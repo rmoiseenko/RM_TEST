@@ -1,0 +1,61 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Individualfunktion bei
+//    "Disposition Ausnahmemeldungen"
+//
+//##############################################################################
+
+//******************************************************************************
+// Berechnet die Priorität einer Individual-Ausnahme
+// wird aufgerufen innerhalb von DAMU_CalcPrioForAusnahme
+// @Result: Prio, numerisch
+//******************************************************************************
+function _DAMU_CalcPrioForAusnahmeIndividuell(nAusnTyp)
+   Result := 999, // Default-Prio: sehr niedrig...
+   case nAusnTyp
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion fügt der MemTable der Ausnahme-Meldungen Individualmeldungen hinzu
+// wird in DAMU_CreateAusnahmeMemTable aufgerufen
+// @Result: Memtable
+//******************************************************************************
+function _DAMU_AddIndividualfelderToAusnahmeMemTable(oMem),
+end,
+
+//******************************************************************************
+// Funktion überträgt eine die Individualfelder einer Ausnahmemeldung
+// von der Memtable in die Datenbank.
+// wird in DAMU_DB_UebertrageNeueAusnahme aufgerufen
+// @Result: null
+//******************************************************************************
+function _DAMU_DB_UebertrageIndividualfelderNeueAusnahme(oMemAusnahmen, oKdnDAM),
+end,
+
+//******************************************************************************
+// Funktion aktualisiert die Individualfelder in einer
+//  als "identisch wiederholt aufgetretene Ausnahme"  in der Datenbank.
+// wird in DAMU_DB_AktualisiereVorhandeneAusnahme aufgerufen
+// @Result: null
+//******************************************************************************
+function _DAMU_DB_AktualisiereIndividualfelderVorhandeneAusnahme(oMemAusnahmen, oKdnDAM)
+end,
+
+//******************************************************************************
+// Mit dieser Funktion kann man individuell den Planungsmodus ändern
+// @Result: char(1) , der Planungsmodus 'E' für Einkauf, bzw. 'F' für Fertigung
+//******************************************************************************
+function _GetIndividuellenPlanungsmodusForArtikel(oKdnDamQuery, cPlanungsmodus),
+   result := cPlanungsmodus,
+end,
+
+//******************************************************************************
+// Mit dieser Funktion kann man individuell einen Lieferanten für die Ausnahmemeldung
+// im Einkauf (DAB315) festlegen
+// @Result: integer = Lieferantennummer
+//******************************************************************************
+function _GetIndividuelleLieferantenNummer(oKdnDamQuery, nLiefnr),
+   result := nLiefnr,
+end,

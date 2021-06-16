@@ -1,0 +1,416 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Hilfsfunktionen für den Umgang mit der SLMemo-Datenstruktur
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Validieren eines SL_MEMO-Arrays.
+// @result: integer - ggf. der Fehlercode, 0 bei "kein Fehler"
+//******************************************************************************
+function _SML_SLMEMO_ValidateSLMemo_Internal(aSLMemo:R)
+   result := SML_ERR_ErrorResultInit(),
+   if empty(aSLMemo) then
+      result := SML_ERR_ErrorResult(gl_SML_ERRC_SLMEMO_SLMemoMustNotBeEmpty),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-311
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_SML_GetAV()
+//    * SML_SML_SetAV()
+//
+//******************************************************************************
+// Validieren eines SL_MEMO-Arrays. Im Fehlerfall wird eine Exception ausgelöst.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _SML_SLMEMO_AssertSLMemo_Internal(aSLMemo:R)
+   SML_ERR_RaiseError(SML_SLMEMO_ValidateSLMemo_Internal(aSLMemo)),
+end,
+
+//******************************************************************************
+// REQ-389
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_SLMEMO_GetAV()
+//    * SML_SLMEMO_SetAV()
+//
+//******************************************************************************
+// Erimttelt den V-Index abhängig vom Datentyp des Parameters.
+// Bedeutung des Datentyps des Parameters uVIndexOrAttributeKey:
+//  * C: uVIndexOrAttributeKey wird als Merkmalsschlüssel interpretiert
+//  * N: uVIndexOrAttributeKey wird als V-Index interpretiert
+//
+// @Result: integer, V-Index
+//******************************************************************************
+function _SML_SLMEMO_GetVIndexByAmbiguousParameter_Internal(uVIndexOrAttributeKey:U)
+| cDataType |
+   Result    := -1,
+   cDataType := ValType(uVIndexOrAttributeKey),
+   case cDataType
+      of 'N' :: Result := uVIndexOrAttributeKey,
+      of 'C' :: Result := SMLV_VIndexAssert(uVIndexOrAttributeKey),
+      otherwise
+         SML_ERR_RaiseError({gl_SML_ERRC_InvalidParameterType,
+                             {cDataType, 'uVIndexOrAttributeKey', 'N> oder <C'}}),
+   endcase,
+end,
+
+//******************************************************************************
+// REQ-387
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_SML_SetAV()
+//
+//******************************************************************************
+// Wert in internes SL_MEMO-Datenformat konvertieren.
+// Diese Funktion wird von SML_SML_SetAVAt() [REQ-390] verwendet, um einen Wert
+//  für ein Merkmal in einem SL_MEMO-Array abzuspeichern.
+//
+// ACHTUNG:
+//  Das interne SL_MEMO-Datenformat dient ausschließlich zum Speichern von
+//   Werten, die durch des businessexpress-Variantensystems erstellt werden
+//   können. Es ist nach einer Konvertierung in dieses Format beispielsweise
+//   nicht mehr möglich den ursprünglichen Codeblock-Datentypen per ValType() zu
+//   ermitteln.
+//  Um den gespeicherten Wert im Codeblock verwenden zu können muss die Funktion
+//   SML_SLMEMO_ConvertToExternalFormat_Internal() [REQ-388] verwendet werden.
+//   Diese ermöglicht das Konvertieren von Werten im SL_MEMO-Datenformat in ein
+//   Codeblock konformes Datenformat.
+//
+// @Result: string, Wert im internen SL_MEMO-Datenformat
+//******************************************************************************
+function _SML_SLMEMO_ConvertToInternalFormat_Internal(uValue:U, nSMLDataType:N)
+   // TODO: Sicherstellen, dass uValue je nach nSMLDataType als gültiger
+   //  Codeblock-Datentyp vorliegt.
+   case nSMLDataType
+      of {gl_SML_DataTypeText,
+          gl_SML_DataTypeMemo,
+          gl_SML_DataTypeArticle,
+          gl_SML_DataTypeAttribTable} ::
+         Result := '"' + uValue + '"',
+
+      of gl_SML_DataTypeNumeric ::
+         Result := StrTran(Str(uValue), '.', ','),
+
+      of gl_SML_DataTypeBoolean ::
+         Result := iif(uValue, 'True', 'False'),
+
+      of gl_SML_DataTypeDate ::
+         Result := 'SToD("' + FormatDateTime('yyyymmdd', uValue) + '")',
+
+      otherwise
+         SetError('Ungültiger Datentyp <' + ToString(nSMLDataType) + '>'),
+   endcase,
+end,
+
+//******************************************************************************
+// REQ-388
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_SML_GetAV()
+//
+//******************************************************************************
+// Konvertiert einen im SL_MEMO-Datenformat formatierten Wert in ein Codeblock
+//  konformes Format.
+// Die Konvertierung erfolgt mithilfe der Codeblock-Standardfunktion Eval() und
+//  ist ohne weiteres auf das SL_MEMO-Datenformat anwendbar. Lediglich für den
+//  SL_MEMO-Datentyp gl_SML_DataTypeMemo (Langtext) ist eine spezielle
+//  Vor-Konvertierung notwendig.
+//
+// @Result: undefined/variant, Wert als Codeblock-Datentyp
+//******************************************************************************
+function _SML_SLMEMO_ConvertToExternalFormat_Internal(cValue:C, nSMLDataType:N)
+| nMinCount, nMaxCount, cQuote, bInitialize |
+
+   // Möglicherweise ist der zu setzende Wert leer -> initialen Wert verwenden!
+   // Eine Initialisierung ist für alle Datentypen notwendig, da ein Leerstring
+   //  ein ungültiger Codeblock-Code wäre und Eval() dann eine Exception
+   //  auslösen würde.
+   bInitialize := cValue == '',
+
+   case nSMLDataType
+      of {gl_SML_DataTypeText,
+          gl_SML_DataTypeArticle,
+          gl_SML_DataTypeAttribTable} ::
+         if bInitialize then
+            cValue := '""',        // initialer String-Wert
+         endif,
+
+      // Spezielle Behandlung für numerische Werte
+      of gl_SML_DataTypeNumeric ::
+         if bInitialize then
+            cValue := '0',         // initialer numerischer Wert
+         else
+            // Numerische Werte, die eine Gleitkommazahl darstellen werden im
+            //  SL_MEMO als "123,45" gespeichert. Die korrekte Schreibweise für
+            //  Gleitkommazahlen im Codeblock wäre: 123.45
+            // -> Das Komma muss durch einen Punkt ersetzt werden
+            cValue := StrTran(cValue, ',', '.'),
+         endif,
+
+      of gl_SML_DataTypeBoolean ::
+         if bInitialize then
+            cValue := 'False',     // initialer Boolean-Wert
+         endif,
+
+      of gl_SML_DataTypeDate ::
+         if bInitialize then
+            cValue := 'SToD("0")', // initialer Datumswert
+         endif,
+
+      // Spezielle Behandlung für Langtexte
+      of gl_SML_DataTypeMemo ::
+         if bInitialize then
+            cValue := '""',        // initialer String-Wert
+         else
+            // Langtexte können doppelte Hochkommas enthalten und beim Auswerten
+            // zu einem Fehler führen.
+            //  -> Ersetzen durch auswertbaren Codeblock-Code.
+            cQuote    := '"',
+            // Doppelte Hochkommas an Anfang und Ende jeweils ignorieren
+            nMinCount := 2,
+            // Pauschal "TokenCount() - 1", weil hier die Anzahl der Delimiter
+            // benötigt wird, nicht die Anzahl der Tokens
+            nMaxCount := TokenCount(cValue, cQuote) - 1 - nMinCount,
+            cValue    := StrTran(cValue, cQuote, '" + Chr(34) + "', nMinCount, nMaxCount),
+            // Langtexte können außerdem Zeilenumbrüche enthalten und
+            // mehrzeilige Strings können im Codeblock nicht ausgewertet werden.
+            //  -> Zeilenumbrüche durch Codeblock-Code konforme Zeilenumbrüche
+            //     ersetzen.
+            cValue := StrTran(cValue, CRLF, '" + CRLF + "'),
+         endif,
+   endcase,
+
+   Result := Eval(cValue),
+end,
+
+//******************************************************************************
+// REQ-386
+//******************************************************************************
+// Ermitteln der Position bzw. des Index im SL_MEMO-Array anhand des V-Index.
+//
+// TODO:
+//  Ggf. macht es Sinn statt dem Parameter nVIndex einen parameter
+//  uVIndexOrAttributeKey zu verwenden, der sowohl die Übergabe eines V-Index
+//  als auch die Übergabe eines Merkmalsschlüssels ermöglicht.
+//
+// @Result: integer, Index des Merkmals im SL_MEMO-Array
+//  Rückgabe ist -1, falls das Merkmal/V-Index im SL_MEMO-Array nicht vorkommt.
+//******************************************************************************
+function _SML_SLMEMO_FindAttribute(aSLMemo:R, nVIndex:N)
+| nSLMemoIndex |
+
+   Result := -1,
+   for nSLMemoIndex := 1 to ALen(aSLMemo) do
+      if nVIndex = aSLMemo[nSLMemoIndex, gl_SML_SLMemoVIndex] then
+         Result := nSLMemoIndex,
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Auslesen eines Merkmalswertes per Merkmalsschlüssel oder V-Index.
+// @result: integer - Fehler-Code
+//******************************************************************************
+function _SML_SLMEMO_GetAV_Internal(aSLMemo:A, uVIndexOrAttributeKey:U, uValue:R)
+| nVIndex, nSLMemoIndex |
+
+   // Validieren des SL_MEMO-Arrays
+   result := SML_SLMEMO_ValidateSLMemo_Internal(aSLMemo),
+
+   if not SML_ERR_IsError(result) then
+      nVIndex      := SML_SLMEMO_GetVIndexByAmbiguousParameter_Internal(uVIndexOrAttributeKey),
+      nSLMemoIndex := SML_SLMEMO_FindAttribute(aSLMemo, nVIndex),
+      if nSLMemoIndex = -1 then
+         result := SML_ERR_ErrorResult(gl_SML_ERRC_SLMEMO_NoAttributeForVIndex, {nVIndex})
+      else
+         startseq
+            uValue := SML_SLMEMO_ConvertToExternalFormat_Internal(
+               aSLMemo[nSLMemoIndex, gl_SML_SLMemoValue],
+               aSLMemo[nSLMemoIndex, gl_SML_SLMemoDataType]
+            ),
+         onerror
+            SetError('Fehler beim Auswerten des Merkmalswertes: [' + CRLF +
+                     GetErrorText() + CRLF + ']'),
+         stopseq,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-314
+//******************************************************************************
+// Auslesen eines Merkmalswertes per Merkmalsschlüssel oder V-Index.
+// @Result: variant - Wert des Merkmals
+//******************************************************************************
+function _SML_SLMEMO_GetAV(aSLMemo:R, uVIndexOrAttributeKey:U)
+   result := nil,
+   SML_ERR_RaiseError(SML_SLMEMO_GetAV_Internal(aSLMemo, uVIndexOrAttributeKey, result)),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Auslesen eines Merkmalswertes per Merkmalsschlüssel oder V-Index.
+// Im Fehlerfall wird der übergebene Default-Wert zurückgegeben.
+//
+// @result: variant - Wert des Merkmals
+//******************************************************************************
+function _SML_SLMEMO_GetAV_DefaultValue(aSLMemo:R, uVIndexOrAttributeKey:U, uDefaultValue:U)
+   if SML_ERR_IsError(SML_SLMEMO_GetAV_Internal(aSLMemo, uVIndexOrAttributeKey, result)) then
+      result := uDefaultValue,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Schreiben eines Merkmalswertes per Index des SL_MEMO-Arrays.
+//
+// Der Wert wird nur geschrieben wenn:
+//  * ... die Datentypen von zu setzenden Wert und des Merkmals übereinstimmen
+//  * ... der Wert des Merkmals vom zu setzenden Wert abweicht
+//
+// @result: integer - Fehler-Code
+//******************************************************************************
+function _SML_SLMEMO_SetAVAt_Internal(aSLMemo:R, nSLMemoIndex:N, uValue:U, bValueChanged:R)
+| nDataType, cCbDataType, uPreparedValue |
+
+   // Validieren des SL_MEMO-Arrays
+   result := SML_SLMEMO_ValidateSLMemo_Internal(aSLMemo),
+
+   if not SML_ERR_IsError(result) then
+      // Validieren des SL_MEMO-Array-Index
+      if nSLMemoIndex < 1 or nSLMemoIndex > ALen(aSLMemo) then
+         result := SML_ERR_ErrorResult(gl_SML_ERRC_SLMEMO_ArrayIndexOutOfBounds, {nSLMemoIndex}),
+      else
+         nDataType   := aSLMemo[nSLMemoIndex, gl_SML_SLMemoDataType],
+         cCbDataType := SML_DataTypeToCbDataType(nDataType),
+         // Sicherstellen, dass die Datentypen des Merkmals und des zu setzenden
+         // Werts kompatibel sind.
+         if ValType(uValue) <> cCbDataType then
+            result := SML_ERR_ErrorResult(
+               gl_SML_ERRC_SLMEMO_AttributeDataTypeMismatch,
+               {ValType(uValue), cCbDataType, aSLMemo[nSLMemoIndex, gl_SML_SLMemoLabel]}
+            ),
+         else
+            uPreparedValue := SML_SLMEMO_ConvertToInternalFormat_Internal(uValue, nDataType),
+            bValueChanged  := uPreparedValue <> aSLMemo[nSLMemoIndex, gl_SML_SLMemoValue],
+            if bValueChanged then
+               aSLMemo[nSLMemoIndex, gl_SML_SLMemoValue] := uPreparedValue,
+            endif,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-390
+//******************************************************************************
+// Schreiben eines Merkmalswertes per Index des SL_MEMO-Arrays.
+//
+// Der Wert wird nur geschrieben wenn:
+//  * ... die Datentypen von zu setzenden Wert und des Merkmals übereinstimmen
+//  * ... der Wert des Merkmals vom zu setzenden Wert abweicht
+//
+// @Result: boolean, Gibt an ob der Merkmalswert verändert wurde
+//******************************************************************************
+function _SML_SLMEMO_SetAVAt(aSLMemo:R, nSLMemoIndex:N, uValue:U)
+   SML_ERR_RaiseError(SML_SLMEMO_SetAVAt_Internal(aSLMemo, nSLMemoIndex, uValue, result)),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Schreiben eines Merkmalswertes per Merkmalsschlüssel oder V-Index.
+//
+// Der Wert wird nur geschrieben wenn:
+//  * ... ein Merkmal mit dem passenden V-Index gefunden wird
+//  * ... die Datentypen von zu setzenden Wert und des Merkmals übereinstimmen
+//  * ... der Wert des Merkmals vom zu setzenden Wert abweicht
+//
+// @result: integer - Fehler-Code
+//******************************************************************************
+function _SML_SLMEMO_SetAV_Internal(aSLMemo:R, uVIndexOrAttributeKey:U, uValue:U, bAttributeFound:R, bValueChanged:R)
+| nVIndex, nSLMemoIndex |
+
+   bAttributeFound := false,
+   bValueChanged   := false,
+
+   // Validieren des SL_MEMO-Arrays
+   result := SML_SLMEMO_ValidateSLMemo_Internal(aSLMemo),
+
+   if not SML_ERR_IsError(result) then
+      nVIndex         := SML_SLMEMO_GetVIndexByAmbiguousParameter_Internal(uVIndexOrAttributeKey),
+      nSLMemoIndex    := SML_SLMEMO_FindAttribute(aSLMemo, nVIndex),
+      bAttributeFound := nSLMemoIndex <> -1,
+      if bAttributeFound then
+         result := SML_SLMEMO_SetAVAt_Internal(aSLMemo, nSLMemoIndex, uValue, bValueChanged),
+      else
+         result := SML_ERR_ErrorResult(gl_SML_ERRC_SLMEMO_NoAttributeForVIndex, {nVIndex})
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-315
+//******************************************************************************
+// Schreiben eines Merkmalswertes per Merkmalsschlüssel oder V-Index.
+//
+// Der Wert wird nur geschrieben wenn:
+//  * ... ein Merkmal mit dem passenden V-Index gefunden wird
+//  * ... die Datentypen von zu setzenden Wert und des Merkmals übereinstimmen
+//  * ... der Wert des Merkmals vom zu setzenden Wert abweicht
+//
+// @Result: array, {<boolean>, <boolean>}
+//            * 1. Wert: Zeigt an, ob ein Merkmal mit dem Merkmalsschlüssel bzw.
+//                       mit dem V-Index existiert
+//            * 2. Wert: Zeigt an, ob das gefundene Merkmal verändert wurde
+//******************************************************************************
+function _SML_SLMEMO_SetAV(aSLMemo:R, uVIndexOrAttributeKey:U, uValue:U)
+| bAttributeFound, bValueChanged, aErrorResult |
+
+   aErrorResult := SML_SLMEMO_SetAV_Internal(aSLMemo, uVIndexOrAttributeKey, uValue, bAttributeFound, bValueChanged),
+   // HINWEIS (SP - 2017-08-22):
+   //   Damit sich die Funktion so verhält wie zuvor, muss der Fehler-Code
+   //   gl_SML_ERRC_SLMEMO_NoAttributeForVIndex ignoriert werden und per Wert in
+   //   bAttributeFound angegeben werden.
+   SML_ERR_RaiseErrorIf(SML_ERR_ErrorResultCode(aErrorResult) <> gl_SML_ERRC_SLMEMO_NoAttributeForVIndex, aErrorResult),
+
+   result := {bAttributeFound, bValueChanged},
+end,
+

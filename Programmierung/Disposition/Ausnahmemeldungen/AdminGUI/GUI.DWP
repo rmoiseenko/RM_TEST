@@ -1,0 +1,328 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: - Administrative Oberfläche für die temporäre Erzeugung /
+//                 Betrachtung von Ausnahmemeldungen.
+//               - Die Oberfläche kann operativ genutzt werden, wenn das System
+//                 der Ausnahmemeldungen nicht in den Dispo-Prozess integriert
+//                 werden soll. In diesem Fall würde man das Ergebnis vmtl.
+//                 exportieren und Anhand der so erstellten Excel-Liste die
+//                 Ausnahmen abarbeiten.
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cFormID, m_cWinPosSaveId, m_cGridAusnId,
+
+   m_oDM, m_Dab010_TermRast, m_oMemAusnahmen, m_cLastTermRastArtNr:C:='',
+   m_oTerminRasterForm,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CalcAusnahmen, A_ClearMemTable, A_Filter, A_ShowIndiHelp, actions,
+   BeBitBtn2, BeLabel1, BeLabel2, BeLabel3, BePanel1, BePanel2, BeSpeedButton1,
+   btn_CalcAusnahmen, chkcmb_AusnahmeTypenFilter, ds_Ausnahmen, ds_TermRast010,
+   edt_ArtNrOnly, grid_Ausnahmen, ipnl_Info, pnl_Options, pnl_Right,
+   pnl_Terminraster
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID        := "@DI_AM",
+m_cWinPosSaveId  := "@DI_AM",
+m_cGridAusnId    := "@DI_AM_B",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', '', oForm),
+
+   m_oMemAusnahmen               := DAMU_CreateAusnahmeMemTable(oForm),
+   m_cLastTermRastArtNr          := '',
+   AssignEvent(m_oMemAusnahmen, 'AfterScroll', 'm_oMemAusnahmen_AfterScroll'),
+   ds_Ausnahmen.DataSet          := m_oMemAusnahmen,
+   grid_Ausnahmen.ID             := m_cGridAusnId,
+   grid_Ausnahmen.ReadWriteProps := false,
+   grid_Ausnahmen.CbChangeOrder  := True,
+
+   // notwendige Tabelle(n) öffnen
+   m_Dab010_TermRast                 := DbGetTable(m_oDM, waDab010, 'DAB010'), // muss der Standard-Alias sein, sonst meckert der Terminraster-Browser
+   m_Dab010_TermRast.IndexName       := 'DAB011',
+   DbScope({Chr(255)}, {Chr(255)}, m_Dab010_TermRast),
+   ds_TermRast010.DataSet            := m_Dab010_TermRast,
+
+   m_oTerminRasterForm.MasterDataSet := m_Dab010_TermRast,
+end,
+
+//******************************************************************************
+// Terminraster-Docking erzeugen und anzeigen
+//******************************************************************************
+function CreateAndShowTerminRasterForm()
+   if empty(m_oTerminRasterForm) then
+      m_oTerminRasterForm               := CreateObject('TFormArtDates', 'Terminraster_Docking', oForm, pnl_Terminraster),
+      m_oTerminRasterForm.Align         := alclient,
+      m_oTerminRasterForm.BorderStyle   := bsnone,
+      m_oTerminRasterForm.KeyPreview    := false,
+      m_oTerminRasterForm.FormStyle     := fsStayOnTop,
+   endif,
+   Show(m_oTerminRasterForm),
+end,
+
+//******************************************************************************
+// Funktion löscht alle Datensätze der MemTable
+// @Result: null
+//******************************************************************************
+function DeleteAllRecordsFromMemTable()
+   DbDisableControls(m_oMemAusnahmen),
+   startseq
+      m_oMemAusnahmen.Filtered := false,
+      DeleteAllData(m_oMemAusnahmen),
+   always
+      DbEnableControls(m_oMemAusnahmen),
+   stopseq,
+end,
+
+//******************************************************************************
+// MemTable neu filtern auf Basis der GUI-Eingaben
+// @Result: null
+//******************************************************************************
+function RefreshFilter()
+| cFilter, cCheckedValue, i, cCurToken |
+   if not empty(m_oMemAusnahmen) then
+      cFilter                  := '',
+
+      cCheckedValue  := chkcmb_AusnahmeTypenFilter.Value,
+      for i := 1 to TokenCount(cCheckedValue, '/') do
+         cCurToken := AllTrim(Token(cCheckedValue, '/', i)),
+         if not empty(cCurToken) then
+            cFilter := ConcatTrenner('(AUSN_TYP = ' + cCurToken + ')', cFilter, ' OR '),
+         endif,
+      next,
+      if empty(cFilter) then
+         cFilter := 'AUSN_TYP = -1'
+      endif,
+
+      m_oMemAusnahmen.Filtered := false,
+      m_oMemAusnahmen.Filter   := cFilter,
+      m_oMemAusnahmen.Filtered := true,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function chkcmb_AusnahmeTypenFilterChange( Sender )
+  RefreshFilter(),
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: AfterScroll der Ausnahmen-Memtable
+//******************************************************************************
+function m_oMemAusnahmen_AfterScroll( Sender )
+   if VarEqual(m_cLastTermRastArtNr, m_oMemAusnahmen:ARTNR) then
+      exit,
+   endif,
+
+   m_cLastTermRastArtNr := m_oMemAusnahmen:ARTNR,
+
+   if NoDs(m_oMemAusnahmen) then
+      DbScope({Chr(255)}, {Chr(255)},                         m_Dab010_TermRast),
+   else
+      DbScope({m_cLastTermRastArtNr}, {m_cLastTermRastArtNr}, m_Dab010_TermRast),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_DAMU_IndiOnlineHelp_SQLWhere),
+end,
+
+//******************************************************************************
+// Action: Ausnahmen-Memtable leeren?
+//******************************************************************************
+function A_ClearMemTableExecute( Sender )
+   if jn('Alle Ausnahmen aus der temp. Tabelle löschen ?' + crlf + '(Es werden auch Ausnahmen gelöscht, die aktuell nicht sichtbar sind)') then
+      DeleteAllRecordsFromMemTable(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Ausnahmen berechnen
+//******************************************************************************
+function A_CalcAusnahmenExecute( Sender )
+| oDM, cArtnr, cCheckedValue |
+
+  cArtnr := PadR(edt_ArtNrOnly.Text, mBeArtNoLen),
+
+  ProgressBarShow('', 'Disposition - Ausnahmemeldungen berechnen', true),
+  startseq
+     startseq
+        oDM := CreateObject('TBeDbGet'),
+        startseq
+           DbDisableControls(m_oMemAusnahmen),
+           startseq
+              DeleteAllRecordsFromMemTable(),
+
+              cCheckedValue := chkcmb_AusnahmeTypenFilter.Value,
+
+              if at(Str(gl_DAMU_MengenUnterdeckung),                cCheckedValue) > 0 then DAMU_Erzeuge_10(oDM, m_oMemAusnahmen, true, true, cArtnr, '', true),    endif,
+//            if at(Str(gl_DAMU_MengenUeberdeckung),                cCheckedValue) > 0 then DAMU_Erzeuge_20(oDM, m_oMemAusnahmen,             cArtnr, '', true),    endif,
+              if at(Str(gl_DAMU_KonkreterAbgangInDerVergangenheit), cCheckedValue) > 0 then DAMU_Erzeuge_50(oDM, m_oMemAusnahmen,             cArtnr, '', true),    endif,
+              if at(Str(gl_DAMU_KonkreterZugangInDerVergangenheit), cCheckedValue) > 0 then DAMU_Erzeuge_60(oDM, m_oMemAusnahmen,             cArtnr, '', true),    endif,
+              if at(Str(gl_DAMU_AuftragsbestaetigungUeberfaellig),  cCheckedValue) > 0 then DAMU_Erzeuge_80(oDM, m_oMemAusnahmen,             cArtnr,     true, 3), endif,
+
+              m_oMemAusnahmen.OrderBy := 'ARTNR;AUSN_TYP',
+           always
+              DbEnableControls(m_oMemAusnahmen),
+           stopseq,
+
+           DbGoTop(m_oMemAusnahmen),
+        always
+           DestroyObject(oDM),
+        stopseq,
+     onerror
+        MessageDlg('Fehler bei der Berechnung' + crlf +
+                   GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+     stopseq,
+  always
+     ProgressBarHide(),
+  stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CalcAusnahmen            := FindObject(oForm, "A_CalcAusnahmen"),
+   A_ClearMemTable            := FindObject(oForm, "A_ClearMemTable"),
+   A_Filter                   := FindObject(oForm, "A_Filter"),
+   A_ShowIndiHelp             := FindObject(oForm, "A_ShowIndiHelp"),
+   actions                    := FindObject(oForm, "actions"),
+   BeBitBtn2                  := FindObject(oForm, "BeBitBtn2"),
+   BeLabel1                   := FindObject(oForm, "BeLabel1"),
+   BeLabel2                   := FindObject(oForm, "BeLabel2"),
+   BeLabel3                   := FindObject(oForm, "BeLabel3"),
+   BePanel1                   := FindObject(oForm, "BePanel1"),
+   BePanel2                   := FindObject(oForm, "BePanel2"),
+   BeSpeedButton1             := FindObject(oForm, "BeSpeedButton1"),
+   btn_CalcAusnahmen          := FindObject(oForm, "btn_CalcAusnahmen"),
+   chkcmb_AusnahmeTypenFilter := FindObject(oForm, "chkcmb_AusnahmeTypenFilter"),
+   ds_Ausnahmen               := FindObject(oForm, "ds_Ausnahmen"),
+   ds_TermRast010             := FindObject(oForm, "ds_TermRast010"),
+   edt_ArtNrOnly              := FindObject(oForm, "edt_ArtNrOnly"),
+   grid_Ausnahmen             := FindObject(oForm, "grid_Ausnahmen"),
+   ipnl_Info                  := FindObject(oForm, "ipnl_Info"),
+   pnl_Options                := FindObject(oForm, "pnl_Options"),
+   pnl_Right                  := FindObject(oForm, "pnl_Right"),
+   pnl_Terminraster           := FindObject(oForm, "pnl_Terminraster"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   oForm.OrigCapt                   := 'Disposition - Ausnahmemeldungen',
+   oForm.ImageIndex                 := 605,  // Image-Index für den Window-Navigator setzen
+
+   edt_ArtNrOnly.Text               := '',
+   chkcmb_AusnahmeTypenFilter.CbCheckAllItems,
+
+   CreateAndShowTerminRasterForm(),
+
+   // ReDesign 7 (Rückwärtskompatibel mit 6.5)
+   ipnl_Info.ColorMode                   := ipcmInfo,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+stopseq,

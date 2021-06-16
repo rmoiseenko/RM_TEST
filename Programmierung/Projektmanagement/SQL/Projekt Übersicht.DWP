@@ -1,0 +1,38 @@
+SELECT
+      DABPRJ.ID,
+      DABPRJ.PLATZ,
+      DABPRJ.ERSTELLT,
+      DABPRJ.GEAEND_USR,
+      DABPRJ.GEAENDERT,
+      DABPRJ.BEZ,
+      DABPRJ.BEZ_SORT,
+      DABPRJ.BESCHREIB,
+      LEFT(DABPRJ.BESCHREIB, 150) AS BESCHREIB_SORT,
+      DABPRJ.TYP,
+      DABPRJ.STATUS,
+      DABPRJ.PRIORITAET,
+      DABPRJ.VERANTWORT,
+      DABPRJ.KDNR,
+      DABPRJ.BEGINN,
+      DABPRJ.ENDE,
+      DABPRJ.SA_GESAMT,
+      DABPRJ.SA_ZEIT,
+      DABPRJ.SA_AUFWAND,
+      DABPRJ.SA_ERGBNIS,
+      DABPRJ.PLAN_ERL,
+      DABPRJ.IST_ERL,
+      DABPRJ.IST_A,      
+      (SELECT SUM(iif(LEIST_ART = 10 AND RESTYP = 'M', MENGE_PLAN, 0)) FROM "DABPVL.ADT" WHERE PRJ_ID = DABPRJ.ID) as CALC_MENGE_PLAN_SUM, // Summe Mitarbeiter-Plan-Minuten
+      (SELECT SUM(iif(LEIST_ART = 10 AND RESTYP = 'M', MENGE_IST, 0))  FROM "DABPVL.ADT" WHERE PRJ_ID = DABPRJ.ID) as CALC_MENGE_IST_SUM,  // Summe Mitarbeiter-Ist-Minuten
+      // Summe Mitarbeiter-Rest-Minuten
+      // => Achtung: Überarbeit bei einer einzelnen Leistung wird nicht auf andere Plan-Werte angerechnet!
+      (SELECT SUM(iif(LEIST_ART = 10 AND RESTYP = 'M',
+                      iif(MENGE_PLAN - MENGE_IST > 0,
+                          MENGE_PLAN - MENGE_IST,
+                          0),
+                      0))                             FROM "DABPVL.ADT" WHERE PRJ_ID = DABPRJ.ID) as CALC_MENGE_REST_SUM, // Summe Rest (
+      (SELECT SUM(iif(LEIST_ART = 10, EK_WRTPLAN, 0)) FROM "DABPVL.ADT" WHERE PRJ_ID = DABPRJ.ID) as CALC_EK_WRTPLAN_SUM, // Gesamtwert der Plan-Summe
+      (SELECT SUM(iif(LEIST_ART = 10, EK_WRTIST, 0))  FROM "DABPVL.ADT" WHERE PRJ_ID = DABPRJ.ID) as CALC_EK_WRTIST_SUM   // Gesamtwert der Ist-Summe
+   FROM "DABPRJ.ADT" DABPRJ
+@@PRJ_FILTER@@   WHERE @@PRJ_WHERE@@
+

@@ -1,0 +1,359 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Nachricht erstellen
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm erstellt eine Nachricht zu einer Belegliste.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIDOCLId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Globals)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion erstellt eine Outbound-Nachricht in der EDIMSG-Tabelle und
+// schreibt den Nachrichteninhalt auf Basis des übergebenen abstract syntax tree
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDI_Message_CreateOrUpdateOutboundMessage(oDM:O, oEDIDOCL:O, oAST:O)
+|
+   oEDIMSG, oEDIPROF,
+   nProfileId, bExplicitEdit,
+   cMessageString
+|
+
+   cMessageString := EDI_Edifact_AST_ComposeMessage(oAST),
+
+   nProfileId := oEDIDOCL:EDIPROF_ID,
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+   oEDIPROF.CbIndexName := 'ID',
+   SetErrorIf(not oEDIPROF.CbFindKey({nProfileId}), 'Profile with ID <' + str(nProfileId) + '> not found'),
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbIndexName := 'ID',
+
+   if empty(oEDIDOCL:EDIMSG_ID) or
+      not oEDIMSG.CbFindKey({oEDIDOCL:EDIMSG_ID}) then
+      oEDIMSG.CbAppend(),
+   else
+      oEDIMSG.CbEdit(),
+   endif,
+
+   oEDIMSG:EDITRCH_ID := oEDIPROF:EDITRCH_ID,
+   oEDIMSG:EDIPROF_ID := oEDIDOCL:EDIPROF_ID,
+   oEDIMSG:EDIPART_ID := oEDIDOCL:EDIPART_ID,
+   oEDIMSG:EDIDOCL_ID := oEDIDOCL:ID,
+   oEDIMSG:STANDARD   := oEDIPROF:STANDARD,
+   oEDIMSG:MSG_TYPE   := oEDIPROF:MSG_TYPE,
+   oEDIMSG:PROF_MC    := oEDIPROF:MATCHCODE,
+   oEDIMSG:STANDORT   := mStandort,
+   oEDIMSG:ABTEILUNG  := mAbteilung,
+   oEDIMSG:DIRECTION  := gl_EDI_ProcessDirection_Outbound,
+   oEDIMSG:PROC_STEP  := gl_EDI_ProcessStep_EDIMSG_Outbound_Created,
+   oEDIMSG:PROCESS    := oEDIPROF:PROCESS,
+   oEDIMSG:TEST       := false,
+
+   oEDIMSG:FILE_TYPE  := EDI_Message_EDIMSG_GenerateFileExtension(oDM, oEDIMSG),
+   oEDIMSG:FILE_NAME  := EDI_Message_EDIMSG_GenerateFileName(oDM, oEDIMSG),
+
+   EDI_Message_EDIMSG_SetMessageString(oDM, oEDIMSG, cMessageString),
+
+   oEDIMSG.CbPost(),
+
+   // EDIMSG-ID in Belegliste aktulaisieren
+   bExplicitEdit := not EditModes(oEDIDOCL),
+   if bExplicitEdit then
+      oEDIDOCL.CbEdit(),
+   endif,
+   oEDIDOCL:EDIMSG_ID := oEDIMSG:ID,
+   if bExplicitEdit then
+      oEDIDOCL.CbPost(),
+   endif,
+
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt dem AST alle Positionen des aktuellen EDIHEAD-Records
+// hinzu.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function AST_AddPositions(oASTNode:O, oDM:O, nEDIHEADId:N)
+|
+   oEDIPOS,
+   oSG26, oSG30,
+   aPositionData, cQuantityUnit
+|
+
+   oEDIPOS := MyGetTable(oDM, waEDIPOS, ''),
+   oEDIPOS.CbIndexname := 'EDIHEAD_ID',
+
+   oEDIPOS.CbSetRangeEx({nEDIHEADId}),
+   startseq
+      while not oEDIPOS.CbEof do
+         aPositionData := StrToArr(oEDIPOS:DATA),
+         cQuantityUnit := EDI_InhouseFormat_Get(aPositionData, 'DAB055.ME', 'STK'),
+
+         // SegmentGroup 26: LIN, QTY, DTM, etc.
+         oSG26 := EDI_Edifact_AST_AddSegment(oASTNode, 'SG26', {}),
+
+         EDI_Edifact_AST_AddSegment(oSG26, 'LIN', {'', '', {
+            EDI_InhouseFormat_GetAssert(aPositionData, 'DAB055.ARTNR'), 1
+         }}),
+         EDI_Edifact_AST_AddSegment(oSG26, 'QTY', {{
+            '113', // Quantity to be delivered
+            EDI_InhouseFormat_GetAssert(aPositionData, 'DAB055.BMENGE'),
+            cQuantityUnit
+         }}),
+         EDI_Edifact_AST_AddSegment(oSG26, 'DTM', {{
+            '67', // Delivery Date deriving from actual schedule
+            FormatDateTime('YYYYMMDD', ctod(EDI_InhouseFormat_GetAssert(aPositionData, 'DAB055.TERMIN'))),
+            '102' // Calendar date
+         }}),
+
+         // SegmentGroup 30: PRI, etc.
+         oSG30 := EDI_Edifact_AST_AddSegment(oSG26, 'SG30', {}),
+
+         EDI_Edifact_AST_AddSegment(oSG30, 'PRI', {{
+            'AAA', // Price qualifier: Calculation net
+            EDI_InhouseFormat_GetAssert(aPositionData, 'DAB055.EPREIS'),
+            'DI',  // Price type: Distributor
+            '',
+            1,
+            cQuantityUnit
+         }}),
+
+         oEDIPOS.CbNext(),
+      end,
+   always
+      oEDIPOS.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion fügt dem AST alle Nachrichten-Kopfsätze des aktuellen EDIDOC-
+// Records bzw. Belegs hinzu.
+//
+// HINWEIS:
+//   Typischerweise ist immer nur ein Kopfsatz mit einem EDIDOC-Record
+//   verknüpft.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function AST_AddMessages(oASTNode:O, oDM:O, nEDIDOCId:N)
+| oEDIHEAD, aHeadData |
+
+   oEDIHEAD := MyGetTable(oDM, waEDIHEAD, ''),
+   oEDIHEAD.CbIndexname := 'EDIDOC_ID',
+   oEDIHEAD.CbSetRangeEx({nEDIDOCId}),
+   startseq
+      SetErrorIf(oEDIHEAD.CbNoDataAvailable, 'No inhouse-format records available for EDIDOC record <' + str(nEDIDOCId) + '>'),
+
+      oEDIHEAD.CbFirst(),
+      while not oEDIHEAD.CbEof do
+         aHeadData := StrToArr(oEDIHEAD:DATA),
+         EDI_Edifact_AST_AddSegment(oASTNode, 'UNH', {
+            oEDIHEAD:ANUMMER,
+            EDI_InhouseFormat_GetAssert(aHeadData, 'DAB700.BELEG_NR')
+         }),
+
+         AST_AddPositions(oASTNode, oDM, oEDIHEAD:ID),
+
+         EDI_Edifact_AST_AddSegment(oASTNode , 'UNT', {0, oEDIHEAD:ANUMMER}),
+
+         oEDIHEAD.CbNext(),
+      end,
+   always
+      oEDIHEAD.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion fügt dem AST alle Belege der aktuellen Belegliste hinzu.
+// Dabei werden die mit den Belegen verknüpften Kopfsätze (EDIHEAD) ermittelt
+// und als Basis für die zu schreibenden Daten verwendet.
+//
+// @result: nil oder array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//******************************************************************************
+function AST_AddDocuments(oASTNode:O, oDM:O, nEDIDOCLId:N, nDocumentsCount:R)
+|
+   oEDIDOC,
+   aASTAddDocumentsResult, aASTAddMessagesResult
+|
+
+   nDocumentsCount := 0,
+
+   oEDIDOC := MyGetTable(oDM, waEDIDOC, ''),
+   oEDIDOC.CbIndexName := 'EDIDOCL_ID',
+   oEDIDOC.CbSetRangeEx({nEDIDOCLId}),
+   startseq
+      oEDIDOC.CbFirst(),
+      while not oEDIDOC.CbEof do
+         startseq
+            aASTAddMessagesResult := AST_AddMessages(oASTNode, oDM, oEDIDOC:ID),
+            if empty(aASTAddMessagesResult) then
+               EDI_ProcessResult_SetSuccess(aASTAddMessagesResult),
+            endif,
+         onerror
+            EDI_ProcessResult_SetError(aASTAddMessagesResult,  GetErrorText(GetErrorObj())),
+            EDI_ProcessResult_SetError(aASTAddDocumentsResult, 'One or more documents could not be added to the message'),
+         stopseq,
+
+         oEDIDOC.CbEdit(),
+         EDI_ProcessResult_WriteStatusToTable(aASTAddMessagesResult, oEDIDOC),
+         if EDI_ProcessResult_IsSuccess(aASTAddMessagesResult) then
+            oEDIDOC:PROC_STEP := gl_EDI_ProcessStep_EDIDOC_DocumentAddedToMessage,
+         endif,
+         oEDIDOC.CbPost(),
+
+         nDocumentsCount++,
+         oEDIDOC.CbNext(),
+      end,
+   always
+      oEDIDOC.CbCancelRange(),
+   stopseq,
+
+   result := aASTAddDocumentsResult,
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt eine EDIFACT-Nachricht auf Basis einer Belegliste.
+// Dabei werden alle in der Belegliste enthaltenen Belege in die Nachricht auf-
+// genommen.
+//
+// @result: nil oder array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//******************************************************************************
+function DocumentList_CreateEdifactMessage(oDM:O, nEDIDOCLId:N, oProgressCallback:O)
+|
+   oEDIDOCL, oEDIPROF,
+   oAST, nDocumentsCount, dtNow,
+   cSenderGLN, cSenderIdentificationType,
+   cRecipientGLN, cRecipientIdentificationType,
+   aASTAddDocumentsResult
+|
+
+   oEDIDOCL := MyGetTable(oDM, waEDIDOCL, ''),
+   oEDIDOCL.CbIndexName := 'ID',
+
+   SetErrorIf(
+      not oEDIDOCL.CbFindKey({nEDIDOCLId}),
+      'EDIDOCL record with ID <' + str(nEDIDOCLId) + '> does not exist'
+   ),
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+   oEDIPROF.CbIndexName := 'ID',
+
+   SetErrorIf(
+      not oEDIPROF.CbFindKey({oEDIDOCL:EDIPROF_ID}),
+      'oEDIPROF record with ID <' + str(oEDIDOCL:EDIPROF_ID) + '> does not exist'
+   ),
+
+   cSenderGLN                   := trim(oEDIPROF:GLN_OWN),
+   cSenderIdentificationType    := 'ZZZ',
+   cRecipientGLN                := trim(oEDIPROF:GLN_PART),
+   cRecipientIdentificationType := 'ZZZ',
+
+   oAST := EDI_Edifact_AST_Create(),
+   oDM.CbTransaction_Begin(),
+   startseq
+      startseq
+         dtNow := now(),
+         EDI_Edifact_AST_AddUNASegment(oAST),
+         EDI_Edifact_AST_AddSegment(oAST, 'UNB', {
+            {'UNOC', 3},
+            {cSenderGLN,    cSenderIdentificationType},
+            {cRecipientGLN, cRecipientIdentificationType},
+            {FormatDateTime('YYMMDD', dtNow), FormatDateTime('HHNN', dtNow)},
+            {nEDIDOCLId}
+         }),
+
+         aASTAddDocumentsResult := AST_AddDocuments(oAST, oDM, nEDIDOCLId, nDocumentsCount),
+         if empty(aASTAddDocumentsResult) then
+            EDI_ProcessResult_SetSuccess(aASTAddDocumentsResult),
+         endif,
+
+         EDI_Edifact_AST_AddSegment(oAST, 'UNZ', {nDocumentsCount, nEDIDOCLId}),
+
+         if EDI_ProcessResult_IsSuccess(aASTAddDocumentsResult) then
+            EDI_Message_CreateOrUpdateOutboundMessage(oDM, oEDIDOCL, oAST),
+         endif,
+      always
+         EDI_Edifact_AST_Destroy(oAST),
+      stopseq,
+      result := aASTAddDocumentsResult,
+
+      oEDIDOCL.CbEdit(),
+      if EDI_ProcessResult_IsSuccess(result) then
+         oEDIDOCL:PROC_STEP := gl_EDI_ProcessStep_EDIDOCL_MessageCreated,
+      endif,
+      EDI_ProcessResult_WriteStatusToTable(result, oEDIDOCL),
+      oEDIDOCL.CbPost(),
+      oDM.CbTransaction_Commit(),
+   always
+      if oDM.CbTransaction_TryRollback() then
+         DbResetDM(oDM),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, false),
+
+m_aResult := {},
+startseq
+   m_aResult := DocumentList_CreateEdifactMessage(m_oDM, m_nEDIDOCLId, m_oProgressCallback),
+   if empty(m_aResult) then
+      EDI_ProcessResult_SetSuccess(m_aResult),
+   endif,
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult
+

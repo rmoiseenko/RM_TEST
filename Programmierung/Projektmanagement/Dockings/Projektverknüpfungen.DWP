@@ -1,0 +1,276 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Docking zeigt (generisch) zu z. B. einem Artikel alle
+//               existierenden Verknüpfungen an.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+   m_cFormClassID, m_cWinPosSaveId, m_cBrowserId,
+
+   m_oDM, m_oLinks_Gui,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_GoToProject, A_Refresh, ActionList, btn_GoTo, btn_Refresh, ds_Links,
+   ds_MasterTable, grd_Links, pnl_DevInfos, pnl_GoToPanel, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@EXILNKDCK",
+m_cWinPosSaveId := "@EXLNPOS",
+m_cBrowserId    := "@PRJ_DKG",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// ActionsEnabled steuert die für den User verfügbaren Interaktionen
+//******************************************************************************
+function ActionsEnabled()
+| bEnabled |
+   bEnabled := not (EOF(m_oLinks_Gui) and BOF(m_oLinks_Gui)),
+
+   A_GoToProject.Enabled := bEnabled,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, -1, 'TBeRightsTable'),
+
+   // eigenes Datenmodul erstellen
+   m_oDM     := CreateObject('TBeDbGet', '', oForm),
+
+   // notwendige Tabelle(n) öffnen
+   m_oLinks_Gui                 := DbGetTable(m_oDM, waDABVKN, 'DockingVKN'),
+   m_oLinks_Gui.IndexName       := 'QUELL_WA',
+   m_oLinks_Gui.CheckReadAccess := raFilter, // => Leserechte berücksichtigen
+   m_oLinks_Gui.CheckUserRights := True,     // Berechtigungen prüfen
+   m_oLinks_Gui.Name            := 'DOCKINGVKN',
+
+   // Mit dem Grid verbinden
+   ds_Links.DataSet          := m_oLinks_Gui,
+   grd_Links.DataSource      := ds_Links,
+   grd_Links.RegisterDataSet := m_oLinks_Gui,
+   grd_Links.ID              := m_cBrowserID,
+   grd_Links.ReadWriteProps  := False,
+
+   // MasterTable mit MasterDataSource verbinden: Ab jetzt kommen Scroll_Update-Events
+   ds_MasterTable.DataSet := m_oMasterTable,
+end,
+
+//******************************************************************************
+// Test-Funktion für den EditorMode
+// @Result: oForm-Instanz
+//******************************************************************************
+function TestProjectDocking()
+| cTestKdnr |
+   cTestKdnr      := 'B-1',
+   m_oMasterTable := DbGetTable(gl_oDM, waDab010, 'DAB000_TEST_MASTER'),
+   MySeek({cTestKdnr}, m_oMasterTable),                                         PRS('TestProjectDocking()', 'Test-Master-Artikel: ' + AllTrim(m_oMasterTable:ARTNR) + ': ' + AllTrim(m_oMasterTable:BEZ1)),
+end,
+
+//******************************************************************************
+// Aktualisiert die Entwicklerinformationen
+//******************************************************************************
+function RefreshDevInfo()
+   if not empty(m_oMasterTable) then
+      pnl_DevInfos.Caption :=
+         'DevInfos: ' + crlf +
+         'Master-Workarea = ' + Str(m_oMasterTable.WorkArea) + ' / Master-ID = ' + Str(m_oMasterTable:ID),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim Datenwechsel auf der Übergebenen Tabelle müssen die Informationen
+// aktualisiert werden
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+| nMasterID |
+   startseq
+      if not empty(m_oLinks_Gui) then
+         if not empty(m_oMasterTable) then
+            nMasterID := m_oMasterTable:ID,
+         else
+            nMasterID := -1,
+         endif,
+
+         // Interne DABVKN neu Filtern (nur Projektverknüpfungen)
+         DBFilter('QUELL_WA = 260 AND ' +
+                  'ZIEL_WA = ' + Str(m_oMasterTable.WorkArea) + ' AND ' +
+                  'ZIEL_ID = ' + Str(nMasterID),
+                  m_oLinks_Gui),
+
+         iif(pnl_DevInfos.Visible, RefreshDevInfo(),),
+      endif,
+   onerror
+      SetError('Fehler beim Neu-Positionieren' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Bei Datenwechsel
+//******************************************************************************
+function ds_LinksDataChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim doppelklicken auf ein verknüpftes Projekt in das Projektmanagement
+// springensss
+//******************************************************************************
+function grd_LinksDblClick( Sender )
+   if not empty(m_oLinks_Gui:QUELL_ID) then
+      ProjMgmtGUI_ShowProjectmanagement(Sender, m_oLinks_Gui:QUELL_ID),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)                                           prs('FormExClose', 'START'),
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )                                                prs('FormExDestroy', 'START'),
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),                             prs('FormExDestroy', 'END'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Manuelles aktualisieren aller Verknüpfungen -> Neu filtern
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nLastID |
+   if not empty(m_oLinks_Gui) then
+      nLastID := m_oLinks_Gui:ID,
+      startseq
+         m_oLinks_Gui.Filtered := False,
+         m_oLinks_Gui.Filtered := True,
+      always
+         DBLocate('ID', nLastID, 0, m_oLinks_Gui),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Zum derzeit markierten Projekt springen // TODO: Nicht nur Projekt-Verknüpfungen möglich.
+//******************************************************************************
+function A_GoToProjectExecute( Sender )
+   ProjMgmtGUI_ShowProjectmanagement(Sender, m_oLinks_Gui:QUELL_ID),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Projekte',
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_GoToProject  := FindObject( oForm, "A_GoToProject" ),
+      A_Refresh      := FindObject( oForm, "A_Refresh" ),
+      ActionList     := FindObject( oForm, "ActionList" ),
+      btn_GoTo       := FindObject( oForm, "btn_GoTo" ),
+      btn_Refresh    := FindObject( oForm, "btn_Refresh" ),
+      ds_Links       := FindObject( oForm, "ds_Links" ),
+      ds_MasterTable := FindObject( oForm, "ds_MasterTable" ),
+      grd_Links      := FindObject( oForm, "grd_Links" ),
+      pnl_DevInfos   := FindObject( oForm, "pnl_DevInfos" ),
+      pnl_GoToPanel  := FindObject( oForm, "pnl_GoToPanel" ),
+      pnl_Main       := FindObject( oForm, "pnl_Main" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+      pnl_DevInfos.Visible := EditorMode(),
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      TestProjectDocking()
+   endif,
+
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

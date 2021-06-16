@@ -1,0 +1,1393 @@
+//##############################################################################
+//##############################################################################
+// Allgemeine Funktionen mit Auswirkungen an der Oberfläche
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Prüft ob ein Fenster (Docking) angedockt ist
+//******************************************************************************
+function _ProjMgmtGUI_IsFormDocked(oSendingObject, oForm)
+   if (oForm <> nil) and
+      (ClassName(oForm) = 'TFormEx') and
+      ( (GetParent(oForm) <> nil) or
+        (oForm.FormStyle = fsStayOnTop) ) then
+      Result := True,
+   else
+      Result := False,
+   endif,
+end,
+
+//******************************************************************************
+// Projektzeit-Erfassung Browser Hintergrund-Farbe
+// @Result: Integer / Farbwert
+//******************************************************************************
+function _ProjMgmtGUI_ProjectAcquirePostingsBrowserBackgroundColor(cLineType)
+   Result := clNone,
+
+   case cLineType
+      of {'A', 'W'} :: Result := GetBeDesignColor(dcbCyan, dcgLevel1),
+      of 'B'        :: Result := clNone,
+      of {'P', 'D'} :: Result := GetBeDesignColor(dcbGreen, dcgLevel1),
+   endcase,
+end,
+
+//******************************************************************************
+// Projektzeit-Erfassung Spalten Hintergrund-Farbe
+// @Result: Integer / Farbwert
+//******************************************************************************
+function _ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(oMemtable, cFieldName)
+| oField, cLineType |
+   Result := clNone,
+
+   cLineType := oMemtable:ZEILEN_TYP,
+   oField    := DBField(cFieldName, oMemTable),
+   // Readonly Spalten der 'B' Zeilen
+   if oField.ReadOnly and cLineType = 'B' then
+      Result := GetBeDesignColor(dcbWhite, dcgLevel1),
+   else
+      // Spalten der 'B' Zeilen die durch den Benutzer geändert wurden ORANGE hervorheben
+      if cLineType = 'B' then
+         if Left(cFieldName, 8) = 'TAG_NEW_' and
+            AsNumber(cFieldName, oMemtable) <> AsNumber('TAG_OLD_' + Right(cFieldName, 1), oMemtable) then
+            Result := GetBeDesignColor(dcbOrange, dcgLevel1),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Ermittelt den ImageIndex für Zellen mit Kommentaren (falls vorhanden)
+// @Result: null
+//******************************************************************************
+function _ProjMgmtGUI_CommentImageIndex(oMemTable, oColumn)
+| cFieldName |
+   Result     := 0,
+
+   cFieldName := oColumn.FieldName,
+   if oMemTable:ZEILEN_TYP = 'B' then
+      if Left(cFieldName, 8) = 'TAG_NEW_' and
+         AsNumber(cFieldName, oMemtable) <> AsNumber('TAG_OLD_' + Right(cFieldName, 1), oMemtable) and
+         not empty(AsString('TAG_COM_' + Right(cFieldName, 1), oMemTable)) then
+         Result := 87,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Projektzeit-Erfassung Spalten Vordergrund-Farbe
+// @Result: Integer / Farbwert
+//******************************************************************************
+function _ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(oMemtable, cColumn)
+| cLineType |
+   Result := clNone,
+   cLineType := oMemtable:ZEILEN_TYP,
+
+   // Werte der Differenz-Zeile hervorheben
+   if cLineType = 'D' then
+      // Negative Werte immer ROT hervorheben
+      if AsNumber(cColumn.FieldName, oMemtable) < 0 then
+         Result := clRed,
+      else
+         // Positive GRÜN hervorheben
+         if AsNumber(cColumn.FieldName, oMemtable) > 0 then
+            Result := clGreen,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Projektzeit-Erfassung Wert-Spalten Formatierung
+// @Result: String / Anzeigewert
+//******************************************************************************
+function _ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(cValue, oMemtable)
+| cFieldName, cLineType |
+   Result := '',
+
+   if cValue <> 0 then
+      cLineType := oMemtable:ZEILEN_TYP,
+      Result := FloatToStr(cValue),
+      // Eingabe-Einheit dem Anzeige-Wert hintenanstellen
+      if oMemTable:EINGABE_EINHEIT = 'h' then
+         Result := Result + ' h',
+      else
+         Result := Result + ' min',
+      endif,
+
+      // Bei Summen-Zeilen mit positiven Werten ein '+' voranstellen
+      if cLineType $ 'DP' then
+         if cValue > 0 then
+            Result := '+' + Result,
+         endif,
+      endif
+   endif,
+end,
+
+//******************************************************************************
+// Globale Funktion zum Aufrufen der Projektsuche
+// Als Result kommt ein Name-Value-Array, aus dem die Projekt ID ggf. ermittelt
+// werden muss
+// Das Name-Value-Array hat folgenden Aufbau
+//  [ [Modus, Wert], [Selektion, Wert], [ProjektID, Wert], [VorgangsID, Wert] ]
+//******************************************************************************
+function _ProjMgmtGUI_ShowSearchDialog(oOwner, cSAVEID, nPresetProjectID)
+   Result := Call('Projektmanagement\Projekt suchen', oOwner, cSAVEID, nPresetProjectID,,,'ONLYPROJECTS'),
+
+   // ProjektID aus dem Result-Array ermitteln
+   Result := Result[SeekInDimArray('PROJEKT_ID', Result, 1), 2],
+end,
+
+//******************************************************************************
+// Globale Funktion zum Aufrufen der Projektsuche
+// Das Name-Value-Array hat folgenden Aufbau
+//  [ [Modus, Wert], [Selektion, Wert], [PrjID, Wert], [VorgangsID, Wert] ]
+//******************************************************************************
+function _ProjMgmtGUI_ShowSearchDialogExtended(oOwner, cSAVEID, nPresetProjectID, nPresetTaskID, aSettings, cShowProjectOrTaskMode)
+   Result := Call('Projektmanagement\Projekt suchen', oOwner, cSAVEID, nPresetProjectID, nPresetTaskID, aSettings, cShowProjectOrTaskMode),
+end,
+
+//******************************************************************************
+// Globale Funktion zum Aufrufen der Buchungsübersicht zu einer Vorgangsleistung
+//******************************************************************************
+function _ProjMgmtGUI_ShowBookingOverview(oOwner, nID)
+   Call('Projektmanagement\Gebuchte Vorgangsleistungen', oOwner, nID),
+end,
+
+//******************************************************************************
+// Globale Funktion zum Aufrufen des "Vorgangsleistung Buchen"-Dialogs
+//******************************************************************************
+function _ProjMgmtGUI_ShowTaskEffortBookingDialog(oOwner, nID)
+   Call('Projektmanagement\Vorgangsleistung buchen', oOwner, nID),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt eine Verknüpfung zwischen einem übergebenen
+// BusinessObject und einem wählbaren Projekt
+//******************************************************************************
+function _ProjMgmtGUI_AddRelationShipToProject(oDM,
+                                               oBusinessObject,
+                                               nKind,
+                                               nType,
+                                               oOwner)
+| oProjectBO, nProjectID, bNewCreated, oRelation |
+   nProjectID := -1,
+   oRelation  := nil,
+
+   // Parameter prüfen
+   if empty(oDM) or
+      empty(oBusinessObject) or
+      not (nKind > -1) or
+      not (nType > -1) then
+      SetError('Fehler beim Erstellen der Verknüpfung zum Projekt' + crlf +
+               'Fehlerhafte Parameter übergeben'),
+   endif,
+
+   // Suchdialog aufrufen um Projektauswahl zu ermöglichen
+   nProjectID := ProjMgmtGUI_ShowSearchDialog(oOwner, '', -1),
+   if nProjectID = -1 then
+      exit,
+   endif,
+
+   // Wurde ein Projekt ausgewählt dann ProjectBO erstellen und Positionieren
+   oProjectBO := CreateObject('TBeProjectBo', 'LinkProjectBO'),
+   startseq
+      oProjectBO.CBDataModule := oDM, // Datenmodul des ProjectBO's auf das übergebene setzen
+      startseq
+         oProjectBO.CbGoToID(nProjectID), // ProjectBO positionieren
+      onerror
+         SetError('Fehler beim Positionieren auf das Projekt: ' + Str(nProjectID) +
+                  crlf + GetErrorText()),
+      stopseq,
+
+      oRelation := oProjectBO.CBRelationShips.CBFindRelationShip(oBusinessObject, nKind, nType),
+      startseq
+         // Verknüpfung zwischen den Objekten herstellen wenn noch nicht existent
+         if not empty(oRelation) then
+            bNewCreated := False,
+         else
+            oRelation   := oProjectBO.CBRelationShips.CBAddRelationShip(oBusinessObject, nKind, nType),
+            bNewCreated := True,
+         endif,
+      always
+         DestroyObject(oRelation),
+      stopseq,
+   always
+      DestroyObject(oProjectBO),
+   stopseq,
+
+   if bNewCreated then
+      MessageDlg('Verknüpfung erfolgreich angelegt', mtInformation),
+   else
+      MessageDlg('Verknüpfung existiert bereits', mtInformation),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion legt eine Verknüpfung zwischen einem Projekt und dem
+// übergebenen Datensatz an
+// @Result: Integer / Projekt-Nr. (-1 bei Abbruch)
+//******************************************************************************
+function _ProjMgmtGUI_AddRelationShipToProjectByDestID(oDM,
+                                                       nDestWorkarea,
+                                                       nDestID,
+                                                       nDestLocation,
+                                                       nKind,
+                                                       nType,
+                                                       oOwner)
+   | nProjectID, oProjectBO, oRelation, bNewCreated |
+   bNewCreated := False,
+   nProjectID  := -1,
+   Result      := -1,
+
+   // Parameter prüfen
+   if empty(oDM) or                                      // Datenmodul OK?
+      not (nDestWorkarea > 0 and nDestWorkarea < 999) or // Workarea OK?
+      not (nDestID > -1) or                              // ID OK?
+      not (nKind > -1) or                                // Art der Verknüpfung OK?
+      not (nType > -1) then                              // Verknüpfungstyp OK?
+      SetError('Fehler beim Erstellen der Verknüpfung zum Projekt' + crlf +
+               'Fehlerhafte Parameter übergeben'),
+   endif,
+
+   // Suchdialog aufrufen um Projektauswahl zu ermöglichen
+   nProjectID := ProjMgmtGUI_ShowSearchDialog(oOwner, '', -1),
+   Result     := nProjectID,
+   if nProjectID = -1 then
+      exit,
+   endif,
+
+   // Wurde ein Projekt ausgewählt dann ProjectBO erstellen und Positionieren
+   oProjectBO := CreateObject('TBeProjectBo', 'LinkProjectBO'),
+   startseq
+      oProjectBO.CBDataModule := oDM, // Datenmodul des ProjectBO's auf das übergebene setzen
+      startseq
+         oProjectBO.CbGoToID(nProjectID), // ProjectBO positionieren
+      onerror
+         SetError('Fehler beim Positionieren auf das Projekt: ' + Str(nProjectID) +
+                  crlf + GetErrorText()),
+      stopseq,
+
+      oRelation := oProjectBO.CBRelationShips.CbFindRelationShipByDestID(nDestWorkarea, nDestID, nDestLocation, nKind, nType),
+      startseq
+         // Verknüpfung zwischen den Objekten herstellen wenn noch nicht existent
+         if not empty(oRelation) then
+            bNewCreated := False,
+         else
+            oRelation := oProjectBO.CBRelationShips.CbAddRelationShipByDestID(nDestWorkarea,
+                                                                              nDestID,
+                                                                              nDestLocation,
+                                                                              nKind,
+                                                                              nType),
+            bNewCreated := True,
+         endif,
+      always
+         DestroyObject(oRelation),
+      stopseq,
+   always
+      DestroyObject(oProjectBO),
+   stopseq,
+
+   if bNewCreated then
+      MessageDlg('Verknüpfung erfolgreich angelegt', mtInformation),
+   else
+      MessageDlg('Verknüpfung existiert bereits', mtInformation),
+   endif,
+end,
+
+//******************************************************************************
+// Öffnet das Projektmanagement
+// Hierfür wird der Sender (Button o.ä.) benötigt um das BE-Hauptfenster zu
+// ermitteln.
+// Außerdem kann das Projektmanagement mit der Übergabe einer Projekt-ID
+// auf das Übergebene Projekt positioniert werden. Wenn dies nicht gewünscht ist
+// muss eine -1 übergeben werden.
+//******************************************************************************
+function _ProjMgmtGUI_ShowProjectManagement(oSendingObject, nProjID)
+| oOwnerObject, oPositionMem, nOldCursor |
+   oOwnerObject := nil,
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      startseq
+         Result := GFU_ShowMDIChild('PROJEKTMANAGEMENT_MASTER', 'Projektmanagement\Projektstamm'),
+
+            // Wenn bereits geöffnet nach vorne bringen und eventuell ausgewähltes
+            // Projekt markieren
+            if nProjID > -1 then
+            oPositionMem := FindObject(Result, 'PRJPOSMEM'), // Positionierungstabelle suchen
+               if not empty(oPositionMem) then
+                  oPositionMem:DESTPROJ := nProjID, // Wert in die Positionierungstabelle schreiben
+                  DBPost(oPositionMem),             // Und Posten -> Löst internen AfterPost aus
+               else
+                  SetError('Positionieren nicht möglich, da die ' + crlf +
+                           'Positionierungstabelle nicht gefunden werden konnte'),
+               endif,
+            endif,
+      onerror
+         SetError('Fehler beim Springen zum Projekt' + crlf + GetErrorText()),
+      stopseq,
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion nutzt die ShowBeWindow-Funktionaliäten in Abhänigkeit der
+// übergebenen Workarea
+//******************************************************************************
+function _ProjMgmtGUI_ShowLinkedBeWindow(nWA, nID)
+| nWindowConst, cParamText, cShowBeWindowID |
+
+   //***************************************************************************
+   // Zeigt eine Meldung an wenn eine Verknüpfung unter der übergebenen ID nicht
+   // gefunden werden konnte
+   //***************************************************************************
+   function ShowNotAvailableMessage(cTypeText, nID)
+   | cBeginText, cEndText, cID |
+      cBeginText := ' mit der ID: ',
+      cEndText   := ' ist nicht (mehr) verfügbar.',
+
+      if ValType(nID) <> 'C' then
+         cID := Str(nID),
+      else
+         cID := nID,
+      endif,
+
+      MessageDlg(cTypeText + cBeginText + cID + cEndText, mtError),
+   end,
+
+
+   //***************************************************************************
+   // Diese Funktion öffnet abhänging von dem Dab035-Datensatz entweder das
+   // Lieferanten-Rückstands-Fenster oder die Offenen Produktionsaufträge
+   //***************************************************************************
+   function ShowSupplyBacklogs(nId:N)
+   | oSelf, oAction, oForm, oTable, aRecordInfo |
+
+      aRecordInfo := lookup(waDab035, 'DAB03D', {{nId}}, '{BESTPOSNR, LIEFNR}', ''),
+      if empty(aRecordInfo) then
+         ShowNotAvailableMessage('Der Lieferrückstand / Offene Produktionsauftrag', nId),
+      else
+         if aRecordInfo[2] = -1 then
+            // Sofern die Lieferantennummer -1 (also nicht gesetzt) ist, handelt
+            // es sich um einen Produktionsauftrag.
+            ShowBeWindow(bwProduction, aRecordInfo[1]),
+         else
+            // Sofern die Lieferantennummer gesetzt ist, muss es sich um eine
+            // Bestell-Position handeln.
+            oSelf := ShowBeWindow(bwSupplier, Str(aRecordInfo[2])),
+            // Aktion für Lieferrückstände suchen
+            oAction := FindObject(oSelf, 'A_BackOrders'),
+            // Aktion ausführen
+            if not Empty(oAction) and ActionExecute(oAction) then
+               // Fenster suchen
+               oForm := FindObjByClass(oSelf, 'TFormSuppBackOrd'),
+               // Wenn Fenster vorhanden dann zu Kontakt springen
+               if not Empty(oForm) then
+                  oForm.ExecRefresh,
+                  oTable := FindObject(oForm, 'MainTable'),
+                  DbLocate('ID', nId, 0, oTable),
+               endif,
+            endif,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Springt zum übergebenen Kontakt unter Berücksichtigung des jeweiligen
+   // Kontakt-Typs
+   //***************************************************************************
+   function ShowContactForm()
+   | oSelf, oAction, oForm, oTable, nPERSNR, cTYP, nWindowType |
+      // Typ des Kontakts bestimmen
+      cTYP    := Lookup(waDAB005, 'DAB007', {{nID}}, 'TYP', ''),
+      nPERSNR := Lookup(waDAB005, 'DAB007', {{nID}}, 'PERSNR', -1),
+
+      if empty(cTYP) or empty(nPERSNR) then
+         ShowNotAvailableMessage('Der Kontakt', nID),
+         exit,
+      endif,
+
+      // Fenster-Typ herausfinden
+      nWindowType := -1,
+      if not empty(cTYP) then
+         if 'K' $ cTYP then            // Kunde
+            nWindowType := bwCustomer,
+         else if 'Z' $ cTYP then       // Lieferant
+            nWindowType := bwSupplier,
+         else if 'V' $ cTYP then       // Vertreter
+            nWindowType := bwAgent,,
+         endif,
+         endif,
+         endif,
+
+         if nWindowType = -1 then
+            SetError('Ungültiger Kontakttyp übergeben'),
+         endif,
+      endif,
+
+      if nPERSNR > -1 then
+         // Jeweiliges Fenster öffnen
+         oSelf := ShowBeWindow(nWindowType, Str(nPERSNR)),
+         // Aktion für Kontakte suchen
+         oAction := FindObject(oSelf, 'A_Contacts'),
+         // Aktion ausführen
+         if not Empty(oAction) and ActionExecute(oAction) then
+            // Kontak-Fenster suchen
+            oForm := FindObjByClass(oSelf, 'TFormEditContacts'),
+            // Wenn Fenster vorhanden dann zu Kontakt springen
+            if not Empty(oForm) then
+               oForm.ExecRefresh,
+               oTable := FindObject(oForm, 'MainTable'),
+               DbLocate("ID", nID, 0, oTable),
+            endif,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion öffnet die Kundenauftragsverwaltung und positioniert auf
+   // die entsprechende Position.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ShowCustomerOrderPositions(nId:N)
+   | oSelf, oAction, oMainTable, cOrderPositionNo, cParamString |
+
+      cOrderPositionNo := Lookup(waDab055, 'ID', {{nId}}, 'APNUMMER', ''),
+      if empty(cOrderPositionNo) then
+         ShowNotAvailableMessage('Die Auftragsposition', nId),
+      else
+         cParamString := Lookup(waDab050, 'DAB051', {{left(cOrderPositionNo, 6)}}, 'str(KDNR, 8) + ANUMMER', ''),
+         oSelf := ShowBeWindow(bwCustOrders, cParamString),
+         if not empty(oSelf) then
+            oAction := FindObject(oSelf, 'A_Show_Pos'),
+            if not empty(oAction) and ActionExecute(oAction) then
+               oMainTable := FindObject(oSelf, 'Dab055'),
+               if not empty(oMainTable) then
+                  oMainTable.CbFindKey({cOrderPositionNo}),
+               endif,
+            endif,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion öffnet abhängig von dem Dab320-Datensatz entweder die
+   // Produktions-Disposition oder die Bestell-Disposition und positioniert
+   // entsprechend auf die entsprechende ID.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ShowProductionDispositionRecord(nId:N)
+   | oSelf, aRecordInfo, oAction, oForm |
+
+      aRecordInfo := lookup(waDab320, 'ID', {{nId}}, '{eof(), LIEFNR}', ''),
+      if empty(aRecordInfo) or aRecordInfo[1] then
+         ShowNotAvailableMessage('Die Bestell-/Produktions-Disposition', nId),
+      else
+         if aRecordInfo[2] = -1 then
+            oSelf := ShowBeWindow(bwProdDisposition, nId),
+            if not empty(oSelf) then
+               oSelf.CbRefreshGUI(nId),
+            endif,
+         else
+            oSelf := ShowBeWindow(bwSupplier, str(aRecordInfo[2])),
+            if not empty(oSelf) then
+               oAction := FindObject(oSelf, 'A_Dispo'),
+               if not empty(oAction) and ActionExecute(oAction) then
+                  oForm := FindObjByClass(oSelf, 'TBeFormPurchaseDisposition'),
+                  if not empty(oForm) then
+                     oForm.CbRefreshGUI(nId),
+                  endif,
+               endif,
+            endif,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion öffnet die Produktions-Dispositions-Planung und
+   // positioniert auf die entsprechende ID.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ShowProductionDispositionPlanningRecord(nId:N)
+   | oSelf |
+
+      if lookup(waDab215, 'ID', {{nId}}, 'eof()', false) then
+         ShowNotAvailableMessage('Der Produktions-Dispositionsplanungs-Datensatz', nId),
+      else
+         oSelf := ShowBeWindow(bwProdDispoPlan, nId),
+         if not empty(oSelf) then
+            oSelf.CbRefreshGUI(nId),
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion öffnet die Bestell-Dispositionsplanung und positioniert auf
+   // die entsprechende ID.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ShowPurchaseDispositionPlanningRecord(nId:N)
+   | oSelf, aRecordInfo, oAction, oForm |
+
+      aRecordInfo := lookup(waDab315, 'ID', {{nId}}, '{eof(), LIEFNR}', ''),
+      if empty(aRecordInfo) or aRecordInfo[1] then
+         ShowNotAvailableMessage('Der Bestell-Dispositionsplanungs-Datensatz', nId),
+      else
+         oSelf   := ShowBeWindow(bwSupplier, str(aRecordInfo[2])),
+         oAction := FindObject(oSelf, 'A_Scheduling'),
+         if not empty(oAction) and ActionExecute(oAction) then
+            oForm := FindObjByClass(oSelf, 'TBeFormPurchaseDispositionPlanning'),
+            if not empty(oForm) then
+               oForm.CbRefreshGUI(nId),
+            endif,
+         endif,
+      endif,
+   end,
+
+   startseq
+      if nWA < 0 then
+         SetError('Ungültige WorkArea übergeben'),
+      endif,
+
+      nWindowConst := -1,
+      cParamText   := '',
+
+      case nWa
+         // Kundenstamm
+         of  waDab000 ::
+            cParamText   := Str(Lookup(waDAB000, 5, {{nID}}, 'KDNR'), 8), // Kein Index-Name verwenden wg. FiBu
+            if not empty(cParamText) then
+               nWindowConst := bwCustomer,
+            else
+               ShowNotAvailableMessage('Der Kunde', nID),
+            endif,
+
+         // Artikelstamm
+         of  waDab010 ::
+            cParamText := Lookup(waDAB010, 'DAB01G', {{nID}}, 'ARTNR', ''),
+            if not empty(cParamText) then
+               nWindowConst := bwArticle,
+            else
+               ShowNotAvailableMessage('Der Artikel', nID),
+            endif,
+
+         // Kundenauftrag
+         of  waDab050 ::
+            cParamText := Lookup(waDAB050, 'ID', {{nID}}, 'Str(KDNR, 8) + ANUMMER'),
+            if not empty(cParamText) then
+               nWindowConst := bwCustOrders,
+            else
+               ShowNotAvailableMessage('Der Auftrag', nID),
+            endif,
+
+         // Kundenauftragsposition
+         of  waDab055 ::
+            nWindowConst := -1,
+            ShowCustomerOrderPositions(nID),
+
+         // Lieferant
+         of  waDab100 ::
+            cParamText := Lookup(waDAB100, 5, {{nID}}, 'STR(LINR, 8)', ''),
+            if not empty(cParamText) then
+               nWindowConst := bwSupplier,
+            else
+               ShowNotAvailableMessage('Der Lieferant', nID),
+            endif,
+
+         // Memo
+         of  waDab065 ::
+            if not empty(Lookup(waDAB065, 'DAB06B', {{nID}}, 'MEMO_ID', '')) then
+               nWindowConst := bwGroupWare,
+               cParamText   := Str(waDAB065) + ';' + Str(nID) + ';;True',
+            else
+               ShowNotAvailableMessage('Das Memo', nID),
+            endif,
+
+         // Lieferantenrückstände / Produktion: Offene Aufträge
+         of waDab035 ::
+            nWindowConst := -1,      // -1 Setzen damit kein weiteres ShowBeWindow ausgelöst wird
+            ShowSupplyBacklogs(nID), // Spezialbehandlung für Lieferrückstände
+
+         // Bestell-/Produktions-Disposition
+         of waDab320 ::
+            nWindowConst := -1,
+            ShowProductionDispositionRecord(nID),
+
+         // Bestell-Dispositionsplanung
+         of waDab315 ::
+            nWindowConst := -1,
+            ShowPurchaseDispositionPlanningRecord(nID),
+
+         // Produktions-Dispositionsplanung
+         of waDab215 ::
+            nWindowConst := -1,
+            ShowProductionDispositionPlanningRecord(nID),
+
+         // Fertigungsaufträge
+         of waDab240 ::
+            cParamText   := Left(Lookup(waDab240, 'DAB245', {{nID}}, 'B_POS_LFD', ''), 8),
+            if not empty(cParamText) then
+               nWindowConst := bwProduction,
+            else
+               ShowNotAvailableMessage('Der Fertigungsauftrag', nID),
+            endif,
+
+         // Vertreter
+         of waDab062 ::
+            cParamText := Str(Lookup(waDAB062, 'DAB06P', {{nID}}, 'VTNR', 0)),
+            if not empty(cParamText) then
+                nWindowConst := bwAgent,
+            else
+               ShowNotAvailableMessage('Der Vertreter', nID),
+            endif,
+
+         // Kontakte
+         of waDab005 :: nWindowConst := -1, // -1 Setzen damit kein weiteres ShowBeWindow ausgelöst wird
+                        ShowContactForm(),  // Spezialbehandlung für Kontakte
+
+         // Projekte
+         of waDABPRJ ::
+            if not empty(Lookup(waDABPRJ, 'ID', {{nID}}, 'ID', 0)) then
+               nWindowConst := -1, // -1 Setzen damit kein weiteres ShowBeWindow ausgelöst wird
+               ProjMgmtGUI_ShowProjectManagement(nil, nID), // Projektmanagement öffnen
+            else
+               ShowNotAvailableMessage('Das Projekt', nID),
+            endif,
+
+         // Um weitere Sprungmöglichkeiten hinzuzufügen müssen diese Einträge um die jeweilige
+         // Sprungfunktion erweitert werden.
+         //      of  waDabXXX :: nWindowConst := ,
+         //               cParamText   := ,
+      endcase,
+
+      // Nutzen der ShowBeWindow-Funktion mit den ermittelten Werten
+      if not nWindowConst = -1 then
+         ShowBeWindow(nWindowConst, cParamText),
+      endif,
+   onerror
+      SetError('Fehler in ProjMgmtGUI_ShowLinkedBeWindow' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion ruft die Zeitbuchungen für Vorgänge auf.
+// Gibt es zu einem Vorgang für den aktuellen User noch
+// keine Vorgangsleistung so wird diese angelegt.
+//******************************************************************************
+function _ProjMgmtGUI_ShowBookingDialogForMemo(oMemoBO, bCreateNewTaskEffort, bUseBookingTimer)
+| oDABPVL, nTaskEffortID, oDAB020, bShowDialog, oTaskEffortBO |
+   startseq
+      bShowDialog   := False,
+      nTaskEffortID := -1,
+
+      // Wenn keine Vorgangs-ID im Memo eingetragen ist abbrechen
+      if empty(oMemoBO.CbTaskID) then
+         exit,
+      endif,
+
+      // Vorgangsleistung für den aktuellen User ermitteln
+      oDABPVL := BeOpen(waDABPVL, 'VORG_ID'),
+      startseq
+         DBFilter('VORG_ID = ' + Str(oMemoBO.CbTaskID) + ' AND ' +
+                  'RESTYP = "M"', oDABPVL),
+
+         // Vorgangsleistungen durchsuchen
+         DBGoTop(oDABPVL),
+         while not EOF(oDABPVL) and (nTaskEffortID = -1) do
+            if mbeUserPersNr = oDABPVL:RES_ID then
+               nTaskEffortID := oDABPVL:ID,
+            endif,
+            DBSkip(1, oDABPVL),
+         end,
+
+         // Wenn der User in einer Leistung vorgesehen ist Buchungsdialog anzeigen
+         if nTaskEffortID <> -1 then
+            oDAB020 := BeOpen(waDAB020, 'VORGLS_ID'),
+            startseq
+               DBFilter('VORGLS_ID = ' + Str(nTaskEffortID) + ' and ' +        // Nur diesen Vorgang
+                        'DToS(DATUM) = "' + DToS(Date()) + '" and ' +          // Nur heutige Buchungen
+                        'Trim(PLATZ) = "' + c_usr + '"', oDAB020),             // Nur von diesem Platz ausgeführte (keine Nachbuchungen usw.)
+               DBGoBottom(oDAB020),
+               if not bUseBookingTimer or (BOF(oDAB020) and EOF(oDAB020)) then // Wenn kein Timer verwendet wird oder keine Buchung vorhanden sind
+                  bShowDialog := True,
+               else
+                  if ((Now() - oDAB020:ERSTELLT) > (0.25 / 24)) then // wenn x.xx Stunden vergangen sind // TODO: Timer-Flag
+                     bShowDialog := True,
+                  endif,
+               endif,
+            always
+               BeClose(oDAB020),
+            stopseq,
+         else
+            // Wenn der 2. Parameter der Funktion auf True steht soll eine neue
+            // Vorgangsleistung angelegt und dann auf diese gebucht werden
+            if bCreateNewTaskEffort then
+               oTaskEffortBO := CreateObject('TBeProjectTaskEffortBo', 'NewEffort', oMemoBO.CbDataModule),
+               startseq
+                  startseq
+                     oTaskEffortBO.CbInsertTaskEffort(oMemoBO.CbTaskID),
+                     oTaskEffortBO.CbResourceType := 'M',
+                     oTaskEffortBO.CbResourceID   := mbeUserPersNr,
+                     oTaskEffortBO.CBPost(),
+                     nTaskEffortID := oTaskEffortBO.CbID,
+                  onerror
+                     SetError('Fehler beim Erstellen der neuen Vorgangsleistung ' + crlf +
+                              'für den Benutzer: ' + c_usr + crlf + GetErrorText()),
+                  stopseq,
+               always
+                  DestroyObject(oTaskEffortBO),
+               stopseq,
+               bShowDialog := True,
+            endif,
+         endif,
+
+         // Dialog angezeigen
+         if bShowDialog then
+            ProjMgmtGUI_ShowTaskEffortBookingDialog(nil, nTaskEffortID),
+         endif,
+      always
+         BeClose(oDABPVL),
+      stopseq,
+   onerror
+      SetError('Fehler in OpenBookingsWhenMemoPosted()' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Aufruf des Projektübersicht-Drucks
+//******************************************************************************
+function _ProjMgmtGUI_PrintProjectOverview(nProjectID, bUseLayoutMode)
+   Call('Projektmanagement\Druck Projektübersicht', nProjectID, bUseLayoutMode),
+end,
+
+//******************************************************************************
+// Mit dieser Funktion lassen sich Projekte auf Basis bereits bestehender
+// Projekte erstellen. Hierbei erhält der Benutzer die möglichkeit zu wählen
+// welches Projekt als Basis verwendet wird und was davon übernommen werden
+// soll.
+// Zudem hat der Benutzer die Möglichkeit im Supervisormodus ein Demo-Projekt
+// zu erstellen.
+//
+// Nach dem Erstellen wird im Projektstamm auf das neue Projekt positioniert.
+// @Result: null
+//******************************************************************************
+function _ProjMgmtGUI_CreateNewProjectFromTemplate(oOwner, nPresetProjID, oDM)
+| aProgArray, nNewProjectID, oProjectController, oProjBO, nCopyMode |
+   startseq
+      aProgArray := {},
+      // Auswahl des Basis-Projekts oder Erstellung eines Demo-Projekts
+      aProgArray := Call('Projektmanagement\Projekt aus Vorlage Dialog', nPresetProjID),
+
+      if ALen(aProgArray) = 4 then
+         // Soll ein Demo-Projekt erstellt werden?
+         if aProgArray[4] then
+            nNewProjectID := Call('Projektmanagement\DemoProjekt erstellen'),
+         // Kopie eines anderen Projekts
+         else
+            nNewProjectID := -1,
+
+            // Gewünschten Kopiermodus setzen
+            nCopyMode := pftDefault,
+
+            // Vorgänge kopieren?
+            if aProgArray[2] then
+               nCopyMode := nCopyMode + pftTasks,
+
+               // Vorgangsleistung kopieren?
+               if aProgArray[3] then
+                  nCopyMode := nCopyMode + pftTaskEfforts,
+               endif,
+            endif,
+
+            oProjectController := CreateObject('TBeProjectBusinessController', 'CalcController'),
+            startseq
+               oProjectController.CbDataModule := oDM,
+               oProjBO := CreateObject('TBeProjectBO', 'CalcProjBO'),
+               startseq
+                  oProjBO.CbDataModule := oDM,
+                  DBStartTrans(oDM.ADSConnection),
+                  startseq
+                     nNewProjectID := oProjectController.CbCreateNewProjectFromTemplate(aProgArray[1], oProjBO, nCopyMode),
+                     DBCommit(oDM.ADSConnection),
+                  onerror
+                     DBRollback(oDM.ADSConnection),
+                     SetError(GetErrorText()),
+                  stopseq
+               always
+                  DestroyObject(oProjBO),
+               stopseq,
+            always
+               DestroyObject(oProjectController),
+            stopseq,
+         endif,
+
+         // Neu erstelltes Projekt positionieren lassen
+         if nNewProjectID > -1 then
+            ProjMgmtGUI_ShowProjectManagement(oOwner, nNewProjectID),
+         endif,
+      endif,
+   onerror
+      SetError('Fehler beim Erstellen eines neuen Projekts nach Vorlage' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für Browser
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Formatiert den Anzeigetext für Plan/Ist-Werte:
+// - nColValue wird immer in Minuten übergeben
+// @Result: Formatierter Anzeige-Text
+//******************************************************************************
+function _ProjMgtGUI_CalcDisplayValueForQuantityValue(nColValue)
+   Result := '',
+
+   if nColValue <> 0 then
+      if Abs(nColValue) < 60 then
+         Result := FloatToStr(nColValue) + ' min',
+      else
+         Result := FloatToStr(Round(nColValue / 60, cPMResMinutePrec)) + ' h'
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Ermittelt die Beschreibung/Bezeichnung zur Quell-Tabelle für
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_TableDescriptionAndImageIndex(uColumnResult, oDabAVG)
+   Result := {uColumnResult, -1},
+
+   // Kürzere Namen nutzen, deswegene nicht per GetTableInfo()
+   case oDabAVG:DS_WA
+      of waDabPRJ :: Result := {'Projekt',  558},
+      of waDabPRV :: Result := {'Vorgang',  553},
+      of waDabPVL :: Result := {'Leistung', 264},
+      of waDabPRE :: Result := {'Erlös',    575},
+   endcase,
+end,
+
+//******************************************************************************
+// Ermittelt die Beschreibung/Bezeichnung zu einem DabAVG-Satz
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_RecordDescription(uColumnResult, oDabAVG)
+| aVorgLeistArr, cVorgDesc, nAnummer  |
+   Result := uColumnResult,
+
+   case oDabAVG:DS_WA
+      // Für den Projektstamm-Satz macht eine Anzeige der Bezeichnung wenig Sinn, da man sich ja ohnehin in diesem Projekt befindet...
+      // of waDabPRJ :: cBez := LookUp(waDabPRJ, 'ID', {{DS_ID}}, 'AllTrim(BEZ)', '?'),
+
+      of waDabPRV :: Result        := LookUp(waDabPRV, 'ID', {{uColumnResult}}, 'AllTrim(BEZ)', '?'),
+
+      of waDabPVL :: aVorgLeistArr := LookUp(waDabPVL, 'ID', {{uColumnResult}}, '{VORG_ID, AllTrim(AllTrim(POSNR) + " " + AllTrim(BEZ))}', {-1, '?'}),
+                     cVorgDesc     := LookUp(waDabPRV, 'ID', {{aVorgLeistArr[1]}}, 'AllTrim(BEZ)', '?'),
+                     Result        := cVorgDesc + ' / ' + aVorgLeistArr[2],
+
+      of waDabPRE :: nANummer      := LookUp(waDabPRE, 'ID', {{uColumnResult}}, 'ANUMMER', 0),
+                     Result        := iif(nANummer > 0,
+                                          'Auftrag-Nr.: ' + Str(nANummer),
+                                          LookUp(waDabPRE, 'ID', {{uColumnResult}}, 'RTFToText(MEMO)', '?')),
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion dient der Ermittlung des entsprechenden Wertes zu einem
+// DABAVG-Satz, der je nach FELDTYP aus einem Anderen Wert-Feld ausgelesen werden
+// muss. Dies ist notwendig um diesen in der Spalte "Neuer Wert" in den beiden
+// Änderungsverfolgungs-Browsern anzeigen zu können.
+// @Result: Undefined - Je nach FELDTYP
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_NewValueFieldFunc(oDabAVG)
+   Result := '',
+   case oDabAVG:FELDTYP
+      of  9 :: Result := oDabAVG:WERT_TIMST,         // ftDate
+      of 10 :: Result := oDabAVG:WERT_TIMST,         // ftTime
+      of 11 :: Result := oDabAVG:WERT_TIMST,         // ftDateTime
+
+      of  1 :: Result := AllTrim(oDabAVG:WERT_MEMO), // ftString
+      of 23 :: Result := AllTrim(oDabAVG:WERT_MEMO), // ftFixedChar
+      of 24 :: Result := AllTrim(oDabAVG:WERT_MEMO), // ftWideString
+      of 16 :: Result := AllTrim(oDabAVG:WERT_MEMO), // ftMemo
+
+      of  6 :: Result := oDabAVG:WERT_DOUBL,         // ftFloat
+      of  7 :: Result := oDabAVG:WERT_DOUBL,         // ftCurrency
+
+      of  2 :: Result := oDabAVG:WERT_INT,           // ftSmallint
+      of  3 :: Result := oDabAVG:WERT_INT,           // ftInteger
+      of  4 :: Result := oDabAVG:WERT_INT,           // ftWord
+      of 25 :: Result := oDabAVG:WERT_INT,           // ftLargeint
+      of 14 :: Result := oDabAVG:WERT_INT,           // ftAutoInc
+
+      of  5 :: Result := oDabAVG:WERT_LOGIC,         // ftBoolean
+   otherwise
+      if not empty(oDabAVG:FELDTYP) then
+         Result := '? ' + Str(oDabAVG:FELDTYP) + ' ?',
+      endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion dient der Berechnung verständlicher Anzeigewerte (z. B. für
+// Eurobeträge "1 €" statt "1") für die Anzeige in der Spalte "Neuer Wert" in den
+// beiden Änderungsverfolgungs-Browsern
+// @Result: String - Formatierter Anzeigewert
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_NewValueFieldDisplayFunc(uColumnResult, oDabAVG)
+| cDabPVLResTyp, aResInfoArr |
+
+   Result := uColumnResult,
+   case oDabAVG:DS_WA
+      // Projekt-Tabelle
+      of waDabPRJ ::
+         case AllTrim(oDABAVG:FELDNAME)
+            of 'BEGINN'     :: Result := iif(empty(uColumnResult), '', uColumnResult),
+            of 'ENDE'       :: Result := iif(empty(uColumnResult), '', uColumnResult),
+            of 'STATUS'     :: Result := AttribDispVal(-15,    ToString(uColumnresult)),
+            of 'SA_GESAMT'  :: Result := AttribDispVal(102066, ToString(uColumnresult)),
+            of 'SA_ZEIT'    :: Result := AttribDispVal(102066, ToString(uColumnresult)),
+            of 'SA_AUFWAND' :: Result := AttribDispVal(102066, ToString(uColumnresult)),
+            of 'SA_ERGBNIS' :: Result := AttribDispVal(102066, ToString(uColumnresult)),
+         endcase,
+
+      // Projekt-Vorgangs-Tabelle
+      of waDabPRV ::
+         case AllTrim(oDABAVG:FELDNAME)
+            of 'ERLEDIGT' :: Result := iif(empty(uColumnResult), 'Nein', 'Ja'),
+            of 'BEGINN' :: Result   := iif(empty(uColumnResult), '', uColumnResult),
+            of 'ENDE'   :: Result   := iif(empty(uColumnResult), '', uColumnResult),
+         endcase,
+
+      // Projekt-Vorgangs-Leistungs-Tabelle
+      of waDabPVL ::
+         case AllTrim(oDABAVG:FELDNAME)
+            of 'RESTYP'     ::
+               Result := AttribDispVal(101004, ToString(uColumnresult)),
+
+            of 'RES_ID'     ::
+               cDabPVLResTyp := LookUp(waDabPVL, 'ID', {{oDabAVG:DS_ID}}, 'AllTrim(RESTYP)', ''),
+               case cDabPVLResTyp
+                  of 'M' :: Result := LookUp(waDab262, 'DAB263', {{uColumnResult}}, 'AllTrim(NAME) + " (" + Str(PERSNR) + ")"', '?'),
+                  of 'R' :: Result := LookUp(waDab330, 'ID',     {{uColumnResult}}, 'AllTrim(BEZ)  + " (" + Str(ID)     + ")"', '?'),
+               endcase,
+
+            of 'EKP'        ::
+               Result := FormatFloat('#,##0.00', uColumnResult) + ' €',
+
+            of 'MENGE_PLAN' ::
+               cDabPVLResTyp := LookUp(waDabPVL, 'ID', {{oDabAVG:DS_ID}}, 'RESTYP', ''),
+               if cDabPVLResTyp == 'M' then
+                  Result := ProjMgtGUI_CalcDisplayValueForQuantityValue(uColumnResult),
+               endif,
+         endcase,
+
+      // Projekt-Erlöse-Tabelle
+      of waDabPRE ::
+         case AllTrim(oDABAVG:FELDNAME)
+            of 'ZEILEN_TYP' :: Result := AttribDispVal(102072, ToString(uColumnresult)),
+            of 'DAB050_ID'  :: Result := iif(uColumnResult > 0, LookUp(waDab050, 'ID', {{uColumnResult}}, 'AllTrim(NAME1) + " (" + Str(KDNR) + ")"', '?'), ''),
+            of 'PLAN_ERL'   :: Result := FormatFloat('#,##0.00', uColumnResult) + ' €',
+            of 'PLAN_ERL_M' :: Result := iif(empty(uColumnResult), '', iif(uColumnResult, 'Ja', 'Nein')),
+            of 'IST_ERL'    :: Result := FormatFloat('#,##0.00', uColumnResult) + ' €',
+            of 'IST_ERL_M'  :: Result := iif(empty(uColumnResult), '', iif(uColumnResult, 'Ja', 'Nein')),
+            of 'IST_A'      :: Result := FormatFloat('#,##0.00', uColumnResult) + ' €',
+            of 'IST_A_M'    :: Result := iif(empty(uColumnResult), '', iif(uColumnResult, 'Ja', 'Nein')),
+         endcase,
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt für bestimmte DABAVG-Felder, jeweils eine eigene
+// Hintergrundfarbe zur Anzeige in der Spalte "Neuer Wert", in den beiden
+// Änderungsverfolgungs-Browsern
+// @Result: Integer / Farbwert
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_NewValueFieldBackgroundColor(uColumnResult, oDabAVG)
+
+   Result := clNone,
+   case oDABAVG:DS_WA
+      // Projekt
+      of waDabPRJ ::
+         case AllTrim(oDABAVG:FELDNAME)
+            of 'STATUS'     :: Result := AttribColor(-15,    Str(uColumnResult)),
+            of 'SA_GESAMT'  :: Result := AttribColor(102066, Str(uColumnresult)),
+            of 'SA_ZEIT'    :: Result := AttribColor(102066, Str(uColumnresult)),
+            of 'SA_AUFWAND' :: Result := AttribColor(102066, Str(uColumnresult)),
+            of 'SA_ERGBNIS' :: Result := AttribColor(102066, Str(uColumnresult)),
+         endcase,
+   endcase,
+
+   // Sofern der Wert keine Farbe definiert => Browser-Hintergrund nutzen       // TODO: Kann entfernt werden, sobald die Korrektur für die
+   // Änderungen von heute hervorheben                                          //       Berechnung der Hintergrundfarben in Browsern in der Echtversion ist
+   if Result = clNone then
+      Result := iif(Trunc(oDABAVG:ERSTELLT) = Trunc(Date()),
+                   GetBeDesignColor(dcbCyan, dcgLevel1),
+                   clNone),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion hebt bestimmte Einträge in der Spalte "Neuer Wert" hervor
+//******************************************************************************
+function _ProjMgmtGUI_ChangeTrackingBrowser_NewValueFieldForegroundColor(oColumn, oDABAVG)
+   Result := clNone, // Aktuell noch keine Detail-Definition
+end,
+
+//******************************************************************************
+// Hintergrund-Farbe für den Projekt-Vorgänge-Browser berechnen
+// @Result: Integer / Farbwert
+//******************************************************************************
+function _ProjMgmtGUI_GetTaskBrowserBackgroundColor(oDabPRV)
+   Result := clNone,
+   if oDabPRV:TYP = bcPRV_Type_GroupTask then
+      Result := GetBeDesignColor(dcbCyan, dcgLevel1),
+   endif,
+
+   // Wenn der Meilenstein bereits überzogen wurde Rot markieren
+   if not empty(oDabPRV:ENDE) and oDabPRV:ENDE < Date() and not oDabPRV:ERLEDIGT then
+      Result := GetBeDesignColor(dcbRed, dcgLevel1),
+   endif,
+end,
+
+//******************************************************************************
+// Aus einem Start-Datum und einem Feld-Name (z.B. TAG_NEW_5) ein Datum für diesen
+// Tag ermitteln
+// @Result: String / Datum
+//******************************************************************************
+function _ProjMgmtGUI_CalcPostingDateFieldTitle(dDate, cFieldName)
+| cFieldNo |
+   Result := cFieldName,
+
+   cFieldNo := Right(cFieldName, 1),
+   if (cFieldNo <> '') and (dDate <> 0) then
+      Result := DToC(dDate + Val(cFieldNo) - 1),
+   endif,
+end,
+
+//******************************************************************************
+// Fix für Docking-Fenster wenn diese angedockt werden
+// @Result: null
+//******************************************************************************
+function _ProjMgmtGUI_FixDocking(oDockForm)
+| oParent, oParentForm, nMaxHeight, nMaxWidth, nMinHeight, nMinWidth |
+
+   oParent := GetParent(oDockForm),
+   if not empty(oParent) then
+      if ClassName(oParent) = 'TTabSheet' then
+         oParent.ImageIndex := oDockForm.ImageIndex,
+         oParent.Caption    := StrTran(oDockForm.Caption, '&', '&&'),
+      endif,
+
+      oDockForm.CbHelper.CbRequestAlign(),
+   endif,
+
+   // User-Defined Dock/Undock Event auslösen
+   // damit das Haupt-Formular mitbekommt welche Fenster an/abgedockt werden
+   oDockForm.CbHelper.CbInvokeUserDefinedEvent(oDockForm, iif(oParent = nil, 'Undock', 'Dock'), oParent),
+end,
+
+//******************************************************************************
+// Prüft für eine übergebene Tabelle die Rechte entsprechend dem Modus.
+// Der Parameter bShowMessage bestimmt hierbei ob eine Fehler-Meldung angezeigt
+// werden soll falls keine Berechtigung besteht.
+// Verfügbare Modi:
+// 'N' = Neu-Recht prüfen
+// 'D' = Lösch-Recht prüfen
+// 'C' = Änderungs-Recht prüfen
+// @Result: boolean - Entsprechendes Recht ist (nicht) vorhanden
+//******************************************************************************
+function _ProjMgmtGUI_CheckProjectManagementRights(oTable, nWorkArea, cMode, bShowMessage)
+| oDABXXX |
+
+   //***************************************************************************
+   // Prüfen der jeweiligen Tabelle
+   //***************************************************************************
+   function CheckRight(oTable, cMode, bShowMessage)
+      Result := False,
+
+      // Tabellen für die InsertParams in den Rechten verfügbar sind dürfen für den
+      // Modus 'N' nicht mit dieser Funktion geprüft werden
+      if cMode = 'N' and
+         (oTable.WorkArea = waDABPRV or
+          oTable.WorkArea = waDABPVL or
+          oTable.WorkArea = waDABPRE or
+          oTable.WorkArea = waDAB065 or
+          oTable.WorkArea = waDABTRM) then
+
+         SetError('Für die übergebene Tabelle existieren InsertParams, weshalb eine ' + crlf +
+                  'Rechte-Prüfung mit der Funktion ProjMgmtGUI_CheckProjectManagementRights' + crlf +
+                  'im Modus "N" nicht erlaubt ist.'),
+      endif,
+
+      case Upper(cMode)
+         // Neu-Recht prüfen
+         of 'N' ::
+            Result := oTable.CbCheckRight_Insert(),
+            if not Result and bShowMessage then
+               MessageDlg(GetLangText(1505), mtError),
+            endif,
+
+         // Lösch-Recht prüfen
+         of 'D' :: Result := oTable.CbCheckRight_Delete(),
+            if not Result and bShowMessage then
+               MessageDlg(GetLangText(1506), mtError),
+            endif,
+
+         // Änderungs-Recht prüfen
+         of 'C' :: Result := oTable.CbCheckRight_Edit(),
+            if not Result and bShowMessage then
+               MessageDlg(GetLangText(1504), mtError),
+            endif,
+      otherwise
+         SetError('Modus "' + Upper(cMode) + '" existiert nicht'),
+      endcase,
+   end,
+
+   startseq
+      Result := False,
+
+      // Tabelle oder Workarea?
+      if not empty(oTable) then
+         if ClassOf(oTable, 'TBeRightsTable') then
+            if not oTable.CheckUserRights then
+               SetError('Fehlerhafte Tabelle übergeben. Die Eigenschaft "CheckUserRights" muss aktiv sein'),
+            endif,
+
+            Result := CheckRight(oTable, cMode, bShowMessage),
+         else
+            SetError('Fehlerhafte Tabelle übergeben. Die Tabelle muss eine TBeRightsTable sein'),
+         endif,
+      else
+         // Wenn eine Workarea übergeben wurde dann Tabelle selbst öffnen
+         if nWorkArea > 0 then
+            if cMode <> 'N' then
+               SetError('Aufruf mit einer Workarea ist nur für den Modus "N" erlaubt,' + crlf +
+                        'da ansonsten kein Bezug zum jeweiligen Datensatz besteht'),
+            else
+               oDABXXX := BeOpen(nWorkArea),
+               startseq
+                  oDABXXX.CheckUserRights := True,
+                  Result                  := CheckRight(oDABXXX, cMode, bShowMessage),
+               always
+                  BeClose(oDABXXX),
+               stopseq,
+            endif,
+         else
+            SetError('Ungültige Workarea übergeben'),
+         endif,
+      endif,
+   onerror
+      SetError('Fehler beim Prüfen der Rechte für das Projektmanagement' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion liefert je nachdem ob es sich um einen Mitarbeiter oder eine
+// Resscource handelt die ID und den Namen des Mitarbeiters/der Ressource zurück
+// @Result: String - Formatierter Anzeigewert
+//******************************************************************************
+function _ProjMgmtGUI_RessourceDisplayValue(aRessourceID, aRessourceType)
+| cRessourceDescription |
+
+   Result := '',
+   if not Empty(aRessourceID) and not Empty(aRessourceType) then
+      // Beschreibung für Mitarbeiter oder Ressource ermitteln
+      case aRessourceType
+         of 'M' :: cRessourceDescription := LookUp(waDab262, 'Dab263', {{aRessourceID}}, 'NAME', ''),
+         of 'R' :: cRessourceDescription := LookUp(waDab330, 'ID', {{aRessourceID}}, 'BEZ', ''),
+      endcase,
+
+      if not Empty(cRessourceDescription) then
+         Result := Trim(Str(aRessourceID)) + ' - ' + Trim(cRessourceDescription),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion macht je nach Paramter einen String aus Usernummern + Name oder
+// nur Name
+// @Result: String
+//******************************************************************************
+function _CalcStringForUserCombo(nUserNumber, cUserName)
+   if GetBeParam('PrjMgmtEmployeeSortbyName') = 'J' then
+      Result := Trim(cUserName) + ' (' + Str(nUserNumber) + ')' + Chr(9) + Str(nUserNumber),
+   else
+      Result := Str(nUserNumber) + ' - ' + Trim(cUserName) + Chr(9) + Str(nUserNumber),
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt die anzuzeigenden Mitarbeiter für die übergebene
+// ComboBox. Es sollen nur Mitarbeiter angezeigt werden, die in dem übergebenen
+// Zeitraum bereits oder noch in der Firma sind/waren. Die Mitarbeiter die
+// ausgewählt waren, werden auch nach der Neuberechnung weiter hin ausgewählt
+// sein.
+// @Result: null
+//******************************************************************************
+function _ProjMgmtGUI_RefreshUserComboItems(dDateFrom, dDateTo, oUserCombo, cPersonelFilter)
+| oDab262, aCheckedUsers, aArr, i, aUserCount |
+   oDab262 := BeOpen(waDab262, 'DAB263'),
+   startseq
+      aArr          := {},
+      aCheckedUsers := {},
+      aUserCount    := oUserCombo.CheckedItems,
+
+      // Die Personalnummern der ausgewählten Mitarbeiter merken
+      for i := 1 to ALen(aUserCount) do
+         AAdd(aCheckedUsers, PadL(Trim(StrToken(oUserCombo.Items[aUserCount[i]], Chr(9), 2)), 3, '0')),
+      next,
+
+      oDab262.Filtered := False,
+      oDab262.Filter   := "((" + DbFilterDatumString(dDateFrom) + " <= DATUM_EIN AND DATUM_EIN <= " + DbFilterDatumString(dDateTo) + ") OR " +
+         "(" + DbFilterDatumString(dDateFrom) + " >= DATUM_EIN) OR (EMPTY(DATUM_EIN))) AND " +
+                          "((" + DbFilterDatumString(dDateFrom) + " <= DATUM_AUS AND DATUM_AUS <= " + DbFilterDatumString(dDateTo) + ") OR " +
+                           "(" + DbFilterDatumString(dDateTo) + " <= DATUM_AUS) OR (EMPTY(DATUM_AUS)))" +
+                          iif(not Empty(cPersonelFilter), ' AND ', '') + cPersonelFilter,
+      oDab262.Filtered := True,
+
+      // Mitarbeiter ermitteln, die in dem ausgewählten Zeitraum zur Verfügung
+      // stehen und die CheckCombo neu befüllen
+      oUserCombo.Items := {},
+      DBGoTop(oDab262),
+      while not Eof(oDab262) do
+         CollAdd(oUserCombo.Items, CalcStringForUserCombo(oDab262:PERSNR, oDab262:NAME)),
+         DBSkip(1, oDab262),
+      end,
+
+      // Alle Einträge in der ComboBox prüfen, ob diese vorher gecheckt waren
+      for i := 1 to CollCount(oUserCombo.Items) do
+         if PadL(Trim(StrToken(CollItem(oUserCombo.Items, i), Chr(9), 2)), 3, '0') $ ArrToStr(aCheckedUsers) then
+            AAdd(aArr, i),
+         endif,
+      next,
+   always
+      BeClose(oDab262),
+   stopseq,
+   oUserCombo.CheckedItems := aArr, // Die Indices aus aArr aktivieren die Mitarbeiter
+end,
+
+//******************************************************************************
+// Abwesenheitsinfo ermitteln. Falls es mehrere Abwesenheitesgründe gibt,
+// werden diese durch ein '/' getrennt.
+// @Result: String - Formatierter Anzeigewert
+//******************************************************************************
+function _ProjMgmtGUI_AbsenseTypeDisplayValue(cTypes)
+| cAbsensType, i |
+   Result := '',
+   cTypes := AllTrim(cTypes),
+   for i := 1 to TokenCount(cTypes, '/') do
+      case Token(cTypes, '/', i)
+         of 'K' :: cAbsensType := GetLangText(15502), // Krank
+         of 'U' :: cAbsensType := GetLangText(15503), // Urlaub
+         of 'A' :: cAbsensType := GetLangText(15504), // Fortbildung
+         of 'B' :: cAbsensType := GetLangText(15525), // Berufsschule
+         of 'Z' :: cAbsensType := GetLangText(15526), // Kurzarbeit
+         of 'S' :: cAbsensType := GetLangText(15527), // Sonderurlaub
+         of 'R' :: cAbsensType := GetLangText(15528), // Betriebsunfall
+         of 'G' :: cAbsensType := GetLangText(15569), // Zeitausgleich
+         of 'D' :: cAbsensType := GetLangText(15598), // Dienstreise
+      endcase,
+
+      if Empty(Result) then
+         Result := cAbsensType,
+      else
+         Result += ', ' + cAbsensType,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Die Funktion gibt die Personalnummern der aktuell ausgewählten Mitarbeiter
+// als String zurück
+// Result String - Personalnummern im Format "/065/066/.../"
+//******************************************************************************
+function _ProjMgmtGUI_CalculateComboValueString(oUserCombo)
+| i, aCheckedItems |
+   Result        := '/',
+   aCheckedItems := oUserCombo.CheckedItems,
+   for i := 1 to ALen(aCheckedItems) do
+      Result += PadL(Trim(StrToken(CollItem(oUserCombo.Items, aCheckedItems[i]), Chr(9), 2)), 3, '0') + '/',
+   next,
+end,
+
+//******************************************************************************
+// Die Funktion wählt die Mitarbeiter aus dem übergebenen String aus,
+// falls diese existieren
+//******************************************************************************
+function  _ProjMgmtGUI_CheckUsers(oUserCombo, cUsers)
+| aCheckedUsers, i |
+   aCheckedUsers := {},
+   for i := 1 to CollCount(oUserCombo.Items) do
+      if PadL(Trim(StrToken(CollItem(oUserCombo.Items, i), Chr(9), 2)), 3, '0') $ cUsers then
+         AAdd(aCheckedUsers, i),
+      endif,
+   next,
+   oUserCombo.CheckedItems := aCheckedUsers,
+end,
+
+//******************************************************************************
+// Die Funktion füllt die ComboBox mit alle Mitarbeitern, die für eine
+// Vorgangsleistung des aktuellen Vorgangs, Leistungen gebucht haben
+// ACTHUNG:
+// Die Funktion erwartet eine bereits gefilterete DabPVL, die nur noch für die
+// ComboBox relevante Daten enthält
+//******************************************************************************
+function _ProjMgmtGUI_RefreshTaskEffortPostingsComboItems(oUserCombo, oDabPVL, nActualRessourceID)
+| aIndexArray, i, cUserName |
+   aIndexArray := {},
+   DBGoTop(oDabPVL),
+   while not EoF(oDabPVL) do
+      if not oDabPVL:RES_ID = 0 then // Falls noch kein Mitarbeiter für die Leistung eingetragen ist, keine Zeile in der ComboBox erstellen
+         cUserName := Trim(LookUp(waDab262, 'Dab263', {{oDabPVL:RES_ID}}, 'NAME', '')), // Den Namen des Mitarbeiters ermitteln
+         CollAdd(oUserCombo.Items, CalcStringForUserCombo(oDabPVL:RES_ID, cUserName)),
+      endif,
+      DBSkip(1, oDabPVL),
+   end,
+
+   // Die Ressource auf der positioniert ist in der ComboBox anchecken
+   for i := 1 to CollCount(oUserCombo.Items) do
+      if (Trim(StrToken(CollItem(oUserCombo.Items, i), Chr(9), 2)) = AllTrim(Str(nActualRessourceID, 3))) then
+         AAdd(aIndexArray, i),
+         Break,
+      endif,
+   next,
+   oUserCombo.CheckedItems := aIndexArray, // den Mitarbeiter anchecken
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt zu einer Projekt-ID die Bezeichnung des Projektes
+// @Result: String - Projektbezeichnung
+//******************************************************************************
+function  _ProjMgmtGUI_ShowProjectLabel(nProjectID)
+   Result := '',
+   if nProjectID > 0 then
+      Result := Lookup(waDABPRJ, 'ID', {{nProjectID}}, 'BEZ', 'Projekt ' + Str(nProjectID) + ' nicht mehr verfügbar'),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liefert einen ImageIndex für eine übergebene WorkArea
+//******************************************************************************
+function _ProjMgmtGUI_ImageIndexForWorkArea(nWorkArea)
+   Result := 0,
+   case nWorkArea
+      of waDAB000 :: Result := 280, // Kunde
+      of waDAB010 :: Result := 247, // Artikel
+      of waDAB050 :: Result := 302, // Aufträge
+      of waDAB100 :: Result := 503, // Lieferant
+      of waDAB065 :: Result := 215, // Memos
+      of waDAB035 :: Result := 654, // Bestellrückstände
+      of waDAB005 :: Result := 214, // Kontakte
+      of waDABPRJ :: Result := 558, // Projekte
+      of waDAB062 :: Result := 3,   // Vertreter
+      of waDAB240 :: Result := 251, // Produktionsauftrag
+   endcase,
+end,

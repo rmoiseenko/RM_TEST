@@ -1,0 +1,476 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Funktionen für die Verfügbarkeitsprüfung auf Basis der
+//    Logik des Einzelterminrasters
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Erzeugt eine Einzel-Terminraster-Tabelle (nur) mit den für die
+//   Verfügbarkeits-Prüfung relevanten Zeilen-Typen
+// @Result: MemTable-Instanz
+//******************************************************************************
+function _VPU_ETR_GetEinzelTermRastMem(oDM, cArtnr)
+| oEinzelTermRastMem |
+
+   cArtnr             := PadR(cArtnr, mBeArtNoLen),
+   oEinzelTermRastMem := ETRU_CreateMem(nil),
+   startseq
+      // Hier alle Zeilen-Typen hinzufügen die potentiell möglich sind.
+      // -> "Gefiltert" auf Basis der gewählten Optionen wird dann später in
+      //    den einzelnen Analyse-Funktionen, welche die dann schon "fertige"
+      //    Einzel-TermRaster-Memtable nutzen.
+
+      ETRU_Add_VerfuegBestand(                  oDM, cArtnr, oEinzelTermRastMem),
+      ETRU_Add_EisernerBestand_Abgang(          oDM, cArtnr, oEinzelTermRastMem),
+
+      ETRU_Add_Zugaenge(                        oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_GrobplanungsZugaenge(            oDM, cArtnr, oEinzelTermRastMem),
+      ETRU_Add_VerkaufAbgaenge(                 oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_ProduktionsAbgaenge(             oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_ProduktionsGrobplanungsAbgaenge( oDM, cArtnr, oEinzelTermRastMem),
+
+   onerror
+      DestroyObject(oEinzelTermRastMem),
+      raise(),
+   stopseq,
+
+   Result := oEinzelTermRastMem,
+end,
+
+//******************************************************************************
+// Erzeugt eine Einzel-Terminraster-Tabelle (nur) mit den für die
+//   Verfügbarkeits-Prüfung relevanten Zeilen-Typen
+// @Result: MemTable-Instanz
+//******************************************************************************
+function _VPU_ETR_GetEinzelTermRastMem_NewMem(oDM, cArtnr, bIncludeEndeWBZInfo, bIncludeWEBestand)
+| oEinzelTermRastMem |
+
+   cArtnr             := PadR(cArtnr, mBeArtNoLen),
+   oEinzelTermRastMem := ETRU_CreateMem_NewMem(oDM, true),
+   startseq
+      // Hier alle Zeilen-Typen hinzufügen die potentiell möglich sind.
+      // -> "Gefiltert" auf Basis der gewählten Optionen wird dann später in
+      //    den einzelnen Analyse-Funktionen, welche die dann schon "fertige"
+      //    Einzel-TermRaster-Memtable nutzen.
+
+      ETRU_Add_VerfuegBestand(                  oDM, cArtnr, oEinzelTermRastMem),
+      if bIncludeEndeWBZInfo then
+         ETRU_Add_EndeWBZInfo(                  oDM, cArtnr, oEinzelTermRastMem),
+      endif,
+      ETRU_Add_EisernerBestand_Abgang(          oDM, cArtnr, oEinzelTermRastMem),
+      if bIncludeWEBestand then
+         ETRU_Add_WareneingangsBestand(         oDM, cArtnr, oEinzelTermRastMem),
+      endif,
+
+      ETRU_Add_Zugaenge(                        oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_GrobplanungsZugaenge(            oDM, cArtnr, oEinzelTermRastMem),
+      ETRU_Add_VerkaufAbgaenge(                 oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_ProduktionsAbgaenge(             oDM, cArtnr, oEinzelTermRastMem, {}, ''),
+      ETRU_Add_ProduktionsGrobplanungsAbgaenge( oDM, cArtnr, oEinzelTermRastMem),
+
+   onerror
+      DestroyObject(oEinzelTermRastMem),
+      raise(),
+   stopseq,
+
+   Result := oEinzelTermRastMem,
+end,
+
+//******************************************************************************
+// Funktion ermittelt auf Basis einer bereits befüllten Einzel-Terminraster-Memtable
+//   die für den übergebenen Bedarf (nBedarfsTyp & uBedarfsId)
+//   "Zum Bedarfszeitpunkt verfügbare Menge".
+//   -> Diese Menge ist die Menge vor(!) Abzug des eigenen Bedarfs.
+//   -> Ist diese Menge >= der Bedarfsmenge, so kann der Bedarf komplett gedeckt werden.
+//
+//   Besonderheit zum Bedarfszeitpunkt:
+//   - Der Zeitpunkt ist immer ein Termin-Index-String, also immer ein "Tag".
+//     Innerhalb eines Tages gibt es eine definierte Reihenfolge aller Bedarfe.
+//     Liegt der "eigene Bedarf" also z.B. als letzter von 3 Bedarfen am
+//     Bedarfszeitpunkt, so werden die beiden am gleichen Tag vorhergehenden
+//     Bedarfe (sofern relevant) zuerst "bedient" und die verbleibende
+//     "zum Bedarfszeitpunkt verfügbare Menge" reduziert sich entsprechend.
+//
+// Parameter:
+//     aZeilenTypen        : Nur diese Zeilen-Typen berücksichtigen (leeres Array = alle Typen)
+//     nBedarfsTyp         : "Eigener" Bedarf hat diesen Typ
+//     uBedarfsId          : "Eigener" Bedarf hat diese ID (z.B. Dab240:ID)
+//
+// @Result: Array
+//     {
+//       [1] "Zum Bedarfszeitpunkt verfügbare Menge" (vor Abzug des eigenen Bedarfs)
+//       [2] "Verfügbare Menge" zum Ende des Einzel-Terminrasters
+//       [3] "Unterdeckung vorhanden" (bezogen auf alle relevanten Bewegungen, also vor oder nach dem "eigenen Bedarf")
+//     }
+//
+//******************************************************************************
+function _VPU_ETR_Calc_VerfuegbarInfosFuerBedarf(oDM, cArtnr, oMemTermRast, aZeilenTypen, nBedarfsTyp, uBedarfsId)
+| oDab010, nStoreQuant, nStoreQuantZuBedarfsTermin,
+  bIsEigBedarfsZeile, bIsEigBedarfsZeileWurdeErreicht, bUnterdeckungVorhanden |
+
+   oDab010 := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   MySeek({cArtnr}, oDab010),
+
+   nStoreQuant                     := 0,
+   nStoreQuantZuBedarfsTermin      := 0,
+   bUnterdeckungVorhanden          := false,
+   bIsEigBedarfsZeileWurdeErreicht := false,
+   DbGoTop(oMemTermRast),
+
+   while not EoF(oMemTermRast) do
+
+      // Verarbeiten wir gerade die "eigene Bedarfszeile" ?
+      bIsEigBedarfsZeile := ETRU_CheckCurrentRecordIsGivenBedarf(oMemTermRast, nBedarfsTyp, uBedarfsId),
+      if bIsEigBedarfsZeile then
+         bIsEigBedarfsZeileWurdeErreicht := true,
+      endif,
+
+      // "eigene Bedarfszeile" immer - und sonst nach "Zeilentypen ist relevant" berücksichtigen
+      if    bIsEigBedarfsZeile
+         or ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, oMemTermRast:ZEILEN_TYP) then
+
+         nStoreQuant                   := Round(nStoreQuant                + oMemTermRast:MENGE, oDab010:ME_RUNDEN),
+         bUnterdeckungVorhanden        := bUnterdeckungVorhanden or nStoreQuant < 0,
+
+         // So lange die "eigene Bedarfszeile" noch nicht erreicht wurde, gehen alle Bewegungen in die
+         //   "zum Bedarfszeitpunkt verfügbare Menge" ein.
+         if not bIsEigBedarfsZeileWurdeErreicht then
+            nStoreQuantZuBedarfsTermin := Round(nStoreQuantZuBedarfsTermin + oMemTermRast:MENGE, oDab010:ME_RUNDEN),
+         endif,
+
+      endif,
+
+      DbSkip(1, oMemTermRast),
+   end,
+
+   Result := {nStoreQuantZuBedarfsTermin, nStoreQuant, bUnterdeckungVorhanden},
+end,
+
+//******************************************************************************
+// Funktion ordnet in einem Einzel-Terminraster die Zugänge zu den Abgängen zu
+//   und beantwortet auf dieser Basis die folgenden Fragen:
+//
+//   Schritt 3:
+//     Aus diesen Zuordnungen wird anschließend für den übergebenen
+//     Abgang/Bedarf 'nBedarfsTyp/uBedarfsId' der Zugangstermin des letzten
+//     notwendigen Bedarfs-deckers ermittelt und ebenfalls zurück gegeben.        // TODO: Diesen Teil in eine eigene Funktion auslagern?
+//
+//   Schritt 4:
+//     In wiefern wird der Bedarf durch Lagerbestand gedeckt?
+//
+//
+//
+//
+// @Result:  Array: {
+//             [1] Array mit allen verarbeiteten Abgängen
+//             [2] Array mit allen verarbeiteten Zugängen
+//             [3] Rec-No des Abgangs/Bedarfs der geprüft wurde
+//             [4] Array der Record-Nummern der Zugänge, die für den angefragten Abgang zugeordnet wurden
+//             [5] Zugangstermin des letzten (spätesten) notwendigen Bedarfsdeckers ermitteln für den angefragten Abgang
+//             [6] Status "in wiefern wird der Bedarf durch Lagerbestand gedeckt" (leer, 'J', 'T' oder 'N')
+//             [7] Bedarfsmenge des angefragten Abgangs, die durch Zugänge gedeckt wird (Lager oder Bewegungen)
+//                 => aber nicht unbedingt rechtzeitig gedeckt!
+//             [8] Array mit Detail-Infos zu allen ETR-Zeilen, die dem angefragten Abgang zugeordnet wurden
+//           }
+//
+//  TODO: Was ist mit positiven Abgängen (z.B. Gutschriften) oder neg. StüLi-Positionen (=positiven Abgängen), oder Werkzeug ?
+//******************************************************************************
+function _VPU_ETR_Calc_ZuordnungAbgaengeZugaenge(oDM, cArtNr, oMemTermRast, aZeilenTypen, nBedarfsTyp, uBedarfsId)
+| oDab010, aAbgaenge, aZugaenge, nCurZeilenTyp, nCurRecNo,
+  nCurVerfuegZugangsMengenSum, nCurOffenAbgangsMengenSum,
+  z, aCurZugang, a, aCurAbgang, nZuordnungsMenge, aBuf,
+  bAbgangFound, nRecNoAbgang, aDemAbgangZugeordnZugaenge, aDemAbgangZugeordnZugaengeDetails,
+  nDurchZugaengeGedeckteMenge,
+  cSpaetesterBedarfsDeckerZugangsTermin, cBedarfDurchLagerGedeckt_Status,
+  aGesuchterAbgang,
+  bLagerDeckung_HasLagerZugang, bLagerDeckung_HasNonLagerZugang |
+
+   oDab010 := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   MySeek({cArtnr}, oDab010),
+
+   aAbgaenge                             := {},
+   aGesuchterAbgang                      := {},
+   aZugaenge                             := {},
+   nCurVerfuegZugangsMengenSum           := 0, // aktuell auf Abgänge "verteilbare" Zugangsmengen-Summe
+   nCurOffenAbgangsMengenSum             := 0, // aktuell "nicht durch Zugänge gedeckte" Bedarfsmengen-Summe
+   cBedarfDurchLagerGedeckt_Status       := '',
+   cSpaetesterBedarfsDeckerZugangsTermin := '',
+   nRecNoAbgang                          := 0,
+
+   //***************************************************************************
+   // 1. Schritt: Zuordnung von Abgängen zu Zugängen (und umgekehrt) durchführen
+   //***************************************************************************
+   DbGoTop(oMemTermRast),
+   while not eof(oMemTermRast) do
+
+      nCurZeilenTyp := oMemTermRast:ZEILEN_TYP,
+      nCurRecNo     := DbRecNo(oMemTermRast),
+
+      // Aktuelle Zeile ist "Eigener Bedarf" oder ist einer der zu berücksichtigen Zeilen-Typen?
+      //  -> dann hat die Bewegung Auswirkung auf die Entwicklung der "verfügbaren Menge"
+      if    ETRU_CheckCurrentRecordIsGivenBedarf(oMemTermRast, nBedarfsTyp, uBedarfsId)
+         or ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, nCurZeilenTyp) then
+
+         if oMemTermRast:IST_ABGANG then
+            if oMemTermRast:MENGE <> 0 then
+               AAdd(aAbgaenge,    { nCurZeilenTyp,             // 1 - Zeilen-Typ
+                                    nCurRecNo,                 // 2 - RecNo in der MemTable
+                                    oMemTermRast:DATENSATZ_ID, // 3 - ID
+                                    oMemTermRast:MENGE,        // 4 - Bedarfsmenge
+                                    oMemTermRast:MENGE,        // 5 - Bedarfsmenge, die noch nicht durch Zugänge gedeckt ist
+                                    {}                         // 6 - zugeordnete Zugänge (RecNos der MemTable)
+                                  }),
+
+               nCurOffenAbgangsMengenSum += oMemTermRast:MENGE,
+            endif,
+         else
+            if oMemTermRast:IST_ZUGANG then
+               if oMemTermRast:MENGE <> 0 then
+                  AAdd(aZugaenge, { nCurZeilenTyp,             // 1 - Zeilen-Typ
+                                    nCurRecNo,                 // 2 - RecNo in der MemTable
+                                    oMemTermRast:DATENSATZ_ID, // 3 - ID
+                                    oMemTermRast:MENGE,        // 4 - Zugangsmenge
+                                    oMemTermRast:MENGE,        // 5 - Menge, die noch nicht auf Abgänge "zugeordnet" wurde
+                                    {}                         // 6 - zugeordnete Abgänge (RecNos der MemTable)
+                                   }),
+
+                  nCurVerfuegZugangsMengenSum += oMemTermRast:MENGE,
+               endif,
+            endif,
+         endif,
+
+         // TODO: Performance-Optimierungs-Möglichkeit: Untergrenzen der For-Schleifen merken und erhöhen, wenn Element "erledigt"
+
+         // Jetzt, wo neue Zu-/Abgänge da sind, können (jetzt) Abgänge gedeckt werden ?
+         if nCurVerfuegZugangsMengenSum > 0 and nCurOffenAbgangsMengenSum < 0 then
+
+            // Die noch nicht zugeordnete(n) Zugangsmenge(n) "der Reihe nach" auf die noch ungedeckten Abgänge verteilen
+
+               // alle Zugänge durchgehen
+               for z := 1 to ALen(aZugaenge) do
+                  aCurZugang := aZugaenge[z],
+                  if aCurZugang[5] > 0 then // noch verteilbar Menge in diesem Zugang?
+                     // Abgang suchen, der noch Zugang braucht
+                     for a := 1 to ALen(aAbgaenge) do
+                        aCurAbgang := aAbgaenge[a],
+                        if aCurAbgang[5] < 0 then
+                           // -> (teil)Zugangsmenge dem Abgang zuordnen
+                           //    -> im Zugang wird die RecNo des Abgangs vermerkt und umgekehrt
+                           nZuordnungsMenge := Min(Abs(aCurAbgang[5]), aCurZugang[5]),
+                           aCurZugang[5]    -= nZuordnungsMenge,            aBuf := aCurZugang[6], AAdd(aBuf, aCurAbgang[2]), aCurZugang[6] := aBuf,
+                           aCurAbgang[5]    += nZuordnungsMenge,            aBuf := aCurAbgang[6], AAdd(aBuf, aCurZugang[2]), aCurAbgang[6] := aBuf,
+                           aZugaenge[z]     := aCurZugang,
+                           aAbgaenge[a]     := aCurAbgang,
+
+                           nCurVerfuegZugangsMengenSum -= nZuordnungsMenge,
+                           nCurOffenAbgangsMengenSum   += nZuordnungsMenge,
+
+                           // Wenn der aktuelle Zugang durch diese Zuordnung "aufgebraucht" ist, dann
+                           //    die innere Schleife abbrechen und zum nächsten Zugang springen
+                           if aCurZugang[5] = 0 then
+                              break,
+                           endif,
+                        endif,
+                     next,
+                  endif,
+               next,
+         endif,
+
+      endif,
+
+      DbSkip(1, oMemTermRast),
+   end,
+
+   // WriteLN('nCurVerfuegZugangsMengenSum', nCurVerfuegZugangsMengenSum, 'nCurOffenAbgangsMengenSum', nCurOffenAbgangsMengenSum),
+   // WriteLn('Zugänge: ', aZugaenge),  // WriteLn('Abgänge: ', aAbgaenge),
+   // if nCurOffenAbgangsMengenSum < 0 then WriteLn('UNGEDECKTE ABGÄNGE!'), endif,
+
+   //***************************************************************************
+   // 2. Schritt: Die Zugänge ermitteln, die dem konkret angefragten Abgang
+   //             zugeordneten wurden.
+   //***************************************************************************
+   aDemAbgangZugeordnZugaenge        := {},
+   aDemAbgangZugeordnZugaengeDetails := {},
+   bAbgangFound                      := false,
+   for a := 1 to ALen(aAbgaenge) do
+      aCurAbgang := aAbgaenge[a],
+      if aCurAbgang[1] = nBedarfsTyp and aCurAbgang[3] = uBedarfsId then
+         aGesuchterAbgang           := aCurAbgang,
+         nRecNoAbgang               := aCurAbgang[2],                           // WriteLn('Der angefragte Abgang hat RecNo ' + Str(nRecNoAbgang)),
+         bAbgangFound               := true,
+         aDemAbgangZugeordnZugaenge := aCurAbgang[6],
+         break,
+      endif,
+   next,
+
+   // SetErrorIf(not bAbgangFound, 'Der übergebene Abgang wurde nicht im Abgangs-Array gefunden'), // TODO: Kann passieren, wenn der Abgangs-Typ nicht in aZeilenTypen enthalten ist
+
+   // Wenn der übergebene Abgang nicht gefunden wurde, dann wurde er wegen seines Zeilen-Typs nicht berücksichtigt.
+   //   => In diesem Fall können für diesen Abgang natürlich keine Bedarfs-Decker ermittelt werden.
+   if not bAbgangFound then
+      nRecNoAbgang                          := 0,
+      cSpaetesterBedarfsDeckerZugangsTermin := '',
+      aDemAbgangZugeordnZugaenge            := {},
+      cBedarfDurchLagerGedeckt_Status       := '',
+      nDurchZugaengeGedeckteMenge           := 0,
+   else
+      //************************************************************************
+      // 3. Schritt: Auf Basis der (dem angefragten Abgang) zugeordneten Zugänge den
+      //             Zugangstermin des letzten (spätesten) notwendigen Bedarfsdeckers
+      //             ermitteln.
+      //************************************************************************
+      if ALen(aDemAbgangZugeordnZugaenge) = 0 then
+         cSpaetesterBedarfsDeckerZugangsTermin := '',                              // WriteLn('Dem Abgang konnte kein Zugang zugeordnet werden.'),
+      else // Zugeordnete(n) Zugäng(e) suchen und deren Termine ermitteln // TODO: Warum nicht einfach den letzten Termin ?
+         for z := 1 to ALen(aDemAbgangZugeordnZugaenge) do
+            SetErrorIf(not DbGoTo(aDemAbgangZugeordnZugaenge[z], oMemTermRast), '(1) Zugeordneter Zugang mit RecNo ' + Str(aDemAbgangZugeordnZugaenge[z]) + ' nicht in MemTable gefunden'),
+            if Len(AllTrim(oMemTermRast:TERMIN_INDEX)) = 9 then // nicht vollständige "Termin-Index" ignorieren, z.B. '        T', was für ein leere Datum entsteht
+               if empty(cSpaetesterBedarfsDeckerZugangsTermin) then
+                  cSpaetesterBedarfsDeckerZugangsTermin := oMemTermRast:TERMIN_INDEX,
+               else
+                  cSpaetesterBedarfsDeckerZugangsTermin := Max(cSpaetesterBedarfsDeckerZugangsTermin, oMemTermRast:TERMIN_INDEX),
+               endif,
+            endif,
+         next,
+
+         //iif( ALen(aDemAbgangZugeordnZugaenge) = 1,
+         //     WriteLn('Der Zugangs-Termin ist ' + cSpaetesterBedarfsDeckerZugangsTermin),
+         //     WriteLn('Der Bedarf wird durch mehrere Zugänge gedeckt. Spätester zugeordeter Zugang ist ' + cSpaetesterBedarfsDeckerZugangsTermin) ),
+      endif,
+
+      //************************************************************************
+      // 4. Schritt: Wieviel der Bedarfsmenge wird durch Zugänge gedeckt?
+      //************************************************************************
+      nDurchZugaengeGedeckteMenge := Abs(aGesuchterAbgang[4]) - Abs(aGesuchterAbgang[5]), // 4 = Bedarfsmenge
+                                                                                          // 5 = Bedarfsmenge, die nicht durch Zugänge gedeckt ist
+
+      //************************************************************************
+      // 5. Schritt: In wiefern wird der Bedarf durch Lagerbestand gedeckt?
+      //************************************************************************
+      if ALen(aDemAbgangZugeordnZugaenge) = 0 then
+         cBedarfDurchLagerGedeckt_Status  := 'N', // Dem Bedarf wurde überhaupt kein Zugang zugeordnet, also auch kein Lagerbestand
+      else
+         bLagerDeckung_HasLagerZugang     := false,
+         bLagerDeckung_HasNonLagerZugang  := false,
+
+         for z := 1 to ALen(aDemAbgangZugeordnZugaenge) do
+            if not DbGoTo(aDemAbgangZugeordnZugaenge[z], oMemTermRast) then
+               SetError('(2) Zugeordneter Zugang mit RecNo ' + Str(aDemAbgangZugeordnZugaenge[z]) + ' nicht in MemTable gefunden'),
+            endif,
+            if oMemTermRast:ZEILEN_TYP = gl_ETRU_Typ_VerfuegBestand then
+               bLagerDeckung_HasLagerZugang    := true,
+            else
+               bLagerDeckung_HasNonLagerZugang := true,
+            endif,
+            // Detail-Array der zugeordneten Abgänge
+            AAdd(aDemAbgangZugeordnZugaengeDetails, {oMemTermRast:ZEILEN_TYP, oMemTermRast:DATENSATZ_ID, oMemTermRast:TERMIN, oMemTermRast:PROD_ABT, ETRU_GUI_DisplayInfoTextForTyp(oMemTermRast)}),
+         next,
+
+         if bLagerDeckung_HasLagerZugang then
+            if bLagerDeckung_HasNonLagerZugang then
+               cBedarfDurchLagerGedeckt_Status    := 'T', // Der Bedarf wird teilweise durch Lager gedeckt
+            else
+               if aGesuchterAbgang[5] = 0 then            // Der Bedarf wird zumindest teilweise durch Lagerbestand gedeckt (und durch sonst nichts) - aber wird er komplett gedeckt?
+                  cBedarfDurchLagerGedeckt_Status := 'J', // -> Der Bedarf wird komplett durch Lager gedeckt
+               else
+                  cBedarfDurchLagerGedeckt_Status := 'T', // -> Der Bedarf wird teilweise durch Lager gedeckt, die Restmenge ist nicht gedeckt
+               endif,
+            endif,
+         else
+            cBedarfDurchLagerGedeckt_Status       := 'N', // Der Bedarf wird überhaupt nicht durch Lager gedeckt
+         endif,
+
+         // WriteLn('In wiefern wird der Bedarf durch Lagerbestand gedeckt? => ' + cBedarfDurchLagerGedeckt_Status),
+      endif,
+
+   endif,
+
+   Result := { aAbgaenge, aZugaenge, nRecNoAbgang, aDemAbgangZugeordnZugaenge, cSpaetesterBedarfsDeckerZugangsTermin, cBedarfDurchLagerGedeckt_Status, nDurchZugaengeGedeckteMenge, aDemAbgangZugeordnZugaengeDetails },
+end,
+
+//##############################################################################
+//##############################################################################
+// GUI-Orientierte Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion markiert einen Zugang im Einzel-Terminraster
+//   => für eine optische Hervorhebung im Browser gedacht
+// @Result: null
+//******************************************************************************
+function _VPU_ETR_GUI_MarkiereZugang(oMemTermRast, nZeilenTyp, nDatensatzID)
+| bBreak |
+   bBreak := false,
+   DbDisableControls(oMemTermRast),
+   startseq
+      DbGoTop(oMemTermRast),
+      while not eof(oMemTermRast) and not bBreak do
+
+         if empty(nZeilenTyp) then // Modus zum Aufheben einer Markierung
+            if oMemTermRast:MARKIERUNG_ZUGANG then
+               MyEdit(oMemTermRast),
+               oMemTermRast:MARKIERUNG_ZUGANG := false,
+               MyPost(oMemTermRast),
+               bBreak := True,
+            endif,
+         else
+            if oMemTermRast:ZEILEN_TYP = nZeilenTyp AND oMemTermRast:DATENSATZ_ID = nDatensatzID then
+               MyEdit(oMemTermRast),
+               oMemTermRast:MARKIERUNG_ZUGANG := true,
+               MyPost(oMemTermRast),
+               bBreak := True,
+            endif,
+         endif,
+
+         if not bBreak then
+            DbSkip(1, oMemTermRast),
+         endif,
+      end,
+   always
+      DbEnableControls(oMemTermRast),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion markiert einen Abgang einer Prod.Reservierung im Einzel-Terminraster
+//   => für eine optische Hervorhebung im Browser gedacht
+// @Result: null
+//******************************************************************************
+function _VPU_ETR_GUI_MarkiereAbgang_Via_B_POS_LFD(oMemTermRast, cB_POS_LFD)
+| bBreak |
+   bBreak := false,
+   DbDisableControls(oMemTermRast),
+   startseq
+      DbGoTop(oMemTermRast),
+      while not eof(oMemTermRast) and not bBreak do
+
+         if empty(cB_POS_LFD) then // Modus zum Aufheben einer Markierung
+            if oMemTermRast:MARKIERUNG_ABGANG then
+               MyEdit(oMemTermRast),
+               oMemTermRast:MARKIERUNG_ABGANG := false,
+               MyPost(oMemTermRast),
+               bBreak := True,
+            endif,
+         else
+            if oMemTermRast:B_POS_LFD = cB_POS_LFD then
+               MyEdit(oMemTermRast),
+               oMemTermRast:MARKIERUNG_ABGANG := true,
+               MyPost(oMemTermRast),
+               bBreak := True,
+            endif,
+         endif,
+
+         if not bBreak then
+            DbSkip(1, oMemTermRast),
+         endif,
+      end,
+   always
+      DbEnableControls(oMemTermRast),
+   stopseq,
+end,

@@ -1,0 +1,48 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Allgemeine Konfiguration für die qualifizierte USt.-ID Prüfung.
+//
+// Das Präfix VATIDV steht für "VAT ID Verification"
+// ("Umsatzsteueridentifikationsnummer-Gültigkeitsprüfung")
+//##############################################################################
+//##############################################################################
+
+|
+   // Einstellungen
+   gl_VATIDV_SenderVatId:_C                        := '',
+   gl_VATIDV_RequestPrintedProtocol:_L             := false,
+   gl_VATIDV_RequestTimeout:_N                     := 30000,
+   gl_VATIDV_UseSimpleVerficationIfNotQualified:_L := false,
+   gl_VATIDV_SendErrorMail:_L                      := false,
+   gl_VATIDV_MailingListRoleKey:_C                 := '',
+   gl_VATIDV_UseCache:_L                           := true,
+   gl_VATIDV_ValidCacheDays:_N                     := 7,
+
+   // Merkmalstabelle "UID-Prüfung: Adress-Typ"
+   gl_VATIDV_AddressType_MainAddress:_N              := 10,
+   gl_VATIDV_AddressType_SupplyAddress:_N            := 20,
+   gl_VATIDV_AddressType_InvoiceAddress:_N           := 30,
+   gl_VATIDV_AddressType_VatIdVerificationAddress:_N := 40,
+
+   // Merkmalstabelle "UID-Prüfung: Ergebnis-Status"
+   gl_VATIDV_ResultStatus_NotDefined:_N                           := 0,
+   gl_VATIDV_ResultStatus_Match:_N                                := 1,
+   gl_VATIDV_ResultStatus_NoMatch:_N                              := 2,
+   gl_VATIDV_ResultStatus_NotRequested:_N                         := 3,
+   gl_VATIDV_ResultStatus_InformationNotPublishedByMemberState:_N := 4,
+
+   // Merkmalstabelle "UID-Prüfung: Ereignis-Typ"
+   gl_VATIDV_EventType_BeforeDeliveryNotePrint:_N    := 10,
+   gl_VATIDV_EventType_BeforeInvoicePrint:_N         := 20,
+   gl_VATIDV_EventType_ManualRequest:_N              := 30,
+
+   // Merkmalstabelle "UID-Prüfung: Prüfungs-Modus"
+   gl_VATIDV_VerificationMode_Undefined:_N := 0,
+   gl_VATIDV_VerificationMode_Simple:_N    := 10,
+   gl_VATIDV_VerificationMode_Qualified:_N := 20
+
+|
+
+true,
+

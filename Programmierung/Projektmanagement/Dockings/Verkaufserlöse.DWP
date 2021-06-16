@@ -1,0 +1,657 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_cSalesProfitBrowser, m_cDefaultSaveId, m_cFormSaveID,
+  m_bStarting:L:=False, m_bCanceling:L:=False,
+
+  m_oDM, m_oProjController, m_oProjBO, m_oProjSalesBO,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_Cancel, A_Delete, A_GoToOrder, A_New, A_Recalc, A_Save, bar_MainToolBar,
+  bdc_MainToolbarDock, BeActionList1, chk_ActualProfitManual, chk_AnticipatedPaymentManual, chk_TargetProfitManual, cmb_LineType, ds_DabPREGrid, ds_DabPREMask,
+  ds_MasterTable, edt_ActualProfit, edt_AnticipatedPayment, edt_Memo, edt_TargetProfit, grd_DabPRE, lbl_ActualProfit, lbl_ActualProfit_WKZ,
+  lbl_AnticipatedPayment, lbl_AnticipatedPayment_WKZ, lbl_LineType, lbl_Memo, lbl_TargetProfit, lbl_TargetProfit_WKZ, pnl_Bottom, pnl_Caption,
+  pnl_Edits, pnl_Grid, pnl_Main, spl_Main, tb_Cancel, tb_Delete, tb_GoToOrder, tb_New,
+  tb_Recalc, tb_Save, tbl_DabPREGrid, tbl_DabPREMask, tbmgr_Toolbars
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+// Browser
+m_cSalesProfitBrowser := '@SALPRO',
+
+m_cDefaultSaveId      := 'SALESPROFIT',
+m_cFormSaveID         := '@SALPRO',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuerelemente aktualisieren
+//******************************************************************************
+function RefreshControls()
+| bHasOrderNo |
+  bHasOrderNo                          := m_oProjSalesBO.CbOrderNo > 0,
+  chk_TargetProfitManual.Enabled       := bHasOrderNo,
+  chk_AnticipatedPaymentManual.Enabled := bHasOrderNo,
+  chk_ActualProfitManual.Enabled       := bHasOrderNo,
+end,
+
+//******************************************************************************
+// Aktualisiert den Enabled-Status der Actions
+//******************************************************************************
+function ActionsEnabled()
+| bMasterBrowse, bBrowse, bPrjExists |
+   prs('FUNCTION: ActionsEnabled()', 'START'),
+
+   bMasterBrowse       := not empty(m_oMasterTable) and
+                          not EditModes(m_oMasterTable),                        // Master-Tabelle muss vorhanden sein und darf nicht im Edit-Modus sein
+   bBrowse             := m_oProjSalesBO.CbInBrowseMode(),                      // Sales-Proft BO im Browse-Modus?
+   bPrjExists          := not empty(m_oProjBO) and m_oProjBO.CbID > 0,
+
+   A_New.Enabled       := bMasterBrowse and bBrowse and bPrjExists,
+   A_Delete.Enabled    := bMasterBrowse and bBrowse and bPrjExists and
+                          not (eof(tbl_DabPREGrid) and bof(tbl_DabPREGrid)),
+   A_Save.Enabled      := bMasterBrowse and not bBrowse,
+   A_Cancel.Enabled    := bMasterBrowse and not bBrowse,
+   A_Recalc.Enabled    := bMasterBrowse and bBrowse and bPrjExists,
+   A_GoToOrder.Enabled := bMasterBrowse and bBrowse and
+                          bPrjExists and not empty(tbl_DabPREGrid:ANUMMER),
+
+   RefreshControls(),
+
+   prs('FUNCTION: ActionsEnabled()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Setzt die Grundeinstellungen für die Controls des Formulars
+//******************************************************************************
+function SetDefaults()
+| cLoadedParams, aParams, i |
+
+   cLoadedParams := GetBeParam(m_cDefaultSaveId),
+   aParams       := iif(empty(cLoadedParams), {}, StrToArr(cLoadedParams)),
+
+   for i:=1 to Len(aParams) do
+      case i
+         of 1:: if not empty(aParams[1]) then
+                   pnl_Bottom.Height := aParams[1],
+                endif,
+      endcase,
+   next,
+end,
+
+//******************************************************************************
+// DabPRE anhand der Master-Table (DabPRJ) Filtern
+//******************************************************************************
+function FilterSalesProfit()
+   DBDisableControls(tbl_DabPREGrid),
+   startseq
+      tbl_DabPREGrid.Filtered := False,
+      tbl_DabPREGrid.Filter   := 'PRJ_ID = ' + Str(m_oMasterTable:ID),
+      tbl_DabPREGrid.Filtered := True,
+      DbGoTop(tbl_DabPREGrid),
+      if LookUp(waDABPRJ, 'ID', {{m_oMasterTable:ID}}, 'ID', 0) > 0 then
+         m_oProjBO.CbGoToID(m_oMasterTable:ID), // ProjectBO neu positionieren
+      else
+         m_oProjBo.CbGoToID(-1),
+      endif,
+      ActionsEnabled(),
+   always,
+      DbEnableControls(tbl_DabPREGrid),
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnen der benötigten SQL-Querys und erste Ausführung der Statements mit
+// absichlich leerer Rückgabe um die Feldstruktur zu erhalten
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+
+   prs('FUNCTION: OpenDataBase()', 'START'),
+
+   if empty(m_oMasterTable) then
+      SetError('Das Verkaufserlöse-Docking kann nicht ohne MasterDataSet geöffnet werden'),
+   else
+      if m_oMasterTable.WorkArea <> waDABPRJ then
+         SetError('Die übergebene Tabelle ist nicht die Projekt-Stamm-Tabelle'),
+      else
+         ds_MasterTable.DataSet   := m_oMasterTable,
+      endif,
+   endif,
+
+   m_oDM                    := CreateObject('TBeDBGet', 'SALESGET', oForm, oForm),
+   m_oProjBO                := CreateObject('TBeProjectBO', 'SALESPRJBO', oForm, oForm),
+   m_oProjBO.CbDataModule   := m_oDM,
+
+   if m_oMasterTable:ID > 0 and not InsertMode(m_oMasterTable) then
+      m_oProjBO.CbGoToID(m_oMasterTable:ID),
+   else
+      m_oProjBO.CbGoToID(-1),
+   endif,
+
+   prs(' ', 'MASTER-PRJ_ID ' + Str(m_oProjBO.CbID)),
+
+   m_oProjController                := CreateObject('TBeProjectBusinessController', 'Sales_Proj_Controller', oForm, oForm),
+   m_oProjController.CbDataModule   := m_oDM,
+   m_oProjSalesBO                   := CreateObject('TBeProjectSalesProfitBO', 'Sales_BO', oForm, oForm),
+   m_oProjSalesBO.CBDataModule      := m_oDM,
+
+   tbl_DabPREMask                 := DBGetTable(m_oDM, waDabPRE),
+   tbl_DabPREMask.Name            := 'tbl_DabPREMask',
+   tbl_DabPREMask.CheckReadAccess := raFilter,
+   tbl_DabPREMask.CheckUserRights := True,
+   ds_DabPREMask.DataSet          := tbl_DabPREMask,
+   AssignEvent(tbl_DabPREMask, 'AfterPost', 'DabPREMask_AfterPost'),
+   AssignEvent(tbl_DabPREMask, 'BeforeInsert', 'DabPREMask_BeforeInsertOrEdit'),
+   AssignEvent(tbl_DabPREMask, 'BeforeEdit', 'DabPREMask_BeforeInsertOrEdit'),
+
+
+   tbl_DabPREGrid.WorkArea          := waDabPRE,
+   tbl_DabPREGrid.AliasName         := 'DABPRE_GRID',
+   tbl_DabPREGrid.Active            := True,
+   tbl_DabPREGrid.IndexName         := 'ANUMMER',
+   tbl_DabPREGrid.CheckReadAccess   := raFilter,
+   ds_DabPREGrid.DataSet            := tbl_DabPREGrid,
+   grd_DabPRE.DataSource            := ds_DabPREGrid,
+   grd_DabPRE.RegisterDataSet       := ds_DabPREGrid,
+   grd_DabPRE.ID                    := m_cSalesProfitBrowser,
+   grd_DabPRE.ReadWriteProps        := False,
+   AssignEvent(tbl_DabPREGrid, 'BeforeScroll', 'DabPREGrid_BeforeScroll'),
+   DbGoTop(tbl_DabPREGrid),
+
+   prs('FUNCTION: OpenDataBase()', 'ENDE'),
+end,
+
+//******************************************************************************
+// der Allgemeine-Status des Dockings hat sich verändert
+//******************************************************************************
+function BrowseModeChanged()
+   // User-Defined BrowserModeChange Event auslösen
+   // damit das Haupt-Formular mitbekommt das sich der Status des Unter-Fensters geändert hat
+   oForm.CbHelper.CbInvokeUserDefinedEvent(oForm, 'BrowseModeChanged', m_oProjSalesBO.CbInBrowseMode()),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: State-Change der Verkaufserlöse Tabelle
+//******************************************************************************
+function ds_DabPREMaskStateChange( Sender )
+   if not m_bStarting then
+      ActionsEnabled(),
+      BrowseModeChanged(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Scroll in der Grid-Tabelle
+//******************************************************************************
+function ds_DabPREGridScroll_Update( Sender )
+| oErrObj |
+   if not m_bStarting and
+      not empty(tbl_DabPREMask) and tbl_DabPREMask.Active and
+      not empty(m_oProjSalesBO) and
+      not EditModes(tbl_DabPREMask) then
+
+      if tbl_DabPREGrid:ID > 0 then
+         startseq
+            m_oProjSalesBO.CbGotoID(tbl_DabPREGrid:ID),
+         onerror
+            oErrObj := GetErrorObj(),
+            if ClassName(oErrObj) = 'EBeCustomDBBoIDNotFoundException' then
+               DBRefresh(tbl_DabPREGrid),
+            else
+               SetError(ClassName(oErrObj) + ': ' + GetErrorText()),
+            endif,
+         stopseq,
+      else
+         m_oProjSalesBO.CbGotoID(-1),
+      endif,
+   endif,
+
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Nach dem Speichern
+//******************************************************************************
+function DabPREMask_AfterPost(Sender)
+   DBRefresh(tbl_DabPREGrid),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Scrollen im Grid
+//******************************************************************************
+function DabPREGrid_BeforeScroll(Sender)
+  if not m_bCanceling and not m_oProjSalesBO.CbInBrowseMode() then
+     Abort(True),
+  endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Editieren (auch Insert)
+//******************************************************************************
+function DabPREMask_BeforeInsertOrEdit(Sender)
+  // Edit/Insert nur möglich wenn Master-Tabelle nicht im Edit-Modus
+  if not empty(m_oMasterTable) and
+     not EditModes(m_oMasterTable) and
+     not empty(m_oProjBO) and m_oProjBO.CbID > 0 then
+     if not DbInTrans(m_oDM.AdsConnection) then
+        DbStartTrans(m_oDM.AdsConnection),
+     endif,
+  else
+     Abort(True),
+  endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle müssen im Docking Aktualisierungen
+//        vorgenommen werden
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   if not m_bStarting and not EditModes(tbl_DabPREMask) then
+      FilterSalesProfit(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Auf Änderungen der Master-Tabelle reagieren
+//******************************************************************************
+function ds_MasterTableDataChange( Sender )
+   if not m_bStarting then
+      ActionsEnabled(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExDestroy( Sender )
+   if not empty(m_oOwnerForm) then
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen des Fensters prüfen ob noch Tabellen im Editmode sind
+//******************************************************************************
+function FormExCloseQuery( Sender, bAllowClose )
+| aArr |
+   startseq
+      if not empty(m_oProjSalesBO) and                                         // ToDo:
+         not m_oProjSalesBO.CbInBrowseMode() then
+         if JN('Es befindet sich noch eine Verkaufserlös-Zeile im Bearbeitungsmodus.' + crlf +
+               'Änderungen verwerfen?') then
+            m_oProjController.CbCancelSalesProfit(m_oProjSalesBO),
+         else
+            bAllowClose := False,
+         endif,
+      endif,
+
+      // Speichern der Splitterpositionen
+      startseq
+         if bAllowClose then
+            aArr := {},
+            AAdd(aArr, pnl_Bottom.Height),                // Panelhöhe merken
+            SetBeParam(m_cDefaultSaveId, ArrToStr(aArr)), // Parameterarray speichern
+         endif,
+      onerror
+         SetError('Fehler beim Speichern der Einstellungen' + crlf + GetErrorText()),
+      stopseq,
+   onerror
+      SetError('Fehler in FormExCloseQuery' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermöglicht das Springen zu dem verknüpften Auftrag
+//******************************************************************************
+function A_GoToOrderExecute( Sender )
+| nCustomerNr |
+   startseq
+      nCustomerNr := Lookup(waDAB050, 'DAB051', {{tbl_DabPREGrid:ANUMMER}}, 'KDNR', 0),
+      if not empty(nCustomerNr) then
+         ShowBeWindow(bwCustOrders, Str(nCustomerNr, 8) + Str(tbl_DabPREGrid:ANUMMER)),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Springen zum Auftrag' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Erstellt einen neuen Projekt-Erlös
+//******************************************************************************
+function A_NewExecute( Sender )
+   if not m_oProjBO.CbID > 0 then
+      if LookUp(waDABPRJ, 'ID', {{m_oMasterTable:ID}}, 'ID', 0) > 0 then
+         m_oProjBO.CbGoToID(m_oMasterTable:ID),
+      else
+         SetError('Neuer Verkaufserlös nicht möglich. Kein zugeordnetes Projekt gefunden.'),
+      endif,
+   endif,
+
+   DbStartTrans(m_oDM.AdsConnection),
+   startseq
+      m_oProjController.CbCreateSalesProfit(m_oProjSalesBO, m_oProjBO.CbID),
+      BeginSuspend(tbl_DabPREMask),
+      startseq
+         m_oProjSalesBO.CbProfitType               := 10, // Kundenauftrag
+         m_oProjSalesBO.CbKind                     := 10, // Erlös
+         m_oProjSalesBO.CbTargetProfitManual       := True,
+         m_oProjSalesBO.CbActualProfitManual       := True,
+         m_oProjSalesBO.CbAnticipatedPaymentManual := True,
+      always
+         EndSuspend(tbl_DabPREMask),
+      stopseq,
+   onerror
+      if DbInTrans(m_oDM.AdsConnection) then
+         DbRollback(m_oDM.AdsConnection),
+      endif,
+
+      // Fehler aufgrund fehlender Neuanlage-Rechte in schöne Meldung wandeln
+      if ClassName(GetErrorObj()) = 'EBeCustomDBBoInsertException' then
+         MessageDlg(GetLangText(1505), mtError),
+      else
+         MessageDlg('Fehler beim Anlegen des Verkaufserlös' + crlf + GetErrorText(), mtError),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Löscht einen Projekt-Erlös
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   if ProjMgmtGUI_CheckProjectManagementRights(tbl_DabPREMask, 0, 'D', True) and
+      JN('Datensatz löschen?') then
+      startseq
+         DbDisableControls(tbl_DabPREGrid),
+         startseq
+            DbStartTrans(m_oDM.AdsConnection),
+            startseq
+               startseq
+                  m_oProjController.CbDeleteSalesProfit(m_oProjSalesBO, m_oProjBO),
+               onerror
+                  if At('The requested lock could not be granted', GetErrortext()) > 0 then
+                     MessageDlg('Fehler beim Löschen des Verkauf-Erlöses.' + crlf + 'Der Datensatz ist von einem anderen User gesperrt.', mtError),
+                     exit,
+                  else
+                     SetError(GetErrorText()),
+                  endif,
+               stopseq,
+               DbCommit(m_oDM.AdsConnection),
+            always
+               if DbInTrans(m_oDM.AdsConnection) then
+                  DbRollback(m_oDM.AdsConnection),
+               endif,
+            stopseq,
+            DBRefresh(tbl_DabPREGrid),
+            DbRefresh(m_oMasterTable),
+         always
+            DbEnableControls(tbl_DabPREGrid),
+         stopseq,
+      onerror
+         MessageDlg('Der Verkaufserlös wurde nicht gelöscht.', mtWarning),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Speichert einen Projekt-Erlös
+//******************************************************************************
+function A_SaveExecute( Sender )
+| nSalesID, oErrObj |
+   startseq
+      nSalesID := m_oProjSalesBO.CbID,
+      startseq
+         DBDisableControls(tbl_DabPREGrid),
+         startseq
+            if m_oProjController.CbPostSalesProfit(m_oProjSalesBO, m_oProjBO) then
+               DbCommit(m_oDM.AdsConnection),
+               DbRefresh(tbl_DabPREGrid),
+               DBLocate('ID', {nSalesID}, 0, tbl_DabPREGrid),
+            endif,
+         always,
+            DbEnableControls(tbl_DabPREGrid),
+         stopseq,
+      onerror
+         oErrObj := GetErrorObj(),
+         if ClassName(oErrObj) = 'ECheckRightsAbort' then
+            exit,
+         endif,
+      stopseq,
+   onerror
+      SetError('Fehler beim Speichern des Verkaufserlös' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung am Projekt-Erlös verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      if DbInTrans(m_oDM.AdsConnection) then
+         m_bCanceling := True,
+         startseq
+            m_oProjController.CbCancelSalesProfit(m_oProjSalesBO),
+            DbRollback(m_oDM.AdsConnection),
+         always
+            m_bCanceling := False,
+         stopseq,
+      endif,
+      DBRefresh(tbl_DabPREGrid),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Alle Erlöse für ein Projekt neue berechnen
+//******************************************************************************
+function A_RecalcExecute( Sender )
+| nOldCursor |
+   startseq
+      nOldCursor := SetCursor(crHourglass),
+      startseq
+         DbStartTrans(m_oDM.AdsConnection),
+         startseq
+
+            BeginSuspend(tbl_DabPREMask), // TODO: Übergangs-Lösung bis Standard-Funktion korrigiert.
+            startseq
+               m_oProjController.CbAutoCalcSalesProfit(m_oProjBO, m_oProjSalesBO),
+            always
+               EndSuspend(tbl_DabPREMask),
+            stopseq,
+
+            DbCommit(m_oDM.AdsConnection),
+         always
+            if DbInTrans(m_oDM.AdsConnection) then
+               DbRollback(m_oDM.AdsConnection),
+            endif,
+         stopseq,
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+
+      DBRefresh(tbl_DabPREGrid),
+   onerror
+      MessageDlg('Verkaufserlöse wurden nicht berechnet.', mtWarning),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm("@SALESPROF", Application),
+   else
+      oForm := LoadForm("@SALESPROF", m_oOwnerForm),
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Verkaufserlöse',
+   oForm.BorderStyle    := bsSizeToolWin,
+   oForm.PositionSaveID := m_cFormSaveID,
+   oForm.ImageIndex     := 575, // Rechner
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_Cancel                     := FindObject( oForm, "A_Cancel" ),
+      A_Delete                     := FindObject( oForm, "A_Delete" ),
+      A_GoToOrder                  := FindObject( oForm, "A_GoToOrder" ),
+      A_New                        := FindObject( oForm, "A_New" ),
+      A_Recalc                     := FindObject( oForm, "A_Recalc" ),
+      A_Save                       := FindObject( oForm, "A_Save" ),
+      bar_MainToolBar              := FindObject( oForm, "bar_MainToolBar" ),
+      bdc_MainToolbarDock          := FindObject( oForm, "bdc_MainToolbarDock" ),
+      BeActionList1                := FindObject( oForm, "BeActionList1" ),
+      chk_ActualProfitManual       := FindObject( oForm, "chk_ActualProfitManual" ),
+      chk_AnticipatedPaymentManual := FindObject( oForm, "chk_AnticipatedPaymentManual" ),
+      chk_TargetProfitManual       := FindObject( oForm, "chk_TargetProfitManual" ),
+      cmb_LineType                 := FindObject( oForm, "cmb_LineType" ),
+      ds_DabPREGrid                := FindObject( oForm, "ds_DabPREGrid" ),
+      ds_DabPREMask                := FindObject( oForm, "ds_DabPREMask" ),
+      ds_MasterTable               := FindObject( oForm, "ds_MasterTable" ),
+      edt_ActualProfit             := FindObject( oForm, "edt_ActualProfit" ),
+      edt_AnticipatedPayment       := FindObject( oForm, "edt_AnticipatedPayment" ),
+      edt_Memo                     := FindObject( oForm, "edt_Memo" ),
+      edt_TargetProfit             := FindObject( oForm, "edt_TargetProfit" ),
+      grd_DabPRE                   := FindObject( oForm, "grd_DabPRE" ),
+      lbl_ActualProfit             := FindObject( oForm, "lbl_ActualProfit" ),
+      lbl_ActualProfit_WKZ         := FindObject( oForm, "lbl_ActualProfit_WKZ" ),
+      lbl_AnticipatedPayment       := FindObject( oForm, "lbl_AnticipatedPayment" ),
+      lbl_AnticipatedPayment_WKZ   := FindObject( oForm, "lbl_AnticipatedPayment_WKZ" ),
+      lbl_LineType                 := FindObject( oForm, "lbl_LineType" ),
+      lbl_Memo                     := FindObject( oForm, "lbl_Memo" ),
+      lbl_TargetProfit             := FindObject( oForm, "lbl_TargetProfit" ),
+      lbl_TargetProfit_WKZ         := FindObject( oForm, "lbl_TargetProfit_WKZ" ),
+      pnl_Bottom                   := FindObject( oForm, "pnl_Bottom" ),
+      pnl_Caption                  := FindObject( oForm, "pnl_Caption" ),
+      pnl_Edits                    := FindObject( oForm, "pnl_Edits" ),
+      pnl_Grid                     := FindObject( oForm, "pnl_Grid" ),
+      pnl_Main                     := FindObject( oForm, "pnl_Main" ),
+      spl_Main                     := FindObject( oForm, "spl_Main" ),
+      tb_Cancel                    := FindObject( oForm, "tb_Cancel" ),
+      tb_Delete                    := FindObject( oForm, "tb_Delete" ),
+      tb_GoToOrder                 := FindObject( oForm, "tb_GoToOrder" ),
+      tb_New                       := FindObject( oForm, "tb_New" ),
+      tb_Recalc                    := FindObject( oForm, "tb_Recalc" ),
+      tb_Save                      := FindObject( oForm, "tb_Save" ),
+      tbl_DabPREGrid               := FindObject( oForm, "tbl_DabPREGrid" ),
+      tbl_DabPREMask               := FindObject( oForm, "tbl_DabPREMask" ),
+      tbmgr_Toolbars               := FindObject( oForm, "tbmgr_Toolbars" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      lbl_TargetProfit_WKZ.Caption       := CurrSign(),
+      lbl_ActualProfit_WKZ.Caption       := CurrSign(),
+      lbl_AnticipatedPayment_WKZ.Caption := CurrSign(),
+
+      oForm.ActiveControl := grd_DabPRE,
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   m_bStarting := True, // Verhindern von Positionierungen etc. während dem öffnen der Tabellen
+   startseq
+      InitForm(),
+
+      // Für Tests in der Cb-Entwicklung
+      if EditorMode() and empty(m_oMasterTable) then
+         m_oMasterTable := DBOpen(waDABPRJ),
+         DBSeek({362}, m_oMasterTable),
+      endif,
+
+      LoadGUI(),
+      OpenDataBase(),            // Tabellen öffnen und BO's erstellen
+   always
+      m_bStarting := False,
+   stopseq,
+
+   SetDefaults(),
+   ActionsEnabled(),
+   FilterSalesProfit(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm
+

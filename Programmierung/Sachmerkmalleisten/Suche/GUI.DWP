@@ -1,0 +1,1436 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung: Benutzeroberfläche für die Suche von Merkmalen einer
+//               Sachmerkmalleiste.
+//
+//    Parameter: Die Übergabe der Parameter erfolgt über den 4. Parameter (P4)
+//               als Array. So ist es möglich die GFU_*_CustomInfo()-
+//               Funktionen zu nutzen.
+//               Das Array besteht aus 2-dimensionalen Arrays, die nach dem
+//               Key-Value-Prinzip funktionieren.
+//               Das Array könnte beispielsweise folgendermaßen aussehen:
+//               {
+//                  {'WORKAREA', waDab010},
+//                  {'SML_ID',   12},
+//                  {'ATTRIB_FILTERS', {
+//                     {'2', '>',  '80'},
+//                     {'5', '>=', '226,0254'},
+//                     {'3', '=',  'True'}
+//                  }}
+//               }
+//
+//    Rückgabe:  * Feldwert des angegebenen 'm_cSelectField'
+//               * -1 bei Abbruch des Dialogs
+//
+//     Hinweis:  Basiert auf dem Programm "Suchen\Volltextsuche".
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oMasterTable:P3,
+   m_aParams:P4,
+
+   // Default-Werte (werden ggf. durch ParseParams() überschrieben)
+   m_nDefaultWorkarea,
+   m_nDefaultSMLId,
+   m_aDefaultAttribFilters,
+   m_nDefaultFilterCount,
+
+   m_nLastWorkarea,
+
+   // Filter-Interface
+   m_aFilterRows,
+   m_aSLMemo,
+   m_nLastFilterRowId,
+   m_oFilterInterfacePanel,
+
+   // Such-Framework
+   m_oQuery,
+   m_nMainWorkarea,
+   m_cMainAlias,
+   m_nSMLId,
+
+   // Allgemein
+   m_nWorkArea:N       := 1,
+   m_cFTSField:C       := 'SUCHE',
+   m_cSelectField:C    := 'ID',
+   m_cPositionSaveId:C := '@SMLSUCHPOS',
+
+   m_bRecordSelectedByUser,
+   m_nSelectedRecord,
+   m_cContainsFilter,
+   m_bUseArticleNoFilter,
+
+   m_bComprehensiveSearch,
+   m_bAutomaticSearch,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_AddFilter, A_ClearSML, A_Close, A_Search, A_Select, Actions,
+   btn_ClearSML, btn_Close, btn_Search, btn_Select, chk_AutomaticSearch,
+   cmb_SML, cmb_Usage, ds_Main, edt_SearchText, grd_Main, ipnl_Filter,
+   pnl_Bottom, pnl_FilterRows, pnl_Filters, pnl_Main, pnl_SMLCombo, pnl_SMLInfo,
+   pnl_Top, pnl_UsageCombo
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+   , pnl_SMLView,
+
+   // Enumeration: FilterRow-Indices
+   FILTER_ROW_ID:N       := 1,
+   FILTER_ROW_DATATYPE:N := 2,
+   FILTER_ROW_PARENT:N   := 3,
+   FILTER_ROW_ATTRIB:N   := 4,
+   FILTER_ROW_OPERATOR:N := 5,
+   FILTER_ROW_VALUE:N    := 6,
+   FILTER_ROW_CLEAR:N    := 7
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Such-Framework Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Hilfsfunktion, die ein SELECT-Statement für die aktuelle Haupt-Workarea
+// erstellt
+// @Result: string
+//******************************************************************************
+function SQL_StatementSelect(nWorkarea, cSelectFields)
+   Result := 'SELECT ' + cSelectFields + ' FROM ' +
+             DbSQLTableName(nWorkarea, True),
+end,
+
+//******************************************************************************
+// Funktion zum Ermitteln der zu verwendenden Browser-ID anhand der Workarea
+// @Result: string, Ermittelte BrowserID
+//******************************************************************************
+function DetermineBrowserIDByWorkarea(nWorkarea)
+   case nWorkarea
+      of waDab000 :: // Kundenstamm
+         Result := 'CUS_FIN',
+
+      of waDab010 :: // Artikelstamm
+         Result := 'ART_FIN',
+
+      of waDab100 :: // Lieferantenstamm
+         Result := 'SUP_FIN',
+
+      of waDab062 :: // Vertreterstamm
+         Result := 'AGT_FIN',
+
+      of waDab005 :: // Kontakte
+         Result := '@CON_FIN', // individueller Browser, da "Zuordnung"-Spalten notwendig
+
+      of waDab262 :: // BDE Personalstamm
+         //cSelectField := 'PERSNR', // keine 'ID' vorhanden
+         Result := 'BDEPRS3',
+
+      of waDab330 :: // BDE Ressourcenstamm
+         Result := 'RES_ED4',
+
+   otherwise
+      SetError('Unsupported workarea: ' + Str(nWorkarea)),
+   endcase,
+end,
+
+//******************************************************************************
+// SLMemo-String aus aktuellen Datensatz der Haupttabelle holen, sofern die zu
+// suchende Sachmerkmalleiste bekannt ist.
+// @Result: string
+//******************************************************************************
+function GetSLMemo()
+| nRecord, cArticleNo |
+   Result  := '',
+
+   if m_nDefaultWorkarea = waDab010 then
+      cArticleNo := Trim(AsString('ARTNR', m_oQuery)),
+      if not Empty(cArticleNo) then
+         Result := Lookup(waSMLZUO, 'ARTNR_SML_ID', {{cArticleNo, m_nSMLId}},
+                          'SL_MEMO', ''),
+      endif,
+   else
+      nRecord := AsNumber(m_cSelectField, m_oQuery),
+      if nRecord > 0 then
+         Result := Lookup(waSMLZUO, 'VERWEND_WA_VERWEND_ID_SML_ID',
+                          {{m_nMainWorkarea, nRecord, m_nSMLId}}, 'SL_MEMO', ''),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Controls aktualisieren
+// @Result: null
+//******************************************************************************
+function RefreshControls()
+   pnl_SMLView.FormVarCalc.PL_Memo := GetSLMemo(),
+end,
+
+//******************************************************************************
+// Query aktualisieren
+// @Result: null
+//******************************************************************************
+function RefreshQuery(cSQLText)
+| bFieldsChanged, cBrowserID |
+   bFieldsChanged := m_nLastWorkarea <> m_nMainWorkarea,
+   WriteLn('EXECUTING STATEMENT: [' + CRLF + cSQLText + CRLF + ']'),
+
+   if bFieldsChanged then
+      m_nLastWorkarea := m_nMainWorkarea,
+      cBrowserID      := DetermineBrowserIDByWorkarea(m_nMainWorkarea),
+
+      if not Empty(m_oQuery) then
+         DestroyObject(m_oQuery),
+      endif,
+      m_oQuery := CreateObject('TBeAdsQuery', 'SMLQuery', oForm),
+      m_oQuery.Name      := m_cMainAlias,
+      m_oQuery.AliasName := m_cMainAlias,
+      m_oQuery.SQL       := cSQLText,
+      m_oQuery.Active    := True,
+
+      ds_Main.DataSet          := m_oQuery,
+      grd_Main.DataSource      := ds_Main,
+      grd_Main.RegisterDataSet := m_oQuery,
+      grd_Main.ID              := cBrowserID,
+      grd_Main.ReadWriteProps  := 0,
+   else
+      cBrowserID := grd_Main.ID, // Browser-ID merken
+      DbDisableControls(m_oQuery),
+      startseq
+         // Browser-Anzeige temporär "deaktivieren"
+         grd_Main.ID := '',
+
+         // Neues SQL-Statement ausführen
+         m_oQuery.Active              := False,
+         m_oQuery.SQL                 := cSQLText,
+         m_oQuery.ExecRefreshDesigner := True,
+         m_oQuery.Active              := True,
+         m_oQuery.ExecRefreshDesigner := True,
+
+         // Browser-Anzeige für neue Daten wieder "aktivieren"
+         grd_Main.ID             := cBrowserID,
+         grd_Main.ReadWriteProps := 0,
+      always
+         DbEnableControls(m_oQuery),
+      stopseq,
+   endif,
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Refresh der Tabelle - dabei versuchen, die Record-Position zu "halten"
+//******************************************************************************
+function RefreshAndTryToKeepRecord()
+   // TODO: leider funktioniert MyRefresh() nicht ordentlich, da der letzte
+   // Datensatz stehen "bleibt", selbst wenn er ausgefiltert wird...
+   DbRefresh(m_oQuery),
+end,
+
+//******************************************************************************
+// Filter setzen
+//******************************************************************************
+function RefreshFilter()
+   if not Empty(m_oQuery) and m_oQuery.Active then
+      WriteLn('RefreshFilter() => ' + m_cContainsFilter),
+      if not Empty(m_cContainsFilter) then
+         if m_oQuery.Filter <> m_cContainsFilter then
+            m_oQuery.Filter   := m_cContainsFilter,
+            m_oQuery.Filtered := True,
+            RefreshAndTryToKeepRecord(),
+         endif,
+      else
+         if m_oQuery.Filter <> '' then
+            m_oQuery.Filtered := False,
+            m_oQuery.Filter   := '',
+            RefreshAndTryToKeepRecord(),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Volltextsuche ausführen
+// @Result: null
+//******************************************************************************
+function FTSExecute()
+| cInputText |
+   // Volltextsuche nicht ausführen, wenn die Workarea noch nicht gewählt ist.
+   if not (Empty(cmb_Usage) or Empty(AllTrim(cmb_Usage.Value))) then
+      cInputText := edt_SearchText.Text,
+      if Empty(cInputText) then
+         m_cContainsFilter := '',
+      else
+         m_cContainsFilter := PrepareTextForFTSSearch(
+            m_nWorkArea, m_cFTSField, cInputText, '', False, True, 'AND', True
+         ),
+      endif,
+      RefreshFilter(),
+   endif,
+end,
+
+//******************************************************************************
+// Merkmals-Filter anhand des Filterzeilen-Arrays ermitteln
+// @Result: array
+//******************************************************************************
+function ParseAttributeFilters(aFilterRows:R)
+|
+   i,
+   oAttribControl, oOperatorControl, oValueControl,
+   nVIndex, nDataType, cTargetField, cOperator, uValue
+|
+   Result := {},
+   for i := 1 to ALen(aFilterRows) do
+      oAttribControl := aFilterRows[i, FILTER_ROW_ATTRIB],
+      nVIndex        := Val(oAttribControl.Value),
+      if nVIndex > 0 then
+         nDataType        := aFilterRows[i, FILTER_ROW_DATATYPE],
+         cTargetField     := SML_AttributeTargetFieldName(nDataType),
+         oOperatorControl := aFilterRows[i, FILTER_ROW_OPERATOR],
+         cOperator        := AllTrim(oOperatorControl.Value),
+         SetErrorIf(Empty(cOperator), 'Operator für Merkmal <' + oAttribControl.Text + '> muss gesetzt sein!'),
+         oValueControl    := aFilterRows[i, FILTER_ROW_Value],
+         uValue           := SML_GUI_GetControlValueByDataType(oValueControl, nDataType),
+         // Merkmals-Filter hinzufügen
+         AAdd(Result, {
+            {'V_INDEX',    '=',       nVIndex, 'N'},
+            {cTargetField, cOperator, uValue,  SML_DataTypeToCbDataType(nDataType)}
+         }),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Nach Merkmale suchen
+// @Result: null
+//******************************************************************************
+function Search(aFilterRows:R, nMainWorkarea, nSMLId, cMainIdFieldName, bComprehensiveSearch)
+| cStatement, aAttribFilters, bUseLocationFilter, cArticleFilter |
+
+   SetErrorIf(nMainWorkarea = 0, 'Verwendung darf nicht leer sein!'),
+
+   // Wenn es sich bei der angezeigten Tabelle um den Artikelstamm handelt,
+   // muss anschließend der Standort-Filter für das SQL-Query beachtet werden
+   bUseLocationFilter := nMainWorkarea = waDab010,
+
+   // Filter ermitteln
+   aAttribFilters := ParseAttributeFilters(aFilterRows),
+   // SQL Statement erzeugen
+   cStatement := SML_QUERY_BuildFilteredSelect(
+      nMainWorkarea, cMainIdFieldName, nSMLID, aAttribFilters,
+      bComprehensiveSearch, bUseLocationFilter
+   ),
+
+   // Beim Artikelstamm ggf. die alternative Artikelnummer-Suche statt der
+   // Volltextsuche verwenden
+   if m_bUseArticleNoFilter then
+      cArticleFilter := Upper(AllTrim(edt_SearchText.Text)),
+      if not Empty(cArticleFilter) then
+         // HINWEIS:
+         //   Hier ist sichergestellt, dass das SQL-Statement bereits einen
+         //   WHERE-Teil besitzt, weil die Dab010 mit Standort-Filter selektiert
+         //   wrid.
+         //   Aus diesem Grund kann hier einfach der Artikelnummer-Filter mit
+         //   AND angefügt werden.
+         cStatement := ConcatTrenner(cStatement, 'ARTNR LIKE ''' + cArticleFilter + '%''', ' AND '),
+      endif,
+   endif,
+
+   // Suche ausführen
+   RefreshQuery(cStatement),
+end,
+
+//******************************************************************************
+// Wrapper-Funktion für Search(...), übergibt notewendige Parameter.
+// @Result: null
+//******************************************************************************
+function SearchExecute()
+| nOldCursor |
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      Search(m_aFilterRows,
+             m_nMainWorkarea,
+             m_nSMLId,
+             m_cSelectField,
+             m_bComprehensiveSearch),
+      // Volltextsuche bei Dab010 nur ausführen, sofern das Flag
+      //  gl_SML_SearchGUI_UseArticleNoSearchForDab010
+      // nicht aktiviert ist.
+      if not m_bUseArticleNoFilter then
+         FTSExecute(),
+      endif,
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// Wrapper-Funktion für Search(...), löst Suche nur aus, wenn Option
+// "immer automatisch Suchen" aktiv ist.
+// @Result: null
+//******************************************************************************
+function AutomaticSearchExecute()
+   if m_bAutomaticSearch then
+      SearchExecute(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// FilterInterface-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Mithile des Datentyps das richtige Control zur eingabe des Filter-Wertes
+// erzeugen.
+// @Result: Control
+//******************************************************************************
+function CreateFilterRowValueControlByDataType(nDataType, cID, oParent)
+| cClass |
+   cClass                  := SML_GUI_GetControlClassByDataType(nDataType),
+   Result                  := CreateObject(cClass, 'FilterValControl_' + cID,
+                                           oParent, oParent),
+   Result.Align            := alClient,
+   Result.AlignWithMargins := True,
+   Result.Margins.Right    := 0,
+   Result.Margins.Bottom   := 0,
+   Result.Font.Style       := fsBold,
+
+   SML_GUI_ClearControlDisplayValue(Result, nDataType),
+end,
+
+//******************************************************************************
+// Filter-Wert Control für angegebene Filter-Zeile initialisieren
+// HINWEIS: Diese Funktion erzeugt ggf. eine neues Filter-Wert Control, wenn
+//          noch keines existiert bzw. zerstört ggf. das alte Control und
+//          erzeugt es dann neu.
+// @Result: null
+//******************************************************************************
+function InitFilterRowValueControl(aFilterInterface:R, aSLMemo:R, nFilterRowIndex, nVIndex)
+|
+  nRowIndex, nDataType, oControl, oOperator, aOperatorItems,
+  bHideOperatorControl,
+  cOprEQ, cOprNE, cOprLT, cOprGT, cOprLE, cOprGE, cOprCONTAINS
+|
+
+  cOprEQ       := '=  gleich'         + Chr(9) + '=',
+  cOprNE       := '<> ungleich'       + Chr(9) + '<>',
+  cOprLT       := '<  kleiner'        + Chr(9) + '<',
+  cOprGT       := '>  größer'         + Chr(9) + '>',
+  cOprLE       := '<= kleiner-gleich' + Chr(9) + '<=',
+  cOprGE       := '>= größer-gleich'  + Chr(9) + '>=',
+  cOprCONTAINS := 'CONTAINS enthält'  + Chr(9) + 'CONTAINS',
+
+  bHideOperatorControl := False,
+
+   // Altes Filter-Wert Control ggf. zerstören
+   if not Empty(aFilterInterface[nFilterRowIndex, FILTER_ROW_VALUE]) then
+      DestroyObject(aFilterInterface[nFilterRowIndex, FILTER_ROW_VALUE]), // Free and ...
+      aFilterInterface[nFilterRowIndex, FILTER_ROW_VALUE] := nil,         // Nil
+   endif,
+
+   // Wenn V-Index = 0, dann ist kein Merkmal gewählt -> Funktion verlassen
+   if nVIndex = 0 then
+      exit,
+   endif,
+
+   // Zeilen-Index und Datentyp ermitteln
+   nRowIndex := SML_SLMEMO_FindAttribute(aSLMemo, nVIndex),
+   nDataType := aSLMemo[nRowIndex, gl_SML_SLMemoDataType],
+
+   aOperatorItems := {cOprEQ, cOprNE}, // Standard-Operatoren
+   case nDataType
+      of gl_SML_DataTypeText        :: AAdd(aOperatorItems, cOprCONTAINS),
+      of gl_SML_DataTypeNumeric     :: AAdd(aOperatorItems, cOprLT),
+                                       AAdd(aOperatorItems, cOprLE),
+                                       AAdd(aOperatorItems, cOprGT),
+                                       AAdd(aOperatorItems, cOprGE),
+      of gl_SML_DataTypeMemo        :: AAdd(aOperatorItems, cOprCONTAINS),
+      of gl_SML_DataTypeArticle     :: AAdd(aOperatorItems, cOprCONTAINS),
+      // Für Boolean-Werte soll das Operator-Control nicht angezeigt werden
+      of gl_SML_DataTypeBoolean     :: bHideOperatorControl := True,
+      of gl_SML_DataTypeDate        :: AAdd(aOperatorItems, cOprLT),
+                                       AAdd(aOperatorItems, cOprLE),
+                                       AAdd(aOperatorItems, cOprGT),
+                                       AAdd(aOperatorItems, cOprGE),
+      of gl_SML_DataTypeAttribTable :: AAdd(aOperatorItems, cOprCONTAINS),
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp'),
+   endcase,
+   // Operatoren-Auswahl setzen
+   oOperator         := aFilterInterface[nFilterRowIndex, FILTER_ROW_OPERATOR],
+   oOperator.Items   := aOperatorItems,
+   oOperator.Value   := '=',
+   oOperator.Visible := not bHideOperatorControl,
+
+   // Neues Filter-Wert Control erzeugen
+   oControl := CreateFilterRowValueControlByDataType(
+      nDataType, Str(nFilterRowIndex),
+      aFilterInterface[nFilterRowIndex, FILTER_ROW_PARENT]
+   ),
+
+   // TabOrder der Controls korrigieren
+   oControl.TabOrder := 3,
+
+   // MMT-ID in das Control schreiben, wenn dies eine MMT-Control ist
+   if nDataType = gl_SML_DataTypeAttribTable then
+      oControl.BeAttributeID := aSLMemo[nRowIndex, gl_SML_SLMemoAttribTable]
+   endif,
+
+   aFilterInterface[nFilterRowIndex, FILTER_ROW_VALUE] := oControl,
+   //aFilterInterface[nFilterRowIndex, 6] := nDataType,
+
+   // Events für das Filter-Value Control zuweisen
+   case nDataType
+      // Spezielle Behandlung für Texte und numerische Werte
+      of { gl_SML_DataTypeText, gl_SML_DataTypeNumeric, gl_SML_DataTypeMemo } ::
+         oControl.ShowButton                  := False,
+         oControl.TextHintProperties.TextHint := '',
+         AssignEvent(oControl, 'OnSearchExecute', 'FilterRowValueControl_OnChange'),
+      // Spezielle Behandlung bei Boolean-Werte (CheckBox)
+      of gl_SML_DataTypeBoolean ::
+         // Checkbox vorläufig aktivieren und nach dem Zuweisen des Events
+         // wieder deaktivieren damit die Caption initial gesetzt wird.
+         oControl.Checked := True,
+         AssignEvent(oControl, 'OnClick', 'FilterRowValueControl_OnClick'),
+         oControl.Checked := False,
+      // Alle anderen Controls (Combobox, DateTimePicker, AritcleEdit)
+      otherwise
+         AssignEvent(oControl, 'OnChange', 'FilterRowValueControl_OnChange'),
+   endcase,
+end,
+
+//******************************************************************************
+// Filter-Controls mit den Daten einer Sachmerkmalleiste befüllen
+// @Result: null
+//******************************************************************************
+function InitFilterRowControls(oAttributeControl, oOperatorControl, aSLMemo:R)
+| aItems, nLen, i |
+
+   nLen   := ALen(aSLMemo),
+   aItems := {},
+   for i := 1 to nLen do
+      // TODO: Ggf. müssen hier auch Berechnungszeilen ignoriert werden?
+      if aSLMemo[i, gl_SML_SLMemoRowType] <> gl_SML_RowTypeSeparator then // Trennzeilen ignorieren
+         //           Merkmal-Name                 < Tab >      V-Index
+         AAdd(aItems, aSLMemo[i, gl_SML_SLMemoLabel] + Chr(9) + Str(aSLMemo[i, gl_SML_SLMemoVIndex])),
+      endif,
+   next,
+   oAttributeControl.Items := aItems,
+   oAttributeControl.Value := '',
+   oOperatorControl.Value  := '',
+end,
+
+//******************************************************************************
+// Filter-Zeile erzeugen
+// @Result: array
+//******************************************************************************
+function CreateFilterRow(oOwner, nRowId)
+| oRow, oAttribute, oOperator, oDelete, oClear |
+
+   //***************************************************************************
+   // Einmaligen Controlnamen erzeugen
+   // @Result: string
+   //***************************************************************************
+   function UniqueControlName(cName)
+      Result := cName + '_' + Str(nRowId),
+   end,
+
+   Result := nil,
+
+   oRow := CreateObject('TBePanel', UniqueControlName('pnl_Row'), oOwner, oOwner),
+   oRow.Align      := alTop,
+   oRow.Height     := 24,
+   oRow.Caption    := '',
+   oRow.BevelOuter := bvNone,
+   // Filter-Zeile soll am Ende eingefügt werden
+   // -> Abstand zum oberen Rand erhöhen
+   oRow.Top        := nRowId * oRow.Height,
+
+   // Auswahl für Operator
+   oOperator := CreateObject('TBeCombo', UniqueControlName('cmb_Operator'), oRow, oRow),
+   oOperator.Align                       := alLeft,
+   oOperator.AlignWithMargins            := True,
+   oOperator.ReadOnly                    := True,
+   oOperator.Margins.Right               := 0,
+   oOperator.Margins.Bottom              := 0,
+   oOperator.TextHintProperties.TextHint := 'Operator wählen',
+   oOperator.Value                       := '',
+   oOperator.Style                       := 3,
+   oOperator.MapList                     := True,
+   oOperator.Font.Style                  := fsBold,
+   oOperator.TabOrder                    := 1,
+
+   // Auswahl für Merkmal
+   oAttribute := CreateObject('TBeCombo', UniqueControlName('cmb_Attribute'), oRow, oRow),
+   oAttribute.Align                       := alLeft,
+   oAttribute.AlignWithMargins            := True,
+   oAttribute.ReadOnly                    := True,
+   oAttribute.DropdownCount               := 25,
+   oAttribute.Margins.Right               := 0,
+   oAttribute.Margins.Bottom              := 0,
+   oAttribute.TextHintProperties.TextHint := 'Merkmal ' + Str(nRowID) + ' wählen',
+   oAttribute.Value                       := '',
+   oAttribute.Style                       := 3,
+   oAttribute.MapList                     := True,
+   oAttribute.Font.Style                  := fsBold,
+   oAttribute.TabOrder                    := 0,
+   AssignEvent(oAttribute, 'OnChange', 'cmb_AttributeChange'),
+
+   // Button zum Zurücksetzen des Filters
+   oClear := CreateObject('TBeSpeedButton', UniqueControlName('btn_ClearFilterRow'), oOwner, oRow),
+   oClear.Caption                := '',
+   oClear.Hint                   := 'Filter leeren',
+   oClear.ShowHint               := True,
+   oClear.ImageIndex.IndexNormal := 745,
+   oClear.Align                  := alRight,
+   oClear.AlignWithMargins       := True,
+   oClear.Margins.Right          := 3,
+   oClear.Margins.Top            := 3,
+   oClear.Margins.Bottom         := 0,
+   oClear.Height                 := 22,
+   oClear.Width                  := 22,
+   oClear.Enabled                := False,
+   AssignEvent(oClear, 'OnClick', 'btn_ClearFilterRowClick'),
+
+   Result                      := Dim(7),
+   Result[FILTER_ROW_ID]       := nRowId,
+   Result[FILTER_ROW_DATATYPE] := 0,
+   Result[FILTER_ROW_PARENT]   := oRow,
+   Result[FILTER_ROW_ATTRIB]   := oAttribute,
+   Result[FILTER_ROW_OPERATOR] := oOperator,
+   Result[FILTER_ROW_VALUE]    := nil,
+   Result[FILTER_ROW_CLEAR]    := oClear,
+end,
+
+//******************************************************************************
+// Filter-Benutzeroberfläche zerstören, falls vorhanden
+// @Result: null
+//******************************************************************************
+function FilterInterface_Destroy(oFilterInterfacePanel, aFilterInterface:R, nLastFilterRowId:R)
+   if not Empty(oFilterInterfacePanel) then
+      DestroyObject(oFilterInterfacePanel),
+      oFilterInterfacePanel := nil,
+      nLastFilterRowId      := 0,
+      aFilterInterface      := {},
+   endif,
+end,
+
+//******************************************************************************
+// Filter-Benutzeroberfläche zerstören, falls vorhanden
+// @Result: null
+//******************************************************************************
+function FilterInterface_ToggleFilterRowEnabled(aFilterInterface:R, nRowIndex, bEnable, aSLMemo:R)
+| oAttrib, oOperator, oValue, oClear |
+   oAttrib   := aFilterInterface[nRowIndex, FILTER_ROW_ATTRIB],
+   oOperator := aFilterInterface[nRowIndex, FILTER_ROW_OPERATOR],
+   oValue    := aFilterInterface[nRowIndex, FILTER_ROW_VALUE],
+   oClear    := aFilterInterface[nRowIndex, FILTER_ROW_CLEAR],
+   if oValue <> nil then
+      DestroyObject(oValue),
+      aFilterInterface[nRowIndex, FILTER_ROW_VALUE] := nil,
+   endif,
+
+   oAttrib.ReadOnly   := not bEnable,
+   oOperator.ReadOnly := not bEnable,
+   oClear.Enabled     := bEnable,
+   InitFilterRowControls(oAttrib, oOperator, aSLMemo),
+end,
+
+//******************************************************************************
+// Filter-Benutzeroberfläche zerstören, falls vorhanden
+// @Result: null
+//******************************************************************************
+function FilterInterface_ToggleFilterRowsEnabled(aFilterInterface:R, bEnable, aSLMemo:R)
+| i |
+   for i := 1 to ALen(aFilterInterface) do
+      FilterInterface_ToggleFilterRowEnabled(aFilterInterface, i, bEnable, aSLMemo),
+   next,
+end,
+
+//******************************************************************************
+// Filter-Benutzeroberfläche zerstören, falls vorhanden
+// @Result: null
+//******************************************************************************
+function FilterInterface_AddFilterRow(oFilterInterfacePanel, aFilterInterface:R, nFilterRowLastId, bEnable, aSLMemo:R)
+| aFilterRow, nRowIndex |
+   SetErrorIf(Empty(oFilterInterfacePanel), 'Filter-Interface existiert nicht!'),
+
+   nFilterRowLastId++,
+   aFilterRow := CreateFilterRow(oFilterInterfacePanel, nFilterRowLastId),
+   nRowIndex  := AAdd(aFilterInterface, aFilterRow),
+   FilterInterface_ToggleFilterRowEnabled(aFilterInterface, nRowIndex, bEnable, aSLMemo),
+   Result := nFilterRowLastId,
+end,
+
+//******************************************************************************
+// Filter-Zeile entfernen
+// @Result: null
+//******************************************************************************
+function FilterInterface_DeleteFilterRow(aFilterInterface:R, nRowIndex)
+| oParent |
+   oParent := aFilterInterface[nRowIndex, FILTER_ROW_PARENT],
+   DestroyObject(oParent),
+   ADelete(aFilterInterface, nRowIndex),
+end,
+
+//******************************************************************************
+// Filter-Zeile zurücksetzen
+// @Result: null
+//******************************************************************************
+function FilterInterface_ClearFilterRow(aFilterInterface:R, nRowIndex)
+| oAttribute, oOperator, oValue |
+   oAttribute := aFilterInterface[nRowIndex, FILTER_ROW_ATTRIB],
+   oOperator  := aFilterInterface[nRowIndex, FILTER_ROW_OPERATOR],
+   oValue     := aFilterInterface[nRowIndex, FILTER_ROW_VALUE],
+
+   oAttribute.Value  := '',
+   oOperator.Value   := '',
+   oOperator.Visible := True,
+   if not Empty(oValue) then
+      DestroyObject(oValue),
+      aFilterInterface[nRowIndex, FILTER_ROW_VALUE] := nil,
+   endif,
+   aFilterInterface[nRowIndex, FILTER_ROW_DATATYPE] := 0,
+end,
+
+//******************************************************************************
+// Alle Filter zurücksetzen
+// @Result: null
+//******************************************************************************
+function FilterInterface_ClearFilterRows(aFilterInterface:R)
+| i |
+   for i := 1 to ALen(aFilterInterface) do
+      FilterInterface_ClearFilterRow(aFilterInterface, i),
+   next,
+end,
+
+//******************************************************************************
+// Filter-Row-Index mithilfe der Row-ID ermitteln
+// @Result: integer
+//******************************************************************************
+function FilterInterface_GetFilterRowIndex(aFilterInterface:R, nRowId)
+| nLen, i |
+   Result := 0,
+   nLen   := ALen(aFilterInterface),
+   for i := 1 to nLen do
+      if aFilterInterface[i, FILTER_ROW_ID] = nRowId then
+         Result := i,
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Filter-Benutzeroberfläche auf Basis der gewählten Sachmerkmalleiste erstellen
+// @Result: object, Das FilterInterface-Panel, auf dem sich alle Filter befinden
+//******************************************************************************
+function FilterInterface_Create(cFilterInterfaceName, oOwner, oParent, aFilterInterface:R, aEnable, aSLMemo:R, aDefaultFilters:R, nLastFilterRowId:R)
+|
+   nLen, i, oAttrib, oOperator, oValue, oRowAdd, oButtonAdd, nTotalFilterRows,
+   nVIndex
+|
+   // Falls pnl_FilterInterface bereits existiert:
+   // -> Zerstören und neu erzeugen
+   //FilterInterface_Destroy(),
+
+   Result            := CreateObject('TBePanel', cFilterInterfaceName, oOwner, oParent),
+   Result.Align      := alClient,
+   Result.Caption    := '',
+   Result.BevelOuter := bvNone,
+
+   nLastFilterRowId := 0,
+
+   nLen             := ALen(aDefaultFilters),
+   nTotalFilterRows := Max(m_nDefaultFilterCount, nLen),
+   for i := 1 to nTotalFilterRows do
+      nLastFilterRowId := FilterInterface_AddFilterRow(Result, aFilterInterface, nLastFilterRowId, aEnable, aSLMemo),
+      if i <= nLen then
+         startseq
+            // Möglicherweise wurde statt einem V-Index der Merkmalsschlüssel
+            //  angegeben -> V-Index ermitteln
+            nVIndex := SML_SLMEMO_GetVIndexByAmbiguousParameter_Internal(aDefaultFilters[i, 1]),
+         onerror
+            // Fehler "Merkmal-Schlüssel <...> kann keinem Merkmal zugeordnet
+            //  werden" abfangen und ignorieren.
+            // Der Filter wird dann mit V-Index = 0 einfach übersprungen.
+            nVIndex := 0,
+         stopseq,
+         // Bevor eine Filterzeile für diesen Filter vorbelegt wird muss
+         //  sichergestellt werden, dass der V-Index auf den sich der Filter
+         //  bezieht im SL_MEMO-Array vorkommt. -> Ansonsten Filter überspringen
+         if SML_SLMEMO_FindAttribute(aSLMemo, nVIndex) <> -1 then
+            // Filterzeile vorbelegen
+            oAttrib         := aFilterInterface[nLastFilterRowId, FILTER_ROW_ATTRIB],
+            oOperator       := aFilterInterface[nLastFilterRowId, FILTER_ROW_OPERATOR],
+            oAttrib.Value   := nVIndex,
+            oOperator.Value := aDefaultFilters[i, 2],
+            oValue          := aFilterInterface[nLastFilterRowId, FILTER_ROW_VALUE],
+            SML_GUI_SetControlValueByDataType(oValue, aFilterInterface[nLastFilterRowId, FILTER_ROW_DATATYPE], aDefaultFilters[i, 3]),
+         endif,
+      endif,
+   next,
+
+   // Button zum Hinzufügen neuer Filter erzeugen
+   oRowAdd                     := CreateObject('TBePanel', 'pnl_AddRow', Result, Result),
+   oRowAdd.Align               := alTop,
+   oRowAdd.Height              := 24,
+   oRowAdd.Caption             := '',
+   oRowAdd.BevelOuter          := bvNone,
+   oRowAdd.Top                 := (nLastFilterRowId + 1) * oRowAdd.Height,
+   oButtonAdd                  := CreateObject('TBeSpeedButton', 'btn_AddFilter', oRowAdd, oRowAdd),
+   oButtonAdd.Action           := A_AddFilter,
+   oButtonAdd.ShowHint         := True,
+   oButtonAdd.Align            := alRight,
+   oButtonAdd.AlignWithMargins := True,
+   oButtonAdd.Margins.Right    := 3,
+   oButtonAdd.Margins.Top      := 3,
+   oButtonAdd.Margins.Bottom   := 0,
+   oButtonAdd.Height           := 22,
+   oButtonAdd.Width            := 22,
+   oButtonAdd.Caption          := '',
+end,
+
+//******************************************************************************
+// Zeilen-Index aus dem Namen eines Controls extrahieren
+// @Result: integer
+//******************************************************************************
+function FilterInterface_ExtractRowIndexFromControlName(aFilterInterface:R, cControlName)
+| nPos |
+   startseq
+      nPos   := RAt('_', cControlName),
+      Result := Val(SubStr(cControlName, nPos + 1, Len(cControlName) - nPos)),
+      Result := FilterInterface_GetFilterRowIndex(aFilterInterface, Result),
+   onerror
+      Result := -1,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bSMLIsSet, bUsageIsSet |
+   bUsageIsSet := not Empty(AllTrim(cmb_Usage.Value)),
+   bSMLIsSet   := not Empty(AllTrim(cmb_SML.Value)),
+end,
+
+//******************************************************************************
+// Ermitteln einer Liste aller Merkmale, die in der Merkmalsverwaltung
+//  definiert sind.
+// Diese Liste ist für die Sachmerkmalleisten-übergreifende Suche notwendig. 
+//
+// @Result: array, Array im SL_MEMO-Format
+//******************************************************************************
+function CollectAllComprehensiveAttributes()
+| oSMLMKM, aRecord |
+
+   Result := {},
+
+   oSMLMKM := BeOpen(waSMLMKM, 'ID', True),
+   startseq
+      while not oSMLMKM.CbEof do
+         aRecord := Dim(gl_SML_SLMemoRecordItemCount),
+         // SL_MEMO Standard-Elemente
+         aRecord[1] := nil,
+         aRecord[2] := 0,
+         // Werte aus der SMLMKM übernehmen
+         aRecord[gl_SML_SLMemoRowType]     := oSMLMKM:MERKM_TYP,
+         aRecord[gl_SML_SLMemoDataType]    := oSMLMKM:DATEN_TYP,
+         aRecord[gl_SML_SLMemoLabel]       := oSMLMKM:BEZ,
+         aRecord[gl_SML_SLMemoValue]       := oSMLMKM:VORGABE,
+         aRecord[gl_SML_SLMemoFormat]      := oSMLMKM:FORMAT,
+         aRecord[gl_SML_SLMemoCalcBlock]   := oSMLMKM:CODEBLOCK,
+         aRecord[gl_SML_SLMemoFieldSize]   := oSMLMKM:GROESSE,
+         aRecord[gl_SML_SLMemoVIndex]      := oSMLMKM:V_INDEX,
+         aRecord[gl_SML_SLMemoAttribTable] := oSMLMKM:MMT,
+         aRecord[gl_SML_SLMemoPrint]       := oSMLMKM:DRUCKEN,
+
+         AAdd(Result, aRecord),
+         oSMLMKM.CbNext(),
+      end,
+   always
+      BeClose(oSMLMKM),
+   stopseq,
+end,
+
+//******************************************************************************
+// Übergabeparameter verarbeiten
+// Wird verwendet, wenn das Programm mit einer GFU_*_CustomInfo()-Funktion auf-
+// gerufen wird.
+// Dabei wird Paramter 4 (P4) für die Übergabe der Parameter als Array genutzt.
+//
+// @Result: null
+//******************************************************************************
+function ParseParams()
+|
+   nLen, i, aParam,
+   PARAM_WORKAREA,
+   PARAM_SMLID,
+   PARAM_ATTRIBFILTERS,
+   PARAM_FILTERCOUNT
+|
+   PARAM_WORKAREA      :='WORKAREA',
+   PARAM_SMLID         :='SML_ID',
+   PARAM_ATTRIBFILTERS :='ATTRIB_FILTERS',
+   PARAM_FILTERCOUNT   :='FILTER_COUNT',
+
+   // Default-Werte initialisieren
+   m_nDefaultWorkarea      := 0,
+   m_nDefaultSMLId         := 0,
+   m_aDefaultAttribFilters := {},
+   m_nDefaultFilterCount   := 3,
+
+   // Test-Filter (Sachmerkmalleisten spezifische Filter)
+//   m_aParams := {
+//      {'WORKAREA', waDab010},
+//      {'SML_ID',   12},
+//      {'ATTRIB_FILTERS', {
+//         {'2', '>',  '80'},
+//         {'5', '>=', '226,0254'},
+//         {'3', '=',  'True'}
+//      }},
+//      {'FILTER_COUNT', 10}
+//   },
+
+   // Test-Filter (Sachmerkmalleisten übergreifende Filter)
+//   m_aParams := {
+//      {'WORKAREA', waDab010},
+//      {'ATTRIB_FILTERS', {
+//         {'TEST-ZAHL',    '>', '80'},
+//         {'TEST-LOGISCH', '=', True}
+//      }}
+//   },
+
+   if not Empty(m_oMasterTable) then
+      m_nDefaultWorkarea := m_oMasterTable.Workarea,
+   endif,
+
+   // Nur Arrays als Parameter zulassen
+   if not ValType(m_aParams) = 'A' then
+      Exit,
+   endif,
+
+   nLen := ALen(m_aParams),
+   for i := 1 to nLen do
+      if ValType(m_aParams[i]) = 'A' and ALen(m_aParams[i]) = 2 then
+         aParam := m_aParams[i],
+         case aParam[1]
+            of PARAM_WORKAREA      :: m_nDefaultWorkarea      := aParam[2],
+            of PARAM_SMLID         :: m_nDefaultSMLId         := aParam[2],
+            of PARAM_ATTRIBFILTERS :: m_aDefaultAttribFilters := aParam[2],
+            of PARAM_FILTERCOUNT   :: m_nDefaultFilterCount   := aParam[2],
+            otherwise
+         endcase,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Setzen der aktuellen Haupt-Workarea
+// @Result: null
+//******************************************************************************
+function InitMainWorkarea(nMainWorkarea)
+| oTableInfo, oQuery, aComboItems |
+   m_nMainWorkarea       := nMainWorkarea,
+   aComboItems           := {},
+   oTableInfo            := GetTableInfo(m_nMainWorkarea),
+   m_cMainAlias          := iif(Empty(oTableInfo), 'SML_SEARCH', oTableInfo.TableDef.AliasName),
+   m_bUseArticleNoFilter := nMainWorkarea = waDab010 and gl_SML_SearchGUI_UseArticleNoSearchForDab010,
+   oQuery                := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := SQL_StatementSelect(waSmlSTM, 'ID, BEZ, NUMMER') +
+                    ' WHERE VERWEND_WA = ' + Str(m_nMainWorkarea) + ' AND SICHT_SUCH',
+      oQuery.Active := True,
+      DbGoTop(oQuery),
+      while not Eof(oQuery) do
+         AAdd(
+            aComboItems,
+            iif(Empty(AllTrim(oQuery:NUMMER)), '', AllTrim(oQuery:NUMMER) + ' - ') + AllTrim(oQuery:BEZ) + Chr(9) +
+            Str(oQuery:ID)
+         ),
+         DbSkip(1, oQuery),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_SML.Items := aComboItems,
+end,
+
+//******************************************************************************
+// Einstellungen laden
+// @Result: null
+//******************************************************************************
+function LoadSettings()
+| cSettings, aSettings |
+   startseq
+      cSettings := GetBeParam('SMLSUCHE'),
+      if not Empty(cSettings) then
+         aSettings := StrToArr(cSettings),
+         if ALen(aSettings) > 0 then
+            m_bAutomaticSearch          := aSettings[1],
+            chk_AutomaticSearch.Checked := m_bAutomaticSearch,
+         endif,
+         if ALen(aSettings) > 1 then
+            GU_TBePanel_SetSplitterData(pnl_Filters, aSettings[2]),
+         endif,
+         if ALen(aSettings) > 2 then
+            GU_TBePanel_SetSplitterData(pnl_SMLInfo, aSettings[3]),
+         endif,
+      endif,
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//******************************************************************************
+// Einstellungen speichern
+// @Result: null
+//******************************************************************************
+function SaveSettings()
+| aSettings |
+   startseq
+      aSettings := {
+         m_bAutomaticSearch,
+         GU_TBePanel_GetSplitterData(pnl_Filters),
+         GU_TBePanel_GetSplitterData(pnl_SMLInfo)
+      },
+      SetBeParam('SMLSUCHE', ArrToStr(aSettings)),
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: OnChange (generisches Event für dynamisch erzeugte Filter-Value
+//                  Controls)
+//******************************************************************************
+function FilterRowValueControl_OnChange( Sender )
+   if not Empty(SML_GUI_GetControlValue(Sender)) then
+      AutomaticSearchExecute(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: OnClick (generisches Event für dynamisch erzeugte Filter-Value
+//                 Checkboxen)
+//******************************************************************************
+function FilterRowValueControl_OnClick( Sender )
+   if Sender.Checked then
+      Sender.Caption := 'ist gesetzt',
+   else
+      Sender.Caption := 'ist NICHT gesetzt',
+   endif,
+
+   AutomaticSearchExecute(),
+end,
+
+//******************************************************************************
+// Event: OnChange (generisches Event für dynamisch erzeugte Merkmal-Combos)
+//******************************************************************************
+function cmb_AttributeChange( Sender )
+| nRowIndex, nVIndex, nSLMemoIndex |
+   if not Empty(AllTrim(Sender.Value)) then
+      nVIndex := Val(Sender.Value),
+      if nVIndex > 0 then
+         nRowIndex    := FilterInterface_ExtractRowIndexFromControlName(m_aFilterRows, Sender.Name),
+         nSLMemoIndex := SML_SLMEMO_FindAttribute(m_aSLMemo, nVIndex),
+         m_aFilterRows[nRowIndex, FILTER_ROW_DATATYPE] := m_aSLMemo[nSLMemoIndex, gl_SML_SLMemoDataType],
+         InitFilterRowValueControl(m_aFilterRows, m_aSLMemo, nRowIndex, nVIndex),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Filter-Zeile löschen (generisch für dynamisch erzeugte Lösch-Buttons)
+//******************************************************************************
+function btn_DeleteFilterRowClick( Sender )
+| nRowIndex |
+   nRowIndex := FilterInterface_ExtractRowIndexFromControlName(m_aFilterRows, Sender.Name),
+   SetParent(Sender, oForm),
+   FilterInterface_DeleteFilterRow(m_aFilterRows, nRowIndex),
+   DestroyObject(Sender),
+end,
+
+//******************************************************************************
+// Event: Filter-Zeile zurücksetzen (generisch für dynamisch erzeugte Lösch-Buttons)
+//******************************************************************************
+function btn_ClearFilterRowClick( Sender )
+| nRowIndex |
+   nRowIndex := FilterInterface_ExtractRowIndexFromControlName(m_aFilterRows, Sender.Name),
+   FilterInterface_ClearFilterRow(m_aFilterRows, nRowIndex),
+
+   AutomaticSearchExecute(),
+end,
+
+//******************************************************************************
+// Event: OnChange (cmb_SML)
+//******************************************************************************
+function cmb_SMLChange( Sender )
+| cSLMemo |
+   m_nSMLId := iif(Empty(AllTrim(cmb_SML.Value)), 0, Val(cmb_SML.Value)),
+   m_bComprehensiveSearch := m_nSMLId = 0,
+   if m_bComprehensiveSearch then
+      // Suche ist jetzt SML übergreifend
+      m_aSLMemo := CollectAllComprehensiveAttributes(),
+   else
+      // Suche ist nun SML spezifisch
+      cSLMemo := Lookup(waSmlSTM, 'ID', {{m_nSMLId}}, 'SL_MEMO', nil),
+      SetErrorIf(cSLMemo = nil, 'Sachmerkmalleiste mit ID ' + Str(m_nSMLId) + ' existiert nicht!'),
+      m_aSLMemo := StrToArr(cSLMemo),
+   endif,
+
+   // Merkmals-Filter aktivieren
+   FilterInterface_ToggleFilterRowsEnabled(m_aFilterRows, True, m_aSLMemo),
+
+   ActionsEnabled(),
+   SearchExecute(),
+end,
+
+//******************************************************************************
+// Event: Bei Klick auf die Checkbox "immer automatisch Suchen"
+//******************************************************************************
+function chk_AutomaticSearchClick( Sender )
+   m_bAutomaticSearch := Sender.Checked,
+end,
+
+//******************************************************************************
+// Event: OnChange (cmb_Usage)
+//******************************************************************************
+function cmb_UsageChange( Sender )
+| cNewBrowserID |
+   cmb_SML.Value := '',
+   FilterInterface_ClearFilterRows(m_aFilterRows),
+   if Empty(AllTrim(cmb_Usage.Value)) then
+      cmb_Usage.Value := Str(m_nDefaultWorkarea),
+      MessageDlg('Verwendung darf nicht leer sein!', mtError),
+   else
+      InitMainWorkarea(Val(cmb_Usage.Value)),
+      SearchExecute(),
+   endif,
+
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: OnScroll_Update
+//******************************************************************************
+function ds_MainScroll_Update( Sender )
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Key-Press im Browser
+//******************************************************************************
+function grd_MainKeyPress( Sender, aKey )
+   case Asc(aKey)
+      // Enter => Fenster mit Auswahl schließen
+      of 13 ::
+         m_bRecordSelectedByUser := True,
+         CloseForm(oForm),
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Browser
+//******************************************************************************
+function grd_MainDblClick( Sender )
+   m_bRecordSelectedByUser := True,
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender )
+| oField |
+   if m_bRecordSelectedByUser then
+      oField := DbField(m_cSelectField, m_oQuery),
+      if not Empty(oField) then
+         m_nSelectedRecord := AsVariant(m_cSelectField, m_oQuery),
+      else
+         SetError('Das Rückgabe-Feld ' + m_cSelectField + ' wurde nicht gefunden (Workarea ' + Str(m_nWorkArea) + ')'),
+      endif,
+   else
+      m_nSelectedRecord := -1,
+   endif,
+
+   startseq
+      SaveSettings(),
+   onerror
+      // Fehler beim Speichern der Einstellungen ignorieren, damit das Fenster
+      // geschlossen werden kann!
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Key-Press im Such-Eingabefeld
+//******************************************************************************
+function edt_SearchTextKeyPress( Sender, aKey )
+   case Asc(aKey)
+     // ESC => Fenster schließen, wenn Suchtext leer (erstes Mal ESC drücken macht den Suchtext ggf. erst leer)
+     of 27 ::
+        if Empty(edt_SearchText.Text) then
+           m_bRecordSelectedByUser := False,
+           CloseForm(oForm),
+        endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Beim Auslösen der Suche
+//******************************************************************************
+function edt_SearchTextSearchExecute( Sender )
+   // Bei Dab010 und aktiviertem gl_SML_SearchGUI_UseArticleNoSearchForDab010
+   // Flag -> Artikelnummer-Suche statt Volltextsuche verwenden
+   if m_bUseArticleNoFilter then
+      SearchExecute(),
+   else
+      FTSExecute(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Sachmerkmalleisten-Filter zurücksetzen
+//******************************************************************************
+function A_ClearSMLExecute( Sender )
+   cmb_SML.Value := '',
+end,
+
+//******************************************************************************
+// Action: Filter-Zeile hinzufügen
+//******************************************************************************
+function A_AddFilterExecute( Sender )
+   m_nLastFilterRowId := FilterInterface_AddFilterRow(
+      m_oFilterInterfacePanel,
+      m_aFilterRows,
+      m_nLastFilterRowId,
+      ALen(m_aSLMemo) > 0,
+      m_aSLMemo
+   ),
+end,
+
+//******************************************************************************
+// Action: Suche auslösen
+//******************************************************************************
+function A_SearchExecute( Sender )
+   SearchExecute(),
+end,
+
+//******************************************************************************
+// Action: Fenster ohne Selektion schließen
+//******************************************************************************
+function A_CloseExecute( Sender )
+   m_bRecordSelectedByUser := False,
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Datenatz auswählen, Fenster schließen
+//******************************************************************************
+function A_SelectExecute( Sender )
+   m_bRecordSelectedByUser := True,
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      oForm               := LoadForm("@SMLSUCHE", Application),
+      A_AddFilter         := FindObject(oForm, "A_AddFilter"),
+      A_ClearSML          := FindObject(oForm, "A_ClearSML"),
+      A_Close             := FindObject(oForm, "A_Close"),
+      A_Search            := FindObject(oForm, "A_Search"),
+      A_Select            := FindObject(oForm, "A_Select"),
+      Actions             := FindObject(oForm, "Actions"),
+      btn_ClearSML        := FindObject(oForm, "btn_ClearSML"),
+      btn_Close           := FindObject(oForm, "btn_Close"),
+      btn_Search          := FindObject(oForm, "btn_Search"),
+      btn_Select          := FindObject(oForm, "btn_Select"),
+      chk_AutomaticSearch := FindObject(oForm, "chk_AutomaticSearch"),
+      cmb_SML             := FindObject(oForm, "cmb_SML"),
+      cmb_Usage           := FindObject(oForm, "cmb_Usage"),
+      ds_Main             := FindObject(oForm, "ds_Main"),
+      edt_SearchText      := FindObject(oForm, "edt_SearchText"),
+      grd_Main            := FindObject(oForm, "grd_Main"),
+      ipnl_Filter         := FindObject(oForm, "ipnl_Filter"),
+      pnl_Bottom          := FindObject(oForm, "pnl_Bottom"),
+      pnl_FilterRows      := FindObject(oForm, "pnl_FilterRows"),
+      pnl_Filters         := FindObject(oForm, "pnl_Filters"),
+      pnl_Main            := FindObject(oForm, "pnl_Main"),
+      pnl_SMLCombo        := FindObject(oForm, "pnl_SMLCombo"),
+      pnl_SMLInfo         := FindObject(oForm, "pnl_SMLInfo"),
+      pnl_Top             := FindObject(oForm, "pnl_Top"),
+      pnl_UsageCombo      := FindObject(oForm, "pnl_UsageCombo"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.KeyPreview            := True, // damit ESC beim Formular ankommt
+      edt_SearchText.Text         := '',
+      m_bRecordSelectedByUser     := False, // zeigt an, ob das Fenster mit Auswahl geschlossen wurde
+      m_nSelectedRecord           := -1,
+      m_cContainsFilter           := '',
+      oForm.ActiveControl         := edt_SearchText,
+      oForm.Width                 := 800,
+      oForm.Constraints.MinWidth  := 350,
+      oForm.Constraints.MinHeight := 300,
+      oForm.PositionSaveId        := m_cPositionSaveId,
+
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading GUI' + CRLF + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Zusätzliche Oberflächen-Controls erzeugen
+// @Result: null
+//******************************************************************************
+function CreateAdditionalControls()
+   pnl_SMLView := CreateObject('TVarCalcPanel', 'pnl_SMLView', oForm, pnl_SMLInfo),
+   pnl_SMLView.Align                 := alClient,
+   pnl_SMLView.AlignWithMargins      := True,
+   pnl_SMLView.BevelOuter            := bvNone,
+   pnl_SMLView.ReadOnly              := True,
+   pnl_SMLView.FormVarCalc.Font.Name := 'Segoe UI',
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID    := m_cPositionSaveID,
+   oForm.OrigCapt          := 'Merkmale suchen',
+   pnl_SMLView.Caption     := '',
+   cmb_Usage.Font.Style    := fsBold,
+   cmb_Usage.BeAttributeID := 99,
+   cmb_SML.Font.Style      := fsBold,
+   cmb_SML.AutoDropDown    := True,
+   btn_ClearSML.Caption    := '',
+
+   // Sortierung im Grid per Spalten-Klick aktivieren
+   grd_Main.CbChangeOrder := True,
+
+   // Sachmerkmalleisten übergreifende Suche, nur wenn keine Sachmerkmalleiste
+   //  gewählt ist.
+   m_bComprehensiveSearch := ALen(m_aSLMemo) = 0,
+   // Automatische Suche per Default aktiv
+   m_bAutomaticSearch     := True,
+   m_nLastWorkarea        := 0,
+   // 200ms Scroll-Delay für Datenbrowser, damit das TVarCalcPanel nicht bei
+   // jedem Datensatz wechsel aktualisiert werden muss.
+   ds_Main.ScrollDelay := 200,
+
+   if Empty(m_nDefaultWorkarea) then
+      // Wenn Workarea nicht vorbelegt wurde -> per Default Artikel-Stamm
+      // verwenden.
+      m_nDefaultWorkarea := waDab010,
+   else
+      // Combobox ausblenden, weil die Workarea beim Aufruf vorbelegt wurde.
+      // HINWEIS: Im Editor-Modus wird die Combobox für Debugging-Zwecke nicht
+      //          ausgeblendet.
+      if not EditorMode() then
+         // Visible Status des Panels umstellen
+         pnl_UsageCombo.Visible := False,
+      endif,
+   endif,
+
+   m_nWorkArea     := m_nDefaultWorkarea,
+   cmb_Usage.Value := Str(m_nDefaultWorkarea),
+   if not Empty(m_nDefaultSMLId) then
+      cmb_SML.Value := Str(m_nDefaultSMLId),
+   endif,
+
+   if m_bUseArticleNoFilter then
+      edt_SearchText.CharCase := 1, // Eingabe in Upper-Case darstellen
+      edt_SearchText.TextHintProperties.TextHint := 'Suche Artikelnummer'
+   endif,
+
+   // Sachmerkmalleisten übergreifende Suche berücksichtigen
+   if m_bComprehensiveSearch then
+      // Liste aller allgemeinen Merkmale als SL_MEMO-Array erstellen
+      m_aSLMemo := CollectAllComprehensiveAttributes(),
+      FilterInterface_ToggleFilterRowsEnabled(m_aFilterRows, True, m_aSLMemo),
+   endif,
+
+   // Filter-Benuteroberfläche erzeugen und Filter ggf. vorbelegen
+   m_oFilterInterfacePanel := FilterInterface_Create(
+      'pnl_FilterInterface',
+      oForm,
+      pnl_FilterRows,
+      m_aFilterRows,
+      True, // Filter-Interface standardmäßig bedienbar machen, da auch
+            // Sachmerkmalleisten übergreifend gesucht werden kann.
+      m_aSLMemo,
+      m_aDefaultAttribFilters,
+      m_nLastFilterRowId
+   ),
+
+   LoadSettings(),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   oForm.OrigCapt := 'Merkmale suchen',
+   ShowModal(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aFilterRows := {},
+m_aSLMemo     := {},
+startseq
+   ParseParams(),
+   LoadGUI(),
+   CreateAdditionalControls(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+m_nSelectedRecord
+

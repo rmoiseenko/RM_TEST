@@ -1,0 +1,260 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_cFormClassID, m_cWinPosSaveId, m_nLastTableState,
+  m_oDM,
+
+  m_bActive, m_oPGKSYA, m_cSyncJobsBrowserID,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ReactivateJob, actions, BeBarButton1, BeBarDockControl1,
+   BeBarManager1, BeBarManager1Bar1, ds_sync, edt_errorlog, grd_aufgaben,
+   info_main, lbl_Aufgaben, lbl_errorlog, lbl_Interval, lbl_IntervalValue,
+   lbl_OK, lbl_StatusCaption, pnl_ErrorLog, pnl_SyncJobs, pnl_TopInfo,
+   TimerKapaBatch
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID       := "@TIMEKAPA",
+m_cWinPosSaveId      := "@TIMEKAPA",
+m_cSyncJobsBrowserID := '@PGKU_TI',  // Achtung: Identisch mit Browser in der "AdminGUI"
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bHasData, bJobNotActive |
+   bHasData                := not empty(m_oPGKSYA) and not NoDs(m_oPGKSYA),
+   bJobNotActive           := bHasData and not m_oPGKSYA:BEARBEITEN,
+
+
+   A_ReactivateJob.Enabled := bJobNotActive,
+end,
+
+
+//******************************************************************************
+//  Diese Funktion startet das Batch-Programm, welches die PGKSYA abarbeitet
+//******************************************************************************
+function TimerKapaBatchTimer( Sender )
+   | aRes, cStartDate |
+   if not m_bActive then
+      m_bActive:=true,
+      startseq,
+         // hier könnte man noch eine globale Variable true setzen, die aussagt, daß der Timer gerade läuft
+         cStartDate           := DtoS(Now()) + ' ' + Time(),
+
+         if gl_PGKU_LoggingActive then
+            PGKU_Logging_LogToNewFileAndClose('-- CALL START', ''),
+         endif,
+         aRes                 := Call("Produktion\Kapazitaetsauswertung Grobplanung\BatchPGKSYA"),
+         if gl_PGKU_LoggingActive then
+            PGKU_Logging_LogToNewFileAndClose('-- CALL END', ''),
+         endif,
+
+         dbrefresh(m_oPGKSYA),
+
+         // hier würde man dann die globale Variable wieder false setzen
+         lbl_OK.Caption       := aRes[2] + ' letzter Start: ' + cStartDate,
+         if aRes[1] = true then
+            lbl_OK.font.color := clGreen,
+         else
+            lbl_OK.font.color := clRed,
+            edt_errorlog.text := cStartDate + ' ' + aRes[2] + crlf + RtfToText(edt_errorlog.text),
+         endif,
+      stopseq,
+      m_bActive:=false,
+   endif,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   m_oDM     := CreateObject('TBeDbGet', '', oForm),
+   m_oPGKSYA                    := DbGetTable(m_oDM, waPGKSYA),
+   m_oPGKSYA.IndexName          := 'FEHLER_ANZ_ID',
+   //GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, waDab010, 'TBeRightsTable'),
+   ds_sync.DataSet              := m_oPGKSYA,
+   grd_aufgaben.DataSource      := ds_sync,
+   grd_aufgaben.RegisterDataSet := m_oPGKSYA,
+   grd_aufgaben.ReadWriteProps  := false,
+   grd_aufgaben.ID              := m_cSyncJobsBrowserID,
+
+   m_bActive               := false,
+   TimerKapaBatch.Interval := 5000, // Millisekunden
+   TimerKapaBatch.enabled  := true,
+   lbl_OK.Caption          := 'Batchlauf gestartet',
+
+   lbl_IntervalValue.Caption := FormatStd(TimerKapaBatch.Interval / 1000, 2) + ' sek',
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_syncScroll_Update( Sender )
+   ActionsEnabled()
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := DbState(m_oPGKSYA) = dsBrowse,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   TimerKapaBatch.enabled  := false,
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Aufgabe "reaktivieren"
+//******************************************************************************
+function A_ReactivateJobExecute( Sender )
+   startseq
+      MyEdit(m_oPGKSYA),
+      m_oPGKSYA:BEARBEITEN :=  true,
+      MyPost(m_oPGKSYA),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Reaktivieren der Aufgabe.', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := ProgName(),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ReactivateJob   := FindObject(oForm, "A_ReactivateJob"),
+   actions           := FindObject(oForm, "actions"),
+   BeBarButton1      := FindObject(oForm, "BeBarButton1"),
+   BeBarDockControl1 := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager1     := FindObject(oForm, "BeBarManager1"),
+   BeBarManager1Bar1 := FindObject(oForm, "BeBarManager1Bar1"),
+   ds_sync           := FindObject(oForm, "ds_sync"),
+   edt_errorlog      := FindObject(oForm, "edt_errorlog"),
+   grd_aufgaben      := FindObject(oForm, "grd_aufgaben"),
+   info_main         := FindObject(oForm, "info_main"),
+   lbl_Aufgaben      := FindObject(oForm, "lbl_Aufgaben"),
+   lbl_errorlog      := FindObject(oForm, "lbl_errorlog"),
+   lbl_Interval      := FindObject(oForm, "lbl_Interval"),
+   lbl_IntervalValue := FindObject(oForm, "lbl_IntervalValue"),
+   lbl_OK            := FindObject(oForm, "lbl_OK"),
+   lbl_StatusCaption := FindObject(oForm, "lbl_StatusCaption"),
+   pnl_ErrorLog      := FindObject(oForm, "pnl_ErrorLog"),
+   pnl_SyncJobs      := FindObject(oForm, "pnl_SyncJobs"),
+   pnl_TopInfo       := FindObject(oForm, "pnl_TopInfo"),
+   TimerKapaBatch    := FindObject(oForm, "TimerKapaBatch"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   oForm.ImageIndex := 332,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   if gl_PGKU_LoggingActive then
+      ForceDirectories(PGKU_Logging_GetPath()),
+      PGKU_Logging_LogToNewFileAndClose('TIMER GUI START', ''),
+   endif,
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+
+   DestroyObject(oForm),
+   if gl_PGKU_LoggingActive then
+      PGKU_Logging_LogToNewFileAndClose('TIMER GUI END', ''),
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+

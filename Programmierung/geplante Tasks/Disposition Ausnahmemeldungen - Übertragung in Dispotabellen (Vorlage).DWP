@@ -1,0 +1,76 @@
+//##############################################################################
+//##############################################################################
+//
+// Vorlage für einen regelmäßigen Task zur Übertragung von
+//    "Disposition Ausnahmemeldungen" in die Dispotabellen
+//
+//    => Programm gehört zum Package "Ausnahmemeldungen.BCP"
+//
+//##############################################################################
+//##############################################################################
+
+| m_oDM, nTime |
+
+//******************************************************************************
+// Funktion stößt die Übertragung von Ausnahmemeldungen von der KdnDAM in die
+//   Tabellen der Dispositionsplanung an
+// @Result: null
+//******************************************************************************
+function DAMU_Task_TransferFromKdnDAMToDispoTables(oDM)
+  | cOnlyArtnr, cOnlyProdAbt |
+
+   cOnlyArtnr   := '', // Einschränkung auf Artikel-Nr. ?
+   cOnlyProdAbt := '', // Einschränkung auf eine Produktions-Abteilung ?
+
+   // 1) Bisherige Ausnahmemeldungs-Hinweissätze löschen
+   //    Gelöscht werden vor der Neu-Übertragung immer alle Ausnahme-Typen in
+   //    allen Dispo-Tabellen
+   DAMU_DispoHintRecords_DeleteAll(oDM, -1, cOnlyArtnr, cOnlyProdAbt ),
+
+
+   // 2) Aktuelle Ausnahmemeldungs-Hinweissätze in den Dispo-Tabellen erstellen
+
+   DAMU_Transfer_Hints_To_DispoTables( oDM,
+                                       true,           // in Prod.-Dispo übertragen
+                                       waDab215,       //    -> Ziel-Tabelle in Prod-Dispo = Dab215
+                                       true,           // in Einkaufs-Dispo übertragen (Dab315)
+                                       cOnlyArtnr,
+                                       cOnlyProdAbt,
+                                       gl_DAMU_AusnahmeTypen ),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Sofern über das Datenmodul Daten geändert werden und die
+   // Stammdaten-Protokollierung (DabPTK) aktiv ist, sollte ein sprechender Name
+   // vergeben werden, da dieser in DabPTK:PROGRAMM geschrieben wird
+   m_oDM := CreateObject('TBeDbGet', 'TASK_AUSNAHMEN_NACH_DISPOTABELLEN'),
+   startseq
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         nTime := GetExTimer(),
+
+         DAMU_Task_TransferFromKdnDAMToDispoTables(m_oDM),
+
+         nTime := GetExTimer() - nTime,
+         WriteLn('TransferFromKdnDAMToDispoTables() durchgeführt in ' + FloatToStr(nTime * 1000, 2) + ' mSec'),
+
+         DbCommit(m_oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection),
+            DbCancelAll(m_oDM),
+         endif,
+      stopseq,
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+stopseq,   

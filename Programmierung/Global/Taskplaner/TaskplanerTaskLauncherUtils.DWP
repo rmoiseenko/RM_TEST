@@ -1,0 +1,242 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: TaskLauncherUtils - Hilfsfunktionen zum Starten eines
+//               Task-Programms
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Programm-Name für ein Task-Launcher-Programm generieren
+// @Result: string - Programm-Name
+//******************************************************************************
+function _TSKPL_GenerateTaskLauncherProgramName(nTaskID:N)
+   Result := 'Tools\Taskplaner\_Temp\TaskLauncher_' + Str(nTaskID),
+end,
+
+//******************************************************************************
+// Task-Programm starten
+// @Result: undefined - Result des Task-Programms
+//******************************************************************************
+function _TSKPL_LaunchTask(nSchedulerID:N, nTaskID:N, uTaskProgram:U, cTaskName:C, aCustomParams:A)
+| cSemaphoreKey |
+
+   //***************************************************************************
+   // Prüft das Ergebnis des Task-Programms und schreibt entsprechend dem
+   // Format und ggf. Result-Code die Log-Message.
+   //
+   // @Result: null
+   //***************************************************************************
+   function CheckTaskResult(uTaskResult:U, nTaskID:N, cTaskName:C)
+   | nResultCode, uResultData, cLogMessage |
+
+      cLogMessage := 'Task <' + cTaskName + '> wurde ',
+      if ValType(uTaskResult) <> 'A' then
+         // Rückage ohne definiertem Rückgabeschema
+         if Empty(uTaskResult) then
+            cLogMessage += 'ohne Rückgabe beendet',
+         else
+            cLogMessage += 'wurde beendet: Rückgabe: ' + ToString(uTaskResult),
+         endif,
+      else
+         nResultCode := KVU_Get(uTaskResult, 'code', -1),
+         uResultData := KVU_Get(uTaskResult, 'data', ''),
+         cLogMessage += iif(nResultCode = 0, 'erfolgreich', 'fehlerhaft') +
+                        ' beendet: Code: ' + Str(nResultCode) +
+                        iif(Empty(uResultData), '', ', Rückgabe: ' + ToString(uResultData)),
+      endif,
+      TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskFinished, cLogMessage),
+   end,
+
+   cSemaphoreKey := TSKPL_GenerateTaskSemaphoreKey(nTaskID),
+   if SemaphorEdit(cSemaphoreKey, false, false) then
+      startseq
+         startseq
+            TSKPL_ChangeTaskStateRunning(nTaskID),
+            TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskExecuted, 'Task <' + cTaskName + '> wurde gestartet'),
+            Result := Call(uTaskProgram, nSchedulerID, nTaskID, aCustomParams),
+         always
+            TSKPL_ChangeTaskStateReady(nTaskID),
+            CheckTaskResult(Result, nTaskID, cTaskName),
+         stopseq,
+      always
+         SemaphorPost(cSemaphoreKey),
+      stopseq,
+   else
+      TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted, 'Fehler beim Ausführen von Task <' + cTaskName + '>: Task wird bereits ausgeführt'),
+   endif,
+end,
+
+//******************************************************************************
+// Codeblock-Code für die Ausführung eines bestimmten Tasks generieren
+// @Result: string - Codeblock-Code
+//******************************************************************************
+function _TSKPL_GenerateTaskLauncherProgramCode(nSchedulerID:N, nTaskID:N, nTaskProgramID:N, cTaskName:C, aCustomParams:A)
+|
+   cID_SchedulerID, cID_TaskID, cID_TaskProgram, cID_TaskName, cID_CustomParams,
+   cTemplateCode, cParamKey, uParamValue, cCustomParamsSetCode, i
+|
+
+   cID_SchedulerID  := '@SCHEDULER_ID@',
+   cID_TaskID       := '@TASK_ID@',
+   cID_TaskProgram  := '@TASK_PROGRAM@',
+   cID_TaskName     := '@TASK_NAME@',
+   cID_CustomParams := '@CUSTOM_PARAMS@',
+
+   cTemplateCode :=
+      '|' + CRLF +
+      '   m_uTaskProgram, m_nSchedulerID, m_nTaskID, m_aCustomParams, m_cTaskName,' + CRLF +
+      '   m_uResult' + CRLF +
+      '|' + CRLF + CRLF +
+      'm_uResult       := nil,' + CRLF +
+      'm_nSchedulerID  := ' + cID_SchedulerID + ',' + CRLF +
+      'm_nTaskID       := ' + cID_TaskID      + ',' + CRLF +
+      'm_uTaskProgram  := ' + cID_TaskProgram + ',' + CRLF +
+      'm_cTaskName     := ' + cID_TaskName    + ',' + CRLF +
+      'm_aCustomParams := {},' + CRLF +
+      '' + cID_CustomParams + CRLF + CRLF +
+      'm_uResult := TSKPL_LaunchTask(m_nSchedulerID, m_nTaskID, m_uTaskProgram, m_cTaskName, m_aCustomParams),' + CRLF +
+      'm_uResult',
+
+   Result := cTemplateCode,
+   Result := StrTran(Result, cID_SchedulerID,  nSchedulerID),
+   Result := StrTran(Result, cID_TaskID,       nTaskID),
+   Result := StrTran(Result, cID_TaskProgram,  nTaskProgramID),
+   Result := StrTran(Result, cID_TaskName,     "'" + cTaskName + "'"),
+
+   cCustomParamsSetCode := '',
+   for i := 1 to ALen(aCustomParams) do
+      cParamKey   := aCustomParams[i, 1],
+      uParamValue := aCustomParams[i, 2],
+      if ValType(uParamValue) == 'C' then
+         uParamValue := '''' + uParamValue + '''',
+      else
+         uParamValue := ToString(uParamValue),
+      endif,
+
+      cCustomParamsSetCode += 'KVU_Set(m_aCustomParams, ''' + cParamKey + ''', ' + uParamValue + '),' + CRLF,
+   next,
+
+   // CustomParams setzen
+   Result := StrTran(Result, cID_CustomParams, cCustomParamsSetCode),
+end,
+
+//******************************************************************************
+// Task-Launcher Programm ermitteln oder neu anlegen
+// @Result: integer - ID des neu angelegten oder bereits existierenden Programms
+//******************************************************************************
+function _TSKPL_CreateOrReUseTaskLauncherProgram(nSchedulerID:N, nTaskID:N, nTaskProgramID:N, cTaskName:C, aCustomParams:A)
+| cProgramName, cProgramCode |
+
+   //***************************************************************************
+   // Erzeugt das übergebene Programm. Hierbei werden bereits existierende Daten
+   // als alt und nicht Aktiv markiert, wärend das neu erzeugte Programm
+   // automatisch als AKTIV gesetzt wird.
+   // @Result: integer - ID des neu angelegten oder existierenden Programms
+   //***************************************************************************
+   function CreateNewOrReUseProgramVersion(cProgramName:C, cProgramCode:C)
+   |
+      oDabPRG, cFilter, bCreateNewVersion,
+      nProgramID, nProgramVersion, cChangeUser, cRunUser
+   |
+      cRunUser          := '',
+      cChangeUser       := '',
+      bCreateNewVersion := True,
+      oDabPRG           := BeOpen(waDabPRG, 'BEZVERSION', True),
+      startseq
+         // Nur auf gesuchtes Programm filtern
+         cFilter := 'Upper(Trim(BEZ)) == "' + Upper(cProgramName) + '"',
+         oDabPRG.CbSetFilter(cFilter),
+         if oDabPRG.CbDataAvailable then
+            // Das Programm wurde gefunden:
+            //  -> Neue Programm-Version anlegen (neue Versionsnummer ermitteln)
+            //  -> Letzter Datensatz ist die aktuelle Version
+            //  -> Neue Version = aktuelle Version + 1
+            oDabPRG.CbLast(),
+
+            nProgramID      := oDabPRG:PROGNR,      // Programmnummer übernehmen
+            nProgramVersion := oDabPRG:VERSION + 1, // Versionsnummer + 1 übernehmen
+            cChangeUser     := oDabPRG:USER_BEARB,  // Programm-Ändern-Rechte übernehmen
+            cRunUser        := oDabPRG:USER_START,  // Programm-Ausführen-Rechte übernehmen
+
+            // Ggf. aktuell aktives Programm deaktivieren
+            while not oDabPRG.CbBof do
+               // Wenn der aktuelle Satz AKTIV ist kann aufgrund der Sortierung
+               // keine zukünftige oder aktive Version mehr kommen => Ändern
+               // und Schleife verlassen
+               if oDabPRG:AKTIV then
+                  bCreateNewVersion := cProgramCode <> oDabPRG:PROGRAMM,
+                  if bCreateNewVersion then
+                     MyEdit(oDabPRG),
+                     oDabPRG:AKTIV := False,
+                     MyPost(oDabPRG),
+                  endif,
+                  break,
+               else
+                  // Ist der aktuelle Satz eine Zukünftige Version? (Kann wegen
+                  // der Sortierung des Index nur der letzte Datensatz sein!)
+                  if not oDabPRG:READONLY then
+                     MyEdit(oDabPRG),
+                     oDabPRG:READONLY := True,
+                     MyPost(oDabPRG),
+                  endif,
+               endif,
+
+               oDabPRG.CbPrior(),
+            end,
+
+            // Filterung aufheben
+            oDabPRG.CbFiltered := False,
+         else
+            // Filterung aufheben
+            oDabPRG.CbFiltered := False,
+            // Da die Programmnummer bei einem Append nicht automatisch
+            // eingefügt wird muss diese manuell ermittelt werden:
+            // -> Index auf PROGNR setzen. Dadurch steht das Programm mit der
+            //    aktuell höchsten Nummer ganz unten
+            oDabPRG.IndexName := 'PROGNR',
+            oDabPRG.CbLast(),
+            nProgramID      := oDabPRG:PROGNR + 1, // Neue Programmnummer = Höchste + 1
+            nProgramVersion := 1,                  // Versionsnummer ist immer 1 da es eine Neuanlage ist
+         endif,
+
+         if bCreateNewVersion then
+            MyAppend(oDabPRG),
+
+            // Standard-Felder setzen
+            oDabPRG:PROGNR     := nProgramID,
+            oDabPRG:VERSION    := nProgramVersion,
+            oDabPRG:ERST_VON   := Val(c_usr),
+            oDabPRG:AEND_VON   := Val(c_usr),
+            oDabPRG:ERST_DAT   := Date(),
+            oDabPRG:ERST_TIME  := StrToTime(Time()),
+            oDabPRG:AEND_DAT   := Date(),
+            oDabPRG:AEND_TIME  := StrToTime(Time()),
+            // Programm spezifische Felder setzen
+            oDabPRG:BEZ        := cProgramName,
+            oDabPRG:PROGRAMM   := cProgramCode,
+            oDabPRG:MASK_ID    := '',
+            oDabPRG:AKTIV      := True,        // Aktiv
+            oDabPRG:READONLY   := True,        // Nicht veränderbar
+            oDabPRG:USER_BEARB := cChangeUser, // Programm-Ändern-Rechte    (Nur befüllt wenn bereits eine Programmversion vorhanden)
+            oDabPRG:USER_START := cRunUser,    // Programm-Ausführen-Rechte (Nur befüllt wenn bereits eine Programmversion vorhanden)
+
+            MyPost(oDabPRG),
+         endif,
+
+         Result := oDabPRG:PROGNR,
+      always
+         BeClose(oDabPRG),
+      stopseq,
+   end,
+
+   cProgramName := TSKPL_GenerateTaskLauncherProgramName(nTaskID),
+   cProgramCode := TSKPL_GenerateTaskLauncherProgramCode(nSchedulerID, nTaskID, nTaskProgramID, cTaskName, aCustomParams),
+   Result := CreateNewOrReUseProgramVersion(cProgramName, cProgramCode),
+end,
+

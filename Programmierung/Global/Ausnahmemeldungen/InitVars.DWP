@@ -1,0 +1,57 @@
+//##############################################################################
+//
+// Sammlung globaler Variablen  für
+//    "Disposition Ausnahmemeldungen"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'DAMU' steht für 'D'isposition 'A'usnahme'm'eldungen 'U'tils
+//
+//##############################################################################
+//##############################################################################
+//
+// Ausnahme-Typen (siehe auch MM-Tabelle 1000)
+//
+//  10 - "(zeitweise) Mengen-Unterdeckung"
+//       <TERM_INDEX> enthält den Termin der ersten erkannten Unterdeckung
+//
+//  20 - "(zeitweise) Mengen-Überdeckung"
+//       <TERM_INDEX> enthält den Termin der ersten erkannten Überdeckung
+//
+//  50 - "Abgang in der Vergangenheit (konkret geplant)"
+//
+//  60 - "Zugang in der Vergangenheit (konkret geplant)"
+//
+//  80 - "Lieferanten-AB überfällig"
+//
+//  Es kann noch weitere individuelle Ausnahamemeldungen geben, die werden in
+//  Global\Ausnahmemeldungen\_CustomInit definiert und beschrieben
+//##############################################################################
+|
+   gl_DAMU_MengenUnterdeckung:_N                       := 10,
+   gl_DAMU_MengenUeberdeckung:_N                       := 20,
+
+   gl_DAMU_KonkreterAbgangInDerVergangenheit:_N        := 50,
+   gl_DAMU_KonkreterZugangInDerVergangenheit:_N        := 60,
+
+   gl_DAMU_AuftragsbestaetigungUeberfaellig:_N         := 80,
+
+   gl_DAMU_IgnoreReservbestForMeldung10:_L             := false,          // In Ausnahmemeldung 10 wird der eiserne Bestand ignoriert
+   gl_DAMU_IgnoreKaufteileBestellEhMinus1:_L           := false,          // Für Kaufteile, die nicht disponiert werden brauchts womöglich auch keine Ausnahmenmeldung
+   gl_DAMU_MengenueberdeckungAbTagen:_N                := 7,              // derzeit nicht in Verwendung
+   gl_DAMU_Mengenueberdeckung_Ignore_BestellEh:_N      := 1,              // Wenn die maximale Mengenüberdeckung kleiner ist als die Bestelleinheit mal diesem Faktor -> keine Ausnahmemeldung
+   gl_DAMU_Mengenueberdeckung_Mult_Verbrauch:_N        := 1,              // Wenn die maximale Mengenüberdeckung kleiner ist der Verbrauch aus Einkauf und Produktion mal diesem Faktor -> keine A.Meldung
+   gl_DAMU_Mengenueberdeckung_SQL_Where_DAB010:_C      := ' ', // where- Bedingung zum Ausschluß bestimmter Artikel
+   gl_DAMU_ABueberfaelligTage:_N                       := 3,
+   gl_DAMU_AusnahmeTypen:_U                            := {},
+   gl_DAMU_IndiOnlineHelp_SQLWhere:_C                  := '',
+   gl_DAMU_IndiErrorsQuietMode:_L                      := true
+|
+
+   gl_DAMU_AusnahmeTypen := { gl_DAMU_MengenUnterdeckung,
+                              gl_DAMU_MengenUeberdeckung,
+                              gl_DAMU_KonkreterAbgangInDerVergangenheit,
+                              gl_DAMU_KonkreterZugangInDerVergangenheit,
+                              gl_DAMU_AuftragsbestaetigungUeberfaellig
+                            },
+
+

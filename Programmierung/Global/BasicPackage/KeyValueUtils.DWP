@@ -1,0 +1,97 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Funktionen für den Umgang mit KeyValue-Strukturen
+//               Der Prefix "KVU_" steht für "KeyValue-Utils"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ein KeyValue-Paar einer KeyValue-Liste (Codeblock-Array) hinzufügen
+// @Result: null
+//******************************************************************************
+function _KVU_Set(aKeyValueList:R, cKey:C, uValue:U)
+| i, bFound, aItem, aLocalKeyValueList |
+
+   // Aufgrund von schlechter Performance beim Zugriff auf Referenzen im
+   // Codeblock wird die Key-Value Array-Referenz erst in eine lokale Variable
+   // kopiert, um einen schnellen Zugriff auf die Elemente des Arrays zu
+   // gewährleisten.
+   aLocalKeyValueList := aKeyValueList,
+   startseq
+      // Wenn noch nicht initialisiert
+      if (ALen(aLocalKeyValueList) < 1) then
+         aLocalKeyValueList := Dim(0),
+      endif,
+
+      bFound := False,
+      for i := 1 to ALen(aLocalKeyValueList) do
+         if (Lower(aLocalKeyValueList[i, 1]) == Lower(Trim(cKey))) then
+            if (ALen(aLocalKeyValueList[i]) = 2) then
+               aLocalKeyValueList[i, 2] := uValue,
+               bFound := True,
+               break,
+            endif,
+         endif,
+      end,
+
+      if not bFound then
+         aItem := Dim(2),
+         aItem[1] := Trim(cKey),
+         aItem[2] := uValue,
+         AAdd(aLocalKeyValueList, aItem),
+      endif,
+   always
+      // Lokal verändertes Array in die Referenz zurückgeben
+      aKeyValueList := aLocalKeyValueList
+   stopseq,
+end,
+
+//******************************************************************************
+// Sucht einen Key in der übergebenen KeyValue-List.
+// @Result: integer - Index des übergebenen Keys in der KeyValue-List
+//******************************************************************************
+function _KVU_Find(aKeyValueList:A, cKey:C)
+| i |
+
+   result := -1,
+   for i := 1 to ALen(aKeyValueList) do
+      if (Lower(aKeyValueList[i, 1]) == Lower(AllTrim(cKey))) then
+         result := i,
+         break,
+      endif,
+   end,
+end,
+
+//******************************************************************************
+// Einen Wert über den entsprechenden Key aus einer KeyValue-Liste holen
+// @Result: variant - Wert für den entsprechenden Key
+//******************************************************************************
+function _KVU_Get(aKeyValueList:A, cKey:C, uDefault:U)
+| i, nPos |
+
+   result := uDefault, // Default nur zurückgegeben, wenn cKey nicht vorhanden
+   nPos   := KVU_Find(aKeyValueList, cKey),
+   if (nPos > 0) and (nPos <= ALen(aKeyValueList)) and
+      (ALen(aKeyValueList[nPos]) = 2) then
+      result := aKeyValueList[nPos, 2],
+   endif,
+end,
+
+//******************************************************************************
+// Einen Wert über den entsprechenden Key aus einer KeyValue-Liste holen.
+// Die Funktion wirft Exception, sofern der Key nicht in der KeyValue-Liste
+// existiert.
+//
+// @Result: variant - Wert für den entsprechenden Key
+//******************************************************************************
+function _KVU_GetAssert(aKeyValueList:A, cKey:C)
+   SetErrorIf(KVU_Find(aKeyValueList, cKey) = -1, 'Key <' + cKey + '> existiert nicht'),
+   Result := KVU_Get(aKeyValueList, cKey, nil),
+end,
+

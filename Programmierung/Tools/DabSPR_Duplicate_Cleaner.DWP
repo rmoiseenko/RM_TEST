@@ -1,0 +1,32 @@
+//##############################################################################
+//##############################################################################
+// Programm zur Entfernung von Duplikaten Übersetzungs-Einträgen (DabSPR)
+//##############################################################################
+//##############################################################################
+| oDabSPR:DB:='waDabSPR, DABSPR', cKey, nCount |
+
+DbUseExceptions(True),
+
+cKey   := '',
+nCount := 0,
+oDabSPR.CbFirst(),
+while not oDabSPR.CbEof do
+   if oDabSPR:KEY == cKey then
+      //Browse(, oDabSPR),
+      SuspendEx(oDabSPR, True),
+      oDabSPR.CbDelete(),
+      writeln(cKey + ' Duplikat gelöscht'),
+      nCount++,
+      //Browse(, oDabSPR),
+
+      oDabSPR.CbFirst(),
+      oDabSPR.CbFindKey({cKey}),
+      oDabSPR.CbNext(),
+      //Browse(, oDabSPR),
+   else
+      cKey := oDabSPR:KEY,
+      oDabSPR.CbNext(),
+   endif,
+next,
+
+writeln(Str(nCount) + ' Duplikate wurden entfernt'),

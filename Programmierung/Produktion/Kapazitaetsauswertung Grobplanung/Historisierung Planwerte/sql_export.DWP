@@ -1,0 +1,36 @@
+SELECT
+      PGKPHK.ID         AS "Historisierung Zähler",
+      PGKPHK.STANDORT   AS "Historisierung Standort",
+      PGKPHK.JAHR       AS "Historisierung per Jahr (zu Kalenderwoche)",
+      PGKPHK.WOCHE      AS "Historisierung per Woche (Planung)",
+      CAST(Trim(CAST(PGKPHK.JAHR AS SQL_CHAR(4))) + '-' + iif(PGKPHK.WOCHE < 10, '0', '') + CAST(PGKPHK.WOCHE AS SQL_CHAR) AS SQL_CHAR(7))
+                         AS "Historisierung per Jahr+Woche", // StrZero() als SQL-Funktion ist erst ab ADS 12 verfügbar
+      PGKPHK.DATUM      AS "Historisierung per Datum (Planung)",
+
+      PGKPHP.RESTYP            AS "Plan Ressourcentyp",
+      Trim(DABMDT_RESTYP.BEZ1) AS "Plan Ressourcentyp Bez.",
+
+      PGKPHP.QUALI      AS "Plan Qualifikation",
+      DABVTM.BEZ        AS "Plan. Qualifikation Bez.",
+      PGKPHP.RES_ID     AS "Plan fixierte Ressource",
+      iif(PGKPHP.RESTYP = 'R',
+          DAB330_FIX.BEZ,
+          DAB262_FIX.NAME) AS "Plan. fixierte Ressource Bez.",
+
+      PGKPHP.AUF_STATUS AS "Plan Status des Auftrags",
+      @PGKPHP_AUF_STATUS_AS_TEXT@,
+
+      PGKPHP.KAP_PRIORI AS "Plan Priorität Kapazitäts-Analyse",
+
+      PGKPHP.BEDARF_MIN AS "Plan Rest Bearbeitungszeit",
+      Round(PGKPHP.BEDARF_MIN / 60, 2)
+                        AS "Plan Rest Bearbeitungszeit Stunden"
+
+   FROM "PGKPHK.ADT" PGKPHK
+   LEFT JOIN "PGKPHP.ADT" PGKPHP        ON (PGKPHP.PGKPHK_ID  = PGKPHK.ID)
+   LEFT JOIN "DABMDT.ADT" DABMDT_RESTYP ON (DABMDT_RESTYP.TAB_ID = 101004 AND DABMDT_RESTYP.WERT = PGKPHP.RESTYP)
+
+
+   LEFT JOIN "DABVTM.ADT" DABVTM     ON (DABVTM.VORG_TYP   = PGKPHP.QUALI)
+   LEFT JOIN "DAB262.ADT" DAB262_FIX ON (DAB262_FIX.PERSNR = PGKPHP.RES_ID AND PGKPHP.RESTYP = 'M')
+   LEFT JOIN "DAB330.ADT" DAB330_FIX ON (DAB330_FIX.ID     = PGKPHP.RES_ID AND PGKPHP.RESTYP = 'R')

@@ -1,0 +1,126 @@
+//******************************************************************************
+// oUserSession    Klasse: TBeasCbUserSession
+// oContext        Klasse: TBeasCbContext
+// oInputParam     Klasse: TBeasCbDynamicServiceInput
+//                            oInputParam.CbParams    Klasse: TBeasCbServiceInputParam
+// oOutputParam    Klasse: TBeasCbDynamicServiceOutput
+//                            oOutputParam.CbParams   Klasse: TBeasCbServiceOutputParam
+//******************************************************************************
+
+|
+   oUserSession:P1, oContext:P2, oInputParam:P3, oOutputParam:P4,
+   // lokale Variablen
+   m_cSqlString, m_oQuery, m_oMemtable,
+   m_cIdType, m_nId, m_nOffset, m_nCount, m_nLanguageID
+|
+
+//******************************************************************************
+function FillMissingMemTableData(oMemTable:O)
+   oMemTable.CbFirst(),
+   while not oMemTable.CbEof do
+      MyEdit(oMemTable),
+      oMemTable:TYPE_STR       := AttribTranslate(gl_TSKPL_Config_AttributeTableID_LogType, Str(oMemTable:TYPE), m_nLanguageID),
+      oMemTable:PLATZ_STR      := BeUserShortName(oMemTable:PLATZ),
+      oMemTable:SCHED_STAT_STR := AttribTranslate(gl_TSKPL_Config_AttributeTableID_SchedulerStatusGUI, Str(oMemTable:SCHED_ST_G), m_nLanguageID),
+      oMemTable:SCHED_STAT_CLR := Trim(Lookup(waDABMDT, 'WERT', {{gl_TSKPL_Config_AttributeTableID_SchedulerStatusGUI, Str(oMemTable:SCHED_ST_G)}}, 'BEZ3', '')),
+      oMemTable:TASK_STAT_STR  := AttribTranslate(gl_TSKPL_Config_AttributeTableID_TaskStatusGUI, Str(oMemTable:TASK_ST_G), m_nLanguageID),
+      oMemTable:TASK_STAT_CLR  := Trim(Lookup(waDABMDT, 'WERT', {{gl_TSKPL_Config_AttributeTableID_TaskStatusGUI, Str(oMemTable:TASK_ST_G)}}, 'BEZ3', '')),
+      MyPost(oMemTable),
+      oMemTable.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Hauptprogramm
+//******************************************************************************
+
+BU_Log_ResetLogLevel(),
+BU_Log_Start('SERVICE cb_taskplaner_getLogs'),
+
+// Sprache ermitteln
+m_nLanguageID := TSKPL_LocaleToBeLanguage(oContext.CbLocale),
+BU_Log_Info('Language mapping: "' + oContext.CbLocale + '" => ' + Str(m_nLanguageID)),
+
+m_cSqlString := '',
+m_cIdType    := 'S',
+m_nID        := 0,
+m_nOffset    := 0,
+m_nCount     := 0,
+startseq
+   m_cIdType  := oInputParam.CbParams.ParamValue('sender'),
+   m_nID      := oInputParam.CbParams.ParamValue('senderid'),
+   m_nOffset := oInputParam.CbParams.ParamValue('offset'),
+   m_nCount   := oInputParam.CbParams.ParamValue('count'),
+onerror
+   // Wenn der Parameter "filter" nicht existiert -> Fehler ignorieren
+stopseq,
+
+m_cSqlString := BP_Basics_LoadSQLScriptByName('beas\dynamic_services\taskplaner\getLogs_sql'),
+m_cSqlString := StrTran(m_cSqlString, '@COUNT@', Str(m_nCount)),
+m_cSqlString := StrTran(m_cSqlString, '@OFFSET@', Str(m_nOffset)),
+m_cSqlString := StrTran(m_cSqlString, '@ID@', Str(m_nID)),
+
+case m_cIdType
+   of 'S' ::
+      m_cSqlString := StrTran(m_cSqlString, '@LOG_TASK@', '//'),
+      m_cSqlString := StrTran(m_cSqlString, '@LOG_SCHED@', ''),
+   of 'T' ::
+      m_cSqlString := StrTran(m_cSqlString, '@LOG_TASK@', ''),
+      m_cSqlString := StrTran(m_cSqlString, '@LOG_SCHED@', '//'),
+   otherwise SetError('no <sender> - so nicht!'),
+endcase,
+
+if not Empty(m_cSqlString) then
+   m_oQuery := CreateObject('TBeADSQuery'),
+   startseq
+      BU_Log_Info('SQL: [' + CRLF + m_cSqlString + CRLF + ']'),
+
+      BU_Log_Start('SERVICE cb_taskplaner_getLogs SQL'),
+      m_oQuery.SQL    := m_cSqlString,
+      m_oQuery.Active := True,
+      BU_Log_End('SERVICE cb_taskplaner_getLogs SQL'),
+
+      m_oMemtable := CreateObject('TBeMemTable'),
+      startseq
+         m_oMemtable.CbAddField('ID',             ftInteger,  0),
+         m_oMemtable.CbAddField('ERSTELLT',       ftDateTime, 0),
+         m_oMemtable.CbAddField('MEMO',           ftMemo,     0),
+         m_oMemtable.CbAddField('TYPE',           ftInteger,  0),
+         m_oMemtable.CbAddField('TYPE_STR',       ftMemo,     0),
+         m_oMemtable.CbAddField('SENDER',         ftString,   1),
+         m_oMemtable.CbAddField('SCHEDUL_ID',     ftInteger,  0),
+         m_oMemtable.CbAddField('SCHED_NAME',     ftMemo,     0),
+         m_oMemtable.CbAddField('SCHED_ST',       ftInteger,  0),
+         m_oMemtable.CbAddField('SCHED_ST_G',     ftInteger,  0),
+         m_oMemtable.CbAddField('SCHED_STAT_STR', ftMemo,     0),
+         m_oMemtable.CbAddField('SCHED_STAT_CLR', ftString,   7),
+         m_oMemtable.CbAddField('TASK_ID',        ftInteger,  0),
+         m_oMemtable.CbAddField('TASK_NAME',      ftMemo,     0),
+         m_oMemtable.CbAddField('TASK_ST',        ftInteger,  0),
+         m_oMemtable.CbAddField('TASK_ST_G',      ftInteger,  0),
+         m_oMemtable.CbAddField('TASK_STAT_STR',  ftMemo,     0),
+         m_oMemtable.CbAddField('TASK_STAT_CLR',  ftString,   7),
+         m_oMemtable.CbAddField('TASK_PARAM',     ftMemo,     0),
+         m_oMemtable.CbAddField('PLATZ',          ftString,   3),
+         m_oMemtable.CbAddField('PLATZ_STR',      ftMemo,     0),
+
+         m_oMemtable.Active := True,
+         m_oMemtable.CbLoadFromDataSet(m_oQuery, False),
+         BU_Log_Start('SERVICE cb_taskplaner_getLogs FillMissingMemTableData'),
+         FillMissingMemTableData(m_oMemtable),
+         BU_Log_End('SERVICE cb_taskplaner_getLogs FillMissingMemTableData'),
+         BU_Log_Info('Records: ' + Str(m_oMemtable.CbRecordCount)),
+
+         BU_Log_Start('SERVICE cb_taskplaner_getLogs BU_DataSetToJSON'),
+         BU_DataSetToJSON(oOutputParam, m_oMemtable, 'logs', {}),
+         BU_Log_End('SERVICE cb_taskplaner_getLogs BU_DataSetToJSON'),
+      always
+         DestroyObject(m_oMemtable),
+      stopseq,
+   always
+      DestroyObject(m_oQuery),
+   stopseq,
+endif,
+
+BU_Log_End('SERVICE cb_taskplaner_getLogs'),
+

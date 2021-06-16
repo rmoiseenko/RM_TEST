@@ -1,0 +1,496 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung:
+//   Oberfläche zur Anzeige der "nächsten Arbeitsgänge" auf
+//   Basis der Kapazitäts-Grobplanung 
+//
+//
+//   Hinweis:
+//       Fenster ist ausgelegt als MDI Child, Aufruf per
+//         GFU_ShowMDIChild('PRODUKTION_KAPA_GROB_JOBLISTE', 'Produktion\Kapazitaetsauswertung Grobplanung\Jobliste\GUI')
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cPositionSaveID,
+   m_cFormID,
+   m_cBrowserID_JobList,
+   m_oDM_GUI,
+   m_oJobListQuery,
+   m_oMemJobList,
+   m_oMemQualiTree,
+   m_bInInit,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_GoTo_Baugruppe, A_Refresh, A_ResetQualiFilter,
+   A_ResetResourceFilter, actions, BeBarButton1, BeBarDockControl1,
+   BeBarManager, BeBarManagerBar1, bipnl_TopInfo, btn_ResetQualiFilter,
+   btn_ResetResourceFilter, chk_ShowDispoOrders, cmb_FilterQuali, cmb_Resource,
+   ds_Joblist, grid_Joblist, lbl_FilterQuali, lbl_heading1, lbl_Resource,
+   pnl_Filter, PopupMenu
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID            := '@PGKJL',
+m_cPositionSaveID    := '@PGKJL',
+m_cBrowserID_JobList := '@PGKJL',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: SQL Script
+//******************************************************************************
+function GetSqlScript(aQualiFilterArray, bIncludeDispo, nResourceID, bEmptyResult)
+| cQualiAndResSQLFilter, i, cStatusFilter, cResourceFilterSQL |
+
+   // Basis-SQL-Script laden
+   Result := PGKU_LoadSQLScriptByName('Produktion\Kapazitaetsauswertung Grobplanung\Jobliste\sql\arbeitsgaenge_verdichtet'),
+
+   // leere Ergebnis-SQL erzwingen?
+   Result := StrTran(Result, '@EMPTY_RESULT@',  iif(bEmptyResult, '', '//')),
+
+   // Standort
+   Result := StrTran(Result, '@STANDORT@',  Str(mStandort)),
+
+   // Liste der Auftrags-Status
+   cStatusFilter := Str(gl_PGKU_AuftragsStatus_Eroeffnet) + ', ' + Str(gl_PGKU_AuftragsStatus_Freigegeben) + ', ' + Str(gl_PGKU_AuftragsStatus_aktiv),
+   if bIncludeDispo then
+      cStatusFilter += ', ' + Str(gl_PGKU_AuftragsStatus_Geplant),
+   endif,
+   Result := StrTran(Result, '@AUF_STATUS_LIST@', cStatusFilter),
+
+   // Filterung auf Qualifikation(en)
+   cQualiAndResSQLFilter       := '',
+   for i := 1 to ALen(aQualiFilterArray) do
+      cQualiAndResSQLFilter := ConcatTrenner(cQualiAndResSQLFilter, Str(aQualiFilterArray[i]), ', '),
+   end,
+   if not empty(cQualiAndResSQLFilter) then
+      cQualiAndResSQLFilter := 'PGKBDP.QUALI IN (' + cQualiAndResSQLFilter + ')',
+   endif,
+   Result := StrTran(Result, '@QUALI_ID_FILTER@',      cQualiAndResSQLFilter),
+   Result := StrTran(Result, '@HAS_QUALI_ID_FILTER@',  iif(empty(cQualiAndResSQLFilter), '//', '')),
+
+   // Filterung auf Resource?
+   cResourceFilterSQL := '',
+   if nResourceID > 0 then
+      cResourceFilterSQL := 'PGKBDP.RESTYP = ''R'' AND PGKBDP.D270_RESID = ' + Str(nResourceID),
+   endif,
+   Result := StrTran(Result, '@RESOURCE_ID_FILTER@',      cResourceFilterSQL),
+   Result := StrTran(Result, '@HAS_RESOURCE_ID_FILTER@',  iif(empty(cResourceFilterSQL), '//', '')),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateMemJobList(oDM, oOwner)
+| oQuery, cSQL |
+
+
+   oQuery := CreateObject('TBeAdsQuery', , oDM),
+   startseq
+      oQuery.ProtocolActive := false,
+      cSQL                  := GetSqlScript({}, true, 0, true),
+      oQuery.SQL            := cSQL,
+      oQuery.Active         := true,
+
+
+      Result           := Createobject('TBeMemTable', 'JOBLIST', oOwner),
+      Result.AliasName := 'JOBLISTE',
+      Result.CbBorrowFromDataSet(oQuery),
+      Result.Active      := true,
+
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM_GUI := CreateObject('TBeDbGet', '', oForm),
+
+
+   //***************************************************************************
+   // Query-Objekt für Joblist-Queries
+   //***************************************************************************
+   m_oJobListQuery                := CreateObject('TBeAdsQuery', 'LOAD_QUERY', m_oDM_GUI),
+   m_oJobListQuery.ProtocolActive := false,
+
+   //***************************************************************************
+   // Memtable, die als Basis für die Jobliste-Anzeige dient
+   //***************************************************************************
+   m_oMemJobList    := CreateMemJobList(m_oDM_GUI, oForm),
+
+   grid_Joblist.UseOnlyRegisteredDataSets := True,
+   GU_LinkTableToGUI(m_oMemJobList, ds_Joblist, grid_Joblist, m_cBrowserID_JobList, false),
+end,
+
+//******************************************************************************
+// Die Funktion befüllt die Qualifikations-Combo mit allen verfügbaren
+//    Qualifikationen
+// Die Funktion hat Keine Rückgabe.
+//******************************************************************************
+function Fill_Quali_Combo()
+| aComboItems, oRec, cItem |
+
+   aComboItems := {},
+   foreach oRec in m_oMemQualiTree  do
+      cItem :=   Replicate('     ', m_oMemQualiTree:EBENE) + AllTrim(m_oMemQualiTree:BEZ)
+               + Chr(9)
+               + Str(m_oMemQualiTree:QUALI_ID),
+      AAdd(aComboItems, cItem),
+   next,
+   cmb_FilterQuali.Items := aComboItems,
+   cmb_FilterQuali.Value := '-1', // das entspricht dem Eintrag "Alle Personen & Ressourcen"
+end,
+
+//******************************************************************************
+// Die Funktion befüllt die Ressourcen-Combo mit allen verfügbaren
+//    Ressourcen (aktuell keine Personen)
+// Die Funktion hat Keine Rückgabe.
+//******************************************************************************
+function Fill_Resource_Combo()
+| aComboItems, oRec, cItem, oDab330 |
+
+   function IsAusgesch(dEintritt, dAustritt)
+     Result := False,
+     if not Empty(dEintritt) then
+        Result := dEintritt > Date(),
+     endif,
+
+     if not Result and not Empty(dAustritt) then
+        Result := dAustritt < Date(),
+     endif,
+   end,
+
+   aComboItems := {},
+   oDab330           := DbGetTable(m_oDM_GUI, waDab330),
+   oDab330.IndexName := 'BEZ',
+
+
+   DBGoTop(oDab330),
+   while not Eof(oDab330) do
+
+      if not IsAusgesch(oDab330:DATUM_EIN, oDab330:DATUM_AUS) then
+         cItem :=   AllTrim(oDAB330:BEZ)
+                  + Chr(9)
+                  + Str(oDAB330:ID),
+         AAdd(aComboItems, cItem),
+      endif,
+      DBSkip(1, oDab330),
+   end,
+
+   cmb_Resource.Items := aComboItems,
+   cmb_Resource.Value := '-1', // das entspricht "keine Auswahl"
+end,
+
+
+//******************************************************************************
+// Funktion erzeugt und lädt einen Qualifikations-Baum in eine Memtable
+// => hierarchische Reihenfolge
+// @Result: null
+//******************************************************************************
+function InitQualiTree()
+| nTreeIDCounter |
+
+   // Qualifikationen in MemTable laden (hierarchische Reihenfolge)
+   m_oMemQualiTree := PGKU_QualiTree_CreateMemtable(oForm),
+   nTreeIDCounter  := 0,
+   PGKU_QualiTree_BuildTree(m_oDM_GUI, m_oMemQualiTree, 0, Date(), Date(), false, 0, 'RM', nTreeIDCounter),
+end,
+
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshJoblistData(nQualiID, aQualiFilterArray, nResourceID, bIncludeDispo)
+| cSQL, nOldID |
+
+   cSQL := GetSqlScript(aQualiFilterArray, bIncludeDispo, nResourceID, false),  // Writeln(cSQL),
+
+   m_oJobListQuery.Active := false,
+   m_oJobListQuery.SQL    := cSQL,
+   m_oJobListQuery.Active := true,
+
+   m_oMemJobList.CbDisableControls(),
+   startseq
+      nOldID := m_oMemJobList:ID,
+      m_oMemJobList.CbLoadFromDataSet(m_oJobListQuery, true),
+      m_oMemJobList.CbFirst(),
+      if nOldID > 0 then
+         m_oMemJobList.CbLocate('ID', {nOldID}, 0),
+      endif,
+   always
+      m_oMemJobList.CbEnableControls(),
+   stopseq,     
+
+   // DbFilter(cFilter, m_oPGKBDP),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: OnDestroy
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_ResourceChange( Sender )
+   ActionExecute(A_Refresh),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_FilterQualiChange( Sender )
+   ActionExecute(A_Refresh),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function chk_ShowDispoOrdersClick( Sender )
+   ActionExecute(A_Refresh),
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Action: "gehe zu: Fertigungsauftrag" 
+//******************************************************************************
+function A_GoTo_FAExecute( Sender )
+| cBestPosNr |
+   startseq,
+      cBestPosNr := m_oMemJobList:BESTPOSNR,
+      if not empty(cBestPosNr) then
+         GU_ShowBeWindow_Dab035_Produktion(cBestPosNr),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zum Fertigungsauftrag.', GetErrorObj()),
+   stopseq,
+
+end,
+
+//******************************************************************************
+// Action: "gehe zu: Baugruppe"
+//******************************************************************************
+function A_GoTo_BaugruppeExecute( Sender )
+| cBaugruppenArtnr |
+   startseq,
+      cBaugruppenArtnr := m_oMemJobList:D240_KOPF_ARTNR1,
+      if not empty(cBaugruppenArtnr) then
+         ShowBeWindow(bwArticle, cBaugruppenArtnr),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zur Baugruppe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Daten neu filtern / laden
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nQualiID, cQualiIdString, aQualiFilterArray, i, nCurQuali, nOldCursor, nResourceID |
+
+   if m_bInInit then
+      exit,
+   endif,
+                                                                                WriteLn('A_RefreshExecute'),
+   startseq
+      nOldCursor := SetCursor(crHourGlass),
+      startseq
+         // gefiltere Qualifikation
+         nQualiID           := Val(cmb_FilterQuali.Value),
+         SetErrorIf(not m_oMemQualiTree.CbLocate('QUALI_ID', {nQualiID}, 0), 'im Filter gewählte Qualifikation wurde nicht im Qualifikations-Baum gefunden'),
+
+         cQualiIdString     := m_oMemQualiTree:QUALI_ID_STRING, // liegt in der Form "900030/900028/900029" vor
+         // Liste der zu filternden Qualifikationen als Array umwandeln
+         aQualiFilterArray  := {},
+         for i := 1 to TokenCount(cQualiIdString, '/') do
+            nCurQuali := Token(cQualiIdString, '/', i),
+            if not empty(nCurQuali) then
+               nCurQuali := Val(nCurQuali),
+               if nCurQuali <> 0 then
+                  AAdd(aQualiFilterArray, nCurQuali),
+               endif,
+            endif,
+         next,
+         // WriteLN(nQualiID, AllTrim(m_oMemQualiTree:BEZ), aQualiFilterArray),
+
+         // gefilterte Maschine
+         nResourceID := Val(cmb_Resource.Value),
+
+         RefreshJoblistData(nQualiID, aQualiFilterArray, nResourceID, chk_ShowDispoOrders.Checked),
+      always
+         SetCursor(nOldCursor)
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktualisieren der Daten', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Qualifikations-Filter zurück setzen
+//******************************************************************************
+function A_ResetQualiFilterExecute( Sender )
+   cmb_FilterQuali.Value := '-1', // das entspricht dem Eintrag "Alle Personen & Ressourcen"
+end,
+
+//******************************************************************************
+// Action: Resourcen-Filter zurück setzen
+//******************************************************************************
+function A_ResetResourceFilterExecute( Sender )
+   cmb_Resource.Value := '', // keine Auswahl
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'Kapazitätsauswertung Grobplanung - Jobliste',
+   oForm.ImageIndex     := 219,
+end,
+
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_GoTo_Baugruppe        := FindObject(oForm, "A_GoTo_Baugruppe"),
+   A_Refresh               := FindObject(oForm, "A_Refresh"),
+   A_ResetQualiFilter      := FindObject(oForm, "A_ResetQualiFilter"),
+   A_ResetResourceFilter   := FindObject(oForm, "A_ResetResourceFilter"),
+   actions                 := FindObject(oForm, "actions"),
+   BeBarButton1            := FindObject(oForm, "BeBarButton1"),
+   BeBarDockControl1       := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager            := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1        := FindObject(oForm, "BeBarManagerBar1"),
+   bipnl_TopInfo           := FindObject(oForm, "bipnl_TopInfo"),
+   btn_ResetQualiFilter    := FindObject(oForm, "btn_ResetQualiFilter"),
+   btn_ResetResourceFilter := FindObject(oForm, "btn_ResetResourceFilter"),
+   chk_ShowDispoOrders     := FindObject(oForm, "chk_ShowDispoOrders"),
+   cmb_FilterQuali         := FindObject(oForm, "cmb_FilterQuali"),
+   cmb_Resource            := FindObject(oForm, "cmb_Resource"),
+   ds_Joblist              := FindObject(oForm, "ds_Joblist"),
+   grid_Joblist            := FindObject(oForm, "grid_Joblist"),
+   lbl_FilterQuali         := FindObject(oForm, "lbl_FilterQuali"),
+   lbl_heading1            := FindObject(oForm, "lbl_heading1"),
+   lbl_Resource            := FindObject(oForm, "lbl_Resource"),
+   pnl_Filter              := FindObject(oForm, "pnl_Filter"),
+   PopupMenu               := FindObject(oForm, "PopupMenu"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   bipnl_TopInfo.Caption  := oForm.OrigCapt,
+
+   A_ResetQualiFilter.Caption    := '',
+   A_ResetResourceFilter.Caption := '',
+   Fill_Quali_Combo(),
+   Fill_Resource_Combo(),
+
+   grid_Joblist.PopUpMenu := PopUpMenu,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_bInInit := true,
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   InitQualiTree(),
+   SetDefaults(),
+   m_bInInit := false,
+   // ActionExecute(A_Refresh),
+
+
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

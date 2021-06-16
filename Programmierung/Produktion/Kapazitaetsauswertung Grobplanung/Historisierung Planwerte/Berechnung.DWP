@@ -1,0 +1,178 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung:
+//    Das Programm ermittelt den geplanten Kapazitätsbedarf (Belastung) aller
+//    Qualifikationen und Einzel-Ressourcen
+//    per "Heute" und speichert das Ergebnis in Tabellen.
+//
+//    Bei jeder Ausführung wird die aktuelle Situation festgehalten, die Daten
+//    werden also historisiert.
+//
+//
+//##############################################################################
+//##############################################################################
+
+
+| m_oDM |
+
+//******************************************************************************
+// Funktion speichernt
+// @Result: null
+//******************************************************************************
+function PGKU_Plandaten_Historisiert_SaveDataToDatabase(oDM, oQueryDetails, oQuerySummen, nStandort)
+| dDatum, nKW, nJahr, oPGKPHK, oPGKPHP, nPlanKopfID |
+
+   SetErrorIf(nStandort <> mStandort, 'nStandort <> mStandort: not implemented - nicht getestet!'),
+
+   // Jahr, KW und Dautum füllen
+   dDatum      := GetAdsServerTime(),
+   nKW         := PGKU_GetPlanungsperiodenKW(dDatum),
+   nJahr       := PGKU_GetPlanungsperiodenJahr(dDatum),
+
+   // Browse(, oQuerySummen),
+   // Browse(, oQueryDetails),
+
+   // Kopf-Datensatz
+   oPGKPHK := DbGetTable(oDM, waPGKPHK), // tabelle für "Plandaten Historie Kopf"
+
+   MyAppend(oPGKPHK),
+   nPlanKopfID        := oPGKPHK:ID,
+   oPGKPHK:JAHR       := nJahr,
+   oPGKPHK:WOCHE      := nKW,
+   oPGKPHK:DATUM      := dDatum,
+   oPGKPHK:ANZ_DS     := oQuerySummen:ANZAHL_DATENSAETZE,
+   oPGKPHK:SUM_BEDARF := oQuerySummen:SUMME_BEDARF_MIN,
+   MyPost(oPGKPHK),
+
+   // Positionen (Bedarfs-Details)
+   oPGKPHP := DbGetTable(oDM, waPGKPHP),
+
+   DbGoTop(oQueryDetails),
+   while not Eof(oQueryDetails) do
+
+      MyAppend(oPGKPHP),
+
+      oPGKPHP:PGKPHK_ID  := nPlanKopfID,
+      oPGKPHP:JAHR       := nJahr,
+      oPGKPHP:WOCHE      := nKW,
+      oPGKPHP:DATUM      := dDatum,
+      oPGKPHP:RESTYP     := oQueryDetails:RESTYP,
+      oPGKPHP:QUALI      := oQueryDetails:QUALI,
+      oPGKPHP:RES_ID     := oQueryDetails:RES_ID,
+      oPGKPHP:AUF_STATUS := oQueryDetails:AUF_STATUS,
+      oPGKPHP:KAP_PRIORI := oQueryDetails:KAP_PRIORI,
+      oPGKPHP:BEDARF_MIN := oQueryDetails:KAPA_MIN,
+      MyPost(oPGKPHP),
+
+      DbSkip(1, oQueryDetails),
+   end,
+end,
+
+//******************************************************************************
+// Funktion berechnet die aktuelle Plan-Belastung (ohne Periodenbezug)
+//  und speichert die Ergebnisse zur Historisierung in die Datenbank
+//******************************************************************************
+function PGKU_Plandaten_Historisiert_LoadDataToQueries(oDM, oQueryDetails, oQuerySummen, nStandort, cResTypes)
+| cSQL, cDemandSQLBlockName, bPersons, bResources, cResTypSQLList, i, bGroupByQuali |
+
+
+   bPersons       := 'M' $ cResTypes,
+   bResources     := 'R' $ cResTypes,
+   cResTypSQLList := '',
+   cResTypSQLList := ConcatTrenner(cResTypSQLList, iif(bPersons,   "'M'", ''), ', '),
+   cResTypSQLList := ConcatTrenner(cResTypSQLList, iif(bResources, "'R'", ''), ', '),
+
+
+   // **************************************************************************
+   // 1. Summen bilden auf Qualifikationen und Ressourcen Ebene
+   // **************************************************************************
+   for i := 1 to 2 do
+      bGroupByQuali := i = 1, // i = 2 => GroupByResources
+
+      cDemandSQLBlockName := 'Produktion\Kapazitaetsauswertung Grobplanung\Historisierung Planwerte\sql_bedarfsermittlung',
+      cSQL                := PGKU_QualiTree_LoadAndReplaceSQLPlaceholder(cDemandSQLBlockName, nStandort, null, null, cResTypSQLList, bGroupByQuali),
+
+      //WriteLn(cSQL),
+
+      oQueryDetails.SQL    := cSQL,
+      DbExecSQL(oQueryDetails),
+   next,
+
+   // **************************************************************************
+   // 2. Ergebnis-temp-Tables gemeinsam zurückgeben
+   // **************************************************************************
+   cSQL                 := 'SELECT * FROM #kapa_bedarf_per_quali_res_BY_QUALI' + crlf +
+                           '   UNION ALL' + crlf +
+                           'SELECT * FROM #kapa_bedarf_per_quali_res_BY_RESID',
+
+   oQueryDetails.SQL    := cSQL,
+   oQueryDetails.Active := true,
+
+   // Browse(, oMemPlanDaten),
+
+   // **************************************************************************
+   // 3. Statistik über die Daten abholen (erfordert ein zweites Query, weil Feldstruktur der Rückgabe anders ist)
+   // **************************************************************************
+   // WriteLn(cSumOverAllSQL),
+
+   oQuerySummen.SQL    := PGKU_LoadSQLScriptByName('Produktion\Kapazitaetsauswertung Grobplanung\Historisierung Planwerte\sql_summen_statistik'),
+   oQuerySummen.Active := true,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Main(oDM, nStandort, cResTypes)
+| oQueryDetails, oQuerySummen |
+
+   oQueryDetails := CreateObject('TBeAdsQuery', , oDM),  // wichtig: Query-Objekte auf dem gleichen Datenmodul erzeugen, damit die temporären Tabellen geteilt werden.
+   startseq
+      oQueryDetails.ProtocolActive := false,
+      oQuerySummen  := CreateObject('TBeAdsQuery', , oDM),  // wichtig: Query-Objekte auf dem gleichen Datenmodul erzeugen, damit die temporären Tabellen geteilt werden.
+      startseq
+         oQuerySummen.ProtocolActive := false,
+         DbStartTrans(oDM.ADSConnection),
+         startseq
+
+            // 1. Schritt: Daten ermitteln
+            PGKU_Plandaten_Historisiert_LoadDataToQueries(m_oDM, oQueryDetails, oQuerySummen, nStandort, cResTypes),
+
+            // 2. Schritt: Daten speichern in Tabellen
+            PGKU_Plandaten_Historisiert_SaveDataToDatabase(m_oDM, oQueryDetails, oQuerySummen, nStandort),
+
+
+            DbCommit(oDM.ADSConnection),
+         always
+            if DbInTrans(oDM.ADSConnection) then
+               DbRollback(oDM.ADSConnection),
+               DbResetDm(oDM),
+            endif,
+         stopseq,
+
+      always
+         DestroyObject(oQuerySummen),
+      stopseq,
+   always
+      DestroyObject(oQueryDetails),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+//  Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oDM := CreateObject('TbeDbGet'),
+   startseq
+      Main(m_oDM, mStandort, 'RM'),
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,

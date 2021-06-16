@@ -1,0 +1,44 @@
+//******************************************************************************
+// Dieses SQL-Statement selektiert alle Einzel-Änderungen, die für
+// das Projekt, dessen Vorgänge oder Leistungen vorliegen
+//******************************************************************************
+
+SELECT * FROM "DABAVG.ADT"
+         WHERE
+@@DATEFILT@@            ERSTELLT >= @@DATESTRING@@
+@@DATEFILT@@            AND
+            (
+@@PRJFILT@@    (  // Projekte
+@@PRJFILT@@       DS_WA = 260 AND
+@@PRJFILT@@       DS_ID IN (SELECT ID FROM "DABPRJ.ADT" DABPRJ
+@@PRJFILT@@                           WHERE ID = @@PRJ_ID@@)
+@@PRJFILT@@    )
+@@PRJFILT@@    OR
+               (  // Vorgänge
+                  DS_WA = 261 AND
+                  DS_ID IN ( SELECT ID FROM "DABPRV.ADT" DABPRV
+                                       WHERE PRJ_ID = @@PRJ_ID@@
+@@TASKFILT@@                           AND ID IN (@@VORG_IDS@@)
+                           )
+               )
+               OR
+               (   // Vorgangsleistungen
+                   DS_WA = 262 AND
+                   DS_ID IN ( SELECT ID FROM "DABPVL.ADT" DABPVL
+                                        WHERE (PRJ_ID = @@PRJ_ID@@)
+@@TASKFILT@@                                  AND (VORG_ID IN (@@VORG_IDS@@))
+
+                            ) AND
+                   // Da ein paar Felder derzeit noch nicht
+                   // freigeschaltet sind, werden sie hier vorübergehend einfach ausgefiltert
+                   NOT FELDNAME IN ('LEIST_ART', 'RECH_ART', 'ARTNR', 'VKP')
+               )
+@@PRJFILT@@    OR
+@@PRJFILT@@    (  // Verkaufs-Erlöse
+@@PRJFILT@@       DS_WA = 263 AND
+@@PRJFILT@@       DS_ID IN ( SELECT ID FROM "DABPRE.ADT" DABPRE
+@@PRJFILT@@                            WHERE PRJ_ID = @@PRJ_ID@@
+@@PRJFILT@@                )
+@@PRJFILT@@    )
+            )
+ORDER BY ID

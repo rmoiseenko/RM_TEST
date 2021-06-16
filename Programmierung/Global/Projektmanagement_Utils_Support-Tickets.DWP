@@ -1,0 +1,54 @@
+//******************************************************************************
+// Diese Funktion erstellt für ein Support-Ticket-Memo einen Vorgang im
+// Support-Projekt wenn dieser noch nicht existiert
+//******************************************************************************
+function _ProjMgmt_CreateTaskForSupportMemoIfNotExists(oMemoBO)
+| oTaskBO, oProjectController, oProjectBo, nSupportProjectID |
+   nSupportProjectID := 97, // Projekt-Nummer unter der alle Support-Tickets angelegt werden sollen
+
+   if empty(oMemoBO) then
+      SetError('Fehler in ProjMgmtGUI_ShowSupportMemoBookingDialog' + crlf + crlf +
+               'Übergebenes MemoBusiness-Objekt ist nicht initialisiert'),
+   endif,
+
+   // Sicherstellen, dass ein Vorgang zum Support-Ticket existiert
+   if empty(oMemoBO.CbTaskId) then // Wenn kein Vorgang im Memo eingetragen ist
+      oProjectController := CreateObject('TBeProjectBusinessController', 'PrjController'),
+      oTaskBO            := CreateObject('TBeProjectTaskBO', 'NewTaskBO'),
+      oProjectBO         := CreateObject('TBeProjectBO', 'NewProjBO'),
+      startseq
+         startseq
+            // Datenmodul des MemoBo's zuweisen
+            oProjectController.CbDataModule := oMemoBO.CbDataModule,
+            oProjectBO.CbDataModule         := oMemoBO.CbDataModule,
+            oTaskBO.CbDataModule            := oMemoBO.CbDataModule,
+
+            // ProjectBO positionieren
+            oProjectBO.CbGoToID(nSupportProjectID),
+            iif(oProjectBO.CbID = nSupportProjectID, , SetError('Supportprojekt konnte nicht positioniert werden')),
+
+            // TaskBO auf -1 positionieren
+            oTaskBO.CbGoToID(-1),
+
+            // Neuen Vorgang anlegen
+            // Vorgang nicht in Transaktion anlegen da die nachfolgende Buchungsfunktion ebenfalls nicht in dieser Transaktion abläuft
+            oProjectController.CbInsertTaskAtEnd(oProjectBO, oTaskBO),
+
+            // Beschreibung anpassen (Memo-Betreff)
+            oTaskBO.CbDescription := oMemoBO.SubjectValue,
+            oTaskBO.CbPost(),
+
+            // ID's in das Memo übernehmen
+            oMemoBO.CbProjectID := nSupportProjectID,
+            oMemoBO.CbTaskID    := oTaskBO.CbID,
+            DBRefresh(oMemoBO.DAB065),
+         onerror
+            SetError('Fehler beim Anlegen eines neuen Support-Vorgangs' +
+                      crlf + crlf + GetErrorText()),
+         stopseq,
+      always
+         DestroyObject(oTaskBO),
+         DestroyObject(oProjectController),
+      stopseq
+   endif,
+end,

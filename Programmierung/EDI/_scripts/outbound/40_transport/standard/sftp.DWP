@@ -1,0 +1,108 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Outbound Transport
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet den ausgehenden Transport-Prozess für das
+//   Datenübertragungsprotokoll "SFTP" ab.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportOutbound_SFTP(oDM:O, nEDIMSGId:N, oProgressCallback:O)
+|
+   oEDIMSG, oEDITRCH,
+   oSFTP,
+   cFilePath, cFileName, aFileList,
+   cURI, cDestinationPath
+|
+
+   result := nil,
+       
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbIndexName := 'ID',
+   SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+   SetErrorIf(empty(oEDIMSG:FILE_NAME), 'EDIMSG:FILE_NAME must not be empty'),
+   SetErrorIf(empty(oEDIMSG:FILE_TYPE), 'EDIMSG:FILE_TYPE must not be empty'),
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindKey({oEDIMSG:EDITRCH_ID}), 'EDITRCH record not found: ' + str(oEDIMSG:EDITRCH_ID)),    
+
+   cURI             := oEDITRCH:URI,
+   cFilePath        := EDI_Transport_Outbound_SaveTempFile(trim(oEDIMSG:FILE_NAME), EDI_Message_EDIMSG_GetMessageString(oDM, oEDIMSG), oEDIMSG),
+   cFileName        := ExtractFileName(cFilePath),
+   cDestinationPath := EDI_Transport_URI_EnsureTrailingPathSeperator(EDI_Transport_URI_GetResource(cURI)),
+
+   oSFTP := EDI_Transport_SFTP_Create(
+      EDI_Transport_URI_GetHost(cURI),
+      EDI_Transport_URI_GetPort(cURI, gl_EDI_Transport_SFTP_DefaultPort),                                     
+      EDI_Transport_SFTP_CreateAuthenticationInfo(oEDITRCH)
+   ),
+   startseq
+      oSFTP.Connect(),
+      startseq
+         aFileList := oSFTP.OpenDirectory(cDestinationPath),
+         if not EDI_Transport_FileNameExistsInDirArray(aFileList, cFileName) then
+            oSFTP.UploadFile(cFilePath, cDestinationPath + cFileName, false),
+         else
+            SetError('File ' + cFileName + ' already exists on the server.'),
+         endif,
+         DeleteFile(GetTempPath() + '\be_edi\outbound_transport\' + cFileName),
+      always
+         oSFTP.Disconnect(),
+      stopseq,
+   always
+      DestroyObject(oSFTP),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, false),
+
+m_aResult := {},
+startseq
+   m_aResult := TransportOutbound_SFTP(m_oDM, m_nEDIMSGId, m_oProgressCallback),
+   if empty(m_aResult) then
+      EDI_ProcessResult_SetSuccess(m_aResult),
+   endif,
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult
+

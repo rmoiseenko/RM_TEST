@@ -1,0 +1,223 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieser Dialog dient zum Einlesen eines CAD-Projekts von der
+//   Benutzeroberfläche für die Administration der CAD-Schnittstelle aus.
+//
+// Rückgabe:
+//   Das Programm gibt ein KVU-Array mit folgenen Eigenschaften zurück:
+//     * ReadProjectDialog.confirmed:     Wurde der Dialog bestätigt Ja/Nein
+//     * ReadProjectDialog.dataSourceURI: URI der Datenqulle (Dateipfad)
+//     * ReadProjectDialog.projectKey:    Projekt-Schlüssel
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cPositionSaveID, m_cFormID,
+
+   m_aResult,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Confirm, actions, btn_Cancel, btn_Confirm,
+   btn_SelectDataSourceDirectory, edt_DataSourceDirectory, edt_ProjectKey,
+   pnl_Buttons, pnl_DataSourceDirectory, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@CADPRJDLG',
+m_cPositionSaveID := '@CADPRJDLG',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls.
+//******************************************************************************
+function ActionsEnabled()
+   A_Cancel.Enabled  := true,
+   A_Confirm.Enabled := not empty(trim(edt_DataSourceDirectory.Text)) and
+                        not empty(trim(edt_ProjectKey.Text)),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Ändern des Datenquellen-Verzeichnisses
+//******************************************************************************
+function edt_DataSourceDirectoryChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Projekt-Schlüssels
+//******************************************************************************
+function edt_ProjectKeyChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Wählen des Datenquellen-Verzeichnisses
+//******************************************************************************
+function A_SelectDataSourceDirectoryExecute( Sender )
+| oDialog |
+
+   oDialog := OpenDlg('Datenquellen-Verzeichnis wählen'),
+   startseq
+      oDialog.Active := true,
+      if oDialog.Selected then
+         edt_DataSourceDirectory.Text := ExtractFilePath(oDialog.FileName),
+         MyFocusControl(oForm, edt_ProjectKey),
+      endif,
+   always
+      DestroyObject(oDialog),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Dialog abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Dialog bestätigen
+//******************************************************************************
+function A_ConfirmExecute( Sender )
+   KVU_Set(m_aResult, 'ReadProjectDialog.confirmed',     true),
+   KVU_Set(m_aResult, 'ReadProjectDialog.dataSourceURI', trim(edt_DataSourceDirectory.Text)),
+   KVU_Set(m_aResult, 'ReadProjectDialog.projectKey',    trim(edt_ProjectKey.Text)),
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsNormal,
+      oForm.BorderStyle := bsDialog,
+      oForm.Windowstate := wsNormal,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'CAD-Projekt einlesen',
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                      := FindObject(oForm, "A_Cancel"),
+   A_Confirm                     := FindObject(oForm, "A_Confirm"),
+   actions                       := FindObject(oForm, "actions"),
+   btn_Cancel                    := FindObject(oForm, "btn_Cancel"),
+   btn_Confirm                   := FindObject(oForm, "btn_Confirm"),
+   btn_SelectDataSourceDirectory := FindObject(oForm, "btn_SelectDataSourceDirectory"),
+   edt_DataSourceDirectory       := FindObject(oForm, "edt_DataSourceDirectory"),
+   edt_ProjectKey                := FindObject(oForm, "edt_ProjectKey"),
+   pnl_Buttons                   := FindObject(oForm, "pnl_Buttons"),
+   pnl_DataSourceDirectory       := FindObject(oForm, "pnl_DataSourceDirectory"),
+   pnl_Main                      := FindObject(oForm, "pnl_Main"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SetDefaults()
+   KVU_Set(m_aResult, 'ReadProjectDialog.confirmed', false),
+   
+   oForm.Constraints.MinWidth := 496,
+   oForm.Constraints.MaxWidth := 496,
+   oForm.Constraints.MinHeight := 140,
+   oForm.Constraints.MaxHeight := 140,
+
+   btn_SelectDataSourceDirectory.Caption := '',
+
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+startseq
+   InitForm(),
+   LoadGUI(),
+   SetDefaults(),
+   ShowGUI(),
+   DestroyObject(oForm),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+m_aResult
+

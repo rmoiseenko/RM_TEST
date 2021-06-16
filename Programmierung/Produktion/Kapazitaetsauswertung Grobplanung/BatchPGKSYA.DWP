@@ -1,0 +1,306 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//    Dieses Programm arbeitet die Datensätze aus der PGKSYA ab
+//    Für sämtliche Datensätze, bei denen BEARBEITEN = TRUE ist, wird eine
+//    Kapazitäts-Bedarfs-Berechnung incl DLZ Terminierung durchgeführt
+//
+// Ablauf:
+//
+//   1. Prüfe, ob offene Aufgaben in der PGKSYA vorliegen (BEARBEITEN = true)
+//   2. Übernimm die erste offene Aufgabe (Filter: BEARBEITEN = true, Datensatz nicht gesperrt, Sortierung = FEHLER_ANZ;ID)
+//      Hintergrund: chronologische Abarbeitung. Niemals als fehlerhaft erkannte Aufgaben immer erst abarbeiten. Nur Aufgaben bearbeiten, die als Bearbeitungsfähig (BEABREITEN = true) erkannt wurden.
+//      PGKSYA Datensatz sperren (ist bei der Prüfung auf Sperrung bereits passiert)
+//      2a.   Aufgabe ausführen, die sich aus den Daten des PGKSYA-Datensatzes ergibt
+//      2a1.      Wenn dabei ein Fehler auftritt, Fehlermeldung in PGKSYA eintragen und Aufgabe als "fehlerhaft" markieren. Datensatz entsperren.
+//      2a2.      Wenn kein Fehler auftritt, Datensatz löschen.
+//   3. go back to 1. solange eine Aufgabe gefunden wurde
+//
+// Die Rückgabe ist ein Array bestehend aus
+//  - true / false für fehlerfrei oder nicht
+//  - 'OK' oder dem Fehlerstring.
+//##############################################################################
+//##############################################################################
+
+| m_aResult, m_cError, m_nFehlerAnzHuerde,
+  m_oDM, m_oDM_PGKSYA, m_oPGKSYA, m_oPGKSYAMem, m_oMemKopf, m_oMemDetail,
+  m_bTestMode, m_oCbPCData |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// In dieser Funktion wird die Kapazitäts-Bedarfs-Berechnung
+// incl Durchlauf Terminierung durchgeführt
+// Die Funktion hat keine Rückgabe
+//******************************************************************************
+function KapaBedarfsBerechnung(oDM, oPGKSYA)
+   | dEndTermin, nTime, aTimes |
+
+   m_oMemKopf.CbEmptyTable(),
+   m_oMemDetail.CbEmptyTable(),
+
+   aTimes     := {},
+   PGKU_Debug_Timer_Init(nTime),
+
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'init'),
+
+   // 1. Auftragskopf-Daten ermitteln
+   PGKU_FillKapaBedarfKopfMem(oDM, m_oMemKopf, oPGKSYA:DS_WA, oPGKSYA:DS_ID, oPGKSYA:BESTPOSNR),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'FillKapaBedarfKopfMem'),
+
+   // 2. Auftragspositionen-Daten ermitteln
+   PGKU_FillKapaBedarfDetailMem(oDM, m_oMemKopf, m_oMemDetail),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'FillKapaBedarfDetailMem'),
+
+   // 3. Summen-Berechnung
+   PGKU_ReCalc(m_oMemDetail),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'ReCalc'),
+
+   // 4. Bereitschaft berechnen
+   PGKU_CalcBereitschaft(m_oMemDetail),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'CalcBereitschaft'),
+
+   // 5. Durchlaufterminierung
+   PGKU_Durchlaufterminierung_PCDataHandling(oDM, m_oCbPCData, m_oMemDetail, m_oMemKopf),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'Durchlaufterminierung'),
+
+   // 6. Infos in Datenbank zurückschreiben
+   PGKU_TransferKapaBedarfMemsToDatabase(oDM, m_oMemKopf, m_oMemDetail),
+   PGKU_Debug_Timer_Lap(nTime, aTimes, 'TransferKapaBedarfMemsToDatabase'),
+
+   WriteLn(Replicate('-', 55)),
+   WriteLn(PGKU_Debug_Timer_PrintValues(aTimes)),
+   WriteLn(Replicate('-', 55)),
+end,
+
+//******************************************************************************
+// Die Funktion editiert den Datensatz der PGKSYA, falls die
+// Kapazitäts-Bedarfs-Berechnung einen Fehler geliefert haben sollte.
+// Die Funktion hat keine Rückgabe
+//******************************************************************************
+function EditErrorPGKSYA(oPGKSYA, cError)
+  MyEdit(oPGKSYA),
+  oPGKSYA:FEHLER     := true,
+  oPGKSYA:FEHLER_ANZ := oPGKSYA:FEHLER_ANZ + 1,
+  oPGKSYA:FEHLER_MSG := cError,
+  oPGKSYA:GEAENDERT  := now(),
+  if oPGKSYA:FEHLER_ANZ >= m_nFehlerAnzHuerde then
+     oPGKSYA:BEARBEITEN := false,
+  else
+     oPGKSYA:BEARBEITEN := true,
+  endif,
+  MyPost(oPGKSYA),
+end,
+
+//******************************************************************************
+// Funktion prüft, ob der Fertigungsauftrag cBestPosNr exisitert oder existiert hat und fertiggemeldet wurde
+// @Result: true / false
+//          ja = Fertigungsauftrag existiert / hat existiert
+//******************************************************************************
+function CheckProdOrderExistsOrIsFinished(oDM, cBestPosNr)
+| cHeadB_Pos_Lfd, oDab240_Head |
+   cHeadB_Pos_Lfd         := D240_CalcHead_B_POS_LFD(cBestPosNr),
+
+   oDab240_Head           := DbGetTable(oDM, waDab240),
+   oDab240_Head.IndexName := 'DAB241',
+
+   Result := DbSeek({cHeadB_Pos_Lfd}, oDab240_Head),
+end,
+
+//******************************************************************************
+// Die Funktion prüft, ob der PGKSYA-Datensatz im Berechnungshorizont ist
+//
+// @Result: boolean
+//******************************************************************************
+function DatensatzInBerechnungsHorizont(oPGKSYA)
+   Result := true,                 // Im Zweifelsfall mit in Berechnung nehmen
+   case oPGKSYA:DS_WA
+      of waDab035 :: Result := lookup(waDab035, 'DAB03D', {{oPGKSYA:DS_ID}}, 'TERMIN <= gl_PGKU_BerechnungsHorizontInJahrenFuerKapaNachfrage'),
+      otherwise      Result := true,
+   endcase
+end,
+
+//******************************************************************************
+// Die Funktion verarbeitet die übergebene Neuanlage, Änderung bzw. Löschung
+// @Result: null
+//******************************************************************************
+function BearbeiteNeuAenderungenLoeschung(oDM, oPGKSYA)
+| bIsDelete |
+
+   // Sonderbehandlung für die Bearbeitung von Dab035-Aufgaben
+   // => ein gelöschter Dab035-Satz kann entweder eine echte Löschung sein oder ein endfertiggemeldeter FA
+   //    Wenn ein FA fertiggemeldet wurde, soll regulär die Terminierung durchlaufen!
+   case oPGKSYA:DS_WA
+      of waDab035 :: bIsDelete := not CheckProdOrderExistsOrIsFinished(oDM, oPGKSYA:BESTPOSNR),
+      otherwise      bIsDelete := oPGKSYA:AEND_ART == 'D',
+   endcase,
+
+   if bIsDelete or not DatensatzInBerechnungsHorizont(oPGKSYA) then
+      PGKU_AuftragLoeschen(oDM, oPGKSYA),
+   else
+      KapaBedarfsBerechnung(oDM, oPGKSYA),
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion verarbeitet einen Datensatz der PGKSYA
+// @Result: null
+//******************************************************************************
+function BearbeiteEineAufgabe(oDM, oPGKSYA)
+   | bError, cError |
+   SetErrorIf(oPGKSYA:BEARBEITEN = false, 'oPGKSYA:BEARBEITEN = false ID: ' + str(oPGKSYA:ID)),
+   SetErrorIf(empty(oPGKSYA:AEND_ART),    'empty(oPGKSYA:AEND_ART) ID: ' + str(oPGKSYA:ID)),
+   SetErrorIf(empty(oPGKSYA:DS_WA),       'empty(oPGKSYA:DS_WA) ID: ' + str(oPGKSYA:ID)),
+   SetErrorIf(empty(oPGKSYA:ARTNR_BG),    'empty(oPGKSYA:ARTNR_BG) ID: ' + str(oPGKSYA:ID)),
+   SetErrorIf(empty(oPGKSYA:BESTPOSNR) and oPGKSYA:DS_ID = 0, 'empty(oPGKSYAMem:BESTPOSNR) and oPGKSYAMem:DS_ID = 0 ID: ' + str(oPGKSYA:ID)),
+
+   // Achtung: Aufgaben-Datensatz ist hier schon gesperrt!
+   DbStartTrans(oDM.AdsConnection),
+   startseq
+      // Abarbeiten der Aufgabe incl Löschung aus der PGKSYA
+      startseq
+         BearbeiteNeuAenderungenLoeschung(oDM, oPGKSYA),
+         bError := false,
+      onerror
+         bError := true,
+         cError := getErrorText() + ' ' + ArrtoStr(getErrorStack()),
+         writeln(cError),
+      stopseq,
+      if not bError then
+         MyDelete(oPGKSYA),
+      else
+         EditErrorPGKSYA(oPGKSYA, cError),
+         DbUnLock(oPGKSYA),
+      endif,
+      if not bError and not m_bTestMode then
+         DbCommit(oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen
+      endif,
+   always
+      if DbInTrans(oDM.AdsConnection) then
+         DbRollBack(oDM.AdsConnection),
+      endif,
+      DbResetDm(oDM), // immer DbResetDM(), damit der nächste Durchlauf
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: String, Valider Teil-String eines Datei-Namens
+//******************************************************************************
+function LoggingGetActionTextForPGKSYARecord(oPGKSYA)
+   Result :=  'ID-' + Str(oPGKSYA:ID) + ' ',
+
+   case oPGKSYA:DS_WA
+      of waDab035 :: Result += 'FA-'         + AllTrim(oPGKSYA:BESTPOSNR),
+      of waDab215 :: Result += 'DISPO-'      + Str(oPGKSYA:DS_ID),
+      otherwise      Result += 'UNKNOWN WA-' + Str(oPGKSYA:DS_WA),
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion sucht die erste zu bearbeitende Aufgabe aus der PGKSYA
+// Dazu muß BEARBEITEN = true sein
+// Dann nimmt er die mit den wenigsten Fehlern und bei gleicher Fehlerzahl die kleinste ID
+// Wenn der Datensatz gesperrt ist, versuch den nächsten
+// @Result: boolean: Wenn eine Aufgabe gefunden wurde: true
+//******************************************************************************
+function BearbeiteAufgaben(oDM, oPGKSYA)
+   | bContinue |
+   Result     := false,
+
+   // Index setzen, Filter setzen, DbGoTop()
+   oPGKSYA.IndexName := 'FEHLER_ANZ_ID',
+   DbFilter('BEARBEITEN = true', oPGKSYA),
+   DbGoTop(oPGKSYA),
+
+   // Wenn es zumindest eine Aufgabe gibt, dann erzeugen wir erst hier das PCData-Objekt (da ggf. relativ zeitaufwendig)
+   if not NoDs(oPGKSYA) then
+
+      // Beide Memtables nur einmalig erstellen
+      if empty(m_oMemKopf) then
+         m_oMemKopf   := PGKU_CreateKapaBedarfKopfMem(oDM),
+      endif,
+      if empty(m_oMemDetail) then
+         m_oMemDetail := PGKU_CreateKapaBedarfDetailMem(oDM),
+      endif,
+
+      // --- START ---
+      // Aktuell (08.07.2016 CM) gibt es ein Speicher-Leck beim Zerstören von PCData
+      // daher wird die "automatische Verlängerungs-Logik" hier nicht benutzt
+
+      // Das PCData-Objekt wird hier einmalig erstellt und innerhalb der Schleife nicht mehr zerstört, es soll für den nächsten Aufruf noch verfügbar sein
+      // if empty(m_oCbPCData) then
+      //    m_oCbPCData  := PGKU_CreatePCData(Date() - (6 * 30)  , Date() + (6 * 30) , '', oDM),
+      // endif,
+      m_oCbPCData  := PGKU_GetCachedPCData(),
+      // --- ENDE ---
+
+      bContinue  := true,
+      while not EoF(oPGKSYA) and bContinue do
+         if DbLock(oPGKSYA) then
+            if gl_PGKU_LoggingActive then
+               PGKU_Logging_LogToNewFileAndClose('---- PROCESS ' + LoggingGetActionTextForPGKSYARecord(oPGKSYA), 'Bearbeite Aufgabe PGKSYA:ID ' + Str(oPGKSYA:ID) + ', BESTPOSNR = ' + oPGKSYA:BESTPOSNR),
+            endif,
+            BearbeiteEineAufgabe(oDM, oPGKSYA),
+            Result    := iif(m_bTestMode, false, true),
+            bContinue := false,
+         else
+            if gl_PGKU_LoggingActive then
+               PGKU_Logging_LogToNewFileAndClose('---- SKIP ' + LoggingGetActionTextForPGKSYARecord(oPGKSYA), 'Aufgabe PGKSYA:ID ' + Str(oPGKSYA:ID) + ' ist gesperrt => Datensatz wird übersprungen'),
+            endif,
+            DbSkip(1, oPGKSYA),
+         endif,
+      end,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aResult          := {false, '?'},
+m_bTestMode        := false,
+m_nFehlerAnzHuerde := 3,         // nach x Fehlern Aufgabe nicht mehr bearbeiten
+m_oCbPCData        := nil,
+m_oMemKopf         := nil,
+m_oMemDetail       := nil,
+
+m_oDM              := CreateObject('TBeDbGet', 'BatchPGKSYA'),
+startseq
+
+   m_oDM_PGKSYA := CreateObject('TBeDbGet'),  // Eigenes Datenmodul für die PGKSYA, damit die Änderungen an der Sync-Tabelle immer committed werden, auch
+                                              // wenn die Verarbeitungs-Logik auf einen Fehler läuft und somit die Verarbeitungs-Transaktion abgebrochen werden muss.
+   startseq
+      startseq
+         m_oPGKSYA  := DbGetTable(m_oDM_PGKSYA, waPGKSYA),
+         while BearbeiteAufgaben(m_oDM, m_oPGKSYA) do
+            ProcessMsg(),
+         end,
+         // Rückgabe, wenn das Programm fehlerfrei gelaufen ist
+         m_aResult := {true, 'OK'},
+      onerror
+         m_cError := 'Fehler im Programm ' + ProgName() + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)),
+         if gl_PGKU_LoggingActive then
+            PGKU_Logging_LogToNewFileAndClose('---- ## ERROR ##', m_cError),
+         endif,
+         if EditorMode() then
+            MessageDlg(m_cError, mtError), // MesageDlg für den Test des Batch-Programms
+         endif,
+         // Der Fehler muß ins Result zur Weiterverarbeitung
+         m_aResult := {false, m_cError},
+      stopseq,
+   always
+      DestroyObject(m_oDM_PGKSYA),
+   stopseq,
+
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aResult

@@ -1,0 +1,118 @@
+function _TSKPL_CalculateStart_Daily(aTaskExecutionOptions)
+| m_aRequirements |
+
+   //***************************************************************************
+   // Durchläuft das Sperr-Array (nicht zu berücksichtigende Wochentage) und
+   // vergleicht jede Position mit nWeekday auf Übereinstimmung.
+   // Falls übereinstimmend wird FALSE zurückgegeben und der Durchlauf abge-
+   // brochen
+   // @Param: Numeric [1..7], Array of Integer
+   // @Result: Boolean, Sperre auf nWeekday
+   //***************************************************************************
+   function WeekdayIsNotAnException(nWeekday, aExceptDays)
+   | i, bNoExceptionFound |
+      result := False,
+      bNoExceptionFound := True,
+      for i := 1 to ALen(aExceptDays) do
+         if (aExceptDays[i] = nWeekday) then
+            bNoExceptionFound := False,
+            break,
+         endif
+      end,
+      result := bNoExceptionFound,
+   end,
+
+   //***************************************************************************
+   // Berechnet den neuen Startzeitpunkt für einen täglichen Ausführplan
+   // @Param: DateTime, Array of Integer
+   // @Result: DateTime
+   //***************************************************************************
+   function CalculateNextStartDate(dtStart, aExceptDays, dtTime)
+   |
+      nStartDoW, i, dtNow
+   |
+      i := 1,
+      dtNow := GetAdsServerTime(),
+      result := Int(dtStart) + Frac(dtTime),
+
+      while (not WeekdayIsNotAnException(Dow(result), aExceptDays)) or (result < dtStart) do
+         i += 1,
+         result += 1,
+
+         if i > 7 then
+            break,
+         endif,
+      end,
+   end,
+
+   //***************************************************************************
+   // Prüft, ob alle Anforderungen für den Auführzeitplan übergeben wurden
+   // @Param: Array mit Ausführoptionen
+   // @Result: boolean, findet aber keine Verwendung, da SetError abbricht
+   //***************************************************************************
+   function CheckRequirements(aTaskExecutionOptions, aRequirements:R)
+   | i, cOutput, localReq, cKey |
+      //Wir gehen davon aus, dass alles passt und missbrauchen result dafür
+      result := True,
+      cOutput := '',
+      if (ALen(aTaskExecutionOptions) < 1) then
+         SetError('Keine Zeitplan-Optionen!'),
+      endif,
+      localReq := aRequirements,
+      for i := 1 to ALen(localReq) do
+         cKey := localReq[i],
+         if KVU_FIND(aTaskExecutionOptions, cKey) < 0 then
+            cOutput := cOutput + ' ' + cKey,
+            result := False,
+         endif,
+      end,
+      if not result then
+         SetError('Anforderungen fehlen: ' + cOutput),
+      endif,
+   end,
+
+   //***************************************************************************
+   // Von außen einzig aufrufbare Funktion (PSEUDO), da default
+   // Gibt das Datum des nächstmöglichen Ausführzeitpunktes zurück
+   // @Param: Array mit Ausführoptionen
+   // @Result: DateTime
+   //***************************************************************************
+   function GetNextStartForTask(aTaskExecutionOptions)
+   |
+      aExceptDays, dtTime, nHours, nMinutes, nSeconds, nMilli, 
+      aLastStart, dtCalcBase, dtNow
+   |
+
+      if (ALen(aTaskExecutionOptions) < 1) then
+         SetError('Keine Zeitplan-Optionen!'),
+      endif,
+
+      dtNow      := GetAdsServerTime(),
+      aLastStart := KVU_GET(aTaskExecutionOptions, 'execution.LastStart', ConvertDateTimeToArray(dtNow)),
+      dtCalcBase := ConvertArrayToDateTime(aLastStart),
+      if dtCalcBase < dtNow then
+        dtCalcBase := dtNow,
+      endif,
+
+      aExceptDays := KVU_GET(aTaskExecutionOptions, 'execution.ExceptDays', {}),
+
+      dtTime := KVU_GET(aTaskExecutionOptions, 'execution.Time', EncodeTime(0, 1, 0, 0)),
+      DecodeTime(dtTime, nHours, nMinutes, nSeconds, nMilli),
+      dtTime := EncodeTime(nHours, nMinutes, 0, 0),
+
+      if (ALen(aExceptDays) > 6) then
+         result := EncodeDateTime(2121, 12, 31, 23, 59, 59, 999),
+//         SetError('Keinen Ausführungs Tag gewählt!'),
+      else
+         result := CalculateNextStartDate(dtCalcBase, aExceptDays, dtTime),
+      endif,
+
+   end,
+
+   //Requirements definieren
+   m_aRequirements := Dim(0),
+   m_aRequirements := {'execution.ExceptDays', 'execution.Time'},
+
+   CheckRequirements(aTaskExecutionOptions, m_aRequirements),
+   result := GetNextStartForTask(aTaskExecutionOptions),
+end,

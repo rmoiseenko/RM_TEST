@@ -1,0 +1,264 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inbound Transport
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet den ausgehenden Transport-Prozess für das
+//   Datenübertragungsprotokoll "SFTP" ab.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDITRCHId:P2,
+   m_oProgressCallback:P3,
+                                                          
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion prüft, ob generell Dateien auf dem FTP-Server archiviert
+// werden können. Dazu wird geprüft, ob das Verzeichnis "imported" existiert.
+//
+// @result: boolean
+//******************************************************************************
+function CanArchiveFiles(oAuthenticationInfo:O, cRemotePath:C, cImportDirectoryName)
+|
+   nFTPResult,
+   cHost, nPort, cUserName, cPassword, bPassive,
+   aResultDir
+|
+
+   EDI_Transport_FTP_GetAuthenticationInfo(oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive),
+
+   nFTPResult := FTPDir(
+      'Checking for directory ' + cRemotePath + cImportDirectoryName,
+      cHost,
+      nPort,
+      cUserName,
+      cPassword,
+      bPassive,
+      aResultDir,
+      cRemotePath + cImportDirectoryName
+   ),
+
+   result := nFTPResult = 0,
+end,
+
+//******************************************************************************
+// Diese Funktion archiviert die Datei mit dem übergebenen Dateipfad in einem
+// Unterverzeichnis (z.B.: .\imported\2018-05-04).
+//
+// @result: boolean - Datei konnte in das Archiv-Verzeichnis verschoben werden
+//******************************************************************************
+function ArchiveFile(oAuthenticationInfo:O, cRemotePath:C, cFileName:C, cLocalFullFilePath:C)
+| cImportPath, aFileList, nFTPResult, cHost, nPort, cUserName, cPassword, bPassive |
+
+   EDI_Transport_FTP_GetAuthenticationInfo(oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive),
+
+   cImportPath := 'imported',
+
+   nFTPResult := FTPDir(
+      '',
+      cHost,
+      nPort,
+      cUserName,
+      cPassword,
+      bPassive,
+      aFileList,
+      cRemotePath + cImportPath
+   ),
+   EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPDir'),
+
+   if not EDI_Transport_FileNameExistsInDirArray(aFileList, cFileName) then
+      nFTPResult := FTPRename(
+         'Moving ' + cFileName,
+         cHost,
+         nPort,
+         cUserName,
+         cPassword,
+         bPassive,
+         {cFileName, cImportPath + '/' + cFileName},
+         cRemotePath
+      ),
+      if nFTPResult <> 0 then
+         nFTPResult := FTPDelete(
+            'Deleting ' + cFileName,
+            cHost,
+            nPort,
+            cUserName,
+            cPassword,
+            bPassive,
+            {cFileName},
+            cRemotePath
+         ),
+         EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPDelete'),
+      endif,
+  else
+     SetError('File <' + cFileName + '> is already imported.'),
+  endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liest genau eine Datei ein.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportInbound_FTP_SingleFile(oDM:O,
+                                         nEDITRCHId:N,
+                                         cRemotePath:C,
+                                         cLocalFullFilePath:C,
+                                         cFileName:C,
+                                         nFileSize:N,
+                                         dtFileChangeDate:DT,
+                                         nTotalFileCount:N,
+                                         nFileIndex:N,
+                                         oAuthenticationInfo:O,
+                                         oProgressCallback:O)
+| oEDIMessage, oEDIMSG |
+
+   oEDIMessage := EDI_Message_Inbound_Create(oDM, nEDITRCHId),
+   startseq
+      startseq
+         EDI_Message_SetContentFromFile(oEDIMessage, cLocalFullFilePath),
+
+         if not empty(cFileName) then
+            ArchiveFile(oAuthenticationInfo, cRemotePath, cFileName, cLocalFullFilePath),
+            EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Read),
+         endif,
+
+         // ggf. Fortschritt-Callback ausführen
+         EDI_Process_UpdateProgress(oProgressCallback, nFileIndex, nTotalFileCount, cFileName),
+      onerror
+         EDI_Message_LogErrorAndSave(oEDIMessage, GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportInbound_FTP(oDM:O, nEDITRCHId:N, oProgressCallback:O)
+|
+   oEDIMSG, oEDITRCH,
+   cRemoteFullFileName, cLocalFullFileName, cURI, cSourcePath, cDestinationPath,
+   aEdiFiles, aFile, aExtensions, aSkippedFilesList, nProcessedFilesCount, i,
+   oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive, nFTPResult
+|
+
+   result := nil,
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindKey({nEDITRCHId}), 'EDITRCH record not found: ' + str(nEDITRCHId)),
+
+   cURI             := oEDITRCH:URI,
+   cSourcePath      := EDI_Transport_URI_EnsureTrailingPathSeperator(EDI_Transport_URI_GetResource(cURI)),
+   cDestinationPath := EDI_Core_GetTemporaryDirectoryPath_Internal(),
+
+   EDI_Transport_FTP_SetAuthenticationInfo(oAuthenticationInfo, oEDITRCH, cURI),
+   EDI_Transport_FTP_GetAuthenticationInfo(oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive),
+
+   SetErrorIf(
+      not CanArchiveFiles(oAuthenticationInfo, cSourcePath, 'imported'),
+      'Remote directory <' + cSourcePath + '> does not contain the archive directory <imported>.' +
+      ' The directory <' + cSourcePath + 'imported> must exist in order to archive files after successfully downloading them.' +
+      ' Please manually create the mentioned directory and try again.'
+   ),
+
+   nFTPResult := FTPDir(
+      '',
+      cHost,
+      nPort,
+      cUserName,
+      cPassword,
+      bPassive,
+      aEDIFiles,
+      cSourcePath
+   ),
+
+   EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPDir'),
+   
+   aEDIFiles   := EDI_Transport_Inbound_FilterFilesFromDirArray(
+      aEDIFiles,
+      EDI_Transport_Inbound_GetExtensionsAsArray(oEDITRCH:MASK, aExtensions),
+      aExtensions),
+
+   for i := 1 to ALen(aEDIFiles) do
+      aFile := aEDIFiles[i],
+      cRemoteFullFileName := cSourcePath + aFile[1],
+      cLocalFullFileName  := cDestinationPath + '\' + aFile[1],
+      nFTPResult := FTPDownload(
+         cRemoteFullFIleName,
+         cHost,
+         nPort,
+         cUserName,
+         cPassword,
+         bPassive,
+         {cLocalFullFileName},
+         cSourcePath
+      ),
+
+      startseq
+         EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPDownload'),
+         startseq
+            oDM.CbTransaction_Begin(),
+            startseq
+               TransportInbound_FTP_SingleFile(oDM,
+                                               oEDITRCH:ID,
+                                               cSourcePath,
+                                               cLocalFullFileName,
+                                               aFile[1],
+                                               aFile[2],
+                                               aFile[3],
+                                               ALen(aEDIFiles),
+                                               i,
+                                               oAuthenticationInfo,
+                                               oProgressCallback),
+
+               nProcessedFilesCount++,
+               oDM.CbTransaction_Commit(),
+            always
+               if oDM.CbTransaction_TryRollback() then
+                  DbResetDM(oDM),
+               endif,
+            stopseq,
+         onerror
+            AAdd(aSkippedFilesList, {cRemoteFullFileName, StrTran(GetErrorText(GetErrorObj()), CRLF, ' ') + ArrToStr(GetErrorStack(true))}),
+         stopseq,
+      always
+         DeleteFile(cLocalFullFileName),
+      stopseq,
+   next,
+
+   KVU_Set(result, 'processedFilesCount', nProcessedFilesCount),
+   KVU_Set(result, 'skippedFilesList',    aSkippedFilesList),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+ TransportInbound_FTP(m_oDM, m_nEDITRCHId, m_oProgressCallback)

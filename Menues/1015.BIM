@@ -1,0 +1,30 @@
+object ITEM_ZERO: TBeCustomMenuItem
+  Caption = 'Sachmerkmale'
+  Counter = 3
+  Key = '1015'
+  IndiImages = 'ImageListMain'
+  IndiImageIndex = 193
+  object ITEM3: TBeCustomMenuItem
+    Caption = 'Sachmerkmale'
+    Counter = 0
+    CodeBlock = 
+      'GFU_ShowDockingFromMaskIndiMenu('#39'SML_DOCKING'#39', Self, '#39'Sachmerkma' +
+      'lleisten\Zuordnung\Docking'#39')'
+    IndiImages = 'ImageListMain'
+    IndiImageIndex = 193
+  end
+  object ITEM2: TBeCustomMenuItem
+    Caption = 'Suche'
+    Counter = 0
+    CodeBlock = 
+      '| nWorkarea, aParams, oOwner |'#13#10#13#10'nWorkarea := 0,'#13#10'aParams   := ' +
+      '{},'#13#10'oOwner    := GetOwner(Self),'#13#10#13#10'if not Empty(oOwner) then'#13#10 +
+      '   oOwner := FindObject(oOwner, '#39'MainTable'#39'),'#13#10'   if not Empty(o' +
+      'Owner) then'#13#10'      nWorkarea := oOwner.Workarea,'#13#10'   endif,'#13#10'end' +
+      'if,'#13#10#13#10'if nWorkarea > 0 then'#13#10'   AAdd(aParams, {'#39'WORKAREA'#39', nWor' +
+      'karea}),'#13#10'endif,'#13#10#13#10'GFU_ShowModal_CustomInfo(nil, '#39'Sachmerkmalle' +
+      'isten\Suche\GUI'#39', aParams)'
+    IndiImages = 'ImageListMain'
+    IndiImageIndex = 9
+  end
+end

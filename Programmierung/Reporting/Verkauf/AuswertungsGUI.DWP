@@ -1,0 +1,719 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//      Docking / MDI Child zum Auswertgen von Kunden-Auftragsbestand /
+//      Angebotsbestand / etc.
+//      => übergreifend oder für einen Kunden
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+   m_aParams:P4,
+
+   m_cFormClassID,
+   m_cWinPosSaveId,
+   m_cBrowserId_MemGrouped,
+   m_cBrowserId_MemHist,
+
+   m_oDM,
+   m_oMemGrouped,
+   m_oMemHistorisierungen,
+
+   m_aGruppierungsOptionen,
+   m_aKennzahlenOptionen,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ExportToExcel, A_Refresh, actions, BeBarButton1, BeBarButton2,
+   BeBarDockControl1, BeBarManager, BeBarManagerBar1, cmb_GroupBy1,
+   cmb_Kennzahl, ds_Historisierungen, ds_MemGrouped, grid_Historisierungen,
+   grid_MemGrouped, lbl_GroupBy1, lbl_Kennzahl, pnl_Filter, pnl_GroupedData,
+   pnl_HistorisierungsZeitpunkte
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID             := '@REPVK',
+m_cWinPosSaveId            := '@REPVK',
+m_cBrowserId_MemGrouped    := '@REPVK',
+m_cBrowserId_MemHist       := '@REPVKH',
+
+// Gruppierungsmöglichkeiten (übergreifend für alle Kennzahlen definiert, nicht jede Gruppierung ist für jede Kennzahl verfügbar, siehe unten)
+m_aGruppierungsOptionen    := {
+                                {'GV1', 'Empfänger-Region', 'LLAND_REG'}, // für Verkauf
+                                {'GV2', 'Auftragswährung',  'WAEKZ'    },
+                                {'GV3', 'Auftragsart',      'AUF_ART'  },
+
+                                {'GE1', 'Absender-Region',  'LAND_REG'}  // für Einkauf
+                              },
+
+// Liste der auswertbaren Kennzahlen
+m_aKennzahlenOptionen      := {
+                                {100, 'Auftragsbestand', 'Angebote',         'AN_RE_WT', gl_HIS_HistorizationType_SalesOrderBacklog,    'GV1/GV2/GV3'},
+                                {101, 'Auftragsbestand', 'Lieferrückstand',  'LR_RE_WT', gl_HIS_HistorizationType_SalesOrderBacklog,    'GV1/GV2/GV3'},
+                                {102, 'Auftragsbestand', 'Reserviert',       'RV_RE_WT', gl_HIS_HistorizationType_SalesOrderBacklog,    'GV1/GV2/GV3'},
+                                {103, 'Auftragsbestand', 'Im Versand',       'VS_RE_WT', gl_HIS_HistorizationType_SalesOrderBacklog,    'GV1/GV2/GV3'},
+                                {104, 'Auftragsbestand', 'Fakturarückstand', 'FR_RE_WT', gl_HIS_HistorizationType_SalesOrderBacklog,    'GV1/GV2/GV3'},
+
+                                {200, 'Bestellbestand',  'Bestellrückstand', 'BR_RE_WT', gl_HIS_HistorizationType_PurchaseOrderBacklog, 'GE1'}
+                              },
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// "RE_WERT"-Feldname für eine Kennzahl ermitteln
+// @Result: String, Feldname
+//******************************************************************************
+function GetRE_WERT_FieldnameForKennzahl(nKennzahl)
+| aElem |
+   Result := '',
+   foreach aElem in m_aKennzahlenOptionen do
+      if aElem[1] = nKennzahl then
+         Result := aElem[4],
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// "Workarea" mit historisierten Daten für eine Kennzahl ermitteln
+// @Result: Integer
+//******************************************************************************
+function GetHISWorkareaFieldnameForKennzahl(nKennzahl)
+| aElem, nHISKOPFTyp |
+   Result := -1,
+   foreach aElem in m_aKennzahlenOptionen do
+      if aElem[1] = nKennzahl then
+         nHISKOPFTyp := aElem[5],
+         Result      := HIS_DetermineWorkareaByHistorizationType_Internal(nHISKOPFTyp),
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// "HISKOPF:TYP" für eine Kennzahl ermitteln
+// @Result: Integer, HISKOPF:TYP
+//******************************************************************************
+function Get_HISKOPF_TYP_ForKennzahl(nKennzahl)
+| aElem |
+   Result := 0,
+   foreach aElem in m_aKennzahlenOptionen do
+      if aElem[1] = nKennzahl then
+         Result := aElem[5],
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Mögliche Gruppierungsoptionen für eine Kennzahl ermitteln
+// @Result: Array
+//******************************************************************************
+function Get_GruppierungsOptionenArray_ForKennzahl(nKennzahl)
+| cErlaubteGruppierungen, aElem, aGrupZeile |
+   Result := {},
+   foreach aElem in m_aKennzahlenOptionen do
+      if aElem[1] = nKennzahl then
+         cErlaubteGruppierungen := aElem[6],
+
+         // Gruppierungs-Array zusammensetzen, mit allen für diese Kennzahl erlaubten Gruppierungen
+         foreach aGrupZeile in m_aGruppierungsOptionen do                      WriteLn(aGrupZeile[1], cErlaubteGruppierungen),
+            if aGrupZeile[1] $ cErlaubteGruppierungen then
+               AAdd(Result, aGrupZeile),
+            endif,
+         next,
+
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Feldname einer Gruppierungs-Optione ermitteln
+// @Result: String, z.B. 'AUF_ART'
+//******************************************************************************
+function Get_FeldName_For_Gruppierungsoption(cGruppierungsOption)
+| aElem |
+   Result := '',
+   foreach aElem in m_aGruppierungsOptionen do
+      if aElem[1] == cGruppierungsOption then
+         Result := aElem[3],
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Feldbezeichnung einer Gruppierungs-Optione ermitteln
+// @Result: String, z.B. 'Absender-Region'
+//******************************************************************************
+function Get_FeldBez_For_Gruppierungsoption(cGruppierungsOption)
+| aElem |
+   Result := '',
+   foreach aElem in m_aGruppierungsOptionen do
+      if aElem[1] == cGruppierungsOption then
+         Result := aElem[2],
+         break,
+      endif,
+   next,
+end,
+
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+   A_Refresh.Enabled       := not empty(m_oMemHistorisierungen) and not empty(m_oMemHistorisierungen:ID),
+   A_ExportToExcel.Enabled := not empty(m_oMemHistorisierungen) and not empty(m_oMemHistorisierungen:ID),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oDM                        := CreateObject('TBeDbGet', 'DM_REPVK', oForm),
+
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+
+   // TODO: Dockbar machen im Kundenstamm
+
+   // GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, waDab010, 'TBeRightsTable'),
+
+   // Memtable für Gruppierte Daten
+   m_oMemGrouped           := CreateObject('TBeMemTable', 'MEM_GROUPEDDATA', oForm),
+   m_oMemGrouped.AliasName := 'MEM_GROUPED',
+
+   // Memtable für Historisierungs-Zeitpunkte
+   // GU_LinkTableToGUI(m_oMemLAGHIS, ds_HISLAG, grid_HISLAG, m_cBrowserId_MemLAGHIS, false),
+   m_oMemHistorisierungen           := CreateObject('TBeMemTable', 'MEM_HIST', oForm),
+   m_oMemHistorisierungen.AliasName := 'MEM_HIST',
+   m_oMemHistorisierungen.CbLoadFields(waHISKOPF, 'MEM_HIST', , ),
+   m_oMemHistorisierungen.Active    := true,
+   GU_LinkTableToGUI(m_oMemHistorisierungen, ds_Historisierungen, grid_Historisierungen, m_cBrowserId_MemHist, false),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetGroup1FeldBezeichnung(cGruppierungsOption)
+   Result := Get_FeldBez_For_Gruppierungsoption(cGruppierungsOption),
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetGroup1Bezeichnung(m_oMemGrouped)
+| cGruppierungsOption, cFieldValue |
+
+   if m_oMemGrouped:SORT_KZ = 20 then
+      Result := 'Summe',
+   else
+      cGruppierungsOption := m_oMemGrouped:GROUP_1_OPTION,
+      cFieldValue         := m_oMemGrouped:GROUP_1,
+
+      case AllTrim(cGruppierungsOption)
+         of {'GV1', 'GE1'} :: // 'LLAND_REG' für HISVK und 'LAND_REG' für HISEK
+               case cFieldValue
+                  of 10 :: Result := 'Inland',
+                  of 20 :: Result := 'EU',
+                  of 30 :: Result := 'Drittland',
+                  of 90 :: Result := 'Intercompany',
+               otherwise
+                  Result := '?'
+               endcase,
+
+         of 'GV2' :: // = 'WAEKZ'
+            Result := CurrSign(cFieldValue, m_oMemGrouped:STANDORT) + ' (' + Str(cFieldValue) + ')',
+
+         of 'GV3' :: // = 'AUF_ART'
+            Result := LookUp(waDABAUF, 'AUF_NR', {{cFieldValue}}, 'AllTrim(AUF_ART)', '?'),
+
+         otherwise
+            Result := 'unknown groupby fieldname',
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ReloadMemHistorisierungen(oDM, nKennzahl, oMemHistorisierungen)
+| oHISKOPF, nHISKOPF_TYP, nOldHISKOPF_ID, dOldDatum |
+
+   nHISKOPF_TYP := Get_HISKOPF_TYP_ForKennzahl(nKennzahl),
+   SetErrorIf(empty(nHISKOPF_TYP), 'empty(nHISKOPF_TYP) for nKennzahl = ' + Str(nKennzahl)),
+
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'DATUM_TYP_ID',
+
+   DbFilter('TYP = ' + Str(nHISKOPF_TYP) + ' AND STATUS = ' + Str(gl_HIS_HistorizationState_Completed) + ' AND STANDORT = ' + Str(mStandort), oHISKOPF),
+   startseq
+      oMemHistorisierungen.CbDisableControls(),
+      startseq
+         nOldHISKOPF_ID := oMemHistorisierungen:ID,
+         dOldDatum      := oMemHistorisierungen:DATUM,
+         oMemHistorisierungen.CbLoadFromDataSet(oHISKOPF, true),
+         if not oMemHistorisierungen.CbLocate('ID', {nOldHISKOPF_ID}, 0) then
+            if not oMemHistorisierungen.CbLocate('DATUM', {dOldDatum}, 0) then
+               oMemHistorisierungen.CbLast(),
+            endif,
+         endif,
+      always
+         oMemHistorisierungen.CbEnableControls(),
+      stopseq,
+   always
+      DbFilter('', oHISKOPF),
+      oHISKOPF.IndexName := 'ID',
+   stopseq,
+
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadGroupedData(nStandort, nKennzahl, nHisKOPF_ID, cGruppierungsOption)
+| oQuery, cSQL, cScriptName, cRE_WERT_Fieldname, oRec, cGroupByFieldname1, nHISWorkarea |
+                                                                                WriteLn(nStandort, nKennzahl, nHisKOPF_ID, cGruppierungsOption),
+   cScriptName := 'Reporting\Verkauf\sql\Auftragsbestand_nach_Region_und_Horizont',
+   cSQL      := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   SetErrorIf(empty(cSQL), 'script not found!'),
+
+   // Parameter im SQL setzen
+   cRE_WERT_Fieldname := GetRE_WERT_FieldnameForKennzahl(nKennzahl),
+   SetErrorIF(empty(cRE_WERT_Fieldname), 'RE_WERT-Feld konnte nicht ermittelt werden für Kennzahl: ' + Str(nKennzahl)),
+
+   cGroupByFieldname1 := Get_FeldName_For_Gruppierungsoption(cGruppierungsOption),
+
+   nHISWorkarea       := GetHISWorkareaFieldnameForKennzahl(nKennzahl),
+   SetErrorIF(empty(nHISWorkarea), 'empty(nHISWorkarea): ' + Str(nKennzahl)),
+
+   cSQL := StrTran(cSQL, '@STANDORT@',     nStandort),
+   cSQL := StrTran(cSQL, '@HISKOPF_ID@',   nHisKOPF_ID),
+   cSQL := StrTran(cSQL, '@RE_WERT_FELD@', cRE_WERT_Fieldname),
+   cSQL := StrTran(cSQL, '@HIST_TABELLE@', DbSqlTableName(nHISWorkarea)),
+   cSQL := StrTran(cSQL, '@GROUPBY_1@',    cGroupByFieldname1),
+
+   WriteLN(cSQL),
+
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+
+      m_oMemGrouped.CbDisableControls(),
+      startseq
+         m_oMemGrouped.Active := false,
+         m_oMemGrouped.CbBorrowFromDataSet(oQuery),
+
+         // Felder hinzufügen, die primär für die Nutzung im Browserdesign gedacht sind
+         m_oMemGrouped.CbAddField('CALC_RE_WERT_FELDNAME', ftString,  10),
+         m_oMemGrouped.CbAddField('CALC_STO_WAENK',        ftInteger,  0),
+         m_oMemGrouped.CbAddField('GROUP_1_FIELD_BEZ',     ftMemo,     0),
+         m_oMemGrouped.CbAddField('GROUP_1_OPTION',        ftString,  10),
+         m_oMemGrouped.CbAddField('GROUP_1_BEZ',           ftMemo,     0),
+
+         m_oMemGrouped.Active := true,
+         m_oMemGrouped.CbLoadFromDataSet(oQuery, true),
+
+         foreach oRec in m_oMemGrouped do
+            m_oMemGrouped.CbEdit(),
+            m_oMemGrouped:CALC_RE_WERT_FELDNAME := cRE_WERT_Fieldname,
+            m_oMemGrouped:CALC_STO_WAENK        := CurrDecimals(nStandort),
+            m_oMemGrouped:GROUP_1_FIELD_BEZ     := GetGroup1FeldBezeichnung(cGruppierungsOption),
+            m_oMemGrouped:GROUP_1_OPTION        := cGruppierungsOption,
+            m_oMemGrouped:GROUP_1_BEZ           := GetGroup1Bezeichnung(m_oMemGrouped),
+            m_oMemGrouped.CbPost(),
+         next,
+
+      always
+         m_oMemGrouped.CbEnableControls(),
+      stopseq,
+
+      GU_LinkTableToGUI(m_oMemGrouped, ds_MemGrouped, grid_MemGrouped, m_cBrowserId_MemGrouped, false),
+
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+end,
+
+//******************************************************************************
+// Funktion führt das SQL-Statement @cSQL aus und exportiert das Ergebnis nach
+//    @cDestFileName
+// @Result: Export erfolgreich ja/nein
+//******************************************************************************
+function ExportSQLToExcel(cSQL, cDestFileNamePreset, cDataDesc, bOpenExcelFileAfterExport)
+| oQuery, nExportCount, cDestFileName, aSaveDialog, nOldCursor |
+
+   Result := false,
+
+   cDestFileName := '',
+   aSaveDialog := SaveDlg('Daten exportieren', 'Excel|*.xlsx', mBeDefault, cDestFileNamePreset), // TCbSaveDlg = class(TSaveDialog)
+   startseq
+      aSaveDialog.Options := _Or(aSaveDialog.Options, 2), // 2 = ofOverwritePrompt => Nachfragen beim Überschreiben einer bereits vorhandenen Datei
+      aSaveDialog.Active := true,
+      if aSaveDialog.DoSave then
+         cDestFileName := aSaveDialog.FileName,
+      endif,
+   always
+      DestroyObject(aSaveDialog),
+   stopseq,
+
+   if empty(cDestFileName) then
+      exit,
+   endif,
+
+   // Export-Datei erst löschen - ExportExcelFile() liefert keinen ordentlichen Fehler, wenn der Export
+   // nicht geklappt hat - daher selbst sicherstellen, dass die Zieldatei nicht schon
+   // vorhanden ist und übeschreibbar ist (=löschbar)
+   if File(cDestFileName) then
+      if not DeleteFile(cDestFileName) then
+         SetError('Die Zieldatei "' + cDestFileName + '" existiert schon und konnte nicht gelöscht werden.'),
+      endif,
+   endif,
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+
+      oQuery := CreateObject('TBeAdsQuery'),
+      startseq
+         oQuery.SQL    := cSQL,
+         oQuery.Active := true,
+
+         if NoDs(oQuery) then
+            MessageDlg('Die aktuelle Auswahl enthält keine Daten für "' + cDataDesc + '"'),
+         else
+            nExportCount := ExportExcelFile(cDestFileName, oQuery, true, false, false),  // WritelN(nExportCount),
+            if nExportCount < 1 then
+               MessageDlg('Der Export nach Excel war nicht erfolgreich.' + crlf +
+                          'Der Dateiname lautet: "' + cDestFileName + '"' + crlf +
+                          'Prüfen Sie, ob das Zielverzeichnis vorhanden ist und die Datei angelegt bzw. überschrieben werden kann. Die Datei darf aktuell nicht geöffnet sein.' + crlf +
+                          'Fehler: ' + GetErrorText(), mtError),
+            else
+               Result := true,
+            endif,
+         endif,
+
+      always
+         DestroyObject(oQuery),
+      stopseq,
+
+      if Result then
+         if bOpenExcelFileAfterExport then
+            ShellExecute(cDestFileName),
+         else
+            MessageDlg('Export erfolgreich in Datei "' + cDestFileName + '".', mtInformation),
+         endif,
+      endif,
+
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportHISDataToExcel(oDM, nHISKOPF_ID)
+| nHISWorkarea, oHISKOPF, cSQL, cScriptName, cDestFileNamePreset, cHistorisierungsTypBez |
+                                                                                WriteLn('Export HISKOPF:ID = ' + Str(nHISKOPF_ID)),
+   oHISKOPF               := DbGetTableAndMySeek(oDM, waHISKOPF,, nHISKOPF_ID),
+   nHISWorkarea           := HIS_DetermineWorkareaByHistorizationType_Internal(oHISKOPF:TYP),
+                                                                                WriteLn('Export für Workarea = ' + Str(nHISWorkarea)),
+
+   cHistorisierungsTypBez := AttribDispVal(gl_HIS_HistorizationType_MMTabellenID, Str(oHISKOPF:TYP)),
+   cDestFileNamePreset    := FormatDateTime('YYYY-MM-DD', oHISKOPF:DATUM) + ' ID-' + Str(oHISKOPF:ID) + ' TYP-' + cHistorisierungsTypBez + '.xlsx',
+
+   case nHISWorkarea
+      of waHISVK :: cScriptName := 'Reporting\Verkauf\sql\export_HISVK',
+      of waHISEK :: cScriptName := 'Reporting\Verkauf\sql\export_HISEK',
+      otherwise SetError('unknown workarea ' + Str(nHISWorkarea)),
+   endcase,
+
+   cSQL := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   cSQL := StrTran(cSQL, '@HISKOPF_ID@', Str(nHISKOPF_ID)),
+   cSQL := StrTran(cSQL, '@DIA020@',     DbSqlTableName(waDIA020, false)),
+   cSQL := StrTran(cSQL, '@DAB000@',     DbSqlTableName(waDab000, false)),
+   cSQL := StrTran(cSQL, '@DAB100@',     DbSqlTableName(waDab100, false)),
+   cSQL := StrTran(cSQL, '@DAB062@',     DbSqlTableName(waDab062, false)),
+   cSQL := StrTran(cSQL, '@DAB310@',     DbSqlTableName(waDab310, false)),
+   cSQL := StrTran(cSQL, '@DAB010@',     DbSqlTableName(waDab010, false)),   
+
+   WriteLn(cSQL),
+
+   ExportSQLToExcel(cSQL, cDestFileNamePreset, cHistorisierungsTypBez, true),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function grid_HistorisierungenDblClick( Sender )
+   ActionExecute(A_Refresh),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_KennzahlChange( Sender )
+| nKennzahl, aGruppierungsOptionen, aElem, aComboArray, cDefaultGroupBy1 |
+
+   nKennzahl := Val(cmb_Kennzahl.Value),
+
+   if not empty(m_oMemHistorisierungen) then
+      if not empty(nKennzahl) then
+         ReloadMemHistorisierungen(m_oDM, nKennzahl, m_oMemHistorisierungen),
+      endif,
+   endif,
+
+   // Gruppierungs-Möglichkeiten => Combo befüllen
+   if not empty(cmb_GroupBy1) then
+      aGruppierungsOptionen := Get_GruppierungsOptionenArray_ForKennzahl(nKennzahl),
+
+
+      cmb_GroupBy1.Maplist := true,
+      aComboArray          := {},
+      cDefaultGroupBy1     := '',
+      foreach aElem in aGruppierungsOptionen do
+         AAdd(aComboArray, aElem[2] + Chr(9) + aElem[1]),
+         cDefaultGroupBy1  := iif(empty(cDefaultGroupBy1), aElem[1], cDefaultGroupBy1),
+      next,
+
+      cmb_GroupBy1.Items := aComboArray,
+      if not empty(cDefaultGroupBy1) then
+         cmb_GroupBy1.Value := cDefaultGroupBy1,
+      endif,
+   endif,
+
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )                                  // TODO: Master-DataSource einführen => Dockbarkeit im Kundenstamm 
+   // Refresh(),
+   // ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := true,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   if GFU_IsChildWindow(oForm) then
+      GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+   else
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Nach Excel exportieren
+//******************************************************************************
+function A_ExportToExcelExecute( Sender )
+   startseq
+      if Jn('Historisierte Daten entsprechend der aktuellen Auswahl nach Excel exportieren?', true) then
+         ExportHISDataToExcel(m_oDM, m_oMemHistorisierungen:ID),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aktualisieren (F5)
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nKennzahl, cGruppierungsOption |
+   if not empty(m_oMemHistorisierungen) and not empty(m_oMemHistorisierungen:ID) then
+
+      nKennzahl           := Val(cmb_Kennzahl.Value),
+      cGruppierungsOption := cmb_GroupBy1.Value,
+
+      LoadGroupedData(mStandort, nKennzahl, m_oMemHistorisierungen:ID, cGruppierungsOption),
+
+      ActionsEnabled(),
+   else
+      MessageDlg('Bitte wählen Sie einen Historisierungs-Zeitpunkt aus der Liste aus.'),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+| bIsMDIChild |    
+   bIsMDIChild := Empty(m_oMasterTable) and m_oOwnerForm = CbApplication.MainForm,
+
+   if Empty(m_oOwnerForm) then
+
+      oForm             := LoadForm(m_cFormClassID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+
+      if bIsMDIChild then
+         oForm.FormStyle   := fsMDIChild,
+         oForm.Windowstate := wsMaximized,
+      else
+         oForm.FormStyle   := fsNormal,
+         oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+      endif,
+   endif,
+
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ExportToExcel               := FindObject(oForm, "A_ExportToExcel"),
+   A_Refresh                     := FindObject(oForm, "A_Refresh"),
+   actions                       := FindObject(oForm, "actions"),
+   BeBarButton1                  := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                  := FindObject(oForm, "BeBarButton2"),
+   BeBarDockControl1             := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager                  := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1              := FindObject(oForm, "BeBarManagerBar1"),
+   cmb_GroupBy1                  := FindObject(oForm, "cmb_GroupBy1"),
+   cmb_Kennzahl                  := FindObject(oForm, "cmb_Kennzahl"),
+   ds_Historisierungen           := FindObject(oForm, "ds_Historisierungen"),
+   ds_MemGrouped                 := FindObject(oForm, "ds_MemGrouped"),
+   grid_Historisierungen         := FindObject(oForm, "grid_Historisierungen"),
+   grid_MemGrouped               := FindObject(oForm, "grid_MemGrouped"),
+   lbl_GroupBy1                  := FindObject(oForm, "lbl_GroupBy1"),
+   lbl_Kennzahl                  := FindObject(oForm, "lbl_Kennzahl"),
+   pnl_Filter                    := FindObject(oForm, "pnl_Filter"),
+   pnl_GroupedData               := FindObject(oForm, "pnl_GroupedData"),
+   pnl_HistorisierungsZeitpunkte := FindObject(oForm, "pnl_HistorisierungsZeitpunkte"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| aElem, aComboArray |
+   oForm.OrigCapt             := 'Verkaufs- / Einkaufs-Bestand Auswertung',
+
+   cmb_Kennzahl.Maplist := true,
+   aComboArray          := {},
+   foreach aElem in m_aKennzahlenOptionen do
+      AAdd(aComboArray, aElem[2] + ' - ' + aElem[3] + Chr(9) + Str(aElem[1])),
+   next,
+
+   cmb_Kennzahl.Items := aComboArray,
+   cmb_Kennzahl.Value := '101',
+
+   cmb_Kennzahl.ParentFont    := true,
+   cmb_Kennzahl.ShowMatchText := true,
+
+   cmb_GroupBy1.ParentFont    := true,
+   cmb_GroupBy1.ShowMatchText := true,
+
+   MyFocusControl(oForm, cmb_Kennzahl),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and Empty(m_oMasterTable) then
+      m_oMasterTable           := DbOpen(waDab000),
+      DbSeek({10000000}, m_oMasterTable),
+   endif,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ActionsEnabled(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+

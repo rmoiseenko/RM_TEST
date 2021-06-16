@@ -1,0 +1,1075 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zur Ansicht aller Beleglisten (EDIDOCL) mit
+//   deren dazugehörigen Belegen (EDIDOC).
+//   Außerdem bietet diese Benutzeroberfläche u.a. folgende Filtermöglichkeiten:
+//     * Datensatz-ID der Belegliste
+//     * Prozessschritt
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden, um die Benutzeroberfläche anzuzeigen:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_DOCUMENT_LIST_DASHBOARD',
+//        self,
+//        'EDI\DocumentListDashboard\DocumentListDashboardGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI, m_oEDIDOC, m_oEDIDOCL, m_oEDIHEAD, m_oEDIPOS, m_oEDIMSG,
+   m_oIndividualDataMemtable_Head, m_oIndividualDataMemtable_Position,
+   m_cPositionSaveId, m_cFormId, m_cBrowserId_EDIDOC, m_cBrowserId_EDIDOCL,
+   m_cBrowserId_EDIHEAD, m_cBrowserId_EDIPOS, m_cBrowserId_EDIMSG,
+   m_cBrowserId_IndividualDataMemtable_Head,
+   m_cBrowserId_IndividualDataMemtable_Position,
+
+   m_nProcessStep_EDIDOCL_AllOpenProcesses,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Back, A_CancelStep, A_EDIDOC_ShowDocument, A_EDIDOCL_ClearFilters,
+   A_EDIDOCL_CreateInhouseFormat, A_EDIDOCL_CreateMessage, A_EDIDOCL_Refresh,
+   A_EDIMSG_SendMessage, A_EditInhouseFormat_Head, A_EditInhouseFormat_Position,
+   A_ShowMessageContent, al_Actions, bar_EDIDOCL_FilterControls,
+   bar_EDIDOCL_Top, bar_Messages, bardock_EDIDOCL_FilterControls,
+   bardock_EDIDOCL_Top, barmngr_Main, bbtn_ClearFilters,
+   bbtn_EDIDOCL_CreateInhouseFormat, bbtn_EDIDOCL_CreateMessage, bbtn_Refresh,
+   bbtn_SendMessage, bcc_EDIDOCL_FilterControls, BeBarDockControl1,
+   BePageControl1, BePageControl2, BePanel10, BePanel11, BePanel12, BePanel13,
+   BePanel14, BePanel15, BePanel16, BePanel17, BePanel2, BePanel3, BePanel4,
+   BePanel5, BePanel6, BePanel7, BePanel8, BePanel9, BeTabSheet1, BeTabSheet2,
+   BeTabSheet3, BeTabSheet4, BeTabSheet5, BeTabSheet6,
+   bipnl_DocumentListsSection_Title, bipnl_DocumentsSection_Title,
+   bipnl_InhouseFormatHeaders_Title, bipnl_InhouseFormatPositions_Title,
+   bipnl_MessagesTitle, btn_Back, btn_CancelSteps, btn_ShowMessageContent,
+   cmb_Filter_ProcessStep, cmb_Filter_Status, ds_EDIDOC, ds_EDIDOCL, ds_EDIHEAD,
+   ds_EDIMSG, ds_EDIPOS, ds_IndividualDataMemtable_Head,
+   ds_IndividualDataMemtable_Position, edt_EDIDOC_Errors, edt_EDIDOC_Kommentar,
+   edt_EDIDOC_Warnings, edt_EDIDOCL_Errors, edt_EDIDOCL_Kommentar,
+   edt_EDIDOCL_Warnings, edt_EDIHEAD_Errors, edt_EDIHEAD_Kommentar,
+   edt_EDIHEAD_Warnings, edt_EDIPOS_Errors, edt_EDIPOS_Kommentar,
+   edt_EDIPOS_Warnings, edt_Search_Id, grd_EDIDOC, grd_EDIDOCL, grd_EDIHEAD,
+   grd_EDIMSG, grd_EDIPOS, grd_InhouseFormatHeaders_Details,
+   grd_InhouseFormatPositions_Details, mp_EditInhouseFormat_Head,
+   mp_EditInhouseFormat_Position, mp_ShowDocument, pc_EDIDOC_Details,
+   pc_EDIDOCL_Details, pnl_DocumentListsSection, pnl_DocumentsSection,
+   pnl_EDIDOC_Details, pnl_EDIDOC_Errors_Row1, pnl_EDIDOC_Grid,
+   pnl_EDIDOC_Warnings_Row1, pnl_EDIDOCL_Details, pnl_EDIDOCL_Errors_Row1,
+   pnl_EDIDOCL_FilterControls, pnl_EDIDOCL_Grid, pnl_EDIDOCL_Warnings_Row1,
+   pnl_Left, pnl_Main, pnl_Right, popup_EDIDOC, popup_Head, popup_Position,
+   ts_EDIDOC_Errors, ts_EDIDOC_Kommentar, ts_EDIDOC_Warnings, ts_EDIDOCL_Errors,
+   ts_EDIDOCL_Kommentar, ts_EDIDOCL_Warnings
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormId            := '@EDIDOCLUI',
+m_cPositionSaveId    := '@EDIDOCLPO',
+m_cBrowserId_EDIDOCL := '@EDIDOCL',
+m_cBrowserId_EDIDOC  := '@EDIDOC',
+m_cBrowserId_EDIHEAD := '@EDIHEAD',
+m_cBrowserId_EDIPOS  := '@EDIPOS',
+m_cBrowserId_EDIMSG  := '@EDIMSGL',
+m_cBrowserId_IndividualDataMemtable_Head     := '@EDIDATBRO',
+m_cBrowserId_IndividualDataMemtable_Position := '@EDIDATBRO',
+
+m_nProcessStep_EDIDOCL_AllOpenProcesses := -10,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsDataAvailable, nEDIDOCLProcessStep, nState,
+  bMessageSentWithError, bDoclCreatedWithoutError, bInhouseCreatedWithError,
+  bMessageCreatedWithoutError |
+
+   bIsDataAvailable    := m_oEDIDOCL.CbDataAvailable,
+   nEDIDOCLProcessStep := m_oEDIDOCL:PROC_STEP,
+   nState              := m_oEDIDOCL:STATUS,
+
+   bMessageSentWithError       := (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_MessageSent and
+                                   nState             = gl_EDI_ProcessStatus_Error),
+
+   bDoclCreatedWithoutError    := (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated and
+                                   not nState          = gl_EDI_ProcessStatus_Error),
+
+   bInhouseCreatedWithError    := (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated and
+                                   nState              = gl_EDI_ProcessStatus_Error),
+
+   bMessageCreatedWithoutError := (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_MessageCreated and
+                                   not nState         = gl_EDI_ProcessStatus_Error),
+
+   A_EDIMSG_SendMessage.Enabled :=
+      not nState = gl_EDI_ProcessStatus_Canceled and
+      (bMessageCreatedWithoutError or bMessageSentWithError),
+
+   A_EDIDOCL_CreateInhouseFormat.Enabled :=
+      bIsDataAvailable and
+      (bDoclCreatedWithoutError or bInhouseCreatedWithError) and
+      not nState = gl_EDI_ProcessStatus_Canceled,
+
+   A_EDIDOCL_CreateMessage.Enabled :=
+      bIsDataAvailable and
+      nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated and
+      not nState = gl_EDI_ProcessStatus_Error and
+      not nState = gl_EDI_ProcessStatus_Canceled,
+
+   A_Back.Enabled :=
+      bIsDataAvailable and
+      nState = gl_EDI_ProcessStatus_Canceled or
+      (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated or
+       nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated or
+       nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_MessageCreated or
+       bMessageSentWithError),
+
+   A_CancelStep.Enabled :=
+      bIsDataAvailable and
+      not nState = gl_EDI_ProcessStatus_Canceled and
+      (nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated or
+       nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated or
+       nEDIDOCLProcessStep = gl_EDI_ProcessStep_EDIDOCL_MessageCreated or
+       bMessageSentWithError),
+
+   A_EditInhouseFormat_Head.Enabled     := not m_oEDIHEAD.CbNoDataAvailable,
+   A_EditInhouseFormat_Position.Enabled := not m_oEDIPOS.CbNoDataAvailable,
+   InputControl_SetReadOnlyState(edt_EDIDOCL_Kommentar, not (nState = gl_EDI_ProcessStatus_Canceled)),
+   InputControl_SetReadOnlyState(edt_EDIDOC_Kommentar,  not (nState = gl_EDI_ProcessStatus_Canceled)),
+   InputControl_SetReadOnlyState(edt_EDIHEAD_Kommentar, not (nState = gl_EDI_ProcessStatus_Canceled)),
+   InputControl_SetReadOnlyState(edt_EDIPOS_Kommentar,  not (nState = gl_EDI_ProcessStatus_Canceled)),
+end,
+
+//******************************************************************************
+// GUI mit der Datenbank verbinden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_DocumentListDashboardGUI',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_DocumentListDashboardGUI_GUI', oForm),
+
+   m_oIndividualDataMemtable_Head     := EDI_InhouseFormat_DataMemtable_Create('EDI_INDI_DATA_HEAD',     m_oDM_GUI),
+   m_oIndividualDataMemtable_Position := EDI_InhouseFormat_DataMemtable_Create('EDI_INDI_DATA_POSITION', m_oDM_GUI),
+
+   // GUI-Tabellen erstellen
+   m_oEDIDOCL := DbGetTable(m_oDM_GUI, waEDIDOCL),
+   m_oEDIDOCL.CbIndexName := 'ID',
+   m_oEDIDOC := DbGetTable(m_oDM_GUI, waEDIDOC),
+   m_oEDIDOC.CbIndexName := 'EDIDOCL_ID',
+   m_oEDIHEAD := DbGetTable(m_oDM_GUI, waEDIHEAD),
+   m_oEDIHEAD.CbIndexName := 'EDIDOCL_ID',
+   m_oEDIPOS := DbGetTable(m_oDM_GUI, waEDIPOS),
+   m_oEDIPOS.CbIndexName := 'EDIHEAD_ID',
+   m_oEDIMSG := DbGetTable(m_oDM_GUI, waEDIMSG),
+   m_oEDIMSG.CbIndexName := 'EDIDOCL_ID',
+
+   GU_LinkTableToGUI(m_oEDIDOCL, ds_EDIDOCL, grd_EDIDOCL, m_cBrowserId_EDIDOCL, false),
+   GU_LinkTableToGUI(m_oEDIDOC,  ds_EDIDOC,  grd_EDIDOC,  m_cBrowserId_EDIDOC,  false),
+   GU_LinkTableToGUI(m_oEDIHEAD, ds_EDIHEAD, grd_EDIHEAD, m_cBrowserId_EDIHEAD, false),
+   GU_LinkTableToGUI(m_oEDIPOS,  ds_EDIPOS,  grd_EDIPOS,  m_cBrowserId_EDIPOS,  false),
+   GU_LinkTableToGUI(m_oEDIMSG,  ds_EDIMSG,  grd_EDIMSG,  m_cBrowserId_EDIMSG,  false),
+   GU_LinkTableToGUI(m_oIndividualDataMemtable_Head,     ds_IndividualDataMemtable_Head,     grd_InhouseFormatHeaders_Details,   m_cBrowserId_IndividualDataMemtable_Head,     false),
+   GU_LinkTableToGUI(m_oIndividualDataMemtable_Position, ds_IndividualDataMemtable_Position, grd_InhouseFormatPositions_Details, m_cBrowserId_IndividualDataMemtable_Position, false),
+
+   // Events zuweisen
+   AssignEvent(ds_EDIDOCL, 'OnScroll_Update', 'ds_EDIDOCLScroll_Update'),
+   AssignEvent(ds_EDIHEAD, 'OnScroll_Update', 'ds_EDIHEADScroll_Update'),
+   AssignEvent(ds_EDIPOS,  'OnScroll_Update', 'ds_EDIPOSScroll_Update'),
+end,
+
+//******************************************************************************
+// Diese Funktion gibt den Dateinamen der aktuellen Nachricht zurück.
+// @result: string - Dateiname
+//******************************************************************************
+function EDIMSG_GetFileName()
+   result := trim(m_oEDIMSG:FILE_NAME),
+end,
+
+//******************************************************************************
+// Löscht das Inhouseformat eines ausgewählten Datensatzes (EDIDOCL)
+// @Result: null
+//******************************************************************************
+function DeleteInhouseFormat(nDOCLID)
+   while not m_oEDIHEAD.CbEoF do
+      m_oEDIHEAD.CbDelete(),
+   end,
+end,
+
+//******************************************************************************
+// Löscht die erstellte Outbound Nachricht aus den entsprechenden Tabellen
+// EDIMSG und EDIDOCL
+// @Result: null
+//******************************************************************************
+function DeleteOutboundMessage()
+   m_oEDIMSG.CbDelete(),
+end,
+
+//******************************************************************************
+// Ändert den Zustand des ausgewählten EDIDOCL Datensatzes
+// @Result: null
+//******************************************************************************
+function ChangeEDITableState(oTable, nProcStep, nState)
+   oTable.CbEdit(),
+   oTable:PROC_STEP := nProcStep,
+   oTable:STATUS    := nState,
+   oTable.CbPost(),
+end,
+
+//******************************************************************************
+// Passt den Status und Prozesschritt beim Zurücksetzen an den Nachrichtenstatus an
+// @Result: null
+//******************************************************************************
+function ChangeDOCState(nProcStep, nState)
+   m_oEDIDOC.CbFirst(),
+   while not m_oEDIDOC.CbEoF do
+      m_oEDIDOC.CbEdit(),
+      m_oEDIDOC:PROC_STEP := nProcStep,
+      m_oEDIDOC:STATUS    := nState,
+      m_oEDIDOC.CbPost(),
+      m_oEDIDOC.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion befüllt die übergebene Combobox mit den Elementen der
+// übergebenen Merkmalstabellen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function FillComboControl(oDM:O, oCombobox:O, nAttributeTableId:N, aAdditionalAttributes:A:=nil)
+| oDabMDT, aAttributes |
+
+   if not empty(aAdditionalAttributes) then
+      aAttributes := aAdditionalAttributes,
+   else
+      aAttributes := {},
+   endif,
+
+   oDabMDT := MyGetTable(oDM, waDabMDT, 'DABMDT_FILL_COMBO'),
+   oDabMDT.CbIndexName := 'SORT_ID',
+   oDabMDT.CbSetRangeEx({nAttributeTableId}),
+   startseq
+      oDabMDT.CbFirst(),
+      while not oDabMDT.CbEof do
+         AAdd(aAttributes, trim(oDabMDT:BEZ1) + chr(9) + trim(oDabMDT:WERT)),
+         oDabMDT.CbNext(),
+      end,
+   always
+      oDabMDT.CbCancelRange(),
+   stopseq,
+
+   oCombobox.MapList := true,
+   oCombobox.Items   := aAttributes,
+end,
+
+//******************************************************************************
+// Diese Funktion setzt alle Filter-Controls auf den jeweiligen Standard-Wert
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ResetFilters()
+   edt_Search_Id.Text           := '',
+   cmb_Filter_ProcessStep.Value := '',
+   cmb_Filter_Status.Value      := '',
+end,
+
+//******************************************************************************
+// Filter ermitteln und anwenden
+// @result: null - keine Rückgabe
+//******************************************************************************
+function Filter()
+|
+   cFilter,
+   cFilter_Id, nFilter_ProcessStep, nFilter_Status, cProcessStepFilter
+|
+
+   cFilter := '',
+
+   cFilter_Id          := AllTrim(edt_Search_Id.Text),
+   nFilter_ProcessStep := val(cmb_Filter_ProcessStep.Value),
+   nFilter_Status      := val(cmb_Filter_Status.Value),
+
+   if not empty(cFilter_Id) then
+      cFilter := ConcatTrenner(cFilter, 'ID = ' + cFilter_Id, ' AND '),
+   endif,
+   if nFilter_ProcessStep <> 0 then
+      cProcessStepFilter := 'PROC_STEP ',
+      if nFilter_ProcessStep = m_nProcessStep_EDIDOCL_AllOpenProcesses then
+         cProcessStepFilter += '<> ' + str(gl_EDI_ProcessStep_EDIDOCL_MessageSent),
+      else
+         cProcessStepFilter += '= ' + str(nFilter_ProcessStep),
+      endif,
+
+      cFilter := ConcatTrenner(cFilter, cProcessStepFilter, ' AND '),
+   endif,
+   if nFilter_Status > 0 then
+      cFilter := ConcatTrenner(cFilter, 'STATUS = ' + str(nFilter_Status), ' AND '),
+   endif,
+
+   writeln('Filter: [' + cFilter + ']'),
+   if empty(cFilter) then
+      m_oEDIDOCL.CbFilter   := '',
+      m_oEDIDOCL.CbFiltered := false,
+   else
+      m_oEDIDOCL.CbFiltered := false,
+      m_oEDIDOCL.CbFilter   := cFilter,
+      m_oEDIDOCL.CbFiltered := true,
+   endif,
+end,
+
+//******************************************************************************
+// Alle GUI-Tabellen aktualisieren
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RefreshAllTables()
+   m_oEDIDOCL.CbRefresh(),
+   m_oEDIDOC.CbRefresh(),
+   m_oEDIHEAD.CbRefresh(),
+   m_oEDIPOS.CbRefresh(),
+   m_oEDIMSG.CbRefresh(),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Datenmenge in der EDIDOC auf Basis des
+// aktuell in der EDIDOCL positionierten Datensatzes.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDIDOC()
+| nEDIDOCLId |
+
+   nEDIDOCLId := iif(m_oEDIDOCL:ID = 0, -1, m_oEDIDOCL:ID),
+   m_oEDIDOC.CbSetRangeEx({nEDIDOCLId}),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Datenmenge in der EDIHEAD auf Basis des
+// aktuell in der EDIDOCL positionierten Datensatzes.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDIHEAD()
+| nEDIDOCLId |
+
+   nEDIDOCLId := iif(m_oEDIDOCL:ID = 0, -1, m_oEDIDOCL:ID),
+   m_oEDIHEAD.CbSetRangeEx({nEDIDOCLId}),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Datenmenge in der EDIMSG auf Basis des
+// aktuell in der EDIDOCL positionierten Datensatzes.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDIMSG()
+| nEDIDOCLId |
+
+   nEDIDOCLId := iif(m_oEDIDOCL:ID = 0, -1, m_oEDIDOCL:ID),
+   m_oEDIMSG.CbSetRangeEx({nEDIDOCLId}),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Datenmenge in der EDIPOS auf Basis des
+// aktuell in der EDIHEAD positionierten Datensatzes.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDIPOS()  
+   m_oEDIPOS.CbSetRangeEx({m_oEDIHEAD:ID}),
+end,
+
+//******************************************************************************
+// Speichert den Kommentareintrag in die entsprechende Tabelle
+// @Result: null
+//******************************************************************************
+function SaveComment(oTable, cText)
+   startseq
+      oTable.CbEdit(),
+      oTable:COMM_MSG := cText,
+      oTable.CbPost(),
+      oTable.CbRefresh(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern des Abbruch-Kommentars für Tabelle Nr. <' + toString(oTable.WorkArea) + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Speichert den Kommentareintrag in die entsprechende Tabelle
+//******************************************************************************
+function edt_EDIDOCL_KommentarValidateValue( Sender )
+   SaveComment(m_oEDIDOCL, edt_EDIDOCL_Kommentar.Text),
+end,
+
+//******************************************************************************
+// Speichert den Kommentareintrag in die entsprechende Tabelle
+//******************************************************************************
+function edt_EDIDOC_KommentarValidateValue( Sender )
+   SaveComment(m_oEDIDOC, edt_EDIDOC_Kommentar.Text),
+end,
+
+//******************************************************************************
+// Speichert den Kommentareintrag in die entsprechende Tabelle
+//******************************************************************************
+function edt_EDIHEAD_KommentarValidateValue( Sender )
+   SaveComment(m_oEDIHEAD, edt_EDIHEAD_Kommentar.Text),
+end,
+
+//******************************************************************************
+// Speichert den Kommentareintrag in die entsprechende Tabelle
+//******************************************************************************
+function edt_EDIPOS_KommentarValidateValue( Sender )
+   SaveComment(m_oEDIPOS, edt_EDIPOS_Kommentar.Text),
+end,
+
+//******************************************************************************
+// Event: Fortschritt beim Outbound-Beleglistenerstellen
+// @result: integer
+//   mrOK     - im Erfolgsfall
+//   mrCancel - bei Abbruch durch den User
+//******************************************************************************
+function DocumentListCreateMessage_OnProgress(sender:O)
+   result := EDI_Process_DefaultOnProgressHandler(sender),
+end,
+
+//******************************************************************************
+// Event: Fortschritt beim Outbound-Beleglistenerstellen
+// @result: integer
+//   mrOK     - im Erfolgsfall
+//   mrCancel - bei Abbruch durch den User
+//******************************************************************************
+function DocumentListCreateInhouseFormat_OnProgress(sender:O)
+   result := EDI_Process_DefaultOnProgressHandler(sender),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDIDOCL
+//******************************************************************************
+function ds_EDIDOCLScroll_Update(sender:O)
+   SynchronizeEDIDOC(),
+   SynchronizeEDIHEAD(),
+   SynchronizeEDIMSG(),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDIHEAD
+//******************************************************************************
+function ds_EDIHEADScroll_Update(sender:O)
+   EDI_InhouseFormat_DataMemtable_Fill(m_oIndividualDataMemtable_Head, m_oEDIHEAD:DATA),
+   SynchronizeEDIPOS(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDIPOS
+//******************************************************************************
+function ds_EDIPOSScroll_Update(sender:O)
+   EDI_InhouseFormat_DataMemtable_Fill(m_oIndividualDataMemtable_Position, m_oEDIPOS:DATA),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Wertes in einem Filter-Control
+//******************************************************************************
+function FilterControl_ValueChanged(sender:O)
+   startseq
+      Filter(),
+      //oForm.ActiveControl := bardock_EDIDOCL_FilterControls,
+      MyFocusControl(oForm, pnl_EDIDOCL_grid),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Ändern einer Filtereinstellung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oEDIDOCL) and
+                not EditModes(m_oEDIDOC),
+   if not bCanClose then
+      MessageDlg('Das Fenster kann nicht geschlossen werden, weil noch nicht gespeicherte Änderungen vorhanden sind.', mtWarning),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Bei Klicken in Filter-Felder - Focus-auf pnl_EDIDOCL_Grid legen
+//******************************************************************************
+function SetFocusOnpnl_EDIDOCL_Grid (Sender:O)
+   MyFocusControl(oForm, pnl_EDIDOCL_Grid),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Nachrichteninhalt anzeigen
+//******************************************************************************
+function A_ShowMessageContentExecute( Sender )
+| oEDIMSG |
+   oEDIMSG := DbGetTable(m_oDM, waEDIMSG),
+   MySeek({m_oEDIMSG:ID}, oEDIMSG),
+   EDI_GUI_ShowMessageContentForm(m_oDM, oEDIMSG),
+end,                                                    
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_CancelStepExecute( Sender )
+   if Jn('Soll die Verarbeitung der Nachricht komplett abgebrochen werden?', false) then
+      m_oEDIDOCL.CbEdit(),
+      m_oEDIDOCL:STATUS := gl_EDI_ProcessStatus_Canceled,
+      m_oEDIDOCL.CbPost(),
+   endif,
+end,
+
+//******************************************************************************
+// Setzt einen Prozessschritt zurück
+//******************************************************************************
+function A_BackExecute( Sender )
+   | nProcessStep, nState |
+
+   nProcessStep := m_oEDIDOCL:PROC_STEP,
+   nState       := m_oEDIDOCL:STATUS,
+
+   case nProcessStep
+      of 10 :: // Belegliste eingelesen, aber abgebrochen // RS evtl doch nicht änderbar
+               MessageDlg("Dieser Vorgang kann nicht zurückgesetzt werden. Bitte erzeugen Sie die Belegliste neu.", mtInformation),
+      of 20 :: // Inhouseformat erstellt oder abgebrochen => Belegliste eingelesen, Inhouseformat löschen und Status für EDIDOC zurücksetzen
+               ChangeEDITableState(m_oEDIDOCL, gl_EDI_ProcessStep_EDIDOCL_DocumentlistCreated, gl_EDI_ProcessStatus_OK),
+               ChangeDOCState(gl_EDI_ProcessStep_EDIDOC_DocumentSelected, gl_EDI_ProcessStatus_OK),
+               DeleteInhouseFormat(m_oEDIDOCL:ID),
+      of 30 :: // Nachricht erstellt oder abgebrochen => Inhouseformat erstellt, Nachricht löschen (EDIMSG und EDIDOCL)
+               ChangeEDITableState(m_oEDIDOCL, gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated, gl_EDI_ProcessStatus_OK),
+               ChangeDOCState(gl_EDI_ProcessStep_EDIDOC_InhouseFormatCreated, gl_EDI_ProcessStatus_OK),
+               DeleteOutboundMessage(),
+      of 40 :: // Nachricht versendet, aber mit Fehler => Nachricht erstellt (EDIMSG und EDIDOCL)
+               ChangeEDITableState(m_oEDIDOCL, gl_EDI_ProcessStep_EDIDOCL_MessageCreated, gl_EDI_ProcessStatus_OK),
+               ChangeEDITableState(m_oEDIMSG, gl_EDI_ProcessStep_EDIMSG_Outbound_Created, gl_EDI_ProcessStatus_OK),
+               ChangeDOCState(gl_EDI_ProcessStep_EDIDOC_DocumentAddedToMessage, gl_EDI_ProcessStatus_OK),
+      otherwise
+         GU_ShowStdErrorMessage('Status der Nachricht <' + EDIMSG_GetFileName() + '> fehlerhaft', GetErrorObj()),
+   endcase,
+end,
+
+//******************************************************************************
+// Action: Nachricht versenden (Outbound)
+//******************************************************************************
+function A_EDIMSG_SendMessageExecute( Sender )
+| aResult, oProgressCallback, cSendMessage_ScriptName |
+
+   cSendMessage_ScriptName := lookup(waEDITRCH, 'ID', {{m_oEDIMSG:EDITRCH_ID}}, 'SCRIPT_TRA', ''),
+   startseq
+         oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+         startseq
+            ProgressbarShow('', 'Nachricht versenden', true),
+            startseq
+               aResult := EDI_Message_Send(
+                  m_oDM,
+                  cSendMessage_ScriptName,
+                  m_oEDIMSG:ID,
+                  oProgressCallback
+               ),
+               if EDI_ProcessResult_IsSuccess(aResult) then
+                  MessageDlg('Nachricht wurde erfolgreich versandt.', mtInformation),
+               else
+                  MessageDlg('Nachricht konnte nicht versendet werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+               endif,
+               m_oEDIMSG.CbRefresh(),
+               m_oEDIDOCL.CbRefresh(),
+            always
+               ProgressbarHide(),
+            stopseq,
+         always
+            DestroyObject(oProgressCallback),
+         stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim versender der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Nachricht erstellen
+//******************************************************************************
+function A_EDIDOCL_CreateMessageExecute( Sender )
+| aResult, oProgressCallback, cDocumentListCreateMessage_ScriptName |
+
+   cDocumentListCreateMessage_ScriptName := lookup(waEDIPROF, 'ID', {{m_oEDIDOCL:EDIPROF_ID}}, 'SCRIPT_MSG', ''),
+   oProgressCallback := CallbackInfo('DocumentListCreateMessage_OnProgress'),
+   startseq
+      ProgressbarShow('', 'Nachricht erstellen für Belegliste <' + str(m_oEDIDOCL:ID) + '>', true),
+      startseq
+         aResult := Call(
+            cDocumentListCreateMessage_ScriptName,
+            m_oDM,
+            m_oEDIDOCL:ID,
+            oProgressCallback
+         ),
+         if EDI_ProcessResult_IsSuccess(aResult) then
+            MessageDlg('Nachricht wurde erfolgreich erstellt.', mtInformation),
+            m_oEDIMSG.CbFindKey({m_oEDIDOCL:ID}),
+            m_oEDIMSG.CbEdit(),
+            m_oEDIMSG:STATUS := m_oEDIDOCL:STATUS,
+            m_oEDIMSG.CbPost(),
+         else
+            MessageDlg('Nachricht konnte nicht erstellt werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+         endif,
+         RefreshAllTables(),
+      always
+         ProgressbarHide(),
+      stopseq,
+   always
+      DestroyObject(oProgressCallback),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Inhouseformat erstellen
+//******************************************************************************
+function A_EDIDOCL_CreateInhouseFormatExecute( Sender )
+| aResult, oProgressCallback, cDocumentListCreateInhouseFormat_ScriptName |
+
+   cDocumentListCreateInhouseFormat_ScriptName := lookup(waEDIPROF, 'ID', {{m_oEDIDOCL:EDIPROF_ID}}, 'SCRIPT_EXP', ''),
+   oProgressCallback := CallbackInfo('DocumentListCreateInhouseFormat_OnProgress'),
+   startseq
+      ProgressbarShow('', 'Inhouse-Format erstellen für Belegliste <' + str(m_oEDIDOCL:ID) + '>', true),
+      startseq
+         aResult := Call(cDocumentListCreateInhouseFormat_ScriptName,
+            m_oDM,
+            m_oEDIDOCL:ID,
+            oProgressCallback
+         ),
+         if EDI_ProcessResult_IsSuccess(aResult) then
+            MessageDlg('Inhouse-Format wurde erfolgreich erstellt.', mtInformation),
+         else
+            MessageDlg('Inhouse-Format konnte nicht erstellt werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+         endif,
+         RefreshAllTables(),
+      always
+         ProgressbarHide(),
+      stopseq,
+   always
+      DestroyObject(oProgressCallback),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Nachrichten-Dashboard aktualisieren
+//******************************************************************************
+function A_EDIDOCL_RefreshExecute( Sender )
+   m_oEDIDOCL.CbRefresh(),
+end,
+
+
+//******************************************************************************
+// Action: Alle Filter zurücksetzen
+//******************************************************************************
+function A_EDIDOCL_ClearFiltersExecute( Sender )
+   startseq
+      // Werte Filter-Controls zurücksetzen
+      ResetFilters(),
+      // Anschließend Daten mit leeren Filter-Werten neu filtern
+      // => hebt den aktuellen Filter auf
+      Filter(),
+      MyFocusControl(oForm, pnl_EDIDOCL_grid),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Zurücksetzen der Filter', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_EditInhouseFormat_HeadExecute( Sender )
+| nModalResult |
+
+   m_oEDIHEAD.CbDisableControls(),
+   startseq
+      m_oEDIHEAD.CbEdit(),
+
+      nModalResult := GFU_ShowModal(m_oIndividualDataMemtable_Head, 'EDI\EditInhouseFormat\EditInhouseFormatGUI'),
+      case nModalResult
+         of mrOk ::
+            m_oEDIHEAD:DATA := EDI_InhouseFormat_DataMemtable_Stringify(m_oIndividualDataMemtable_Head),
+            m_oEDIHEAD.CbPost(),
+         of {mrCancel, mrNone} ::
+            m_oEDIHEAD.CbCancel(),
+            EDI_Inhouseformat_DataMemtable_Fill(m_oIndividualDataMemtable_Head, m_oEDIHEAD:DATA),
+         otherwise
+            SetError('Invalid modal result: ' + str(nModalResult)),
+      endcase,
+   always
+      m_oEDIHEAD.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_EditInhouseFormat_PositionExecute( Sender )
+| nModalResult |
+
+   m_oEDIPOS.CbDisableControls(),
+   startseq
+      m_oEDIPOS.CbEdit(),
+
+      nModalResult := GFU_ShowModal(m_oIndividualDataMemtable_Position, 'EDI\EditInhouseFormat\EditInhouseFormatGUI'),
+      case nModalResult
+         of mrOk ::
+            m_oEDIPOS:DATA := EDI_Inhouseformat_DataMemtable_Stringify(m_oIndividualDataMemtable_Position),
+            m_oEDIPOS.CbPost(),
+         of {mrCancel, mrNone} ::
+            m_oEDIPOS.CbCancel(),
+            EDI_InhouseFormat_DataMemtable_Fill(m_oIndividualDataMemtable_Position, m_oEDIPOS:DATA),
+         otherwise
+            SetError('Invalid modal result: ' + str(nModalResult)),
+      endcase,
+   always
+      m_oEDIPOS.CbEnableControls(),
+   stopseq,
+end,
+      
+//******************************************************************************
+//
+//******************************************************************************
+function A_EDIDOC_ShowDocumentExecute( Sender )
+   ShowDocument(m_oEDIDOC:D700_BEART, m_oEDIDOC:D700_PERNR, m_oEDIDOC:D700_BELNR),
+end,
+
+
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Ausgehende Belege',
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.ImageIndex     := 310,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Back                             := FindObject(oForm, "A_Back"),
+   A_CancelStep                       := FindObject(oForm, "A_CancelStep"),
+   A_EDIDOC_ShowDocument              := FindObject(oForm, "A_EDIDOC_ShowDocument"),
+   A_EDIDOCL_ClearFilters             := FindObject(oForm, "A_EDIDOCL_ClearFilters"),
+   A_EDIDOCL_CreateInhouseFormat      := FindObject(oForm, "A_EDIDOCL_CreateInhouseFormat"),
+   A_EDIDOCL_CreateMessage            := FindObject(oForm, "A_EDIDOCL_CreateMessage"),
+   A_EDIDOCL_Refresh                  := FindObject(oForm, "A_EDIDOCL_Refresh"),
+   A_EDIMSG_SendMessage               := FindObject(oForm, "A_EDIMSG_SendMessage"),
+   A_EditInhouseFormat_Head           := FindObject(oForm, "A_EditInhouseFormat_Head"),
+   A_EditInhouseFormat_Position       := FindObject(oForm, "A_EditInhouseFormat_Position"),
+   A_ShowMessageContent               := FindObject(oForm, "A_ShowMessageContent"),
+   al_Actions                         := FindObject(oForm, "al_Actions"),
+   bar_EDIDOCL_FilterControls         := FindObject(oForm, "bar_EDIDOCL_FilterControls"),
+   bar_EDIDOCL_Top                    := FindObject(oForm, "bar_EDIDOCL_Top"),
+   bar_Messages                       := FindObject(oForm, "bar_Messages"),
+   bardock_EDIDOCL_FilterControls     := FindObject(oForm, "bardock_EDIDOCL_FilterControls"),
+   bardock_EDIDOCL_Top                := FindObject(oForm, "bardock_EDIDOCL_Top"),
+   barmngr_Main                       := FindObject(oForm, "barmngr_Main"),
+   bbtn_ClearFilters                  := FindObject(oForm, "bbtn_ClearFilters"),
+   bbtn_EDIDOCL_CreateInhouseFormat   := FindObject(oForm, "bbtn_EDIDOCL_CreateInhouseFormat"),
+   bbtn_EDIDOCL_CreateMessage         := FindObject(oForm, "bbtn_EDIDOCL_CreateMessage"),
+   bbtn_Refresh                       := FindObject(oForm, "bbtn_Refresh"),
+   bbtn_SendMessage                   := FindObject(oForm, "bbtn_SendMessage"),
+   bcc_EDIDOCL_FilterControls         := FindObject(oForm, "bcc_EDIDOCL_FilterControls"),
+   BeBarDockControl1                  := FindObject(oForm, "BeBarDockControl1"),
+   BePageControl1                     := FindObject(oForm, "BePageControl1"),
+   BePageControl2                     := FindObject(oForm, "BePageControl2"),
+   BePanel10                          := FindObject(oForm, "BePanel10"),
+   BePanel11                          := FindObject(oForm, "BePanel11"),
+   BePanel12                          := FindObject(oForm, "BePanel12"),
+   BePanel13                          := FindObject(oForm, "BePanel13"),
+   BePanel14                          := FindObject(oForm, "BePanel14"),
+   BePanel15                          := FindObject(oForm, "BePanel15"),
+   BePanel16                          := FindObject(oForm, "BePanel16"),
+   BePanel17                          := FindObject(oForm, "BePanel17"),
+   BePanel2                           := FindObject(oForm, "BePanel2"),
+   BePanel3                           := FindObject(oForm, "BePanel3"),
+   BePanel4                           := FindObject(oForm, "BePanel4"),
+   BePanel5                           := FindObject(oForm, "BePanel5"),
+   BePanel6                           := FindObject(oForm, "BePanel6"),
+   BePanel7                           := FindObject(oForm, "BePanel7"),
+   BePanel8                           := FindObject(oForm, "BePanel8"),
+   BePanel9                           := FindObject(oForm, "BePanel9"),
+   BeTabSheet1                        := FindObject(oForm, "BeTabSheet1"),
+   BeTabSheet2                        := FindObject(oForm, "BeTabSheet2"),
+   BeTabSheet3                        := FindObject(oForm, "BeTabSheet3"),
+   BeTabSheet4                        := FindObject(oForm, "BeTabSheet4"),
+   BeTabSheet5                        := FindObject(oForm, "BeTabSheet5"),
+   BeTabSheet6                        := FindObject(oForm, "BeTabSheet6"),
+   bipnl_DocumentListsSection_Title   := FindObject(oForm, "bipnl_DocumentListsSection_Title"),
+   bipnl_DocumentsSection_Title       := FindObject(oForm, "bipnl_DocumentsSection_Title"),
+   bipnl_InhouseFormatHeaders_Title   := FindObject(oForm, "bipnl_InhouseFormatHeaders_Title"),
+   bipnl_InhouseFormatPositions_Title := FindObject(oForm, "bipnl_InhouseFormatPositions_Title"),
+   bipnl_MessagesTitle                := FindObject(oForm, "bipnl_MessagesTitle"),
+   btn_Back                           := FindObject(oForm, "btn_Back"),
+   btn_CancelSteps                    := FindObject(oForm, "btn_CancelSteps"),
+   btn_ShowMessageContent             := FindObject(oForm, "btn_ShowMessageContent"),
+   cmb_Filter_ProcessStep             := FindObject(oForm, "cmb_Filter_ProcessStep"),
+   cmb_Filter_Status                  := FindObject(oForm, "cmb_Filter_Status"),
+   ds_EDIDOC                          := FindObject(oForm, "ds_EDIDOC"),
+   ds_EDIDOCL                         := FindObject(oForm, "ds_EDIDOCL"),
+   ds_EDIHEAD                         := FindObject(oForm, "ds_EDIHEAD"),
+   ds_EDIMSG                          := FindObject(oForm, "ds_EDIMSG"),
+   ds_EDIPOS                          := FindObject(oForm, "ds_EDIPOS"),
+   ds_IndividualDataMemtable_Head     := FindObject(oForm, "ds_IndividualDataMemtable_Head"),
+   ds_IndividualDataMemtable_Position := FindObject(oForm, "ds_IndividualDataMemtable_Position"),
+   edt_EDIDOC_Errors                  := FindObject(oForm, "edt_EDIDOC_Errors"),
+   edt_EDIDOC_Kommentar               := FindObject(oForm, "edt_EDIDOC_Kommentar"),
+   edt_EDIDOC_Warnings                := FindObject(oForm, "edt_EDIDOC_Warnings"),
+   edt_EDIDOCL_Errors                 := FindObject(oForm, "edt_EDIDOCL_Errors"),
+   edt_EDIDOCL_Kommentar              := FindObject(oForm, "edt_EDIDOCL_Kommentar"),
+   edt_EDIDOCL_Warnings               := FindObject(oForm, "edt_EDIDOCL_Warnings"),
+   edt_EDIHEAD_Errors                 := FindObject(oForm, "edt_EDIHEAD_Errors"),
+   edt_EDIHEAD_Kommentar              := FindObject(oForm, "edt_EDIHEAD_Kommentar"),
+   edt_EDIHEAD_Warnings               := FindObject(oForm, "edt_EDIHEAD_Warnings"),
+   edt_EDIPOS_Errors                  := FindObject(oForm, "edt_EDIPOS_Errors"),
+   edt_EDIPOS_Kommentar               := FindObject(oForm, "edt_EDIPOS_Kommentar"),
+   edt_EDIPOS_Warnings                := FindObject(oForm, "edt_EDIPOS_Warnings"),
+   edt_Search_Id                      := FindObject(oForm, "edt_Search_Id"),
+   grd_EDIDOC                         := FindObject(oForm, "grd_EDIDOC"),
+   grd_EDIDOCL                        := FindObject(oForm, "grd_EDIDOCL"),
+   grd_EDIHEAD                        := FindObject(oForm, "grd_EDIHEAD"),
+   grd_EDIMSG                         := FindObject(oForm, "grd_EDIMSG"),
+   grd_EDIPOS                         := FindObject(oForm, "grd_EDIPOS"),
+   grd_InhouseFormatHeaders_Details   := FindObject(oForm, "grd_InhouseFormatHeaders_Details"),
+   grd_InhouseFormatPositions_Details := FindObject(oForm, "grd_InhouseFormatPositions_Details"),
+   mp_EditInhouseFormat_Head          := FindObject(oForm, "mp_EditInhouseFormat_Head"),
+   mp_EditInhouseFormat_Position      := FindObject(oForm, "mp_EditInhouseFormat_Position"),
+   mp_ShowDocument                    := FindObject(oForm, "mp_ShowDocument"),
+   pc_EDIDOC_Details                  := FindObject(oForm, "pc_EDIDOC_Details"),
+   pc_EDIDOCL_Details                 := FindObject(oForm, "pc_EDIDOCL_Details"),
+   pnl_DocumentListsSection           := FindObject(oForm, "pnl_DocumentListsSection"),
+   pnl_DocumentsSection               := FindObject(oForm, "pnl_DocumentsSection"),
+   pnl_EDIDOC_Details                 := FindObject(oForm, "pnl_EDIDOC_Details"),
+   pnl_EDIDOC_Errors_Row1             := FindObject(oForm, "pnl_EDIDOC_Errors_Row1"),
+   pnl_EDIDOC_Grid                    := FindObject(oForm, "pnl_EDIDOC_Grid"),
+   pnl_EDIDOC_Warnings_Row1           := FindObject(oForm, "pnl_EDIDOC_Warnings_Row1"),
+   pnl_EDIDOCL_Details                := FindObject(oForm, "pnl_EDIDOCL_Details"),
+   pnl_EDIDOCL_Errors_Row1            := FindObject(oForm, "pnl_EDIDOCL_Errors_Row1"),
+   pnl_EDIDOCL_FilterControls         := FindObject(oForm, "pnl_EDIDOCL_FilterControls"),
+   pnl_EDIDOCL_Grid                   := FindObject(oForm, "pnl_EDIDOCL_Grid"),
+   pnl_EDIDOCL_Warnings_Row1          := FindObject(oForm, "pnl_EDIDOCL_Warnings_Row1"),
+   pnl_Left                           := FindObject(oForm, "pnl_Left"),
+   pnl_Main                           := FindObject(oForm, "pnl_Main"),
+   pnl_Right                          := FindObject(oForm, "pnl_Right"),
+   popup_EDIDOC                       := FindObject(oForm, "popup_EDIDOC"),
+   popup_Head                         := FindObject(oForm, "popup_Head"),
+   popup_Position                     := FindObject(oForm, "popup_Position"),
+   ts_EDIDOC_Errors                   := FindObject(oForm, "ts_EDIDOC_Errors"),
+   ts_EDIDOC_Kommentar                := FindObject(oForm, "ts_EDIDOC_Kommentar"),
+   ts_EDIDOC_Warnings                 := FindObject(oForm, "ts_EDIDOC_Warnings"),
+   ts_EDIDOCL_Errors                  := FindObject(oForm, "ts_EDIDOCL_Errors"),
+   ts_EDIDOCL_Kommentar               := FindObject(oForm, "ts_EDIDOCL_Kommentar"),
+   ts_EDIDOCL_Warnings                := FindObject(oForm, "ts_EDIDOCL_Warnings"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SetDefaults()
+   // Filter-Comboboxen befüllen
+   FillComboControl(
+      m_oDM_GUI,
+      cmb_Filter_ProcessStep,
+      gl_EDI_MMTID_EDIDOCL_ProcessStep,
+      {'<offene Vorgänge>' + chr(9) + str(m_nProcessStep_EDIDOCL_AllOpenProcesses)}
+   ),
+   FillComboControl(
+      m_oDM_GUI,
+      cmb_Filter_Status,
+      gl_EDI_MMTID_ProcessStatus,
+   ),
+
+   // Controls mit Tabellenfeldern verbinden
+   edt_EDIDOCL_Errors.DataSource   := ds_EDIDOCL,
+   edt_EDIDOCL_Errors.DataField    := 'ERROR_MSG',
+   edt_EDIDOCL_Warnings.DataSource := ds_EDIDOCL,
+   edt_EDIDOCL_Warnings.DataField  := 'WARN_MSG',
+   edt_EDIDOC_Errors.DataSource    := ds_EDIDOC,
+   edt_EDIDOC_Errors.DataField     := 'ERROR_MSG',
+   edt_EDIDOC_Warnings.DataSource  := ds_EDIDOC,
+   edt_EDIDOC_Warnings.DataField   := 'WARN_MSG',
+   edt_EDIHEAD_Errors.DataSource    := ds_EDIHEAD,
+   edt_EDIHEAD_Errors.DataField     := 'ERROR_MSG',
+   edt_EDIHEAD_Warnings.DataSource  := ds_EDIHEAD,
+   edt_EDIHEAD_Warnings.DataField   := 'WARN_MSG',
+   edt_EDIPOS_Errors.DataSource    := ds_EDIPOS,
+   edt_EDIPOS_Errors.DataField     := 'ERROR_MSG',
+   edt_EDIPOS_Warnings.DataSource  := ds_EDIPOS,
+   edt_EDIPOS_Warnings.DataField   := 'WARN_MSG',
+   edt_EDIDOCL_Kommentar.DataSource := ds_EDIDOCL,
+   edt_EDIDOCL_Kommentar.DataField  := 'COMM_MSG',
+   edt_EDIDOC_Kommentar.DataSource := ds_EDIDOC,
+   edt_EDIDOC_Kommentar.DataField  := 'COMM_MSG',
+   edt_EDIHEAD_Kommentar.DataSource := ds_EDIHEAD,
+   edt_EDIHEAD_Kommentar.DataField  := 'COMM_MSG',
+   edt_EDIPOS_Kommentar.DataSource := ds_EDIPOS,
+   edt_EDIPOS_Kommentar.DataField  := 'COMM_MSG',
+
+
+   InputControl_SetReadOnlyState(edt_EDIDOCL_Errors,     true),
+   InputControl_SetReadOnlyState(edt_EDIDOCL_Warnings,   true),
+   InputControl_SetReadOnlyState(edt_EDIDOC_Errors,      true),
+   InputControl_SetReadOnlyState(edt_EDIDOC_Warnings,    true),
+   InputControl_SetReadOnlyState(edt_EDIHEAD_Errors,     true),
+   InputControl_SetReadOnlyState(edt_EDIHEAD_Warnings,   true),
+   InputControl_SetReadOnlyState(edt_EDIPOS_Errors,      true),
+   InputControl_SetReadOnlyState(edt_EDIPOS_Warnings,    true),
+   // Spezialbehandlung für TRichEditEx-Controls: ReadOnly-Farbe explizit setzen
+   edt_EDIDOCL_Errors.Color   := edt_EDIDOCL_Errors.ReadOnlyColor,
+   edt_EDIDOCL_Warnings.Color := edt_EDIDOCL_Warnings.ReadOnlyColor,
+   edt_EDIDOC_Errors.Color    := edt_EDIDOC_Errors.ReadOnlyColor,
+   edt_EDIDOC_Warnings.Color  := edt_EDIDOC_Warnings.ReadOnlyColor,
+   edt_EDIHEAD_Errors.Color   := edt_EDIHEAD_Errors.ReadOnlyColor,
+   edt_EDIHEAD_Warnings.Color := edt_EDIHEAD_Warnings.ReadOnlyColor,
+   edt_EDIPOS_Errors.Color    := edt_EDIPOS_Errors.ReadOnlyColor,
+   edt_EDIPOS_Warnings.Color  := edt_EDIPOS_Warnings.ReadOnlyColor,
+
+   SetBrowserBeAttribID(grd_EDIDOCL, 'PROC_STEP', gl_EDI_MMTID_EDIDOCL_ProcessStep),
+   SetBrowserBeAttribID(grd_EDIDOCL, 'STATUS',    gl_EDI_MMTID_ProcessStatus),
+
+   SetBrowserBeAttribID(grd_EDIDOC, 'PROC_STEP',  gl_EDI_MMTID_EDIODC_ProcessStep),
+   SetBrowserBeAttribID(grd_EDIDOC, 'STATUS',     gl_EDI_MMTID_ProcessStatus),
+
+   SetBrowserBeAttribID(grd_EDIHEAD, 'DIRECTION', gl_EDI_MMTID_ProcessDirection),
+   SetBrowserBeAttribID(grd_EDIHEAD, 'STATUS',    gl_EDI_MMTID_ProcessStatus),
+
+   SetBrowserBeAttribID(grd_EDIPOS,  'STATUS',    gl_EDI_MMTID_ProcessStatus),
+
+   SetBrowserBeAttribID(grd_EDIMSG,  'STANDARD',  gl_EDI_MMTID_MessageStandard),
+   SetBrowserBeAttribID(grd_EDIMSG,  'MSG_TYPE',  gl_EDI_MMTID_MessageType),
+   SetBrowserBeAttribID(grd_EDIMSG,  'DIRECTION', gl_EDI_MMTID_ProcessDirection),
+   SetBrowserBeAttribID(grd_EDIMSG,  'PROC_STEP', gl_EDI_MMTID_EDIMSG_ProcessStep),
+   SetBrowserBeAttribID(grd_EDIMSG,  'STATUS',    gl_EDI_MMTID_ProcessStatus),
+
+
+   // Alle Filter leeren
+   ResetFilters(),
+   // Prozessschritt standardmäßig auf "<offene Vorgänge>" filtern
+   cmb_Filter_ProcessStep.Value := str(m_nProcessStep_EDIDOCL_AllOpenProcesses),
+   Filter(),
+
+   m_oEDIDOCL.CbRefresh(),
+   ActionsEnabled(),
+
+   AssignEvent(edt_Search_Id,          'OnSearchExecute', 'FilterControl_ValueChanged'),
+   AssignEvent(edt_Search_Id,          'OnClick',         'SetFocusOnpnl_EDIDOCL_Grid'),
+   AssignEvent(edt_Search_Id,          'OnExit',          'SetFocusOnpnl_EDIDOCL_Grid'),
+
+   AssignEvent(cmb_Filter_ProcessStep, 'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(cmb_Filter_ProcessStep, 'OnClick',         'SetFocusOnpnl_EDIDOCL_Grid'),
+   AssignEvent(cmb_Filter_ProcessStep, 'OnDropDown',      'SetFocusOnpnl_EDIDOCL_Grid'),
+   AssignEvent(cmb_Filter_Processstep, 'OnExit',          'SetFocusOnpnl_EDIDOCL_Grid'),
+
+   AssignEvent(cmb_Filter_Status,      'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(cmb_Filter_Status,      'OnClick',         'SetFocusOnpnl_EDIDOCL_Grid'),
+   AssignEvent(cmb_Filter_Status,      'OnDropDown',      'SetFocusOnpnl_EDIDOCL_Grid'),
+   AssignEvent(cmb_Filter_Status,      'OnExit',          'SetFocusOnpnl_EDIDOCL_Grid'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

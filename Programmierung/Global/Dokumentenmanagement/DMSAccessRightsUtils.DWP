@@ -1,0 +1,161 @@
+//******************************************************************************
+// INTERNE Funktion, bitte nur die folgendne 5 Funktionen verwenden:
+// Diese Funktion prüft, ob der Anwender das Recht hat, die gewünschte Aktion zu tätigen
+// Übergeben wird die Rechte-Kategorie des Dokuments und der Rechtetyp als
+// String in der Form 'READ', 'WRITE', 'DELETE' oder 'REMOVE'
+//
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission(nCategory, cRightType)
+| oPermissionController, cActionName, nPermission |
+   SetErrorIf(not cRightType $ 'READ,WRITE,OPEN,DELETE,DELETE_ENDGUELTIG', 'Rechte-Typ: ' + cRightType + ' ist nicht READ, WRITE, OPEN, DELETE oder DELETE_ENDGUELTIG'),
+   SetErrorIf(nCategory < 0 , 'Ungültiger Wert (' + Str(nCategory) + ') für Rechte-Kategorie'),
+
+   if nCategory = 0 then
+      result := true,  // Rechte Kategorie nicht gesetzt
+   else
+   cActionName := 'A_DMS_RIGHTS_' + Str(nCategory) + '_' + cRightType,
+   oPermissionController := CreateObject('TBeCbPermissionController'),
+      startseq
+         nPermission := oPermissionController.CbGetFunctionPermission(gl_DMSU_cRightsClassID, cActionName, c_usr, mAbteilung, mStandort),      // writeln('Permission', cActionName, nPermission),
+         case nPermission
+           of cpetInvalid         :: result := true,
+           of cpetSucceed         :: result := true,
+           of cpetFailed          :: result := false,
+           of cpetPassword        :: result := false,  // Wir interpretieren "Passwort" als "Verboten", weil hier ein Passwort-Dialog zwecks Usablilty nicht sinnvoll ist
+           of cpetOneTimePassword :: result := false,  //    - dito -
+         endcase,
+      always
+         DestroyObject(oPermissionController),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Das Leserecht hat keine weiteren Voraussetzungen
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission_READ(nCategory)
+   result := DMSU_CheckPermission(nCategory, 'READ'),
+end,
+
+//******************************************************************************
+// Verraussetzung für das OPEN-Recht ist das READ-Recht
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission_OPEN(nCategory)
+   result := DMSU_CheckPermission(nCategory, 'READ') and
+   DMSU_CheckPermission(nCategory, 'OPEN'),
+end,
+
+//******************************************************************************
+// Verraussetzung für das WRITE-Recht sind die Rechte READ und OPEN
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission_WRITE(nCategory)
+   result := DMSU_CheckPermission(nCategory, 'READ') and
+   DMSU_CheckPermission(nCategory, 'OPEN') and
+   DMSU_CheckPermission(nCategory, 'WRITE'),
+end,
+
+//******************************************************************************
+// Verraussetzung für das DELETE-Recht sind die Rechte READ, WRITE, OPEN
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission_DELETE(nCategory)
+   result := DMSU_CheckPermission(nCategory, 'READ') and
+   DMSU_CheckPermission(nCategory, 'OPEN') and
+   DMSU_CheckPermission(nCategory, 'WRITE') and
+   DMSU_CheckPermission(nCategory, 'DELETE'),
+end,
+
+//******************************************************************************
+// Verraussetzung für das DELETE_ENDGUELTIG-Recht sind die Rechte READ, WRITE, OPEN, DELETE
+// @Result: boolean: darf oder darf nicht
+//******************************************************************************
+function _DMSU_CheckPermission_DELETE_ENDGUELTIG(nCategory)
+   result := DMSU_CheckPermission(nCategory, 'READ') and
+   DMSU_CheckPermission(nCategory, 'OPEN') and
+   DMSU_CheckPermission(nCategory, 'WRITE') and
+   DMSU_CheckPermission(nCategory, 'DELETE') and
+   DMSU_CheckPermission(nCategory, 'DELETE_ENDGUELTIG'),
+end,
+
+//******************************************************************************
+// Erstellung eines F12-Container-Formulars (muss niemals angezeigt werden, darf aber
+// nicht wieder zerstört werden - d.h. es soll ein Kind-Formular vom DMS-Docking
+// sein und im DMS-Docking-Code erzeugt werden.
+// In diesem Fenster wird dann eine Actionlist mit allen notwendigen Actions erzeugt
+// @Result: null
+//******************************************************************************
+function _DMSU_CreateF12ContainerForAccessRights(oDM, oForm)
+
+   | oActionsForm, oActionList, oAction, oDabMdt, oRec |
+
+   oActionsForm              := CreateObject('TFormEx', 'DMS_RECHTE', oForm, , true), // hier als Owner das DMS-Docking nutzen, nicht persistent
+   oActionsForm.ClassID      := gl_DMSU_cRightsClassID,                                // das hier ist die F12-Formular-Klasse
+   oActionsForm.OrigCapt     := 'Dokumentenverwaltung - Zugriffsberechtigungen',
+
+   oActionList        := createObject('TBeActionList', 'actions', oActionsForm, oActionsForm),
+   oActionList.Images := BeImageList(nImageListMain16),
+
+   oDabMdt := MygetTable(oDM, waDabMdt,),
+   oDabMdt.IndexName := 'SORT_ID',
+   DbScope({gl_DMSU_MMTabellenID_Zugriff_Kat}, {gl_DMSU_MMTabellenID_Zugriff_Kat}, oDabMdt),
+
+   // Hier alle Actions erzeugen => MM-Tabelle iterieren
+   foreach oRec in oDabMdt do
+      oAction            := createObject('TBeAction', 'A_DMS_RIGHTS_' + Alltrim(oRec:WERT) + '_READ', oActionsForm, oActionsForm),
+      oAction.ActionList := oActionList,
+      oAction.Caption    := alltrim(oRec:Bez1) + ' - lesen',
+      oAction.ImageIndex := oDabMdt:IMG_INDEX,
+      oAction            := createObject('TBeAction', 'A_DMS_RIGHTS_' + Alltrim(oRec:WERT) + '_WRITE', oActionsForm, oActionsForm),
+      oAction.ActionList := oActionList,
+      oAction.Caption    := alltrim(oRec:Bez1) + ' - ändern',
+      oAction.ImageIndex := oDabMdt:IMG_INDEX,
+      oAction            := createObject('TBeAction', 'A_DMS_RIGHTS_' + Alltrim(oRec:WERT) + '_OPEN', oActionsForm, oActionsForm),
+      oAction.ActionList := oActionList,
+      oAction.Caption    := alltrim(oRec:Bez1) + ' - öffnen',
+      oAction.ImageIndex := oDabMdt:IMG_INDEX,
+      oAction            := createObject('TBeAction', 'A_DMS_RIGHTS_' + Alltrim(oRec:WERT) + '_DELETE', oActionsForm, oActionsForm),
+      oAction.ActionList := oActionList,
+      oAction.Caption    := alltrim(oRec:Bez1) + ' - löschen',
+      oAction.ImageIndex := oDabMdt:IMG_INDEX,
+      oAction            := createObject('TBeAction', 'A_DMS_RIGHTS_' + Alltrim(oRec:WERT) + '_DELETE_ENDGUELTIG', oActionsForm, oActionsForm),
+      oAction.ActionList := oActionList,
+      oAction.Caption    := alltrim(oRec:Bez1) + ' - löschen (endgültig)',
+      oAction.ImageIndex := oDabMdt:IMG_INDEX,
+   next,
+
+end,
+
+//******************************************************************************
+// Funktion zur Ermittlung eines Filter-String für die Zugriffs-Kategorien, die der
+//   User lesen darf.
+//
+// Gedacht zum Einsatz in "Default-Filter (ADS-konformer Filter-String)" der
+//     MM-Tabelle "DMS: Zugriff Kategorie"
+// ACHTUNG: Der Filter-String muss TMemCalcTable-Kompatibel sein, WERT <> '200' geht
+//     z.B. nicht, warum auch immer
+// @Result: Filter-String, z.B. <WERT = '300'>
+//******************************************************************************
+function _DMSU_GetPermissionsAccessCategoryReadFilter()
+| oDabMdt, oRec |
+
+   Result  := '',
+   oDabMdt := BeOpen(waDabMdt),
+   startseq
+      DbScope({gl_DMSU_MMTabellenID_Zugriff_Kat}, {gl_DMSU_MMTabellenID_Zugriff_Kat}, oDabMdt),
+      foreach oRec in oDabMdt do
+         if DMSU_CheckPermission(Val(oDabMdt:WERT), 'READ') then
+            Result := ConcatTrenner(Result, "WERT = '" + AllTrim(oDabMDT:WERT) + "'", ' OR '),
+         endif,
+      next,
+
+      if empty(Result) then
+         Result := "WERT = '-1'",
+      endif,
+   always
+     BeClose(oDabMdt),
+   stopseq,
+end,

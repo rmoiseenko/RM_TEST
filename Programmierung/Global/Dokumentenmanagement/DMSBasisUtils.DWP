@@ -1,0 +1,687 @@
+//##############################################################################
+//##############################################################################
+//
+// Globale Funktionen für das Dokumentenmanagement
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Dokumenten-Semaphore setzen
+// @Result: boolean
+//******************************************************************************
+function _DMSU_SemaphorEdit(nDocumentNo, bShowMessage)
+   Result := SemaphorEdit( '@DMS_INDI_' + StrZero(nDocumentNo, 10), False, bShowMessage ), WriteLn('DMSU_SemaphorEdit()', 'DocNo = ' + Str(nDocumentNo), bShowMessage),
+end,
+
+//******************************************************************************
+// Dokumenten-Semaphore setzen
+// @Result: boolean
+//******************************************************************************
+function _DMSU_SemaphorPost(nDocumentNo)
+   Result := True, // Der "Erfolg" des Sema-Posts ist leider nicht messbar, da
+                   // die Funktion immer 'True' liefert, auch wenn man selbst
+                   // gar nicht gelockt hatte
+   SemaphorPost( '@DMS_INDI_' + StrZero(nDocumentNo, 10) ),                                 WriteLn('DMSU_SemaphorPost()', 'DocNo = ' + Str(nDocumentNo)),
+end,
+
+//******************************************************************************
+// Datei-Größe in Bytes als String zurück geben
+//******************************************************************************
+function _DMSU_FileBytesToString(nSizeInByte)
+   Result := Str(nSizeInByte),
+   if nSizeInByte <= 1024 then
+      Result := Str(nSizeInByte) + ' Byte',
+   else
+      if nSizeInByte <= 1024 * 1024 then
+         Result := Str(Round(nSizeInByte / 1024, 0)) + ' KB',
+      else
+         if nSizeInByte <= 1024 * 1024 * 1024 then
+            Result := Str(Round(nSizeInByte / 1024 / 1024, 2)) + ' MB',
+         else
+            Result := Str(Round(nSizeInByte / 1024 / 1024 / 1024, 2)) + ' GB',
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Hilfs-Funktion, um eine Liste "aller" Datei-Erweiterungen zu liefern, die vmtl.
+// Bild-Typen sind
+// @Result: String der Form "/TEE/PNG/PNG/PCX/DIB/RLE/VST/ICB..."
+//******************************************************************************
+function _DMSU_GetGraphicFileTypes()
+| cGraphicFilter |
+   cGraphicFilter := DlgGraphicfilter(),
+   cGraphicFilter := Upper( Token(cGraphicFilter, '|', 1) ), // liefert "Alle (*.tee;*.png;*.png;*.pcx..."
+   cGraphicFilter := StrTran(cGraphicFilter, 'ALLE (', ''),
+   cGraphicFilter := StrTran(cGraphicFilter, ')', ''),
+   cGraphicFilter := StrTran(cGraphicFilter, ';*.', '/'),
+   cGraphicFilter := StrTran(cGraphicFilter, '*.', '/'),
+
+   Result := '/' + cGraphicFilter + '/',
+end,
+
+//******************************************************************************
+// Userspezifischen temp.-Path berechnen
+// @Result: string
+//******************************************************************************
+function _DMSU_CalcUserTempPath(cUserNo),
+   Result := GetTempPath() + 'be_dms\' + cUserNo + '\',
+end,
+
+//******************************************************************************
+// Die Funktion stellt sicher, dass der lokale temp-Folder existiert
+// => Exception im Fehlerfall
+// @Result: null
+//******************************************************************************
+function _DMSU_EnsureLocalDocumentsTempFolder(cFolder)
+   if not DirectoryExists(cFolder) then
+      if not ForceDirectories(cFolder) then
+         SetError('Das lokale (temporäre) Dokumenten-Verzeichnis "' + AllTrim(cFolder) + '" konnte nicht erstellt werden.'),
+      endif,
+   endif,
+end,
+
+
+//******************************************************************************
+// REQ 786: Nächste, eindeutige Versions-Nr. und Versionsbezeichnung bestimmen
+// -> Achtung: geht nur für eine bereits vorhandene Dokumenten-Nr.
+// @Result: array: integer, neue Dokumenten-Nr. & String, neue Versionsbezeichnung
+//******************************************************************************
+function _DMSU_CalcNextVersionNoBez(nDocumentNo)
+| oDmsVerCache, nNumLength, i, cVersBez, cNummer |
+   Result := {-1,''},
+
+   iif( nDocumentNo <= 0, SetError('DMSU_CalcNextVersionNoBez(): nDocumentNo <= 0'), ),
+
+   oDmsVerCache := BeOpen(waDMSVER, 'DOC_NR', True),
+   startseq
+      DbScope({nDocumentNo}, {nDocumentNo}, oDmsVerCache),
+      startseq
+         DbGoBottom(oDmsVerCache),
+         if oDmsVerCache:DOC_NR = nDocumentNo then // gibt es das Dokument überhaupt ?
+            Result[1] := oDmsVerCache:VERS_NR + 1,
+            // Versionsbezeichnung ermitteln
+            cVersBez := Alltrim(oDmsVerCache:VERS_BEZ),
+            if gl_DMSU_VersBez_Hochzaehlen then
+               // Anzahl der rechtsseitig vorhandenen Zahlen ermitteln
+               nNumLength := 0,
+               for i := len(cVersBez) downto 1 do
+                  if substr(cVersBez,i,1) >= '0' and substr(cVersBez,i,1) <= '9' then
+                     nNumLength++,
+                  else
+                     i := 0,
+                  endif,
+               next,
+               if nNumlength > 0 then
+                  cNummer := Substr(cVersBez,len(cVersBez) - nNumLength + 1, nNumLength),
+                  cNummer := str(Val(cNummer) + 1),
+                  if len(cNummer) > nNumlength and gl_DMSU_VersBez_LimitFormat then
+                     MessageDlg('Versionsnummer konnte nicht hochgezählt werden', mtWarning),
+                  else
+                     cNummer := StrZero(Val(cNummer), nNumLength),
+                     cVersBez := Substr(cVersBez, 1, len(cVersBez) - nNumLength) + cNummer,
+                  endif,
+               endif,
+            endif,
+            result[2] := cVersBez,
+         endif,
+      always
+         DbScope(, oDmsVerCache),
+      stopseq,
+   always
+      BeClose(oDmsVerCache),
+   stopseq,
+
+   if Result[1] = -1 then
+      SetError('DMSU_CalcNextVersionNoBez(): nDocumentNo = ' + Str(nDocumentNo) + ' existiert nicht'),
+   endif,
+end,
+
+//******************************************************************************
+// Für ein Datei-Dokument (ART = gl_DMSU_DokumentenArt_File) die Datei von der Platte in die DB laden
+// @Result: null
+//******************************************************************************
+function _DMSU_LoadFileIntoDocument(oDM, oDmsVer, cFullFilePath)
+|
+   cFileName, cFilePath, cFileExt, aDirArray, nFileSizeInByte,
+   dFileChangedDateTime, oDataFieldObj, aThumbnailFieldObj, nOldCursor ,
+   aResultAppendEdit
+|
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq,
+      cFilePath := ExtractFilePath(cFullFilePath),
+      cFileName := ExtractFileName(cFullFilePath),
+      cFileExt  := ExtractFileExt(cFileName),
+      cFileExt  := Upper( SubStr(cFileExt, 2, Len(cFileExt)) ),
+
+      // Datei-Eigenschaften ermitteln
+      aDirArray            := DirArray(cFilePath, cFileName),
+      if  ALen(aDirArray) < 1 or aDirArray[1, 1] <> cFileName then
+          SetError('Datei ' + cFileName + ' konnte nicht via DirArray() gefunden werden')
+      endif,
+
+      nFileSizeInByte      := aDirArray[1, 3],
+      dFileChangedDateTime := FileDateToDateTime(aDirArray[1, 2]),
+
+      BeginSuspend(oDmsVer),
+      startseq
+         if DbState(oDmsVer) = dsInsert or (DbState(oDmsVer) = dsEdit and empty(oDmsVer:D_GUID_STR)) then
+            aResultAppendEdit := DMSU_BSP_Append(oDM, cFullFilePath, ('/' + cFileExt + '/') $ DMSU_GetGraphicFileTypes(),),
+         endif,
+         if DbState(oDmsVer) = dsEdit and not empty(oDmsVer:D_GUID_STR)then
+            aResultAppendEdit := DMSU_BSP_Update(oDM, oDmsVer:D_GUID_STR, cFullFilePath, oDmsVer:T_GUID_STR, ('/' + cFileExt + '/') $ DMSU_GetGraphicFileTypes()),
+         endif,
+         oDmsVer:NAME       := cFileName,
+         oDmsVer:FILE_NAME  := cFileName,
+         oDmsVer:FILE_TYPE  := cFileExt,
+         oDmsVer:FILE_SIZE  := nFileSizeInByte,
+         oDmsVer:FILE_AEND  := dFileChangedDateTime,
+         oDmsVer:D_GUID_STR := aResultAppendEdit[1],
+         oDmsVer:T_GUID_STR := aResultAppendEdit[2],
+
+      always
+         EndSuspend(oDmsVer),
+      stopseq,
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ 844: Dialog: Eine Datei von der Festplatte in ein vorhandenes Dokument laden
+// @Result: boolean "erfolgreich / abgebrochen"
+//******************************************************************************
+function _DMSU_LoadFileIntoDocumentViaDialog(oDM, oDmsVer, cParamLastFolder)
+| aOpenDlg, cFullFilePath, cLastUsedPath |
+
+   Result := False,
+
+   // Datei überschreiben?
+   if oDmsVer:FILE_SIZE > 0 then
+      if not jn('Es ist bereits eine Datei geladen, soll diese überschrieben werden?') then
+         exit,
+      endif,
+   endif,
+
+   // Datei-Öffnen Dialog anzeigen
+   cFullFilePath := '',
+   cLastUsedPath := AllTrim(GetBeParam(cParamLastFolder + c_usr)),
+   aOpenDlg      := OpenDlg('Datei in Dokumentenmanagement laden', '*.*', cLastUsedPath ),
+   startseq,
+      aOpenDlg.Active := True,
+      if aOpenDlg.Selected then
+         cFullFilePath := aOpenDlg.FileName,
+         SetBeParam(cParamLastFolder + c_usr, ExtractFilePath(cFullFilePath))
+      endif,
+   always,
+      DestroyObject(aOpenDlg),
+   stopseq,
+   if not empty(cFullFilePath) then
+      DMSU_LoadFileIntoDocument(oDM, oDmsVer, cFullFilePath),
+      Result := True,
+   endif,
+
+end,
+
+//******************************************************************************
+// REQ 845: Neues Dokument anlegen - hierbei wird eine neue Dokumenten-Nr. vergeben
+//
+// Parameter
+//  - oDM           : Datenmodul
+//  - oDmsVer       : Dokumenten-Tabellen-Instanz, über welche der Append
+//                    erfolgen soll
+//  - nDocType      : Dokumenten-Art
+//                    -> nur relevant bei einem neuen Dokument
+//  - nMasterWorkarea,
+//    nMasterID     : Workarea und ID des Datensatzes, dem das neue Dokument
+//                    zugeordnet wird
+//
+// @Result: null
+//******************************************************************************
+function _DMSU_AppendNewDocument(oDM, oDmsVer, nDocType, nDocNo, nVersNo, cVersBez, nMasterWorkarea, nMasterID, cParamLastFolder)
+| bIsNewDocument, cName, cVerwendung, cMemo, cLinks, nKateg, nKategZugr, bStatusAuto, i |
+   Result := nil,
+   if not DbInTrans(oDM.ADSConnection) then
+      DbStartTrans(oDM.ADSConnection),
+   endif,
+
+   bIsNewDocument := nDocNo = -1,
+
+   if not bIsNewDocument then        // andernfalls werden diese Werte nicht benötigt
+      if nDocType <> gl_DMSU_DokumentenArt_File then
+         cLinks      := oDmsVer:LINKS,
+      endif,
+      cName       := oDmsVer:NAME,
+      cVerwendung := oDmsVer:VERWENDUNG,
+      cMemo       := oDmsVer:MEMO,
+      nKateg      := oDmsVer:KATEGORIE,
+      nKategZugr  := oDmsVer:KATEG_ZUGR,
+   endif,
+
+   MyAppend(oDmsVer),
+
+   if not bIsNewDocument and nDocType = gl_DMSU_DokumentenArt_File then
+      DMSU_LoadFileIntoDocumentViaDialog(oDM, oDmsVer, cParamLastFolder),
+   endif,
+
+   if bIsNewDocument then
+      nDocNo  := oDmsVer:ID,
+      nVersNo := 1,
+   endif,
+
+   BeginSuspend(oDmsVer),
+   startseq
+      // Neue Version? => Alle Daten aus dem vorgänger übernehmen und
+      // anschließend anpassen
+      if not bIsNewDocument then
+         if oDmsVer:ART <> gl_DMSU_DokumentenArt_File then
+            oDmsVer:LINKS      := cLinks,
+         endif,
+         oDmsVer:MEMO       := cMemo,
+         oDmsVer:VERWENDUNG := cVerwendung,
+         oDmsVer:VERS_BEZ   := cVersBez,
+         oDmsVer:KATEGORIE  := nKateg,
+         oDmsVer:KATEG_ZUGR := nKategZugr,
+         if empty(oDmsVer:NAME) then
+            oDmsVer:NAME := cName,
+         endif,
+      endif,
+
+      oDmsVer:WORKAREA   := nMasterWorkarea,
+      oDmsVer:DS_ID      := nMasterID,
+      oDmsVer:DOC_NR     := nDocNo,
+      oDmsVer:VERS_NR    := nVersNo,
+      oDmsVer:ART        := nDocType,
+      if nMasterWorkarea = waDab010 then
+         oDmsVer:ARTNR   := lookup(waDab010, 'DAB01G', {{nMasterID}}, 'ARTNR', '', , , iif(gl_DMSU_ShowAllDocsForArtNr, -2, -1)), //Falls Dokumente Standortübergreifend sein sollen, Standortlogik ausschalten
+      endif,
+
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+
+   // Wenn es sich nicht um ein neues Dokument handelt, dann ist es eine neue
+   // Version eines best. Dokuments. Für einen solchen Fall muss die Sperre schon
+   // zuvor gesetzt worden sein.
+   if bIsNewDocument then
+      // das Setzen der Sperre für die gerade eben erst neu vergebene Dokumenten-Nr. MUSS funktionieren
+      if not DMSU_SemaphorEdit(nDocNo, False) then
+         SetError('internal error - semaphore could not be acquired for new document no ' + Str(oDmsVer:DOC_NR)),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ 846: Neue Version zu einem bestehenden Dokument anlegen
+//
+// Parameter
+//  - oDM,
+//    oDmsVer       : analog DMSU_AppendNewDocument()
+//  - nDocNo        : Dokumenten-Nr.
+//                    -> Angabe von -1 legt ein neues Dokument an, ansonsten
+//                       eine neue Version zum Dokument 'nDocNo'
+//  - bSemaphoreAlreadySet: Die Semaphor-Sperre wurde bereits gesetzt
+//
+// @Result: null
+//******************************************************************************
+function _DMSU_AppendNewDocumentVersion(oDM, oDmsVer, nDocNo, bSemaphoreAlreadySet, cParamLastFolder)
+| aNextVers, nNextVersNo, cNextVersBez, nDocType, nMasterWorkarea, nMasterID |
+
+   Result := nil,
+
+   if not bSemaphoreAlreadySet then
+      if not DMSU_SemaphorEdit(nDocNo, False) then
+         SetError('DMSU_AppendNewDocumentVersion(): Das Dokument ist aktuell durch einen anderen Benuter / Prozess in Bearbeitung. ' + crlf +
+                  'Es kann keine neue Version angelegt werden.'),
+      endif,
+   endif,
+   aNextVers    := DMSU_CalcNextVersionNoBez(nDocNo), // führt zum Fehler, wenn es das Dokument noch nicht gibt
+   nNextVersNo  := aNextVers[1],
+   cNextVersBez := aNextVers[2],
+   // Vorgaben für die neue Version aus der aktuellen holen
+
+   nDocType        := oDmsVer:ART,
+   nMasterWorkarea := oDmsVer:WORKAREA,
+   nMasterID       := oDmsVer:DS_ID,
+   DMSU_AppendNewDocument(oDM,
+                         oDmsVer,
+                         nDocType,
+                         nDocNo,
+                         nNextVersNo,
+                         cNextVersBez,
+                         nMasterWorkarea,
+                         nMasterID,
+                         cParamLastFolder),
+end,
+
+//******************************************************************************
+// REQ 847: Editieren eines Dokumenten-Datensatzes
+// @Result: null
+//******************************************************************************
+function _DMSU_EditDocument(oDM, oDmsVer)
+   // Validierung des Datenmoduls
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Datemodul muss sich in Transaktion befinden'),
+
+   MyEdit(oDmsVer),
+end,
+
+//******************************************************************************
+// REQ 848: Speichern eines Dokumenten-Datensatzes
+// Wenn mehrere Datensätze bearbeitet werden, kann es sinnvoll sein,
+// noch nicht zu committen, um die Transaktion nicht zu beenden.
+// @Result: null
+//******************************************************************************
+function _DMSU_PostDocument(oDM, oDmsVer, bCommit)
+| nDocNo |
+
+   // Validierung des Datenmoduls
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Datemodul muss sich in Transaktion befinden'),
+
+   nDocNo := oDmsVer:DOC_NR,
+   //oDmsVer:SUCHE := PrepareTextForFts(waDMSVER, 'SUCHE', oDmsVer:NAME + crlf + RtfToText(oDmsVer:MEMO) + crlf + oDmsVer:VERS_BEZ + crlf + oDmsVer:FILE_TYPE + crlf + oDmsVer:LINKS),
+   if DbPost(oDmsVer) then
+      if bCommit then
+         DbCommit(oDM.ADSConnection),
+         Result := true,
+         if not DMSU_SemaphorPost(nDocNo) then
+            SetError('DMSU_PostDocument(): internal error - could not post semaphor for document ' + Str(nDocNo)),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ 849: Abbrechen für einen Dokumenten-Datensatz
+// @Result: null
+//******************************************************************************
+function _DMSU_CancelDocument(oDM, oDmsVer)
+| nDocNo |
+   nDocNo := oDmsVer:DOC_NR,
+   if DbInTrans(oDM.ADSConnection) then
+      DbRollback(oDM.ADSConnection),
+      DbCancelAll(oDM),
+   else
+      DbCancel(oDmsVer),
+   endif,
+   if not DMSU_SemaphorPost(nDocNo) then
+      SetError('DMSU_CancelDocument(): internal error - could not post semaphor for document ' + Str(nDocNo)),
+   endif,
+end,
+
+//******************************************************************************
+// REQ 850: Löschen eines Dokuments
+// @Result: null
+//******************************************************************************
+function _DMSU_DeleteDocument(oDmsVer)
+   BeginSuspend(oDmsVer),
+   startseq
+      oDmsVer:GELOESCHT  := GetAdsServerTime(),
+      oDmsVer:LOESCH_USR := c_usr,
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ 852: Reaktivieren eines Dokuments
+// @Result: null
+//******************************************************************************
+function _DMSU_ReactivateDocument(oDmsVer)
+   BeginSuspend(oDmsVer),
+   startseq
+      oDmsVer:GELOESCHT  := Null,
+      oDmsVer:LOESCH_USR := '',
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ ???: Endgültiges Löschen eines Dokuments
+// @Result: null
+//******************************************************************************
+function _DMSU_DeleteEndgueltigDocument(oDM, oDmsVer, nDeleteDocNo)
+   if DMSU_SemaphorEdit(nDeleteDocNo, True) then
+      if not DbInTrans(oDM.ADSConnection) then
+         DbStartTrans(oDM.ADSConnection),
+      endif,
+      startseq
+         if not empty(oDmsVer:D_GUID_STR) then
+            DMSU_BSP_Delete(oDM, oDmsVer:D_GUID_STR, false),
+         endif,
+         if not empty(oDmsVer:T_GUID_STR) then
+            DMSU_BSP_Delete(oDM, oDmsVer:T_GUID_STR, true),
+         endif,
+         MyDelete(oDmsVer),
+         DbCommit(oDM.AdsConnection),
+      always
+         if DbInTrans(oDM.AdsConnection) then
+            DbRollBack(oDM.AdsConnection),
+            DbCancelAll(oDM),
+         endif,
+         DMSU_SemaphorPost(nDeleteDocNo),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// REQ 853: Ein gescanntes Bild in ein Dokument laden
+//   Quelle = Scan-Item aus dem Scan-Dialog (Klasse 'TBeDocScanItem')
+// @Result: null
+//******************************************************************************
+function _DMSU_LoadScanPageIntoDocument(oDM, oDmsVer, oDocScanItem)
+|
+   nFileSizeInByte, dFileChangedDateTime, oDataFieldObj, aThumbnailFieldObj, aResultAppendEdit
+|
+   BeginSuspend(oDmsVer),
+   startseq
+      aResultAppendEdit := DMSU_BSP_Append(oDM, , true,oDocScanItem.AsString),
+      oDmsVer:D_GUID_STR := aResultAppendEdit[1],
+      oDmsVer:T_GUID_STR := aResultAppendEdit[2],
+
+      // Datei-Eigenschaften "ermitteln"
+      nFileSizeInByte      := Len(oDocScanItem.AsString),
+      dFileChangedDateTime := Now(),
+
+      oDmsVer:NAME := ExtractFileName(oDocScanItem.FileName),
+      if empty(oDmsVer:NAME) then
+         oDmsVer:NAME := 'NEW_DOCUMENT',
+      else
+         oDmsVer:FILE_NAME := oDmsVer:NAME,
+      endif,
+      oDmsVer:FILE_TYPE := Upper(oDocScanItem.FileType),
+      oDmsVer:FILE_SIZE := nFileSizeInByte,
+      oDmsVer:FILE_AEND := dFileChangedDateTime,
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ 854: In einem bestehenden Dokument den Hyper-Link (er)setzen
+// @Result: null
+//******************************************************************************
+function _DMSU_SetNewHyperlinkForDocument(oDM, oDmsVer, cNewHyperlink)
+   BeginSuspend(oDmsVer),
+   startseq
+      oDmsVer:LINKS := cNewHyperlink,
+      if empty(oDmsVer:NAME) then
+         oDmsVer:NAME := cNewHyperlink,
+      endif,
+      oDmsVer:FILE_TYPE := '',
+      oDmsVer:FILE_SIZE := 0,
+      oDmsVer:FILE_AEND := 0,
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ 855: In einem bestehenden Dokument den Datei-Link (er)setzen
+// @Result: null
+//******************************************************************************
+function _DMSU_SetNewFileLinkForDocument(oDM, oDmsVer, cNewFullFileLink)
+| cFileName, cFilePath, cFileExt |
+
+   cFilePath := ExtractFilePath(cNewFullFileLink),
+   cFileName := ExtractFileName(cNewFullFileLink),
+   cFileExt  := ExtractFileExt(cNewFullFileLink),
+   cFileExt  := Upper( SubStr(cFileExt, 2, Len(cFileExt)) ),
+
+   BeginSuspend(oDmsVer),
+   startseq
+      oDmsVer:LINKS := cNewFullFileLink,
+
+      if empty(oDmsVer:NAME) then
+         oDmsVer:NAME := cFileName,
+      endif,
+      oDmsVer:FILE_NAME := cFileName,
+      oDmsVer:FILE_TYPE := cFileExt,
+
+      oDmsVer:FILE_SIZE := 0,
+      oDmsVer:FILE_AEND := 0,
+   always
+      EndSuspend(oDmsVer),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ 856: Datei-Dokument (ART = gl_DMSU_DokumentenArt_File) vom Server laden und lokal speichern
+// @Result: Datei-Name der lokal gespeicherten Datei
+//******************************************************************************
+function _DMSU_LoadDocumentToLocalTempFolder(oDM, oDmsVer, cTempFolder, bAddIDtoFilename:L:=false)
+| cFileName, cFiletype, cFullFilePath, nOldCursor |
+
+   Result := '',
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq,
+      DMSU_EnsureLocalDocumentsTempFolder(cTempFolder),
+
+      iif(oDmsVer:ART <> gl_DMSU_DokumentenArt_File, SetError('internal error - document type must be ' + str(gl_DMSU_DokumentenArt_File)), ),
+
+      cFileName     := ExtractFileName(AllTrim(oDmsVer:NAME)),
+      cFilename     := strtran(cFilename,ExtractFileExt(cFilename),''),         // Extension entfernen
+      if bAddIDtoFilename then
+         cFileName += '_ID'+str(oDmsVer:ID),                                      // ID hinzufügen: Sonderfall, um ggfs. Dateinamen-Dopplungen zu vermeiden
+      endif,
+      cFullFilePath := cTempFolder,
+      cFullFilePath += rtrim(cFileName),
+
+      // Extension wieder hinzufügen
+      cFileType := AllTrim(oDmsVer:FILE_TYPE),                                  // empty(ExtractFileExt(cFullFilePath)) funktioniert nicht, weil immer noch ein .xxx im Formular sein kann
+      if not empty(cFileType) and not '.' + cFileType $ cFullFilePath  then
+         cFullFilePath += '.' + cFileType,
+      endif,
+
+      // TODO: Ggf. ist jett ein nicht gültiger Dateiname entstanden, um das zu
+      //       verhindern wird eine Funktion wie WindowsConformFileName() benötigt
+
+      if File(cFullFilePath) then
+         if not DeleteFile(cFullFilePath) then
+            SetError('Es existiert bereits eine Datei mit dem Namen "' + cFileName + '" im Verzeichnis "' + cTempFolder + '". ' + crlf +
+                     'Die Datei kann nicht gelöscht werden, der Zugriff wurde verweigert.' + crlf),
+         endif,
+      endif,
+
+      DMSU_BSP_SaveAs(oDM, oDmsVer:D_GUID_STR, cFullFilePath),
+
+      Result := cFullFilePath,
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// REQ 857: Datei-Dokument (ART = gl_DMSU_DokumentenArt_File) oder Datei-Links
+// (ART = gl_DMSU_DokumentenArt_Filelink) vom Server laden und
+// mit einem Dialog lokal speichern
+// @Result: null
+//******************************************************************************
+function _DMSU_SaveDocumentWithSaveDialog(oDM, oDmsVer)
+|
+   cFileName, nOldCursor, oSaveDlg, bIsFileDocument, bIsFileLinkDocument
+|
+
+   //***************************************************************************
+   // Kopiert eine Datei in das angegebene Verzeichnis
+   //***************************************************************************
+   function CopyFile(cFileFrom, cFileTo)
+   | cData, oCurrentFile |
+
+      // Daten der Quell-Datei auslesen
+      oCurrentFile := FOpen(cFileFrom, FO_READ),
+      startseq
+         FRead(oCurrentFile, cData, oCurrentFile.Size),
+      always
+         FClose(oCurrentFile),
+      stopseq,
+
+      // Falls die Ziel-Datei schon vorhanden ist ggf. löschen
+      if File(cFileTo) then
+         DeleteFile(cFileTo),
+      endif,
+
+      // Daten in die Ziel-Datei schreiben
+      oCurrentFile := FOpen(cFileTo, FO_CREATE),
+      startseq
+         FWrite(oCurrentFile, cData),
+      always
+         FClose(oCurrentFile),
+      stopseq,
+   end,
+
+   //***************************************************************************
+   // Ermittelt den kompletten Dateinamen
+   //***************************************************************************
+   function FullFileName(cFileName, cType)
+      Result := AllTrim(cFileName),
+
+      if empty(ExtractFileExt(cFileName)) and not empty(cType) then
+         Result := AllTrim(cFileName) + '.' + AllTrim(cType),
+      endif,
+   end,
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq,
+      bIsFileDocument     := oDmsVer:ART = gl_DMSU_DokumentenArt_File,
+      bIsFileLinkDocument := oDmsVer:ART = gl_DMSU_DokumentenArt_Filelink,
+
+      SetErrorIf(not (bIsFileDocument or bIsFileLinkDocument),
+                 'internal error - document type must be File or File-Link'),
+
+      // Dokumenten-Name hat keine Extension? Dann die gespeicherte verwenden
+      cFileName := FullFileName(oDmsVer:NAME, oDmsVer:FILE_TYPE),
+
+      oSaveDlg := SaveDlg('Speichern unter', '*.*', '', cFileName),
+      startseq
+         // Setzt die Optionen des Dialogs so, dass er überprüft ob die zu
+         // speichernde Datei schon vorhanden ist und fragt nach ob diese
+         // überschrieben werden soll
+         oSaveDlg.Options := oSaveDlg.Options - 2,
+
+         // Zeigt den Dialog an
+         oSaveDlg.Active := True,
+
+         if oSaveDlg.DoSave then
+            // Datei hat keine Extension? Dann die des Dokuments verwenden
+            oSaveDlg.FileName := FullFileName(oSaveDlg.FileName, oDmsVer:FILE_TYPE),
+
+            // Datei Speichern
+            if bIsFileDocument then
+               DMSU_BSP_SaveAs(oDM, oDmsVer:D_GUID_STR, oSaveDlg.FileName),
+            else
+               CopyFile(oDmsVer:LINKS, oSaveDlg.FileName),
+            endif,
+         endif,
+      always
+         DestroyObject(oSaveDlg),
+      stopseq
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,

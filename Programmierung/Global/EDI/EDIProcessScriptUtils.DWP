@@ -1,0 +1,190 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält Globals, welche für die Verwendung in sog.
+//   Prozess-Scripten gedacht sind.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt den Status "Fehler" im Result.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_ProcessResult_SetError(aResult:R, cErrorMessage:C)
+   KVU_Set(aResult, 'EDIProcessStatus.status',       gl_EDI_ProcessStatus_Error),
+   KVU_Set(aResult, 'EDIProcessStatus.errorMessage', cErrorMessage),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den Status "Warnung" im Result.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_ProcessResult_SetWarning(aResult:R, cErrorMessage:C)
+   KVU_Set(aResult, 'EDIProcessStatus.status',      gl_EDI_ProcessStatus_Warning),
+   KVU_Set(aResult, 'EDIProcessStatus.warnMessage', cErrorMessage),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den Status "OK" im Result.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_ProcessResult_SetSuccess(aResult:R)
+   KVU_Set(aResult, 'EDIProcessStatus.status',       gl_EDI_ProcessStatus_Ok),
+   KVU_Set(aResult, 'EDIProcessStatus.errorMessage', ''),
+   KVU_Set(aResult, 'EDIProcessStatus.warnMessage',  ''),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob das Prozess-Ergebnis "Ok" oder "Warning" ist.
+// @result: boolean
+//******************************************************************************
+function _EDI_ProcessResult_IsSuccess(aResult:R)
+| nStatus |
+
+   nStatus := KVU_GetAssert(aResult, 'EDIProcessStatus.status'),
+   result  := nStatus = gl_EDI_ProcessStatus_Ok or
+              nStatus = gl_EDI_ProcessStatus_Warning,
+end,
+
+//******************************************************************************
+// Diese Funktion gibt die Fehlermeldung im Prozess-Ergebnis zurück.
+// @result: string - Fehlermeldung
+//******************************************************************************
+function _EDI_ProcessResult_GetErrorMessage(aResult:R)
+   result  := KVU_Get(aResult, 'EDIProcessStatus.errorMessage', 'Unknown error'),
+end,
+
+//******************************************************************************
+// Diese Funktion schreibt das Prozess-Ergebnis in die übergebene Tabelle.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_ProcessResult_WriteStatusToTable(aResult:A, oTable:O)
+| bExplicitEdit, nStatus, cWarnMessage, cErrorMessage |
+
+   //***************************************************************************
+   function LogStatusMessage(oTable:O, cStatusMessageFieldName:O, cMessage:C)
+      if not empty(cMessage) then
+         cMessage := FormatDateTime('YYYY-MM-DD HH:NN:SS', GetAdsServerTime()) + ': ' + cMessage,
+         oTable.CbReplace(
+            cStatusMessageFieldName,
+            ConcatTrenner(cMessage, AsString(cStatusMessageFieldName, oTable), CRLF)
+         ),
+      endif,
+   end,
+
+   bExplicitEdit := not EditModes(oTable),
+
+   if bExplicitEdit then
+      oTable.CbEdit(),
+   endif,
+
+   nStatus       := KVU_GetAssert(aResult, 'EDIProcessStatus.status'),
+   cWarnMessage  := KVU_Get(aResult, 'EDIProcessStatus.warnMessage', ''),
+   cErrorMessage := KVU_Get(aResult, 'EDIProcessStatus.errorMessage', ''),
+
+   oTable:STATUS := nStatus,
+   if nStatus = gl_EDI_ProcessStatus_Error then
+      LogStatusMessage(oTable, 'ERROR_MSG', cErrorMessage),
+   endif,
+   if nStatus = gl_EDI_ProcessStatus_Warning or
+      (nStatus = gl_EDI_ProcessStatus_Error and not empty(cWarnMessage)) then
+      LogStatusMessage(oTable, 'WARN_MSG', cWarnMessage),
+   endif,
+
+
+   if bExplicitEdit then
+      oTable.CbPost(),
+   endif,
+end,
+
+//******************************************************************************
+// Fortschritts-Informationen in ein KVU-Array packen.
+// @result: array - Fortschritts-Informationen
+//******************************************************************************
+function _EDI_Process_PackProgressInfo(nCounter:N, nTotal:N, uData:U)
+   result := {},
+   KVU_Set(result, 'counter', nCounter),
+   KVU_Set(result, 'total',   nTotal),
+   KVU_Set(result, 'data',    uData),
+end,
+
+//******************************************************************************
+// Error-Informationen in ein KVU-Array packen.
+// @result: array - Error-Informationen
+//******************************************************************************
+function _EDI_Process_PackErrorInfo(uErrorObjectOrErrorMessage:U, nErrorCode:N:=0, aErrorStack:A:=nil)
+   result := {},
+
+   if ValType(uErrorObjectOrErrorMessage) == 'O' then
+      KVU_Set(result, 'errorInfo.text',  GetErrorText(uErrorObjectOrErrorMessage)),
+      KVU_Set(result, 'errorInfo.code',  nErrorCode),
+      KVU_Set(result, 'errorInfo.stack', aErrorStack),
+   else
+      KVU_Set(result, 'errorInfo.text', uErrorObjectOrErrorMessage),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion führt ggf. das Fortschritts-Callback mit den aktuellen
+// Fortschritts-Informationen aus.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Process_UpdateProgress(oProgressCallback:O, nCounter:N, nTotal:N, uData:U)
+   if not empty(oProgressCallback) then
+      oProgressCallback.Data := EDI_Process_PackProgressInfo(nCounter, nTotal, uData),
+      if oProgressCallback.Execute = mrCancel then
+         SetError('Process canceled by user'),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion führt ggf. das Error-Callback mit den entsprechenden Fehler-
+// Informationen aus.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Process_UpdateError(oErrorCallback:O, uErrorObjectOrErrorMessage:U, nErrorCode:N:=0, aErrorStack:A:=nil)
+   if not empty(oErrorCallback) then
+      oErrorCallback.Data := EDI_Process_PackErrorInfo(uErrorObjectOrErrorMessage, nErrorCode, aErrorStack),
+      if oErrorCallback.Execute = mrCancel then
+         SetError('Process canceled by user'),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Standard-Eventhandler: Fortschritt bei EDI-Prozessschritt.
+// Diese Funktion dient in erster Linie für die Verwendung in GUIs, in denen ein
+// EDI-Prozess manuell angestoßen wird.
+//
+// @result: integer
+//   mrOK     - im Erfolgsfall
+//   mrCancel - bei Abbruch durch den User
+//******************************************************************************
+function _EDI_Process_DefaultOnProgressHandler(sender:O)
+| aData, nCounter, nTotal, cDisplayText |
+
+   aData        := sender.Data,
+   nCounter     := KVU_Get(aData, 'counter', 0),
+   nTotal       := KVU_Get(aData, 'total',   100),
+   cDisplayText := KVU_Get(aData, 'data',    ''),
+
+   startseq
+      ProgressBarUpdate((nCounter * 100) / nTotal, cDisplayText, true),
+      ProcessMsg(),
+      result := mrOK,
+   onerror
+      result := mrCancel,
+   stopseq,
+end,
+

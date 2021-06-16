@@ -1,0 +1,773 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zum Verwalten von Transportkanälen.
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MANAGEMENT_TRANSPORT_CHANNEL_MANAGER',
+//        self,
+//        'EDI\Management\TransportChannel\TransportChannelManagementGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI, m_oEDITRCH,
+   m_cPositionSaveId, m_cFormId, m_cBrowserId,
+
+   m_bExplicitInsert, m_bExplicitPost,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Activate, A_Cancel, A_Deactivate, A_New,
+   A_ProcessInbound_RetrieveMessages, A_Save, A_SelectProgram_Identification,
+   A_SelectProgram_Transport, al_Actions, bar_Top, bardock_Top, barmngr_Main,
+   bbtn_Activate, bbtn_CancelProfile, bbtn_Deactivate, bbtn_New,
+   bbtn_ProcessInbound_Retrieve, bbtn_SaveProfile, bipnl_Title,
+   btn_SelectProgram_Identification, btn_SelectProgram_Transport,
+   bvl_Details_Row1_Col1, bvl_Details_Row1_Col2, bvl_Details_Row2_Col1,
+   cmb_Direction, cmb_Protocol, ds_EDITRCH, edt_Mask, edt_Name,
+   edt_ScriptName_Identification, edt_ScriptName_Transport, edt_URI,
+   edt_URILogin, edt_URIPassword, grd_EDITRCH, lbl_Details_Row1_Col1_Title,
+   lbl_Details_Row2_Col1_Title, lbl_Direction, lbl_Mask, lbl_Name, lbl_Protocol,
+   lbl_ScriptName_Identification, lbl_ScriptName_Transport, lbl_URI,
+   lbl_URILogin, lbl_URIPassword, pnl_Details, pnl_Details_Row1,
+   pnl_Details_Row1_Col1, pnl_Details_Row1_Col2, pnl_Details_Row2,
+   pnl_Details_Row2_Col1, pnl_Grid, pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDITRCHPO',
+m_cFormId         := '@EDITRCHUI',
+m_cBrowserId      := '@EDITRCH',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsEditModeActive, bIsDataAvailable, bIsActive, bIsInbound |
+
+   bIsEditModeActive := EditModes(m_oEDITRCH),
+   bIsDataAvailable  := m_oEDITRCH.CbDataAvailable,
+   bIsActive         := m_oEDITRCH:ACTIVE,
+   bIsInbound        := m_oEDITRCH:DIRECTION = gl_EDI_ProcessDirection_Inbound,
+
+   // Enabled-Zustand der Actions steuern
+   A_New.Enabled        := not bIsEditModeActive,
+   A_Save.Enabled       := bIsEditModeActive,
+   A_Cancel.Enabled     := bIsEditModeActive,
+   A_Activate.Enabled   := bIsDataAvailable and not bIsEditModeActive and not bIsActive,
+   A_Deactivate.Enabled := bIsDataAvailable and not bIsEditModeActive and bIsActive,
+
+   A_ProcessInbound_RetrieveMessages.Enabled := bIsDataAvailable and not bIsEditModeActive and bIsInbound,
+
+   A_SelectProgram_Identification.Enabled := bIsDataAvailable and not bIsActive and bIsInbound,
+   A_SelectProgram_Transport.Enabled      := bIsDataAvailable and not bIsActive,
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_TransportChannelManagementGUI',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_TransportChannelManagementGUI_GUI', oForm),
+
+   // Haupttabelle (EDITRCH)
+   m_oEDITRCH := DbGetTable(m_oDM_GUI, waEDITRCH),
+   m_oEDITRCH.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDITRCH, ds_EDITRCH, grd_EDITRCH, m_cBrowserId, true),
+
+   // Events zuweisen
+   AssignEvent(ds_EDITRCH, 'OnScroll_Update', 'ds_EDITRCHScroll_Update'),
+   AssignEvent(m_oEDITRCH, 'BeforePost',      'EDITRCH_BeforePost'),
+   AssignEvent(m_oEDITRCH, 'BeforeInsert',    'EDITRCH_BeforeInsert'),
+end,
+
+//******************************************************************************
+// Aktiv-Zustand des aktuellen Transportkanals setzen.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportChannel_SetActive(bActive:L)
+   m_oEDITRCH.CbEdit(),
+   m_bExplicitPost   := true,
+   m_oEDITRCH:ACTIVE := bActive,
+   m_oEDITRCH.CbPost(),
+end,
+
+//******************************************************************************
+// Diese Funktion validiert alle relevanten Felder, bevor der Transportkanal
+// aktiviert werden kann.
+//
+// @result: boolean - Alle Felder sind valide Ja/Nein
+//******************************************************************************
+function ValidateFieldsForActivation(cErrorsStringList:R)
+| bErrorFlag |
+
+   //***************************************************************************
+   function ProgramExists(cProgramName:C)
+      result := lookup(waDabPRG, 'BEZ', {{cProgramName}}, 'not Eof()', false),
+   end,
+
+   //***************************************************************************
+   function GetFieldDisplayName(oTable:O, cFieldName:C)
+   | oField |
+
+      oField := oTable.CbFieldByName(cFieldName),
+      result := oField.DisplayLabel,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion wird dazu genutzt, um alle Felder mit ungültigem Inhalt zur
+   // Fehlerliste cErrorsStringList hinzuzufügen.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function AppendErrorMessage(cFieldName:C, cErrorMessage:C)
+      cErrorsStringList := ConcatTrenner(cErrorsStringList, 'Feld "' + cFieldName + '": ' + cErrorMessage, CRLF),
+   end,
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der Inhalt des Feldes mit dem übergebenen Namen
+   // leer ist und schreibt dann ggf. eine entsprechende Fehlermeldung bzw.
+   // setzt das Error-Flag bErrorFlag.
+   //
+   // @result: boolean - Feldinhalt gültig Ja/Nein
+   //***************************************************************************
+   function CheckField_NotEmpty(oTable:O, cFieldName:C)
+      result := true,
+      if empty(AsVariant(cFieldName, oTable)) then
+         AppendErrorMessage(cFieldName, 'Darf nicht leer sein'),
+         bErrorFlag := true,
+         result     := false,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der Inhalt eines SCRIPT_*-Feldes gültig ist.
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function CheckScriptField_NotEmptyAndProgramExists(oTable:O, cFieldName:C)
+   | cFieldContent |
+
+      if CheckField_NotEmpty(oTable, cFieldName) then
+         cFieldContent := AsVariant(cFieldName, oTable),
+         if not ProgramExists(cFieldContent) then
+            AppendErrorMessage(cFieldName, 'Script mit dem Namen <' + cFieldContent + '> muss existieren'),
+            bErrorFlag := true,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob die Dateinamenendung ungültige Zeichen beinhaltet.
+   // @result: null
+   //***************************************************************************
+   function CheckExtension(oTable:O)
+   | cNotAllowedCharacters |
+      cNotAllowedCharacters := '/\:*?"<>|',
+      if not Empty(oTable:MASK) then
+         if not Empty(CharOnly(cNotAllowedCharacters, oTable:MASK)) then
+            AppendErrorMessage('MASK', 'Dateinamenendung enthält ein oder mehrere ungültige Zeichen: ' + cNotAllowedCharacters),
+            bErrorFlag := true,
+         endif,
+      endif,
+   end,
+
+   cErrorsStringList := '',
+   bErrorFlag        := false,
+
+   CheckField_NotEmpty(m_oEDITRCH, 'DIRECTION'),
+   CheckField_NotEmpty(m_oEDITRCH, 'PROTOCOL'),
+   CheckField_NotEmpty(m_oEDITRCH, 'URI'),
+   CheckScriptField_NotEmptyAndProgramExists(m_oEDITRCH, 'SCRIPT_TRA'),
+   if m_oEDITRCH:DIRECTION <> gl_EDI_ProcessDirection_Outbound then
+      CheckScriptField_NotEmptyAndProgramExists(m_oEDITRCH, 'SCRIPT_IDT'),
+      CheckExtension(m_oEDITRCH),
+   endif,
+   if m_oEDITRCH:PROTOCOL <> gl_EDI_DataTransferProtocol_FileSystem then
+      CheckField_NotEmpty(m_oEDITRCH, 'URI_LOGIN'),
+      CheckField_NotEmpty(m_oEDITRCH, 'URI_PASS'),
+   endif,
+
+   result := not bErrorFlag,
+end,
+
+//******************************************************************************
+// Diese Funktion zeigt den Programmauswahldialog an und schreibt das ggf. aus-
+// gewählte Programm in das übergebenen Feld.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SelectProgram(oTable:O, cFieldName:C)
+| aResult, cProgramName, nCurrentRecord |
+
+   //***************************************************************************
+   // Diese Funktion ermittelt anhand der Prozessrichtung und des
+   // Prozessschrittes die verfügbaren Script-Pfade.
+   //
+   // @result: array - Script-Pfade
+   //***************************************************************************
+   function EDI_DetermineAvailableScriptPaths(nProcessDirection:N, cDestinationFieldName:C)
+   | cBasePath, cProcessStepString |
+
+      cProcessStepString := '',
+      case nProcessDirection
+         of gl_EDI_ProcessDirection_Inbound  ::
+            cBasePath := gl_EDI_ScriptsPathInbound,
+            case cDestinationFieldName
+               of 'SCRIPT_TRA' :: cProcessStepString := '10_transport',
+               of 'SCRIPT_IDT' :: cProcessStepString := '20_identification',
+               of 'SCRIPT_PAR' :: cProcessStepString := '30_parsing',
+               of 'SCRIPT_IMP' :: cProcessStepString := '20_import',
+            endcase,
+
+         of gl_EDI_ProcessDirection_Outbound ::
+            cBasePath := gl_EDI_ScriptsPathOutbound,
+            case cDestinationFieldName
+               of 'SCRIPT_DCL' :: cProcessStepString := '10_documentlist',
+               of 'SCRIPT_EXP' :: cProcessStepString := '20_inhouseformat',
+               of 'SCRIPT_MSG' :: cProcessStepString := '30_createmessage',
+               of 'SCRIPT_TRA' :: cProcessStepString := '40_transport',
+            endcase,
+
+         otherwise
+            SetError('Invalid process direction: ' + str(nProcessDirection)),
+      endcase,
+
+      result := {
+         cBasePath + '\' + cProcessStepString + '\standard',
+         cBasePath + '\' + cProcessStepString + '\custom'
+      },
+   end,
+
+   cProgramName := trim(AsString(cFieldName, oTable)),
+   if empty(cProgramName) then
+      nCurrentRecord := 0,
+   else
+      nCurrentRecord := Lookup(waDabPRG, 'BEZ', {{cProgramName}}, 'PROGNR'),
+   endif,
+
+   aResult := Call(
+      'EDI\Management\ProgramSelectionDialog\GUI',
+      m_oDM,
+      nCurrentRecord,
+      EDI_DetermineAvailableScriptPaths(oTable:DIRECTION, cFieldName)
+   ),
+   if aResult[1] > 0 then
+      if not EditModes(oTable) then
+         oTable.CbEdit(),
+      endif,
+      oTable.CbReplace(cFieldName, aResult[2]),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion zeigt einen Dialog mit den wichtigen Informationen zu den
+// abgerufenen Nachrichten.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowRetrieveMessagesResult(aResult:A)
+| nProcessedFilesCount, aSkippedFilesList, nSkippedFilesCount, cMessage, i |
+
+   nProcessedFilesCount := KVU_GetAssert(aResult, 'processedFilesCount'),
+   aSkippedFilesList    := KVU_GetAssert(aResult, 'skippedFilesList'),
+   nSkippedFilesCount   := ALen(aSkippedFilesList),
+   cMessage             := 'Es wurde(n) ' + str(nProcessedFilesCount) + ' Datei(en) erfolgreich abgerufen.',
+   if nSkippedFilesCount > 0 then
+      cMessage += CRLF + CRLF + 'Folgende Datei(en) konnte(n) nicht abgerufen werden:',
+      for i := 1 to nSkippedFilesCount do
+         cMessage += CRLF + ' - ' + aSkippedFilesList[i, 1] + ': ' + aSkippedFilesList[i, 2],
+      next,
+   endif,
+
+   ShowErrorLog(
+      '',
+      cMessage,
+      0,
+      nil,
+      '',
+      'Ergebnis des manuellen Nachrichten-Abrufs'
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion gibt den Namen des aktuellen Transportkanals zurück.
+// @result: string
+//******************************************************************************
+function EDITRCH_GetName()
+   result := trim(m_oEDITRCH:NAME),
+end,
+
+//******************************************************************************
+function ExtensionListCorrection(oTable:O, oMaskEditField:O)
+|cMask|
+   if oTable:DIRECTION = gl_EDI_ProcessDirection_Inbound then
+      if not Empty(oMaskEditField.Text) then
+         cMask := AllTrim(oMaskEditField.Text),
+         cMask := lower(cMask), //alles auf lowercase
+         cMask := StrTran(cMask, ' ', ''), //Keine Leerzeichen
+
+         while ',,' $ cMask do
+            cMask := StrTran(cMask, ',,', ','), //Doppelte Kommas durch nur eine ersetzen
+         end,
+
+         if AllTrim(Left(cMask, 1)) == ',' then
+            cMask := SubStr(cMask, 2), //Falls ein Komma am Anfang steht, löschen
+         endif,
+
+         if AllTrim(Right(cMask, 1)) == ',' then
+            cMask := SubStr(cMask, 1, Len(cMask) - 1), //Falls ein Komma am Ende steht, löschen
+         endif,
+
+         oTable:MASK := cMask,
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der EDITRCH
+//******************************************************************************
+function ds_EDITRCHScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern des Datensatzes
+//******************************************************************************
+function EDITRCH_BeforePost( Sender )
+   if not m_bExplicitPost then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor der Neuanlage eines Datensatzes
+//******************************************************************************
+function EDITRCH_BeforeInsert( Sender )
+   if not m_bExplicitInsert then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Standard-Eventhandler beim Ändern einer TBeCombo
+//******************************************************************************
+function TBeCombo_DefaultOnChangeHandler(Sender)
+| oTable |
+
+   oTable := Sender.DataSource.DataSet,
+   if EditModes(oTable) then
+      oTable.CbReplace(Sender.DataField, val(Sender.Value)),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oEDITRCH),
+   if not bCanClose then
+      MessageDlg('Das Fenster kann nicht geschlossen werden, weil noch nicht gespeicherte Änderungen vorhanden sind.', mtWarning),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Manueller Abruf bei Inbound-Transportkanälen
+//******************************************************************************
+function A_ProcessInbound_RetrieveMessagesExecute( Sender )
+| oProgressCallback, aResult, cErrorStringList |
+
+   if ValidateFieldsForActivation(cErrorStringList) then
+      startseq
+         oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+         startseq
+            ProgressbarShow('', 'Abruf neuer Dateien in ' + m_oEDITRCH:URI, true),
+            startseq
+               aResult := Call(m_oEDITRCH:SCRIPT_TRA, m_oDM, m_oEDITRCH:ID, oProgressCallback),
+            always
+               ProgressbarHide(),
+            stopseq,
+            ShowRetrieveMessagesResult(aResult),
+         always
+            DestroyObject(oProgressCallback),
+         stopseq,
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim manuellen Abruf neuer Dateien', GetErrorObj()),
+      stopseq,
+   else
+      ShowErrorLog(
+         'Nachrichten können nicht von Transportkanal <' + EDITRCH_GetName() + '> abgerufen werden, weil nicht alle notwendigen Feldinhalte gültig sind.',
+         cErrorStringList
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Transport-Script auswählen
+//******************************************************************************
+function A_SelectProgram_TransportExecute( Sender )
+   startseq
+      SelectProgram(m_oEDITRCH, 'SCRIPT_TRA'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Auswählen des Transport-Scripts', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Identifikations-Script auswählen
+//******************************************************************************
+function A_SelectProgram_IdentificationExecute( Sender )
+   startseq
+      SelectProgram(m_oEDITRCH, 'SCRIPT_IDT'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Auswählen des Identifikations-Scripts', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Transportkanal deaktivieren
+//******************************************************************************
+function A_DeactivateExecute( Sender )
+   startseq
+      TransportChannel_SetActive(false),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Deaktivieren des Transportkanals', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Transportkanal aktivieren
+//******************************************************************************
+function A_ActivateExecute( Sender )
+| cErrorStringList |
+
+   if ValidateFieldsForActivation(cErrorStringList) then
+      startseq
+         TransportChannel_SetActive(true),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Aktivieren des Transportkanals', GetErrorObj()),
+      stopseq,
+   else
+      ShowErrorLog(
+         'Transportkanal <' + EDITRCH_GetName() + '> kann nicht aktiviert werden, weil nicht alle notwendigen Feldinhalte gültig sind.',
+         cErrorStringList
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen am Transportkanal verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDITRCH.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Transportkanal speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| oException |
+
+   m_bExplicitPost := true,
+   startseq
+      startseq
+         ExtensionListCorrection(m_oEDITRCH, edt_Mask),
+         m_oEDITRCH.CbPost(),
+      onerror
+         oException := GetErrorObj(),
+         // Exceptions vom Typ ECheckRightsAbort werden vom be-Standard
+         // entsprechend behandelt bzw. visualisiert -> deshalb ignorieren.
+         if not ClassOf(oException, 'ECheckRightsAbort') then
+            GU_ShowStdErrorMessage('Fehler beim Speichern von Transportkanal <' + EDITRCH_GetName() + '>', oException),
+         endif,
+      stopseq,
+   always
+      m_bExplicitPost := false,
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Anlegen eines neuen Transportkanals
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      m_bExplicitInsert := true,
+      startseq
+         m_oEDITRCH.CbAppend(),
+      always
+         m_bExplicitInsert := false,
+      stopseq,
+      MyFocusControl(oForm, edt_Name),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anlegen eines neuen Transportkanals', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Transportkanalverwaltung',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner), 
+   oForm.ImageIndex     := 398,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Activate                        := FindObject(oForm, "A_Activate"),
+   A_Cancel                          := FindObject(oForm, "A_Cancel"),
+   A_Deactivate                      := FindObject(oForm, "A_Deactivate"),
+   A_New                             := FindObject(oForm, "A_New"),
+   A_ProcessInbound_RetrieveMessages := FindObject(oForm, "A_ProcessInbound_RetrieveMessages"),
+   A_Save                            := FindObject(oForm, "A_Save"),
+   A_SelectProgram_Identification    := FindObject(oForm, "A_SelectProgram_Identification"),
+   A_SelectProgram_Transport         := FindObject(oForm, "A_SelectProgram_Transport"),
+   al_Actions                        := FindObject(oForm, "al_Actions"),
+   bar_Top                           := FindObject(oForm, "bar_Top"),
+   bardock_Top                       := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                      := FindObject(oForm, "barmngr_Main"),
+   bbtn_Activate                     := FindObject(oForm, "bbtn_Activate"),
+   bbtn_CancelProfile                := FindObject(oForm, "bbtn_CancelProfile"),
+   bbtn_Deactivate                   := FindObject(oForm, "bbtn_Deactivate"),
+   bbtn_New                          := FindObject(oForm, "bbtn_New"),
+   bbtn_ProcessInbound_Retrieve      := FindObject(oForm, "bbtn_ProcessInbound_Retrieve"),
+   bbtn_SaveProfile                  := FindObject(oForm, "bbtn_SaveProfile"),
+   bipnl_Title                       := FindObject(oForm, "bipnl_Title"),
+   btn_SelectProgram_Identification  := FindObject(oForm, "btn_SelectProgram_Identification"),
+   btn_SelectProgram_Transport       := FindObject(oForm, "btn_SelectProgram_Transport"),
+   bvl_Details_Row1_Col1             := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row1_Col2             := FindObject(oForm, "bvl_Details_Row1_Col2"),
+   bvl_Details_Row2_Col1             := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   cmb_Direction                     := FindObject(oForm, "cmb_Direction"),
+   cmb_Protocol                      := FindObject(oForm, "cmb_Protocol"),
+   ds_EDITRCH                        := FindObject(oForm, "ds_EDITRCH"),
+   edt_Mask                          := FindObject(oForm, "edt_Mask"),
+   edt_Name                          := FindObject(oForm, "edt_Name"),
+   edt_ScriptName_Identification     := FindObject(oForm, "edt_ScriptName_Identification"),
+   edt_ScriptName_Transport          := FindObject(oForm, "edt_ScriptName_Transport"),
+   edt_URI                           := FindObject(oForm, "edt_URI"),
+   edt_URILogin                      := FindObject(oForm, "edt_URILogin"),
+   edt_URIPassword                   := FindObject(oForm, "edt_URIPassword"),
+   grd_EDITRCH                       := FindObject(oForm, "grd_EDITRCH"),
+   lbl_Details_Row1_Col1_Title       := FindObject(oForm, "lbl_Details_Row1_Col1_Title"),
+   lbl_Details_Row2_Col1_Title       := FindObject(oForm, "lbl_Details_Row2_Col1_Title"),
+   lbl_Direction                     := FindObject(oForm, "lbl_Direction"),
+   lbl_Mask                          := FindObject(oForm, "lbl_Mask"),
+   lbl_Name                          := FindObject(oForm, "lbl_Name"),
+   lbl_Protocol                      := FindObject(oForm, "lbl_Protocol"),
+   lbl_ScriptName_Identification     := FindObject(oForm, "lbl_ScriptName_Identification"),
+   lbl_ScriptName_Transport          := FindObject(oForm, "lbl_ScriptName_Transport"),
+   lbl_URI                           := FindObject(oForm, "lbl_URI"),
+   lbl_URILogin                      := FindObject(oForm, "lbl_URILogin"),
+   lbl_URIPassword                   := FindObject(oForm, "lbl_URIPassword"),
+   pnl_Details                       := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1                  := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1             := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row1_Col2             := FindObject(oForm, "pnl_Details_Row1_Col2"),
+   pnl_Details_Row2                  := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_Details_Row2_Col1             := FindObject(oForm, "pnl_Details_Row2_Col1"),
+   pnl_Grid                          := FindObject(oForm, "pnl_Grid"),
+   pnl_Main                          := FindObject(oForm, "pnl_Main"),
+   pnl_Top                           := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   AssignEvent(cmb_Direction, 'OnChange', 'TBeCombo_DefaultOnChangeHandler'),
+   AssignEvent(cmb_Protocol,  'OnChange', 'TBeCombo_DefaultOnChangeHandler'),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   m_bExplicitInsert := false,
+   m_bExplicitPost   := false,
+
+   btn_SelectProgram_Identification.Caption := '',
+   btn_SelectProgram_Transport.Caption      := '',
+
+   // Controls mit Tabellenfeldern verbinden
+   edt_Name.DataSource                      := ds_EDITRCH,
+   edt_Name.DataField                       := 'NAME',
+   cmb_Direction.DataSource                 := ds_EDITRCH,
+   cmb_Direction.DataField                  := 'DIRECTION',
+   cmb_Protocol.DataSource                  := ds_EDITRCH,
+   cmb_Protocol.DataField                   := 'PROTOCOL',
+   edt_Mask.DataSource                      := ds_EDITRCH,
+   edt_Mask.DataField                       := 'MASK',
+   edt_URI.DataSource                       := ds_EDITRCH,
+   edt_URI.DataField                        := 'URI',
+   edt_URILogin.DataSource                  := ds_EDITRCH,
+   edt_URILogin.DataField                   := 'URI_LOGIN',
+   edt_URIPassword.DataSource               := ds_EDITRCH,
+   edt_URIPassword.DataField                := 'URI_PASS',
+   edt_ScriptName_Identification.DataSource := ds_EDITRCH,
+   edt_ScriptName_Identification.DataField  := 'SCRIPT_IDT',
+   edt_ScriptName_Transport.DataSource      := ds_EDITRCH,
+   edt_ScriptName_Transport.DataField       := 'SCRIPT_TRA',
+
+   // Labels mit Tabellenfeldern verbinden
+   lbl_Name.DataSource                             := ds_EDITRCH,
+   lbl_Name.DataField                              := 'NAME',
+   lbl_Name.UseDefaultCaption                      := true,
+   lbl_Direction.DataSource                        := ds_EDITRCH,
+   lbl_Direction.DataField                         := 'DIRECTION',
+   lbl_Direction.UseDefaultCaption                 := true,
+   lbl_Protocol.DataSource                         := ds_EDITRCH,
+   lbl_Protocol.DataField                          := 'PROTOCOL',
+   lbl_Protocol.UseDefaultCaption                  := true,
+   lbl_Mask.DataSource                             := ds_EDITRCH,
+   lbl_Mask.DataField                              := 'MASK',
+   lbl_Mask.UseDefaultCaption                      := true,
+   lbl_URI.DataSource                              := ds_EDITRCH,
+   lbl_URI.DataField                               := 'URI',
+   lbl_URI.UseDefaultCaption                       := true,
+   lbl_URILogin.DataSource                         := ds_EDITRCH,
+   lbl_URILogin.DataField                          := 'URI_LOGIN',
+   lbl_URILogin.UseDefaultCaption                  := true,
+   lbl_URIPassword.DataSource                      := ds_EDITRCH,
+   lbl_URIPassword.DataField                       := 'URI_PASS',
+   lbl_URIPassword.UseDefaultCaption               := true,
+   lbl_ScriptName_Identification.DataSource        := ds_EDITRCH,
+   lbl_ScriptName_Identification.DataField         := 'SCRIPT_IDT',
+   lbl_ScriptName_Identification.UseDefaultCaption := true,
+   lbl_ScriptName_Transport.DataSource             := ds_EDITRCH,
+   lbl_ScriptName_Transport.DataField              := 'SCRIPT_TRA',
+   lbl_ScriptName_Transport.UseDefaultCaption      := true,
+
+   SetBrowserBeAttribID(grd_EDITRCH, 'DIRECTION', gl_EDI_MMTID_ProcessDirection),
+   SetBrowserBeAttribID(grd_EDITRCH, 'PROTOCOL', gl_EDI_MMTID_DataTransferProtocol),
+
+   // Tabellen-gebundene Controls sowie Anzeige-Status von Actions manuell
+   // aktualisieren.
+   // Dies ist insbesondere wichtig, damit der ReadOnly-Zustand von Controls
+   // initial richtig angezeigt wird.
+   m_oEDITRCH.CbRefresh(),
+   ActionsEnabled(),
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({edt_Name, cmb_Direction, cmb_Protocol, edt_Mask, edt_URI, edt_URILogin, edt_URIPassword, edt_ScriptName_Identification, edt_ScriptName_Transport}),
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row2_Col1_Title, lbl_Details_Row1_Col1_Title}),
+
+   edt_ScriptName_Identification.Font.Name := 'Courier New',
+   edt_ScriptName_Transport.Font.Name      := 'Courier New',
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

@@ -1,0 +1,228 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Belegliste erstellen
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm erstellt eine Belegliste im Kontext eines EDI-Profils.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIPROFId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion errechnet anhand der angegeben Start-Daten im EDIPROF- und
+// EDIPART-Datensatz, das Startdatum, ab welchem Belege in die Belegliste
+// aufgenommen werden dürfen.
+//
+// @result: datetime
+//******************************************************************************
+function EDI_DocumentList_CalculateDocumentStartDate(oEDIPROF:O, oEDIPART:O)
+   result := e2v(
+       oEDIPART:BELEGE_AB,
+       e2v(
+          oEDIPROF:BELEGE_AB,
+          oEDIPART:ERSTELLT
+       )
+    ),
+end,
+
+//******************************************************************************
+//
+// @result: boolean
+//******************************************************************************
+function EDI_Document_Find(oEDIDOC:O, nLocation:N, nDocumentType:N, nDocumentNumber:N, nConsecutiveNumber:N, nPartnerNumber:N, dDate:D)
+   result := oEDIDOC.CbFindKey({
+      nLocation,
+      nDocumentType,
+      nDocumentNumber,
+      nConsecutiveNumber,
+      nPartnerNumber,
+      dDate
+   }),
+end,
+
+//******************************************************************************
+//
+// @result: integer - ID der Belegliste, in der die Belege aufgnommen wurden
+//******************************************************************************
+function DocumentList_AddDocumentsFromPartner(oDM:O, oEDIPROF:O, oEDIPART:O, nDocumentListId:N, oProgressCallback:O)
+|
+   i, nDocumentCount,
+   oDab700,  oEDIDOC_Find, oEDIDOC, oEDIDOCL,
+   nPartnerNumber, nBeDocumentType, dtDocumentsFromDateTime, dFrom, dUntil
+|
+
+   //***************************************************************************
+   function CountRecords(oTable:O)
+      result := 0,
+
+      oTable.CbFirst(),
+      while not oTable.CbEof do
+         result++,
+         oTable.CbNext(),
+      end,
+      oTable.CbFirst(),
+   end,
+
+   result              := nDocumentListId,
+
+   oEDIDOC_Find := MyGetTable(oDM, waEDIDOC, 'EDIDOC_FIND'),
+   oEDIDOC_Find.CbIndexName := 'DAB700_KEY',
+
+   oEDIDOC := MyGetTable(oDM, waEDIDOC, ''),
+   oEDIDOC.CbIndexName := 'DAB700_KEY',
+
+   // Partnernummer (DAB700:PERSNR) ermitteln
+   nPartnerNumber := lookup(
+      oEDIPART:WORKAREA,
+      EDI_Partner_GetIdIndexNameByWorkarea(oEDIPART:WORKAREA),
+      {{oEDIPART:RECORD_ID}},
+      EDI_Partner_GetKeyFieldNameByWorkarea(oEDIPART:WORKAREA),
+      0
+   ),
+   // Belegtyp (DAB700:BELEG_TYP) ermitteln
+   nBeDocumentType := EDI_Edifact_MessageTypeToBeDocumentType(oEDIPROF:MSG_TYPE),
+   // Datum für "Belege ab Zeitpunkt" ermitteln
+   dtDocumentsFromDateTime := EDI_DocumentList_CalculateDocumentStartDate(oEDIPROF, oEDIPART),
+   // Datum "Belege ab Zeitpunkt" für Tabellen-Range formatieren
+   dFrom  := trunc(dtDocumentsFromDateTime),
+   dUntil := today() + 1,
+
+   oDab700 := MyGetTable(oDM, waDab700, 'DAB700_ADDDOCUMENTSFROMPARTNER'),
+   oDab700.CbIndexName := 'PERSNR_DATUM', // PERSNR;BELEG_ART;DATUM
+   // Tabellen-Range mithilfe des Datums für "Belege ab Zeitpunkt" zusätzlich
+   // einschränken => Belege, welche vor dem angegbenen Datum datiert sind,
+   // müssen nicht verarbeitet werden.
+   // Jedoch muss anschließend trotzdem bei jedem Datensatz die Zeit (DAB700:ZEIT)
+   // geprüft werden.
+   oDab700.CbSetRange(
+      {nPartnerNumber, nBeDocumentType, dFrom},
+      {nPartnerNumber, nBeDocumentType, dUntil}
+   ),
+   startseq
+      oDab700.CbFirst(),
+      i := 1,
+      nDocumentCount := CountRecords(oDab700),
+      while not oDab700.CbEof do
+         // Beleg nur verarbeiten wenn dessen Erstellungsdatum größer/gleich dem
+         // angegebenen Datum für "Belege ab Zeitpunkt" ist und
+         // der Beleg noch nicht verarbeitet wurde.
+         if (oDab700:DATUM + oDab700:ZEIT) >= dtDocumentsFromDateTime and
+            not EDI_Document_Find(oEDIDOC, oDab700:STANDORT, oDab700:BELEG_ART, oDab700:BELEG_NR, oDab700:LFD_NR, oDab700:PERSNR, oDab700:DATUM) then
+
+            // Ggf. eine neue Belegliste erstellen, sofern noch keine existiert
+            if empty(nDocumentListId) then
+               oEDIDOCL := MyGetTable(oDM, waEDIDOCL, ''),
+               oEDIDOCL.CbAppend(),
+               oEDIDOCL:EDIPROF_ID := oEDIPROF:ID,
+               oEDIDOCL:EDIPART_ID := oEDIPART:ID,
+               oEDIDOCL:PROC_STEP  := gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated,
+               oEDIDOCL.CbPost(),
+               nDocumentListId     := oEDIDOCL:ID,
+
+               EDI_Process_UpdateProgress(oProgressCallback, 1, nDocumentCount, 'Belegliste erstellt: ' + str(nDocumentListId)),
+               result              := nDocumentListId,
+            endif,
+
+            oEDIDOC.CbAppend(),
+            oEDIDOC:EDIDOCL_ID := nDocumentListId,
+            oEDIDOC:EDIPART_ID := oEDIPART:ID,
+            oEDIDOC:PROC_STEP  := gl_EDI_ProcessStep_EDIDOC_DocumentSelected,
+
+            oEDIDOC:D700_STO   := oDab700:STANDORT,
+            oEDIDOC:D700_BEART := oDab700:BELEG_ART,
+            oEDIDOC:D700_BELNR := oDab700:BELEG_NR,
+            oEDIDOC:D700_LFDNR := oDab700:LFD_NR,
+            oEDIDOC:D700_PERNR := oDab700:PERSNR,
+            oEDIDOC:D700_DATUM := oDab700:DATUM,
+
+            oEDIDOC.CbPost(),
+            EDI_Process_UpdateProgress(oProgressCallback, i, nDocumentCount, 'Beleg hinzugefügt: ' + str(oDab700:BELEG_NR)),
+         else
+            EDI_Process_UpdateProgress(oProgressCallback, i, nDocumentCount, 'Beleg übersprungen: ' + str(oDab700:BELEG_NR)),
+         endif,
+
+         i++,
+         oDab700.CbNext(),
+      end,
+   always
+      oDab700.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt eine Belegliste im Kontext eines EDI-Profils.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function DocumentList_Create(oDM:O, nEDIPROFId:N, oProgressCallback:O)
+| oEDIPROF, oEDIPART, nDocumentListId |
+
+   // Die Beleglisten-ID wird leer initialisiert, weil erst beim Verarbeiten der
+   // einzelnen Belege entschieden wird, ob überhaupt eine Belegliste erstellt
+   // werden muss.
+   nDocumentListId := 0,
+
+   oEDIPART := MyGetTable(oDM, waEDIPART, ''),
+   oEDIPART.CbIndexName := 'EDIPROF_ID',
+   oEDIPART.CbSetRangeEx({nEDIPROFId}),
+   startseq
+      if oEDIPART.CbDataAvailable then
+         oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+         oEDIPROF.CbIndexName := 'ID',
+         SetErrorIf(not oEDIPROF.CbFindKey({nEDIPROFId}), 'EDIPROF record with ID <' + str(nEDIPROFId) + '> does not exist'),
+
+         oEDIPART.CbFirst(),
+         while not oEDIPART.CbEof do
+           nDocumentListId := DocumentList_AddDocumentsFromPartner(oDM, oEDIPROF, oEDIPART, nDocumentListId, oProgressCallback),
+            oEDIPART.CbNext(),
+         end,
+      else
+         SetError('Profile with ID <' + str(nEDIPROFId) + '> is not assigned to any partner'),
+      endif,
+   always
+      oEDIPART.CbCancelRange(),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, true),
+
+m_aResult := {},
+startseq
+   m_aResult := DocumentList_Create(m_oDM, m_nEDIPROFId, m_oProgressCallback),
+   EDI_ProcessResult_SetSuccess(m_aResult),
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult
+

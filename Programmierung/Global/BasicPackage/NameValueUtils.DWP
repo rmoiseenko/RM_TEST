@@ -1,0 +1,54 @@
+
+//##############################################################################
+// Name / Value Funktionen
+//##############################################################################
+
+//******************************************************************************
+function _NVCreate(cType, nLen, nDez, oOwner:O:=nil, cName:C:='')
+| oMem |
+   // ToDo: MemTable muss noch auf 'TbeMemTable' umgestellt werden.
+   //       Achtung: Für die Erweiterung muss der Datentyp 'N' genauer definiert werden, um bereits bestehende 
+   //                aufrufe der Funktion nicht zu beeinträchtigen.
+   oMem := CreateObject('TMemCalcTable', cName, iif(empty(oOwner), Application, oOwner)),
+                                                                                            
+   AddMemField(oMem, 'NAME', 'C',    50,   0),                                              
+   AddMemField(oMem, 'VALUE', cType, nLen, nDez),                                           
+   oMem.Active  := true,                                                                    
+   oMem.OrderBy := 'NAME',                                                                  
+   Result       := oMem,                                                                    
+end,
+
+//******************************************************************************
+function _NVGet(cName, oNV)
+   Result := nil,
+   DbScope({Trim(cName)}, {Trim(cName)}, oNV),
+   DbGoTop(oNV),
+   if not EoF(oNV) then
+      Result := oNV:VALUE,
+   endif,
+end,
+
+//******************************************************************************
+function _NVSet(cName, uValue, oNV)
+   DbScope({Trim(cName)}, {Trim(cName)}, oNV),
+   DbGoTop(oNV),
+   if EoF(oNV) then
+      MyAppend(oNV),
+      oNV:NAME := Trim(cName),
+   else
+      MyEdit(oNV),
+   endif,
+   oNV:VALUE := uValue,
+   MyPost(oNV),
+end,
+
+//******************************************************************************
+function _NVNameArray(oNV)
+   DbScope(, oNV),
+   DbGoTop(oNV),
+   Result := {},
+   while not EoF(oNV) do
+      AAdd(Result, oNV:NAME),
+      DbSkip(1, oNV),
+   end,
+end,

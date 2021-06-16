@@ -1,0 +1,423 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Funktionen zum Traversieren, Lesen und Schreiben des "abstract syntax tree".
+//
+// Die Abkürzung "AST" steht für "abstract syntax tree".
+//##############################################################################
+//##############################################################################
+
+function _EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTree:O) ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Read)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ermittelt in der aktuellen Ebene den am nächsten gelegenen
+// Segmentknoten (ein-schließlich des aktuellen Knoten), welcher dem dem
+// übergebenen Segment-Bezeichner entspricht.
+//
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_FindNearest(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C)
+| oNode, cExpectedClassName |
+
+   cExpectedClassName := 'TTreeNodeEx',
+   SetErrorIf(
+      not ClassOf(oAbstractSyntaxTreeNode, cExpectedClassName),
+      'Given parameter <oAbstractSyntaxTreeNode> must be of type <' + cExpectedClassName + '>'
+   ),
+
+   result := nil,
+   oNode  := oAbstractSyntaxTreeNode,
+
+   while not empty(oNode) do
+      if Left(oNode.Text, ALen(cSegmentIdentifier)) == cSegmentIdentifier then
+         result := oNode,
+         break,
+      endif,
+      oNode := oNode.NextSibling,
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion sucht in der aktuellen Ebene vom übergebenen Knoten aus nach
+// allen Segmentknoten, welche mit dem übergebenen Segment-Bezeichner
+// übereinstimmen.
+//
+// @result: array - Liste der gefundenen Segmente
+//******************************************************************************
+function _EDI_AST_FindAll(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C)
+| oNode |
+
+   result := {},
+   oNode  := EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTreeNode),
+   oNode  := EDI_AST_FindNearest(oNode, cSegmentIdentifier),
+   while not empty(oNode) do
+      AAdd(result, oNode),
+      oNode := EDI_AST_FindNearest(oNode.NextSibling, cSegmentIdentifier),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion sucht rekursiv nach allen Segmenten mit dem übergebenen
+// Segment-Bezeichner.
+//
+// @result: array - Liste der gefundenen Segmente
+//******************************************************************************
+function _EDI_AST_FindAllRecursive(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C)
+| oMainNode |
+
+   function FindSegment(oNode:O, cSegmentIdentifier:C, aSegments:R, nLevel:N:=0)
+      if Left(oNode.Text, Len(cSegmentIdentifier)) == cSegmentIdentifier then
+         AAdd(aSegments, oNode),
+      endif,
+      // Erst alle untergeordneten Knoten verarbeiten
+      if oNode.HasChildren then
+         FindSegment(oNode.FirstChild, cSegmentIdentifier, aSegments, nLevel + 1),
+      endif,
+      // Nächsten Geschwister-Knoten verarbeiten
+      if not empty(oNode.NextSibling) then
+         FindSegment(oNode.NextSibling, cSegmentIdentifier, aSegments, nLevel),
+      endif,
+   end,
+
+   result    := {},
+   oMainNode := EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTreeNode),
+
+   if not empty(oMainNode) then
+      FindSegment(oMainNode, cSegmentIdentifier, result),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt das nächstgelegene Segment mit dem übergebenen
+// Segment-Bezeichner in der untergeordneten Ebene des aktuellen Knotens.
+//
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_FindChild(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C)
+| oNode |
+
+   oNode := EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTreeNode),
+   if oNode.HasChildren then
+      result := EDI_AST_FindNearest(oNode.FirstChild, cSegmentIdentifier),
+   else
+      result := nil,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt alle Segmentknoten mit dem übergebenen
+// Segmentbezeichner in der untergeordneten Ebene.
+//
+// @result: array
+//******************************************************************************
+function _EDI_AST_FindChildren(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C)
+| oNode |
+
+   result := {},
+   oNode  := EDI_AST_FindChild(oAbstractSyntaxTreeNode, cSegmentIdentifier),
+   while not empty(oNode) do
+      AAdd(result, oNode),
+      oNode := EDI_AST_FindNearest(oNode.NextSibling, cSegmentIdentifier),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt anhand des übergebenen EDI-Segmentpfads das
+// entsprechende Segment-Objekt und gibt dieses zurück.
+//
+// Der Segmentpfad bezieht sich dabei immer auf die Kind-Knoten des übergebenen
+// Referenzknotens (oReferenceNode).
+//
+// Beispiele:
+//
+//   | Referenzknoten | Segmentpfad | Voller Segmentpfad       |
+//   ----------------------------------------------------------|
+//   | ROOT           | "UNB"       | ROOT/UNB                 |
+//   | SG25           | "SG28/PRI"  | ROOT/SGMSG/SG25/SG28/PRI |
+//
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_FindPath(oReferenceNode:O, cSegmentPath:C)
+|
+   oNode, nPathItems, cSegmentIdentifier, i,
+   nPosIndexOpen, nPosIndexClose, cSegmentIndexString, nSegmentIndex
+|
+
+   result := nil,
+   oNode  := EDI_AST_TTreeViewEx_FirstNode_Internal(oReferenceNode),
+
+   SetErrorIf(not oNode.HasChildren, 'No child nodes available in reference node'),
+   oNode := oNode.FirstChild,
+
+   nPathItems := TokenCount(cSegmentPath, '/'),
+   for i := 1 to nPathItems do
+      cSegmentIdentifier := Token(cSegmentPath, '/', i),
+      // Segment-Identifier validieren:
+      //   Segment-Identifier dürfen nicht leer sein. Das bedeutet auch, dass
+      //   die Angabe eines Segmentpfads wie z.B. "/SGMSG/SG25/LIN" ungültig
+      //   ist, weil vor dem ersten Slash ("/") kein Segment angegeben wurde.
+      //
+      // Beispiele für leere Segement-Identifier in Segmentpfaden:
+      //   "/SGMSG/SG25/LIN"  => leeres Segment am Anfang
+      //   "SGMSG/SG25/SG28/" => leeres Segment am Ende
+      //   "/SGMSG//SG25/LIN" => leeres Segment zwischen "SGMSG" und "SG25"
+      SetErrorIf(
+         empty(AllTrim(cSegmentIdentifier)),
+         'Empty segment identifier is not allowed (index: ' + str(i) + ' in path "' + cSegmentPath + '")'
+      ),
+
+      nPosIndexOpen  := RAt('[', cSegmentIdentifier),
+      nPosIndexClose := RAt(']', cSegmentIdentifier),
+      nSegmentIndex  := 1,
+      if nPosIndexOpen > 0 and nPosIndexClose > 0 then
+         cSegmentIndexString := SubStr(cSegmentIdentifier, nPosIndexOpen + 1, Len(cSegmentIdentifier) - nPosIndexOpen - 1),
+         nSegmentIndex       := val(cSegmentIndexString),
+         cSegmentIdentifier  := left(cSegmentIdentifier, nPosIndexOpen - 1),
+      endif,
+
+      while nSegmentIndex > 0 do
+         oNode := EDI_AST_FindNearest(oNode, cSegmentIdentifier),
+         SetErrorIf(empty(oNode), 'Segment "' + cSegmentIdentifier + '" not present in current scope'),
+         nSegmentIndex--,
+         if nSegmentIndex > 0 then
+            oNode := oNode.NextSibling,
+         endif,
+      end,
+
+      if i = nPathItems then
+         result := oNode,
+      else
+         oNode := oNode.FirstChild,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion lest den Wert mit dem übergebenen Datenelement-Bezeichner aus
+// dem übergebenen Segment aus und gibt diesen zurück.
+//
+// @result: string - Wert des Segments
+//******************************************************************************
+function _EDI_AST_GetValue(oAbstractSyntaxTreeNode:O,
+                           cCompositeDataElementIdentifier:C,
+                           cDataElementIdentifier:C:='')
+|
+   oEDISEGM, aPositionInfo, cSegment,
+   nStandard, cElementSeperator, cCompositeElementSeperator
+|
+
+   // TODO: Alle Infos in den AST "verpacken", damit diese nicht global sind
+
+   nStandard                  := EDI_Context_GetStandard(),
+   cElementSeperator          := EDI_Context_GetElementSeperator(),
+   cCompositeElementSeperator := EDI_Context_GetCompositeElementSeperator(),
+
+   cSegment := oAbstractSyntaxTreeNode.Text,
+   oEDISEGM := BeOpen(waEDISEGM, 'INDEX_UNIQUE'),
+   startseq
+      aPositionInfo := EDI_SegmentMapping_GetPosition(
+         oEDISEGM,
+         nStandard,
+         EDI_Edifact_SegmentString_ExtractSegmentIdentifier_Internal(cSegment, cElementSeperator),
+         cCompositeDataElementIdentifier,
+         cDataElementIdentifier
+      ),
+   always
+      BeClose(oEDISEGM),
+   stopseq,
+
+   result := EDI_Edifact_SegmentString_ExtractValue_Internal(
+      cSegment,
+      aPositionInfo,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+//
+// @result: string - Wert des Segments
+//******************************************************************************
+function _EDI_AST_GetPathValue(oAbstractSyntaxTreeNode:O,
+                               cSegmentPath:C,
+                               cCompositeDataElementIdentifier:C,
+                               cDataElementIdentifier:C:='')
+| oSegmentNode |
+
+   oSegmentNode := EDI_AST_FindPath(oAbstractSyntaxTreeNode, cSegmentPath),
+   result       := EDI_AST_GetValue(oSegmentNode, cCompositeDataElementIdentifier, cDataElementIdentifier),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Write)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt dem übergebenen AST-Node einen neuen Child-node hinzu mit
+// dem Segment als String.
+//
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_AddSegmentAsString(oAbstractSyntaxTreeNode:O, cSegmentString:C)
+| oNode |
+
+   oNode       := EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTreeNode),
+   result      := oNode.AddChild,
+   result.text := cSegmentString,
+end,
+
+//******************************************************************************
+// Diese Funktion fügt dem übergebenen AST-Node einen neuen Child-node hinzu mit
+// dem Segment im Array-Format.
+//
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_AddSegment(oAbstractSyntaxTreeNode:O, cSegmentIdentifier:C, aSegmentContent:A)
+| cSegmentString |
+
+   //***************************************************************************
+   function AppendElementsToSegmentString(aElements:A, bIsCompositeElement:L)
+   | i, cDelimiter, uItem |
+
+      if bIsCompositeElement then
+         cDelimiter := gl_EDI_Default_CompositeElementSeperator,
+      else
+         cDelimiter := gl_EDI_Default_ElementSeperator,
+      endif,
+
+      for i := 1 to ALen(aElements) do
+         uItem := aElements[i],
+         if not bIsCompositeElement or i > 1 then
+            cSegmentString += cDelimiter,
+         endif,
+         if ValType(uItem) == 'A' then
+            AppendElementsToSegmentString(uItem, true),
+         else
+            cSegmentString += ToString(uItem),
+         endif,
+      next,
+   end,
+
+   cSegmentString := cSegmentIdentifier,
+   AppendElementsToSegmentString(aSegmentContent, false),
+   cSegmentString += gl_EDI_Default_SegmentTerminator,
+
+   result := EDI_AST_AddSegmentAsString(oAbstractSyntaxTreeNode, cSegmentString),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt dem übergebenen AST-Node das UNA-Segemnt hinzu.
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _EDI_AST_AddUNASegment(oAbstractSyntaxTreeNode:O)
+   // Standard UNA-Segment: UNA:+.? '
+   result := EDI_AST_AddSegmentAsString(
+      oAbstractSyntaxTreeNode,
+      'UNA' +
+      gl_EDI_Default_CompositeElementSeperator +
+      gl_EDI_Default_ElementSeperator +
+      gl_EDI_Default_DecimalSeperator +
+      gl_EDI_Default_ReleaseIndicator +
+      gl_EDI_Default_ReservedCharacter +
+      gl_EDI_Default_SegmentTerminator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt einen EDIFACT-Nachrichten-String anhand eines
+// "abstract syntax tree" (AST).
+//
+// @result: string - EDIFACT-Nachricht
+//******************************************************************************
+function _EDI_AST_ComposeMessage_Edifact(oAST:O)
+| oFirstNode, nMessagesCount, nSegmentsCount |
+
+   //***************************************************************************
+   function ComposeMessage_Internal(oNode:O, nMessagesCount:R, nSegmentsCount:R)
+   | cSegmentString, oChildNode |
+
+      result := '',
+
+      if oNode.HasChildren then
+         oChildNode := oNode.FirstChild,
+         while not empty(oChildNode) do
+            result := ConcatTrenner(result, ComposeMessage_Internal(oChildNode, nMessagesCount, nSegmentsCount), CRLF),
+            oChildNode := oChildNode.NextSibling,
+         end,
+      else
+         cSegmentString := oNode.Text,
+         case EDI_Edifact_SegmentString_ExtractSegmentIdentifier_Internal(cSegmentString, gl_EDI_Default_ElementSeperator)
+            of 'UNH' ::
+               nSegmentsCount := 1 // Segment-Zähler initialisieren
+
+            of 'UNT' ::
+               nSegmentsCount++,
+               cSegmentString := EDI_Edifact_SegmentString_SetValue_Internal(
+                  cSegmentString,
+                  EDI_Edifact_DataElementMap_Create(1, 0, true, false),
+                  nSegmentsCount,
+                  gl_EDI_Default_ElementSeperator,
+                  gl_EDI_Default_CompositeElementSeperator,
+                  gl_EDI_Default_SegmentTerminator
+               ),
+
+               nMessagesCount++,
+               nSegmentsCount := -1,
+
+            of 'UNZ' ::
+               cSegmentString := EDI_Edifact_SegmentString_SetValue_Internal(
+                  cSegmentString,
+                  EDI_Edifact_DataElementMap_Create(1, 0, true, false),
+                  nMessagesCount,
+                  gl_EDI_Default_ElementSeperator,
+                  gl_EDI_Default_CompositeElementSeperator,
+                  gl_EDI_Default_SegmentTerminator
+               ),
+
+            otherwise
+               if nSegmentsCount <> -1 then
+                  nSegmentsCount++,
+               endif,
+         endcase,
+
+         result := cSegmentString,
+      endif,
+   end,
+
+   result := '',
+
+   nMessagesCount := 0,
+   nSegmentsCount := -1,
+
+   oFirstNode := EDI_AST_TTreeViewEx_FirstNode_Internal(oAST),
+
+   result := ComposeMessage_Internal(oFirstNode, nMessagesCount, nSegmentsCount),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+function _EDI_AST_TTreeViewEx_FirstNode_Internal(oAbstractSyntaxTree:O)
+   if ClassOf(oAbstractSyntaxTree, 'TTreeViewEx') then
+      result := oAbstractSyntaxTree.FirstNode,
+      if empty(result) then
+         result       := CollAdd(oAbstractSyntaxTree.Items),
+         result.Text  := 'ROOT',
+         result.Value := '0',
+      endif,
+   else
+      result := oAbstractSyntaxTree,
+   endif,
+end,
+

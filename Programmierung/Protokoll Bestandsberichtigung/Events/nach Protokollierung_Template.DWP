@@ -1,0 +1,30 @@
+//##############################################################################
+//##############################################################################
+// Callback-Programm für Custom Codeblock-Event "nach Protokollierung"
+//
+// Parameter:
+//  * nMode:    Protokollierungsmodus/protokollierter Prozess
+//               1 = Re.Kontrolle Pos.Berichtigung
+//               2 = Re.Kontrolle Freigabe
+//               3 = Produktions-Verbrauch anonym
+//               4 = Inventur-Korrektur manuell
+//               5 = Inventur-Korrektur Stapel
+//               6 = Produktion Teil-Fertigmeldung
+//               7 = Produktion End-Fertigmeldung
+//  * oDM:      Datenmodul, das sich in einer aktiven Transaktion befindet
+//  * oKDNBBP:  Protokoll-Tabelle, die auf den neu angelegten Protokolldatensatz positioniert ist
+// Rückgabe: keine
+// HINWEIS:  Transaktion aktiv!
+//##############################################################################
+//##############################################################################
+
+| nMode:P1, oDM:P2, oKDNBBP:P3 |
+
+// Hinweis: Dieses Programm ist ein Template, zur Aktivierung des Events ein Programm mit 
+//          dem Namen 'Protokoll Bestandsberichtigung\Events\nach Protokollierung' anlegen
+// 
+//          Das Event kann z.B. genutzt werden, um die Kostenstelle im 'KDNBBP' Datensatz individuell zu
+//          überschreiben. Das kann Sinn machen, sofern die Daten in der Folge genutzt werden, um FiBu-Buchungen auszulösen.
+// 
+// Hinweis: Das Event wird nur ausgeführt, wenn 'gl_BBPU_EventAfterLogging_Active := true' gesetzt ist.
+//          Diese Variable sollte im '..InitVars' Programm gesetzt werden.

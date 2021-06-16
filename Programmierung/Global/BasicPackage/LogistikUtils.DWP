@@ -1,0 +1,137 @@
+//******************************************************************************
+// Trennt die Informationen PLZ und Ort
+// Rückgabe ist ein KVU-Array mit PLZ und ORT
+//******************************************************************************
+function _BP_SplitPLZORT(cPLZOrt:C, cLandISO:C)
+| oMem, i, nPosPLZ, cOrt, cPLZ, oRec |
+
+   //******************************************************************************
+   //Vergibt das Scoring für die PLZ/Ort-Trennung
+   //Rückgabe ist eine ganze Zahl
+   //******************************************************************************
+   function Scoring(cPLZOrt, cLandISO)
+      |cNummern, nNummern, nLen|
+
+      nLen:=len(cPLZORT),
+      if nLen < 4 then  // Definitiv zu kurz
+         result:=100,
+         exit,
+      endif,
+
+      cNummern:=charonly('0123456789', cPLZOrt),
+      nNummern:=len(cNummern),
+
+      if cLandISO="DE" then  // Deutschland
+         if nNummern=5 and nLen<=7 then
+            result:=0,
+            exit,
+         endif,
+      endif,
+      result:=abs(5-nNummern) + abs(5-nLen),  // Standard-Formel
+
+   end,
+
+   oMem:=CreateObject("TBeMemTable"), // Memtable über enthaltene Wörter mit Scoring, je niedriger das Scoring desto warscheinlicher ist es eine PLZ
+   oMem.CbAddField( "WORT",     ftString, 35),
+   oMem.CbAddField( "SCORING",  ftInteger, 0),
+   oMem.CbAddField( "STELLE",   ftInteger, 0),
+   oMem.Active:=true,
+   cOrt:='',
+
+   //Füllen der Worttabelle
+   for i:=1 to tokencount(cPLZOrt, " ") do
+      if !empty(strtoken(cPLZOrt,' ', i)) then
+         myappend(oMem),
+         oMem:WORT    := strtoken(cPLZOrt,' ', i),
+         oMem:STELLE  := i,
+         oMem:SCORING := Scoring(trim(oMem:WORT), cLandISO),
+         mypost(oMem),
+      endif,
+   next,
+
+   //Ermittlung der PLZ
+   oMem.CbOrderBy("SCORING"),
+   dbgotop(oMem),
+   nPosPLZ      := oMem:STELLE,
+   cPLZ         := trim(oMem:WORT),
+
+   //Ermittlung des Orts
+   oMem.CbOrderBy("STELLE"),
+   foreach oRec in oMem do
+      if oMem:STELLE <> nPosPLZ then
+         cOrt+=trim(oMem:WORT) + ' ',
+      endif,
+   end,
+   destroyObject(oMem),
+   result:={},
+   KVU_SET(result, "PLZ", trim(cPLZ)),
+   KVU_SET(result, "ORT", trim(cOrt)),
+end,
+
+//******************************************************************************
+// Trennt Strasse und Hausnummer
+// Rückgabe ist KVU-Array mit STRASSE und HAUSNUMMER
+//******************************************************************************
+function _BP_SplitStrasseHausnummer(cStrasseUndHausnummer, cLandISO) // Land wird noch nicht verwendet aber ist schonmal in der Signatur, damit es beim Einbau idealerweise gleich übergeben wird
+| nPos, cStrasse, cHausnummer |
+   nPos        := RAt(' ', Trim(cStrasseUndHausnummer)),
+   cStrasse    := AllTrim(Left(   cStrasseUndHausnummer, nPos - 1)),
+   cHausnummer := AllTrim(SubStr( cStrasseUndHausnummer, nPos + 1)),
+   Result      := {},
+   KVU_Set(Result, 'STRASSE',    cStrasse),
+   KVU_Set(Result, 'HAUSNUMMER', cHausnummer),
+end,
+
+//******************************************************************************
+// Funktion prüft, ob der Lagerplatz für das übergebene Lager verfügbar ist.
+// Wenn nicht, wird der Lagerplatz in der Lagerort-Tabelle angelegt bzw. die
+// übergebene Lagernummer in die Lagerliste des Platzes mit aufgenommen.
+// @Result: boolean - Lagerplatz für Lager verfügbar
+//******************************************************************************
+Function _BP_CheckAndAddLagerplatz(oDM:O, cLager:C, cPlatz:C, bQuiet:B:=true, bOnlyCheck:B:=false)
+   | oDAB610, cFrage, aPlatzhalter |
+   oDAB610 := MyGetTable(oDM, waDAB610,),
+   oDAB610.CbIndexName := 'DAB611',
+
+   cFrage := "Soll der Lagerplatz " + Alltrim(cPlatz) + " für Lager " + strzero(val(cLager),2) + " in der Lagerort-Tabelle angelegt werden?",
+
+   startseq,
+      // Platz ggfs. in Lagerorttabelle anlegen
+      SetErrorIf(empty(cPlatz), 'Übergebener Platz ist leer!'),
+
+      if dbseek({cPlatz},oDAB610) then
+         if strzero(val(cLager),2) $ odAB610:FLAGER then
+            Result := true,
+         else
+            if bOnlyCheck then
+               Result := false,
+            else
+               if bQuiet or jn(cFrage) then
+                  myEdit(oDAB610),                                                    // wenn schon vorhanden, dann hinzufügen
+                  oDAB610:FLAGER := strtran(rtrim(oDAB610:FLAGER)+"/"+strzero(val(cLager),2),"//","/"),
+                  myPost(oDAB610),
+                  Result := true,
+               else
+                  Result := false,
+               endif,
+            endif,
+         endif,
+      else
+         if bOnlyCheck then
+            Result := false,
+         else
+            if bQuiet or jn(cFrage) then
+               myAppend(oDAB610),
+               oDAB610:PLATZ := cPlatz,
+               oDAB610:FLAGER := strzero(val(cLager),2)+"/",
+               myPost(oDAB610),
+               Result := true,
+            else
+               Result := false,
+            endif,
+         endif,
+      endif,
+   OnError
+      result := false,
+   stopseq,
+end,

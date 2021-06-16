@@ -1,0 +1,152 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm ist ein Penandt zu dem alten SL_FromFile-Programm aus der
+//   alten Edifact-Toolbox.
+//   Hier wurde hauptsächlich von der Verwendung eines File-Streams auf Strings
+//   umgestellt, um ein Besseres Handling zu bieten.
+//   Für diesen Zweck wurden die EDI_SchemeString_*()-Funktionen implementiert,
+//   um die Verwnedung von File-Streams nachzubilden, weil ansonsten die Logik
+//   in diesem Programm zu stark hätte angepasst werden müssen.
+//
+// HINWEIS:
+//   Dies ist nur eine TEMPORÄRE Lösung, der Parser für Schema-Dateien muss
+//   unbedingt neu und ordentlich implementiert werden.
+//
+//##############################################################################
+//##############################################################################
+
+|m_cSchemeString:P1, oFile, aArr, cStr,
+nStart, aList|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function EDI_SchemeString_Open(cSchemeString)
+| aLines |
+
+   aLines := StrArray(cSchemeString),
+   result := {1, ALen(aLines), aLines},
+end,
+
+//******************************************************************************
+function EDI_SchemeString_Eof(aSchemaStringObject:R)
+   result := aSchemaStringObject[1] > aSchemaStringObject[2],
+end,
+
+//******************************************************************************
+function EDI_SchemeString_ReadLine(aSchemaStringObject:R)
+   if EDI_SchemeString_Eof(aSchemaStringObject) then
+      result := '',
+   else
+      result := aSchemaStringObject[3, aSchemaStringObject[1]],
+      aSchemaStringObject[1] := aSchemaStringObject[1] + 1,
+   endif,
+end,
+
+
+
+
+// TODO: Dies ist eine globale Funktion
+function EDI_SIndex(aArr, nStart:R, nRecTiefe, aList:R) //Liest das Rekursive Strukturarray aus und verwamdelt es in eine sortierte Liste
+   |i, aBuf, nStart1, aItem, nAktSegment|
+
+   nStart1:=nStart,
+   for i:=1 to alen(aArr) do
+      aBuf:=aArr[i],
+      nStart++,                                                                 writeln(nStart, padr('', nRecTiefe*3) + aBuf[1] ),
+      aItem:={aBuf[1], aBuf[2], nStart, nStart1,0},
+      aadd(aList, aItem),
+      if len(aBuf[1])>3 then
+         nAktSegment:=nStart,
+         EDI_SIndex(aBuf[3], nStart, nRecTiefe+1, aList),
+         aList[nAktSegment, 5]:=nStart,
+      endif,
+   next,
+end,
+
+function SegTyp(cStr)
+   |nSeg|
+   result:=alltrim(padr(cStr, 3)),
+   if empty(result) then
+      exit,
+   endif,
+   if result<>'---' then
+      exit,
+   endif,
+   result:=padr(cStr, 35),
+   nSeg:=val(charonly('1234567890', result)),
+   result:='SG' +  strzero(nSeg,2),
+   if nSeg=0 then
+      result:='',
+   endif,
+end,
+
+
+function MakeArr(oFile:R, cStr, nTiefe)
+   |cBuf, bWdh, nRecTiefeSoll, cTyp, aRes, aFRes, aBuf|
+
+   aFRes:={},
+   while !EDI_SchemeString_Eof(oFile) or not empty(AllTrim(cStr)) do
+      cTyp:=SegTyp(cStr),
+      cBuf:=substr(cStr, 55, 2),
+      if val(cBuf)=1 then
+         bWdh:=false,
+      else
+         bWDH:=true,
+      endif,
+      cBuf:=substr(cStr, 58),
+      cBuf:=charonly('|+', cBuf),
+      nRecTiefeSoll:=len(cBuf),            //writeln(padr(cTyp,3), nTiefe, nRecTiefeSoll, cStr),
+
+      if nRecTiefeSoll>nTiefe then
+         cStr:=EDI_SchemeString_ReadLine(oFile),
+         aBuf:= {cTyp, bWdh},
+         aRes:=MakeArr(oFile, cStr, nTiefe+1),
+         aadd(aBuf, aRes[1]),
+         aadd(aFRes, aBuf),
+         nRecTiefeSoll:=aRes[2],
+         cTyp:=aRes[3],
+         bWdh:=aRes[4],
+      endif,
+      if nRecTiefeSoll=nTiefe then
+         if !empty(cTyp) then
+            aadd(aFRes, {cTyp, bWdh}),
+         endif,
+      endif,
+      if nRecTiefeSoll<nTiefe then
+         result:={aFRes, nRecTiefeSoll,cTyp, bWdh),
+         exit,
+      endif,
+
+      cStr:=EDI_SchemeString_ReadLine(oFile),
+
+   end,
+   result:={aFRes, nRecTiefeSoll,cTyp, bWdh),
+
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+oFile:=EDI_SchemeString_Open(m_cSchemeString),
+
+cStr:=EDI_SchemeString_ReadLine(oFile),
+aArr:=MakeArr( oFile,cStr,  0),
+aArr:=aArr[1],
+aArr:={{'UNB', false}, {'SGMSG', true, aArr}},
+aadd(aArr, {'UNZ', false}),
+
+nStart:=0,
+aList:={},                          writeln('BeforeSort', ),
+EDI_SIndex(aArr,nStart,0, aList),   //writeln('AfterSort'),  writeln(debugarr(aList)),
+
+aList
+

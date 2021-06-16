@@ -1,0 +1,864 @@
+//##############################################################################
+//##############################################################################
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportPrograms(cBasicPath, bCompleteExport, dChangesSince)
+   | oDabPRG, cFilePath, i |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der CodeBlock-Programme', true),
+   startseq
+      oDabPRG := BeOpen(waDabPRG),
+      oDabPRG.IndexName := 'AKTPROGNR',
+      startseq
+         oDabPRG.CbFirst(),
+         while not oDabPRG.CbEoF do
+            i++,
+            if bCompleteExport or oDabPRG:GEAENDERT > dChangesSince then
+               ProgressBarUpdate(100 / oDabPRG.CbRecordCount * i, Trim(oDabPRG:BEZ), true),
+
+               cFilePath := cBasicPath + 'Programme\' + Trim(oDabPRG:BEZ) + '.DWP',
+
+               ForceDirectories(ExtractFilePath(cFilePath)),
+               SaveFile(oDabPRG:PROGRAMM, cFilePath),
+            endif,
+            oDabPRG.CbNext(),
+         end,
+      always
+         beClose(oDabPRG),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportIndiForms(cBasicPath, bCompleteExport, dChangesSince, bExportAsJSON)
+   | oDabFIL, i, cData, cFileExt |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der F12-Formulare', true),
+   startseq
+      oDabFIL := BeOpen(waDabFIL),
+      startseq
+         oDabFIL.CbSetRangeEx({520}),
+         ForceDirectories(cBasicPath + 'F12-Formulare'),
+         oDabFIL.CbFirst(),
+         while not oDabFIL.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabFIL:FELD), true),
+            if bCompleteExport or oDabFIL:GEAENDERT > dChangesSince then
+               cData    := oDABFIL:WIN_DATA,
+               cFileExt := '.BEF',
+
+               if bExportAsJSON then
+                  cData    := FormAsExportText(cData),
+                  cFileExt := '.BEFJ',
+               endif,
+
+               SaveFile(cData, cBasicPath + 'F12-Formulare\' + Trim(oDabFIL:FELD) + cFileExt),
+            endif,
+            oDabFIL.CbNext(),
+         end,
+      always
+         beClose(oDabFIL),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportMasks(cBasicPath, bCompleteExport, dChangesSince)
+   | oDabFRM, i |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der Masken', true),
+   startseq
+      oDabFRM := beOpen(waDabFRM),
+      startseq
+         ForceDirectories(cBasicPath + 'Masken'),
+         oDabFRM.CbFilter   := 'not DEFAULT',
+         oDabFRM.CbFiltered := true,
+         oDabFRM.CbFirst(),
+         while not oDabFRM.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabFRM:MASK_ID), true),
+            if bCompleteExport or oDabFRM:GEAENDERT > dChangesSince then
+               SaveFile(oDabFRM:DATA, cBasicPath + 'Masken\' + Trim(oDabFRM:MASK_ID) + '.BEM'),
+            endif,
+            oDabFRM.CbNext(),
+         end,
+      always
+         beClose(oDabFRM),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportBrowser(cBasicPath, bCompleteExport, dChangesSince, nUserNo:N)
+   | oDabBRO, i |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der Browser', true),
+   startseq
+      oDabBRO := BeOpen(waDabBRO),
+      startseq
+         ForceDirectories(cBasicPath + 'Browser'),
+
+         oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
+         browse(, oDabBRO),
+         oDabBRO.CbFirst(),
+         while not oDabBRO.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabBRO:BROWSER_ID), true),
+
+
+            if bCompleteExport or oDabBRO:GEAENDERT > dChangesSince then
+               SaveFile(oDabBRO:DATA, cBasicPath + 'Browser\' + Trim(oDabBRO:BROWSER_ID) + '.BEB'),
+            endif,
+            oDabBRO.CbNext(),
+         end,
+      always
+         oDabBRO.CbSetFilter(''),
+         beClose(oDabBRO),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportLayouts(cBasicPath, bCompleteExport, dChangesSince)
+   | oDabR10, i |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der Layouts', true),
+   startseq
+      oDabR10 := BeOpen(waDabR10),
+      startseq
+         ForceDirectories(cBasicPath + 'Layouts'),
+         oDabR10.CbFirst(),
+         while not oDabR10.CbEoF do
+            i++,
+            ProgressBarUpdate(100 / oDabR10.CbRecordCount * i, Str(oDabR10:REPORT_NR), true),
+            if bCompleteExport or oDabR10:GEAENDERT > dChangesSince then
+               CreateDir(cBasicPath + 'Layouts\' + Trim(oDabR10:REPORT_ID)),
+               SaveFile(oDabR10:REPORT, cBasicPath + 'Layouts\' + Trim(oDabR10:REPORT_ID) + '\' + Str(oDabR10:REPORT_NR) + '.RTM'),
+            endif,
+            oDabR10.CbNext(),
+         end,
+      always
+         beClose(oDabR10),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportIndiMenue(cBasicPath, bCompleteExport, dChangesSince)
+   | oDabFIL, i |
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der Individualmenüs', true),
+   startseq
+      oDabFIL := BeOpen(waDabFIL),
+      startseq
+         oDabFIL.CbSetRangeEx({523}),
+         ForceDirectories(cBasicPath + 'Menue'),
+         oDabFIL.CbFirst(),
+         while not oDabFIL.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabFIL:FELD), true),
+            if bCompleteExport or oDabFIL:GEAENDERT > dChangesSince then
+               SaveFile(oDabFIL:MSK_INHALT, cBasicPath + 'Menues\' + Trim(oDabFIL:FELD) + '.BIM'),
+            endif,
+            oDabFIL.CbNext(),
+         end,
+      always
+         beClose(oDabFIL),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportMerkmalstabellen(cBasicPath, bCompleteExport, dChangesSince)
+   | oDabMTA, oDabMDT, cPath, cContent, i, aArray |
+
+   //***************************************************************************
+   function ConvertRecAsArrayToFormattedString(aRecAsArray:A)
+      Result := StrTran(ArrToStr(aRecAsArray), '},{', '},' + crlf + '{'),
+   end,
+
+   //***************************************************************************
+   function CleanStandardFields(aRecAsArray:A)
+      | n, nIndex, aStandardFields |
+      Result := aRecAsArray,
+      aStandardFields := {'ID', 'ERSTELLT', 'PLATZ', 'GEAENDERT', 'GEAEND_USR', 'REC_NO', 'SUCHE'},
+
+      for n := 1 to ALen(aStandardFields) do
+         nIndex := KVU_Find(Result, aStandardFields[n]),
+         if nIndex > 0 then
+            KVU_SET(RESULT, aStandardFields[n], nil)
+         endif,
+      next,
+   end,
+
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der Merkmalstabellen', true),
+   startseq
+      oDabMTA := BeOpen(waDabMTA),
+      oDabMDT := beOpen(waDabMDT),
+      startseq
+         oDabMDT.IndexName := 'WERT',
+
+         ForceDirectories(cBasicPath + 'Merkmalstabellen'),
+         oDabMTA.CbFirst(),
+         while not oDabMTA.CbEoF do
+            i++,
+            if bCompleteExport or oDabMTA:GEAENDERT > dChangesSince then
+               ProgressBarUpdate(100 / oDabMTA.CbRecordCount * i, str(oDabMTA:TAB_ID), true),
+
+
+               cPath := cBasicPath + 'Merkmalstabellen\' + str(oDabMTA:TAB_ID) + '\',
+               CreateDir(cPath),
+               aArray   := CleanStandardFields(oDabMTA.CbGetRecAsArray()),
+               cContent := ConvertRecAsArrayToFormattedString(aArray),
+
+               SaveFile(cContent, cPath + 'details.MMT'),
+
+               oDabMDT.CbSetRangeEx({oDabMTA:TAB_ID}),
+               oDabMDT.CbFirst(),
+               while not oDabMDT.CbEoF do
+                  aArray   := CleanStandardFields(oDabMDT.CbGetRecAsArray()),
+                  cContent := ConvertRecAsArrayToFormattedString(aArray),
+
+                  SaveFile(cContent, cPath + Trim(oDabMDT:WERT) + '.MMD'),
+                  oDabMDT.CbNext(),
+               end,
+            endif,
+            oDabMTA.CbNext(),
+         end,
+      always
+         beClose(oDabMDT),
+         beClose(oDabMTA),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportCodeBlockPanels(cBasicPath, bCompleteExport, dChangesSince)
+   | oAdsQuery, cPath, i |
+   i     := 0,
+   cPath := cBasicPath + 'CodeblockPanels\',
+   CreateDir(cPath),
+   oAdsQuery := CreateObject('TbeAdsQuery'),
+   startseq
+      oAdsQuery.SQL := 'SELECT * FROM ' + DbSQLTableName(waDabFIL) + ' WHERE DATEI = 524',
+      oAdsQuery.Active := true,
+
+      ProgressBarShow('Export', 'Export der Codeblock-Panels', true),
+      startseq
+         oAdsQuery.CbFirst(),
+         while not oAdsQuery.CbEoF do
+            i++,
+            ProgressBarUpdate(100 / oAdsQuery.CbRecordCount * i, Trim(oAdsQuery:FELD), true),
+            if not empty(oAdsQuery:FELD) and (bCompleteExport or oAdsQuery:GEAENDERT > dChangesSince) then
+               SaveFile(oAdsQuery:MSK_INHALT, cPath + Trim(oAdsQuery:FELD) + '.dwp'),
+            endif,
+            oAdsQuery.CbNext(),
+         end,
+      always
+         ProgressBarHide(),
+      stopseq,
+   always
+      DestroyObject(oAdsQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function WriteTableDefiniton(oParam:R, oTableInfo:R)
+   oParam.AddParam('TableName', oTableInfo.TableLabel ),
+   oParam.AddParam('TableWorkArea',  Str(oTableInfo.TableWorkArea)),
+   oParam.AddParam('TableLabel',     oTableInfo.TableLabel),
+   oParam.AddParam('IndiTName',      oTableInfo.IndiTName),
+   oParam.AddParam('IsADT',          ToString(oTableInfo.IsADT)),
+   oParam.AddParam('IsUserTable',    ToString(oTableInfo.IsUserTable)),
+   oParam.AddParam('Right_Delete',   oTableInfo.Right_Delete),
+   oParam.AddParam('Right_Edit',     oTableInfo.Right_Edit),
+   oParam.AddParam('Right_Insert',   oTableInfo.Right_Insert),
+   oParam.AddParam('Right_Read',     oTableInfo.Right_Read),
+   oParam.AddParam('Right_UpdDel',   oTableInfo.Right_UpdDel),
+   oParam.AddParam('Right_UpdNew',   oTableInfo.Right_UpdNew),
+   oParam.AddParam('Right_UpdUpd',   oTableInfo.Right_UpdUpd),
+   oParam.AddParam('Right_Validate', oTableInfo.Right_Validate),
+   oParam.AddParam('UserAlias',      oTableInfo.UserAlias),
+   oParam.AddParam('UserProtocol',   ToString(oTableInfo.UserProtocol)),
+   oParam.AddParam('UserSubsidComm', ToString(oTableInfo.UserSubsidComm)),
+   oParam.AddParam('IndexInfo',      oTableInfo.IndexInfo),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function WriteFieldDefiniton(oParam:R, oFieldInfo:R)
+   | oField |
+   oField := oParam.AddComplexElement(oFieldInfo.FieldName),
+   oField.AddElement('AttribID',            Str(oFieldInfo.AttribID)),
+   oField.AddElement('Comment',             oFieldInfo.Comment),
+   oField.AddElement('Copyable',            ToString(oFieldInfo.Copyable)),
+   oField.AddElement('DefRight_Edit',       oFieldInfo.DefRight_Edit),
+   oField.AddElement('DefRight_MaskValid',  oFieldInfo.DefRight_MaskValid),
+   oField.AddElement('DefRight_New',        oFieldInfo.DefRight_New),
+   oField.AddElement('DefRight_Read',       oFieldInfo.DefRight_Read),
+   oField.AddElement('DefRight_Update',     oFieldInfo.DefRight_Update),
+   oField.AddElement('DefRight_Validate',   oFieldInfo.DefRight_Validate),
+   oField.AddElement('DisplayName',         oFieldInfo.DisplayName),
+   oField.AddElement('FieldAlign',          Str(oFieldInfo.FieldAlign)),
+   oField.AddElement('FieldIsLocationable', ToString(oFieldInfo.FieldIsLocationable)),
+   oField.AddElement('FieldSpec',           Str(oFieldInfo.FieldSpec)),
+   oField.AddElement('LocationCopy',        Str(oFieldInfo.LocationCopy)),
+   oField.AddElement('LocationType',        Str(oFieldInfo.LocationType)),
+   oField.AddElement('MaskAvailable',       ToString(oFieldInfo.MaskAvailable)),
+   oField.AddElement('MaskDuplicates',      ToString(oFieldInfo.MaskDuplicates)),
+   oField.AddElement('MaskMustExist',       ToString(oFieldInfo.MaskMustExist)),
+   oField.AddElement('MaskOptUserDef',      ToString(oFieldInfo.MaskOptUserDef)),
+   oField.AddElement('Mask_Content',        oFieldInfo.Mask_Content),
+   oField.AddElement('Mask_Control',        oFieldInfo.Mask_Control),
+   oField.AddElement('Mask_Options',        oFieldInfo.Mask_Options),
+   oField.AddElement('Mask_Picture',        Trim(oFieldInfo.Mask_Picture)),
+   oField.AddElement('NotUserDef',          ToString(oFieldInfo.NotUserDef)),
+   oField.AddElement('Right_Edit',          oFieldInfo.Right_Edit),
+   oField.AddElement('Right_IndiGet',       ToString(oFieldInfo.Right_IndiGet)),
+   oField.AddElement('Right_MaskValid',     oFieldInfo.Right_MaskValid),
+   oField.AddElement('Right_New',           oFieldInfo.Right_New),
+   oField.AddElement('Right_Read',          oFieldInfo.Right_Read),
+   oField.AddElement('Right_Update',        oFieldInfo.Right_Update),
+   oField.AddElement('Right_Validate',      oFieldInfo.Right_Validate),
+   oField.AddElement('SemaphorLock',        ToString(oFieldInfo.SemaphorLock)),
+   oField.AddElement('SemaphorSign',        oFieldInfo.SemaphorSign),
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportTableDefinitions(cBasicPath)
+   | oTableParam, oTable, i, j, cPath, oFieldInfo, oFields |
+   cPath := cBasicPath + 'TableDefinitions\',
+   CreateDir(cPath),
+
+   ProgressBarShow('Export', 'Export der Tabellen-Definition', false),
+   startseq
+      oTableParam := CreateObject('TBeasCbServiceInputParam'),
+      startseq
+         for i := 0 to 999 do
+            oTableParam.InitCbParam(),
+            oTable := GetTableInfo(i),
+            if not empty(oTable) then
+               ProgressBarUpdate(0, oTable.TableDef.TableName, true),
+               WriteTableDefiniton(oTableParam, oTable),
+               oFields := oTableParam.AddComplexParam('Felder'),
+               for j := 0 to oTable.FieldRightList.CbCount - 1 do
+                  oFieldInfo := oTable.FieldRightList.CbFieldInfoByIndex(j),
+                  WriteFieldDefiniton(oFields, oFieldInfo),
+               next,
+               SaveFile(oTableParam.CbToJSONStringIndent(), cPath + oTable.TableDef.TableName + '.json'),
+
+               oTableParam.Clear(),
+            endif,
+         next,
+      always
+         DestroyObject(oTableParam),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportRollen(cBasicPath, bCompleteExport, dChangesSince)
+   | oAdsQuery, aArray, cPath, i |
+   i     := 0,
+   cPath := cBasicPath + 'Rollen\',
+   CreateDir(cPath),
+
+   oAdsQuery := CreateObject('TbeAdsQuery'),
+   startseq
+      oAdsQuery.SQL    := 'SELECT * FROM "DABRRO.ADT" WHERE TYP = 50 OR TYP = 40',
+      oAdsQuery.Active := true,
+
+      ProgressBarShow('Export', 'Export der Rollen', true),
+      startseq
+         while not oAdsQuery.CbEoF do
+            i++,
+            ProgressBarUpdate(100 / oAdsQuery.CbRecordCount * i, Trim(oAdsQuery:ROLLENNAME), true),
+            if bCompleteExport or oAdsQuery:GEAENDERT > dChangesSince then
+               aArray := {},
+               KVU_Set(aArray, 'AKTIV', ToString(oAdsQuery:AKTIV)),
+               KVU_Set(aArray, 'TYP', oAdsQuery:TYP),
+               KVU_Set(aArray, 'PRIO', oAdsQuery:PRIO),
+               KVU_Set(aArray, 'ROLLENNAME', Trim(oAdsQuery:ROLLENNAME)),
+               KVU_Set(aArray, 'ROLLENSCHL', Trim(oAdsQuery:ROLLENSCHL)),
+               KVU_Set(aArray, 'SYS_ROLLE', oAdsQuery:SYS_ROLLE),
+               KVU_Set(aArray, 'MEMO', RtfToText(oAdsQuery:MEMO)),
+               KVU_Set(aArray, 'IMAGEINDEX', oAdsQuery:IMAGEINDEX),
+               KVU_Set(aArray, 'BEREICHE', Trim(oAdsQuery:BEREICHE)),
+               SaveFile(StrTran(ArrToStr(aArray),'},{', '},' + crlf + '{'), cPath + Trim(oAdsQuery:ROLLENSCHL) + '.txt'),
+            endif,
+            oAdsQuery.CbNext(),
+         end,
+      always
+         ProgressBarHide(),
+      stopseq,
+   always
+      DestroyObject(oAdsQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportWithoutPackage(aExportSettings)
+   | cBasicPath, bCompleteExport, dChangesSince, bExportIndiFormAsJSON, nExportBroAsUsr |
+
+   cBasicPath      := KVU_Get(aExportSettings, 'BASICPATH',       ''),
+   bCompleteExport := KVU_Get(aExportSettings, 'COMPLETE_EXPORT', true),
+   dChangesSince   := KVU_Get(aExportSettings, 'EXPORT_SINCE',    nil),
+   nExportBroAsUsr := KVU_Get(aExportSettings, 'EXPORT_BRO_AS_USR', c_usr),
+
+   if CompareBeVersion(mBeVersion, '7.2.1.1') then
+      bExportIndiFormAsJSON := KVU_Get(aExportSettings, 'EXPORT_INDIFORM_AS_JSON', true)
+   else
+      bExportIndiFormAsJSON := false,
+   endif,
+
+   if RAt('\', cBasicPath) <> Alen(cBasicPath) then
+      cBasicPath := cBasicPath + '\',
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_PROGRAM', false) then
+      ExportPrograms(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_INDIFORMS', false) then
+      ExportIndiForms(cBasicPath, bCompleteExport, dChangesSince, bExportIndiFormAsJSON),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_MASKS', false) then
+      ExportMasks(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_BROWSER', false) then
+      ExportBrowser(cBasicPath, bCompleteExport, dChangesSince, nExportBroAsUsr),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_LAYOUTS', false) then
+      ExportLayouts(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_INDIMENUES', false) then
+      ExportIndiMenue(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_MMT', false) then
+      ExportMerkmalstabellen(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_CB_PANELS',  false) then
+      ExportCodeBlockPanels(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_TABLEDEF', false) then
+      ExportTableDefinitions(cBasicPath),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_TABLEDEF', false) then
+      ExportRollen(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetProgramsPackageString(bCompleteExport, dChangesSince)
+   | oDabPRG, cFilePath, i, cPath |
+
+   //***************************************************************************
+   // Diese Funktion ermittelt den Programmpfad anhand des namens
+   //***************************************************************************
+   function GetProgrammPath(cName)
+      | j, nTokens |
+      Result  := '',
+      nTokens := TokenCount(cName, '\'),
+      for j := 1 to nTokens -1 do
+         if not empty(Result) then
+            Result += '\',
+         endif,
+
+         Result += StrToken(cName, '\', j),
+      next,
+   end,
+
+
+   i := 0,
+
+   ProgressBarShow('Export', 'Export der CodeBlock-Programme', true),
+   startseq
+      oDabPRG := BeOpen(waDabPRG),
+      oDabPRG.IndexName := 'BEZ',
+      startseq
+         oDabPRG.CbFirst(),
+         while not oDabPRG.CbEoF do
+            i++,
+            if bCompleteExport or oDabPRG:GEAENDERT > dChangesSince then
+               ProgressBarUpdate(100 / oDabPRG.CbRecordCount * i, Trim(oDabPRG:BEZ), true),
+
+               cPath := GetProgrammPath(oDabPRG:BEZ),
+               Result += 'TYPE=PROG;FOLDER=Programmierung\' + cPath + ';NAME=' + Trim(oDabPRG:BEZ),
+
+               if not empty(oDabPRG:OPTIONS) then
+                  Result += ';USE_POPT=J',
+               endif,
+               Result += crlf,
+
+            endif,
+            oDabPRG.CbNext(),
+         end,
+      always
+         beClose(oDabPRG),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetF12FormularePackageString(bCompleteExport, dChangesSince, bExportAsJSON)
+   | oDabFIL, oDabPRG, cFilePath, cPath |
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der CodeBlock-Programme', false),
+   startseq
+      oDabPRG           := beOpen(waDabPRG),
+      oDabPRG.IndexName := 'AKTPROGNR',
+      startseq
+         oDabFIL := BeOpen(waDabFIl),
+         oDabFIL.CbSetRangeEx({520}),
+         startseq
+            oDabFIL.CbFirst(),
+            while not oDabFIL.CbEoF do
+               if bCompleteExport or oDabFIL:GEAENDERT > dChangesSince then
+                  ProgressBarUpdate(0, Trim(oDabFIL:FELD), true),
+
+                  cPath := 'F12-Formulare-ohne-Zuweisung',
+                  oDabPRG.CbSetFilter('MASK_ID = ''' + Trim(oDabFIL:FELD) + ''''),
+                  if not empty(Trim(oDabPRG:BEZ)) then
+                     cPath := 'Programmierung\' + ExtractFilePath(Trim(oDabPRG:BEZ)),
+                  endif,
+
+
+                  Result += 'TYPE=MASK;FOLDER=' + cPath + ';NAME=' + Trim(oDabFIL:FELD),
+                  if bExportAsJSON then
+                     Result += ';AS_JSON=J',
+                  endif,
+                  Result += crlf,
+
+               endif,
+               oDabFIL.CbNext(),
+            end,
+         always
+            oDabFIL.CbCancelRange(),
+            beClose(oDabFIL),
+         stopseq,
+      always
+         beClose(oDabPRG),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetMaskPackageString(bCompleteExport, dChangesSince)
+   | oDabFRM, i |
+   i      := 0,
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der Masken', true),
+   startseq
+      oDabFRM := beOpen(waDabFRM),
+      startseq
+         oDabFRM.CbFilter   := 'not DEFAULT',
+         oDabFRM.CbFiltered := true,
+         oDabFRM.CbFirst(),
+         while not oDabFRM.CbEoF do
+            i++,
+            if bCompleteExport or oDabFRM:GEAENDERT > dChangesSince then
+               ProgressBarUpdate(0, Trim(oDabFRM:MASK_ID), true),
+
+               Result += 'TYPE=STDMASK;FOLDER=Masken;NAME=' + Trim(oDabFRM:BEZ) + ';ID=' + oDabFRM:MASK_ID + crlf,
+            endif,
+            oDabFRM.CbNext(),
+         end,
+      always
+         beClose(oDabFRM),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetBrowserPackageString(bCompleteExport, dChangesSince, nUserNo:N)
+   | oDabBRO, i |
+   i      := 0,
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der Browser', true),
+   startseq
+      oDabBRO := BeOpen(waDabBRO),
+      startseq
+         oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
+
+         oDabBRO.CbFirst(),
+         while not oDabBRO.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabBRO:BROWSER_ID), true),
+            if bCompleteExport or oDabBRO:GEAENDERT > dChangesSince then
+               Result += 'TYPE=BROW;FOLDER=Browser;NAME=' + Trim(oDabBRO:BROWSER_ID) + ';COPYTOALL=J;COPYTOZERO=J' + crlf,
+            endif,
+            oDabBRO.CbNext(),
+         end,
+      always
+         oDabBRO.CbSetFilter(''),
+         beClose(oDabBRO),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetLayoutPackageString(bCompleteExport, dChangesSince)
+   | oDabR10, i |
+   i := 0,
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der Layouts', true),
+   startseq
+      oDabR10 := BeOpen(waDabR10),
+      startseq
+         oDabR10.CbFirst(),
+         while not oDabR10.CbEoF do
+            i++,
+            ProgressBarUpdate(100 / oDabR10.CbRecordCount * i, Str(oDabR10:REPORT_NR), true),
+            if bCompleteExport or oDabR10:GEAENDERT > dChangesSince then
+               Result += 'TYPE=LAYOUT;FOLDER=Layout',
+               Result += ';BEZ=' + Trim(oDabR10:BEZ),
+               Result += ';REPORT_ID=' + Trim(oDabR10:REPORT_ID),
+               Result += ';REPORT_NR=' + Str(oDabR10:REPORT_NR),
+               Result += ';REPORT_TYP=' + oDabR10:REPORT_TYP,
+               Result += crlf,
+            endif,
+            oDabR10.CbNext(),
+         end,
+      always
+         beClose(oDabR10),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetIndiMenuPackageString(bCompleteExport, dChangesSince)
+   | oDabFIL, i |
+   i      := 0,
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der Individualmenüs', true),
+   startseq
+      oDabFIL := BeOpen(waDabFIL),
+      startseq
+         oDabFIL.CbSetRangeEx({523}),
+         oDabFIL.CbFirst(),
+         while not oDabFIL.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabFIL:FELD), true),
+            if bCompleteExport or oDabFIL:GEAENDERT > dChangesSince then
+               Result += 'TYPE=MENUE;FOLDER=Menues;ID=' + Trim(oDabFIL:FELD) + crlf,
+            endif,
+            oDabFIL.CbNext(),
+         end,
+      always
+         beClose(oDabFIL),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ExportWithPackage(aExportSettings)
+   |
+      cBasicPath, bCompleteExport, dChangesSince,
+      bExportIndiFormAsJSON, nExportBroAsUsr, cContent,
+      aParams
+   |
+
+   cBasicPath      := KVU_Get(aExportSettings, 'BASICPATH',       ''),
+   bCompleteExport := KVU_Get(aExportSettings, 'COMPLETE_EXPORT', true),
+   dChangesSince   := KVU_Get(aExportSettings, 'EXPORT_SINCE',    nil),
+   nExportBroAsUsr := KVU_Get(aExportSettings, 'EXPORT_BRO_AS_USR', c_usr),
+
+   if CompareBeVersion(mBeVersion, '7.2.1.1') then
+      bExportIndiFormAsJSON := KVU_Get(aExportSettings, 'EXPORT_INDIFORM_AS_JSON', true)
+   else
+      bExportIndiFormAsJSON := false,
+   endif,
+
+   cContent := '',
+   cContent += '//################################################################################' + crlf,
+   cContent += '// Options' + crlf,
+   cContent += '//################################################################################' + crlf,
+   cContent += 'TYPE=OPTIONS;OPTION=EXPORT_PROGRAM_SHORT_NAME' + crlf,
+   cContent += 'TYPE=OPTIONS;OPTION=REPLACE_INVALID_CHARACTERS' + crlf,
+
+   if empty(nExportBroAsUsr) then
+      cContent += 'TYPE=OPTIONS;OPTION=EXPORT_DEFAULT_BROWSER' + crlf,
+   endif,
+   cContent += crlf,
+
+
+   if KVU_Get(aExportSettings, 'EXPORT_PROGRAM', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Programme/Events' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetProgramsPackageString(bCompleteExport, dChangesSince) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_INDIFORMS', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// F12-Formulare' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetF12FormularePackageString(bCompleteExport, dChangesSince, bExportIndiFormAsJSON) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_MASKS', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Masken' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetMaskPackageString(bCompleteExport, dChangesSince) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_BROWSER', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Browser' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetBrowserPackageString(bCompleteExport, dChangesSince, nExportBroAsUsr) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_LAYOUTS', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Layout' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetLayoutPackageString(bCompleteExport, dChangesSince) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_INDIMENUES', false) then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Individualmenues' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetIndiMenuPackageString(bCompleteExport, dChangesSince) + crlf,
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_MMT', false) then
+      ExportMerkmalstabellen(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_CB_PANELS',  false) then
+      ExportCodeBlockPanels(cBasicPath, bCompleteExport, dChangesSince),
+   endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_TABLEDEF', false) then
+      ExportTableDefinitions(cBasicPath),
+   endif,
+
+   if RAt('\', cBasicPath) <> Alen(cBasicPath) then
+      cBasicPath := cBasicPath + '\',
+   endif,
+   SaveFile(AnsiToUtf8(cContent), cBasicPath + 'package.bcp'),
+
+   aParams := {},
+   KVU_Set(aParams, 'packageImportExport.packageFilePath', cBasicPath + 'package.bcp'),
+   KVU_Set(aParams, 'packageImportExport.operation', 'export'),
+   Result := call('Tools\package-import-export\GUI', nil, nil, nil, aParams),
+end,
+

@@ -1,0 +1,323 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche enthält alle Verwaltungstools der EDI-Toolbox als
+//   Tabkarten.
+//   Die angedockten Verwaltungs-GUIs sind:
+//     * EDI-Transportkanalverwaltung: "Transportkanäle"
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowMDIChild(
+//        'EDI_MANAGEMENT',
+//        'EDI\Management\ManagementGUI'
+//     )
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cPositionSaveId, m_cFormId,
+
+   m_aDockingForms,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_DocumentListDashboardGUI, A_InboundMessagesGUI,
+   A_MessageDashboardGUI, A_PartnerConfigurationGUI, A_ProfileManagementGUI,
+   A_SchemesGUI, A_SegmentMappingsGUI, A_TransportChannelManagementGUI,
+   al_Actions, mnu_InboundDocuments, mnu_Main, mnu_Management,
+   mnu_MessageDashboard, mnu_Messages, mnu_OutboundDocuments,
+   mnu_PartnerConfiguration, mnu_ProfileManagement, mnu_Schemes,
+   mnu_SegmentMappings, mnu_TransportChannels, N1, pc_Main, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDIMNGMPO',
+m_cFormId         := '@EDIMNGMUI',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+end,
+
+//******************************************************************************
+// Docking-Programm aufrufen und andocken.
+// @result: object - TFormEx: Manuell angedocktes Formular
+//******************************************************************************
+function OpenAndDockForm(oDockingSite:O,
+                         cDockingProgramName:C,
+                         cFormRefKey:C,
+                         cFormTitle:C:='')
+| aResultForm, oDockingForm, bDockForm |
+
+   bDockForm := empty(KVU_Get(m_aDockingForms, cFormRefKey, nil)),
+   aResultForm := GFU_ShowForm(
+      m_aDockingForms,
+      cFormRefKey,
+      oForm,
+      nil,
+      cDockingProgramName
+   ),
+
+   oDockingForm    := aResultForm[1],
+   m_aDockingForms := aResultForm[2],
+   
+   if bDockForm then
+      if not empty(cFormTitle) then
+         oDockingForm.OrigCapt := cFormTitle,
+      endif,
+
+      oDockingForm.CbHelper.CbManualDock(oDockingSite),
+      oDockingSite.ActivePage.ImageIndex := oDockingForm.ImageIndex,
+   endif,
+
+   result := oDockingForm,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array entfernen
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := true,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Schema-Verwaltung öffnen/anzeigen
+//******************************************************************************
+function A_SchemesGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\Management\Schemes\SchemesGUI',                             'EDI_MANAGEMENT_SCHEMES',                   'EDIFACT: Schemata'),
+end,
+
+//******************************************************************************
+// Action: Segment-Mappings öffnen/anzeigen
+//******************************************************************************
+function A_SegmentMappingsGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\Management\SegmentMappings\SegmentMappingsGUI',             'EDI_MANAGEMENT_SEGMENT_MAPPINGS',          'EDIFACT: Segment-Mappings'),
+end,
+
+//******************************************************************************
+// Action: Partnerkonfiguration öffnen/anzeigen
+//******************************************************************************
+function A_PartnerConfigurationGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\Management\PartnerConfiguration\PartnerConfigurationGUI',   'EDI_MANAGEMENT_PARTNER_CONFIGURATION',     'Partnerkonfiguration'),
+end,
+
+//******************************************************************************
+// Action: Profile öffnen/anzeigen
+//******************************************************************************
+function A_ProfileManagementGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\Management\Profile\ProfileManagementGUI',                   'EDI_MANAGEMENT_PROFILE_MANAGER',           'Profile'),
+end,
+
+//******************************************************************************
+// Action: Transportkanäle öffnen/anzeigen
+//******************************************************************************
+function A_TransportChannelManagementGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\Management\TransportChannel\TransportChannelManagementGUI', 'EDI_MANAGEMENT_TRANSPORT_CHANNEL_MANAGER', 'Transportkanäle'),
+end,
+
+//******************************************************************************
+// Action: Nachrichten-Dashboard öffnen/anzeigen
+//******************************************************************************
+function A_MessageDashboardGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\MessageDashboard\MessageDashboardGUI',                      'EDI_MESSAGE_DASHBOARD',                    'Nachrichten'),
+end,
+
+//******************************************************************************
+// Action: Beleglisten-Dashboard öffnen/anzeigen
+//******************************************************************************
+function A_DocumentListDashboardGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\DocumentListDashboard\DocumentListDashboardGUI',            'EDI_DOCUMENT_LIST_DASHBOARD',              'Ausgehende Belege'),
+end,
+
+//******************************************************************************
+// Action: Eingehende Belege öffnen/anzeigen
+//******************************************************************************
+function A_InboundMessagesGUIExecute( Sender )
+   OpenAndDockForm(pc_Main, 'EDI\InboundMessages\InboundMessagesGUI',                        'EDI_INBOUND_MESSAGES',                     'Eingehende Belege'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'Electronic Data Interchange (EDI)',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 1,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_DocumentListDashboardGUI      := FindObject(oForm, "A_DocumentListDashboardGUI"),
+   A_InboundMessagesGUI            := FindObject(oForm, "A_InboundMessagesGUI"),
+   A_MessageDashboardGUI           := FindObject(oForm, "A_MessageDashboardGUI"),
+   A_PartnerConfigurationGUI       := FindObject(oForm, "A_PartnerConfigurationGUI"),
+   A_ProfileManagementGUI          := FindObject(oForm, "A_ProfileManagementGUI"),
+   A_SchemesGUI                    := FindObject(oForm, "A_SchemesGUI"),
+   A_SegmentMappingsGUI            := FindObject(oForm, "A_SegmentMappingsGUI"),
+   A_TransportChannelManagementGUI := FindObject(oForm, "A_TransportChannelManagementGUI"),
+   al_Actions                      := FindObject(oForm, "al_Actions"),
+   mnu_InboundDocuments            := FindObject(oForm, "mnu_InboundDocuments"),
+   mnu_Main                        := FindObject(oForm, "mnu_Main"),
+   mnu_Management                  := FindObject(oForm, "mnu_Management"),
+   mnu_MessageDashboard            := FindObject(oForm, "mnu_MessageDashboard"),
+   mnu_Messages                    := FindObject(oForm, "mnu_Messages"),
+   mnu_OutboundDocuments           := FindObject(oForm, "mnu_OutboundDocuments"),
+   mnu_PartnerConfiguration        := FindObject(oForm, "mnu_PartnerConfiguration"),
+   mnu_ProfileManagement           := FindObject(oForm, "mnu_ProfileManagement"),
+   mnu_Schemes                     := FindObject(oForm, "mnu_Schemes"),
+   mnu_SegmentMappings             := FindObject(oForm, "mnu_SegmentMappings"),
+   mnu_TransportChannels           := FindObject(oForm, "mnu_TransportChannels"),
+   N1                              := FindObject(oForm, "N1"),
+   pc_Main                         := FindObject(oForm, "pc_Main"),
+   pnl_Main                        := FindObject(oForm, "pnl_Main"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   m_aDockingForms := {},
+   pc_Main.Images := BeImageList(nImageListMain16),
+
+   LockDesktop(oForm.OrigCapt + ': Lade Dockings'),
+   startseq
+      // EDIFACT
+      ActionExecute(A_SchemesGUI),
+      ActionExecute(A_SegmentMappingsGUI),
+
+      // Verwaltung
+      ActionExecute(A_TransportChannelManagementGUI),
+      ActionExecute(A_ProfileManagementGUI),
+      ActionExecute(A_PartnerConfigurationGUI),
+
+      // Nachrichten
+      ActionExecute(A_InboundMessagesGUI),
+      ActionExecute(A_DocumentListDashboardGUI),
+      ActionExecute(A_MessageDashboardGUI),
+      pc_Main.TabIndex := 5, // Per Default Nachrichten-Dashboard anzeigen
+   always
+      UnlockDesktop(),
+   stopseq,
+
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

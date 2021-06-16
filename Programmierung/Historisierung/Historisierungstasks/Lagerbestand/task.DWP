@@ -1,0 +1,202 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Historisierung des Lagerbestandes
+//##############################################################################
+//##############################################################################
+
+| m_aParams:P1,
+
+  m_bParamTestMode,
+
+  m_aResult |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Berechnet ein SQL-Select-Statement auf Basis der DAB010, welches alle Artikel-Sätze
+//    enthält, die irgendwelche Lagerbestände haben
+// @Result: String
+//******************************************************************************
+function GetHISLAG_SelectQuery(nStandort)
+| i, cAlleLagerFelder, cAlleLagerFelderUngleichNull, cStockFieldName |
+
+   for i := 0 to 59 do
+      cStockFieldName := 'LAGER' + Str(i),
+      cAlleLagerFelder             := ConcatTrenner(cAlleLagerFelder,             cStockFieldName, ', '),
+      cAlleLagerFelderUngleichNull := ConcatTrenner(cAlleLagerFelderUngleichNull, cStockFieldName + ' <> 0', ' OR '),
+      if i > 1 and mod(i, 10) = 0 then
+         cAlleLagerFelder             += crlf + '     ',
+         cAlleLagerFelderUngleichNull += crlf + '          ',
+      endif,
+   next,
+
+   Result :=
+      'SELECT' + crlf +
+      '     ARTNR, ARTTYP, PROD_ABT, ARTGRUPPE, KOSTENST, PE, EKP, LTZTEKP, DURCHSCHEK,' + crlf +
+      '     LAGERP, LAGERV, LAGERM, LAGERW, '                                            + crlf +
+      '     ' + cAlleLagerFelder                                                + crlf +
+      '  FROM ' + DbSqlTableName(waDab010, false) + ' DAB010 '                  + crlf +
+      '  WHERE     DAB010.STANDORT = ' + Str(nStandort)                         + crlf +
+      '         AND'                                                            + crlf +
+      '         ( LAGERP <> 0 OR LAGERV <> 0 OR LAGERM <> 0 OR LAGERW <> 0 OR'  + crlf +
+      '           ' + cAlleLagerFelderUngleichNull                              + crlf +
+      '         )',
+end,
+
+//******************************************************************************
+// Bestands-spezifische Felder in der HISLAG setzen
+// @Result: null
+//******************************************************************************
+function SetHISLAGDetailFields(oDM, oHISLAG, oDab010)
+| cExpectedTableAlias, cStockFieldName, oStockField, i |
+
+   HIS_ValidateDataModule_Internal(oDM),
+   SetErrorIf(oHISLAG.Workarea <> waHISLAG, 'Übergebene Tabelle muss eine Instanz der HISLAG sein'),
+
+   cExpectedTableAlias := DetermineDefaultAliasName(waHISLAG),
+   SetErrorIf(oHISLAG.AliasName <> cExpectedTableAlias, 'Ungültiger AliasName <' + oHISLAG.AliasName + '> für Tabelleninstanz, erwarte <' + cExpectedTableAlias + '>'),
+   SetErrorIf(GetOwner(oHISLAG) <> oDM,                 'Tabelleninstanz <' + cExpectedTableAlias + '> ist keine Tabelle des Datenmoduls'),
+   SetErrorIf(not EditModes(oHISLAG),                   'Tabelleninstanz <' + cExpectedTableAlias + '> muss sich im Edit- oder Insert-Modus befinden'),
+
+   oHISLAG:ARTNR      := oDab010:ARTNR,
+   oHISLAG:ARTTYP     := oDab010:ARTTYP,
+   oHISLAG:PROD_ABT   := oDab010:PROD_ABT,
+   oHISLAG:ARTGRUPPE  := oDab010:ARTGRUPPE,
+   oHISLAG:KOSTENST   := oDab010:KOSTENST,
+   oHISLAG:PE         := oDab010:PE,
+   oHISLAG:EKP        := oDab010:EKP,
+   oHISLAG:LTZTEKP    := oDab010:LTZTEKP,
+   oHISLAG:DURCHSCHEK := oDab010:DURCHSCHEK,
+   oHISLAG:LAGER_VER  := Lager('', oDab010, True),
+
+   // Setzen der Abteilung nicht notwendig für den Lagerbestand, da keine
+   // Abteilungstrennung für Lagerverwaltung aktiv ist.
+   // oHISLAG:ABTEILUNG  := 0,
+
+   // Alle Lager-Felder übernehmen
+   oHISLAG:LAGERP    := oDab010:LAGERP,
+   oHISLAG:LAGERV    := oDab010:LAGERV,
+   oHISLAG:LAGERM    := oDab010:LAGERM,
+   oHISLAG:LAGERW    := oDab010:LAGERW,
+
+   for i := 0 to 59 do
+      cStockFieldName := 'LAGER' + Str(i),
+      oStockField     := oHISLAG.CbFieldByName(cStockFieldName),
+      DbReplace(oStockField, AsNumber(cStockFieldName, oDab010)),
+   next,
+end,
+
+//******************************************************************************
+// Lagerbestand historisieren
+// @Result: keine Rückgabe
+//******************************************************************************
+function RunHistorization(bTestMode)
+|
+   oDM, oDab010Query, oDab010, oHISLAG,
+   nHISKOPF_ID, nErrorCount, cErrorMessages, nRecordCount, aErrorStack, cErrorStack, i,
+   nStandort, dHistorisierungsDatum, cComment
+|
+
+   nStandort                := mStandort, // Achtung: Aktuell kann nicht für einen anderen Standort als den aktuellen historisiert werden.
+   dHistorisierungsDatum    := mBDatum,   // immer = Buchungsdatum // EoM(SToD('20150601')),
+
+   // Achtung: Hier gibt es keine(!) Transaktion, da die der Kopfsatz immer, auch
+   //          im Fehlerfall bestehen bleiben soll. Das schreiben der Detail-Sätze
+   //          ist je Datensatz "atomar", also auch unproblematisch.
+   oDM := CreateObject('TBeDbGet', 'DM_HIS_StockHistorization_Header'),
+   startseq
+      cComment       := 'Historisierung für '  + crlf +
+                        'Standort: '           + Str(nStandort),
+
+      nHISKOPF_ID    := HIS_HeaderAdd(oDM, gl_HIS_HistorizationType_Stock, dHistorisierungsDatum, null, null, cComment),
+
+      KVU_Set(m_aResult, 'HISKOPF_ID', nHISKOPF_ID),
+
+      nRecordCount   := 0,
+      nErrorCount    := 0,
+      cErrorMessages := '',
+
+      startseq
+         oDab010Query := CreateObject('TBeAdsQuery', 'HISLAG_QUERY', oDM),
+         startseq
+            oDab010Query.SQL    := GetHISLAG_SelectQuery(nStandort),
+            oDab010Query.Active := true,
+            oDab010             := DbGetTable(oDM, waDab010),
+            while not oDab010Query.CbEof do
+               startseq
+                  nRecordCount++,
+
+                  MySeek({oDab010Query:ARTNR}, oDab010),
+                  oHISLAG := HIS_DetailAdd(oDM, nHISKOPF_ID, gl_HIS_DetailDataType_Single),
+                  SetHISLAGDetailFields(oDM, oHISLAG, oDab010),
+                  HIS_DetailPost(oDM, oHISLAG),
+
+                  if bTestMode and nRecordCount > 10 then
+                     SetError('Test-Modus ist aktiv: Fehler/Abbruch bei Datensatz ' + Str(nRecordCount)),
+                  endif,
+
+                  if Mod(nRecordCount, 500) = 0 then
+                     WriteLn(Str(nRecordCount, 8) + ' Datensätze historisiert'),
+                     ProcessMsg(),
+                  endif,
+               onerror
+                  nErrorCount++,
+
+                  aErrorStack := GetErrorStack(True),
+                  cErrorStack := '',
+                  startseq
+                     for i := 1 to ALen(aErrorStack) do
+                        cErrorStack += '- '     + aErrorStack[i, 1]      + '(): ',
+                        cErrorStack += 'Zeile ' + Str(aErrorStack[i, 2]) + ': ',
+                        cErrorStack += StrTran(aErrorStack[i, 4], crlf, ' '),
+                        cErrorStack += ' (' + aErrorStack[i, 3] + ')' + crlf,
+                     next,
+                  onerror
+                     cErrorStack := DebugArr(aErrorStack),
+                  stopseq,
+                  cErrorMessages := ConcatTrenner(cErrorMessages, cErrorStack, CRLF + CRLF),
+
+                  SetErrorIf(nErrorCount >= 10, 'Lagerbestandshistorisierung: Zu viele Fehler sind aufgetreten -> Abbruch'),
+               stopseq,
+
+               oDab010Query.CbNext(),
+            end,
+         always
+            DestroyObject(oDab010Query),
+         stopseq,
+      always
+         if nErrorCount = 0 then
+            HIS_HeaderFinalize(oDM, nHISKOPF_ID),
+         else
+            HIS_HeaderMarkAsErroneous(oDM, nHISKOPF_ID, nErrorCount, cErrorMessages),
+         endif,
+      stopseq,
+
+
+   always
+      DestroyObject(oDM),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_aResult := {},
+
+   // übergebene Parameter auslesen
+   m_bParamTestMode              := KVU_Get(m_aParams, 'TESTMODE',  false),
+
+   RunHistorization(m_bParamTestMode),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+m_aResult

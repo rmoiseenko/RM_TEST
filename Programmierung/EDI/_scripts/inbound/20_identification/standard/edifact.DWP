@@ -1,0 +1,225 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Identifikation
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet einen simplen Identifikationsprozess für EDIFACT-
+//   Nachrichten ab.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.status',       <integer>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// TODO
+// @result: array - EDIProcessResult
+//******************************************************************************
+function IdentifyEdifactMessage(oEDIMessage:R, oProgressCallback:O)
+|
+   oDM, oEDIMSG, cMessageString,
+   cSegmentTerminator, cElementSeperator, cCompositeElementSeperator, cDummy,
+   nStandard, nMessageType, cSenderEnvelopeGLN, cRecipientEnvelopeGLN, bTestFlag,
+   cSenderBusinessGLN, cRecipientBusinessGLN,
+   aNADSegments, bEachMessageHasMatchingBusinessGLNs, cQualifier, cGLN, i,
+   oQueryProfiles, cSqlText
+|
+
+   // Result initialisieren
+   result := {},
+
+   oDM     := EDI_Message_GetDataModule(oEDIMessage),
+   oEDIMSG := EDI_Message_GetTable(oEDIMessage),
+
+   // Notwendige Informationen aus EDIFACT-Envelope und Nachricht ermitteln
+   cMessageString := EDI_Message_EDIMSG_GetMessageString(oDM, oEDIMSG),
+   EDI_Edifact_MessageString_GetDelimiters(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator, cDummy, cDummy, cDummy),
+
+   nStandard             := EDI_Consts_EdifactMessageStandard_ToValue(EDI_Edifact_MessageString_GetStandard(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator)),
+   nMessageType          := EDI_Consts_EdifactMessageType_ToValue(EDI_Edifact_MessageString_GetMessageType(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator)),
+   cSenderEnvelopeGLN    := EDI_Edifact_MessageString_GetSenderGLN(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator),
+   cRecipientEnvelopeGLN := EDI_Edifact_MessageString_GetRecipientGLN(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator),
+   iif(EDI_Edifact_MessageString_GetTestFlag(cMessageString, cSegmentTerminator, cElementSeperator, cCompositeElementSeperator) = '1', (bTestFlag := True), (bTestFlag := False)),
+   aNADSegments          := EDI_Edifact_MessageString_GetSegmentsByIdentifier(cMessageString, 'NAD', cSegmentTerminator),
+
+   // Prüfen, ob für alle enthaltenen Nachrichten eine eindeutige
+   // Partnerkonfiguration ermittelt werden kann.
+   // Wenn alle GLNs (bzw. Identifikationsnummern) der jeweiligen Beteiligten
+   // in jeder enthaltenen Nachricht übereinstimmen, bedeutet das, dass
+   // potentiell ein eindeutiger EDIPART-Datensatz für die EDIFACT-Datei
+   // ermittelt werden kann.
+   bEachMessageHasMatchingBusinessGLNs := true,
+   cSenderBusinessGLN    := '',
+   cRecipientBusinessGLN := '',
+   for i := 1 to ALen(aNADSegments) do
+      cQualifier := EDI_Edifact_SegmentString_ExtractValue_Internal(
+         aNADSegments[i],
+         EDI_Edifact_DataElementMap_Create(1, 0, true, false), // 3035
+         cElementSeperator,
+         cCompositeElementSeperator
+      ),
+      cGLN := EDI_Edifact_SegmentString_ExtractValue_Internal(
+         aNADSegments[i],
+         EDI_Edifact_DataElementMap_Create(2, 1, false, true), // 3039
+         cElementSeperator,
+         cCompositeElementSeperator
+      ),
+
+      // Ausschlaggebend sind die NAD-Segmente mit folgenden Qualifiern:
+      //   * SU: Für die Identifikation des Zulieferers (hier die eigene Identifikationsnummer)
+      //   * BY: Für die Identifikation des Käufers (hier die Identifikationsnummer des EDI-Partners)
+      case cQualifier
+         of 'SU' ::
+            bEachMessageHasMatchingBusinessGLNs := empty(cRecipientBusinessGLN) or cRecipientBusinessGLN == cGLN,
+            if empty(cRecipientBusinessGLN) then
+               cRecipientBusinessGLN := cGLN,
+            endif,
+
+         of 'BY' ::
+            bEachMessageHasMatchingBusinessGLNs := empty(cSenderBusinessGLN) or cSenderBusinessGLN == cGLN,
+            if empty(cSenderBusinessGLN) then
+               cSenderBusinessGLN := cGLN,
+            endif,
+      endcase,
+
+      if not bEachMessageHasMatchingBusinessGLNs then
+         break,
+      endif,
+   next,
+
+   // Wenn die enthaltenen Nachrichten keine kaufmännischen
+   // Identifikationsnummern enthalten werden Identifikationsnummern aus dem
+   // Envelope verwendet.
+   if empty(cRecipientBusinessGLN) then
+      cRecipientBusinessGLN := cRecipientEnvelopeGLN,
+   endif,
+   if empty(cSenderBusinessGLN) then
+      cSenderBusinessGLN := cSenderEnvelopeGLN,
+   endif,
+
+   // Erstellen des SQL-Statements zur Identifikation
+   oQueryProfiles := CreateObject('TBeAdsQuery'),
+   startseq
+      cSqlText :=
+         'SELECT EDIPROF.ID AS EDIPROF_ID' + iif(bEachMessageHasMatchingBusinessGLNs, ', EDIPART.ID AS EDIPART_ID', '') + ' FROM ' + DbSqlTableName(waEDIPROF, true) + CRLF +
+         iif(bEachMessageHasMatchingBusinessGLNs, 'INNER JOIN ' + DbSqlTableName(waEDIPART, true) + ' ON EDIPROF.ID = EDIPART.EDIPROF_ID', '') + CRLF +
+         'WHERE ' + CRLF +
+         '   EDIPROF.ACTIVE AND' + CRLF +
+         '   EDIPROF.EDITRCH_ID = ' + str(oEDIMSG:EDITRCH_ID)     + ' AND' + CRLF +
+         '   EDIPROF.STANDARD = '   + str(nStandard)              + ' AND' + CRLF +
+         '   EDIPROF.MSG_TYPE = '   + str(nMessageType)           + ' AND' + CRLF +
+         "   EDIPROF.GLN_OWN = '"   + cRecipientEnvelopeGLN + "'" + ' AND' + CRLF +
+         "   EDIPROF.GLN_PART = '"  + cSenderEnvelopeGLN + "'",
+
+      if bEachMessageHasMatchingBusinessGLNs then
+         cSqlText += ' AND' + CRLF +
+         "   EDIPART.GLN_OWN = '"   + cRecipientBusinessGLN + "'" + ' AND' + CRLF +
+         "   EDIPART.GLN_PART = '"  + cSenderBusinessGLN + "'",
+      endif,
+
+      prs(ProgName() + '::Identification_Edifact', 'SQL => [' + cSqlText + ']'),
+
+      oQueryProfiles.SQL    := cSqlText,
+      oQueryProfiles.Active := true,
+
+      case true
+         of bEachMessageHasMatchingBusinessGLNs and oQueryProfiles.CbRecordCount = 0 ::
+            SetError('Could not find matching partner configuration or profile for ' +
+                     'sender envelope GLN "' + cSenderEnvelopeGLN +'",  recipient envelope GLN "' + cRecipientEnvelopeGLN + '"'
+                     // + crlf + 'sql: ' + crlf + cSqlText
+                     ),
+
+         of not bEachMessageHasMatchingBusinessGLNs and oQueryProfiles.CbRecordCount = 0 ::
+            SetError('Could not find matching profile'),
+
+         of oQueryProfiles.CbRecordCount > 1 ::
+            SetError('No unique profile found'),
+
+         otherwise
+            EDI_Message_SetLocation(oEDIMessage, mStandort),
+            EDI_Message_SetDepartment(oEDIMessage, mAbteilung),
+            EDI_Message_SetProfile(oEDIMessage, oQueryProfiles:EDIPROF_ID),
+            if bEachMessageHasMatchingBusinessGLNs then
+               EDI_Message_SetPartnerConfiguration(oEDIMessage, oQueryProfiles:EDIPART_ID),
+            endif,
+            if bTestFlag then
+               EDI_Message_SetTestFlag(oEDIMessage, 1),
+            endif,
+      endcase,
+   always
+      DestroyObject(oQueryProfiles),
+   stopseq,
+end,
+
+//******************************************************************************
+// Standard-Identifikation für EDIFACT-Nachrichten.
+// @result: array - EDI-ProcessResult
+//******************************************************************************
+function Identification_Edifact(oDM:O, nEDIMSGId:N, oProgressCallback:O:=nil)
+| oEDIMessage |
+
+   result := {},
+
+   oEDIMessage := EDI_Message_Open(oDM, nEDIMSGId),
+   startseq
+      startseq
+         IdentifyEdifactMessage(oEDIMessage, oProgressCallback),
+         EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Identified),
+         EDI_ProcessResult_SetSuccess(result),
+      onerror
+         EDI_ProcessResult_SetError(result, GetErrorText(GetErrorObj())),
+         EDI_Message_LogErrorAndSave(oEDIMessage, GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+
+m_oDM.CbTransaction_Begin(),
+startseq
+   startseq
+      m_aResult := Identification_Edifact(m_oDM, m_nEDIMSGId, m_oProgressCallback),
+   onerror
+      EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+   stopseq,
+
+   m_oDM.CbTransaction_Commit(),
+always
+   if m_oDM.CbTransaction_TryRollback() then
+      DbResetDM(m_oDM),
+   endif,
+stopseq,
+
+m_aResult
+

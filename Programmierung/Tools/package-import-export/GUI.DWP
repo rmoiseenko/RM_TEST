@@ -1,0 +1,2563 @@
+//##############################################################################
+//##############################################################################
+// Dieses Programm dient zum Exportieren bzw. Importieren von business express
+// Customizing Ressourcen wie z.B.
+//   * Codeblock-Programme
+//   * F12 Formulare
+//   * Browser
+//     ...
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aParams:P4,
+
+   m_cPositionSaveID, m_cFormID, m_cClientSettingsKey,
+
+   m_oDM, m_oDabPRG, m_oDabBRO, m_oDabFIL,
+
+   m_oDABR10, m_oDABR70, m_oDABFRM, m_oMemMaskenIDs,
+   m_aIndMenue, m_aStdMasks, m_aLayouts, m_aBeleg, m_aBrowserCopyLog,
+   m_aBrowsersToCopyToTotal, m_aBrowsersToCopyToAll,
+   m_iCopyTotal, m_iCopyAll, m_aCustomizingObjects,
+
+   m_nErrorCount,
+   m_bIsProcessing, m_bCommandLineMode_IsActive, m_bCommandLineMode_IsExport,
+   m_bCommandLineMode_Result, m_cOption_ExportDefaultBrowser, m_cOption_AlwaysExportShortName,
+   m_cOption_ReplaceInvalidCharacter,
+   m_cRepositoryType,
+   m_aPrograms, m_aBrowser, m_aMasks, m_aOptions,
+
+   m_cPredefinedRepoBasePath, m_cPredefinedRepoPath,
+   m_cDefaultRepoBasePath, m_cDefaultPackagePath, m_cDefaultSVNPath,
+   m_aDefaultPackageFiles,
+   m_cBaseSourceOrDestinationPath, m_cPackagePath,
+
+   m_aExportProgramms,
+
+   // Farbkonstanten
+   m_nMessage, m_nError, m_nWarning, m_nInfo,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Export, A_Import, A_OpenPackageDirectoryInFileManager,
+   A_SelectPackage, A_ShowInfoText, A_ShowRepositoryStatus, A_ShowSettings,
+   actions, bar_main, BeBarButton1, BeBarButton2, BeBarButton3, BeBarButton4,
+   BeBarManager, bipnl_Head, bipnl_Log, btn_Cancel, btn_Export, btn_Import,
+   btn_OpenPath, chk_IgnoreReadOnly, cmb_DefaultPaths, cmb_Repositories,
+   dock_main, edt_InfoText, edt_Log, edt_PackagePath, pnl_Background,
+   pnl_Buttons, pnl_MainBack, pnl_PackagePath, pnl_SelectedPath
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@PKGIMEXPO',
+m_cPositionSaveID := '@IMEXPOS',
+
+m_cDefaultRepoBasePath := 'C:',
+m_cDefaultSVNPath      := m_cDefaultRepoBasePath + '\be_svn',
+
+m_nMessage := 0,
+m_nError   := 1,
+m_nWarning := 2,
+m_nInfo    := 3,
+
+m_cOption_ExportDefaultBrowser    := 'EXPORT_DEFAULT_BROWSER',
+m_cOption_AlwaysExportShortName   := 'EXPORT_PROGRAM_SHORT_NAME',
+m_cOption_ReplaceInvalidCharacter := 'REPLACE_INVALID_CHARACTERS',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+
+//##############################################################################
+// Includes - begonnen, Funktionalität auszulagern um die Strutkur des
+//            Programmes zu verbessern.
+//            TODO: In einem späteren Schritt in Globals umwandlen.
+//                  Die Utils werden aktuell auch verwendet im package 'layout-codebloecke-suchen-ersetzen'
+//##############################################################################
+
+//#p Tools\package-import-export\layout_utils
+//#p Tools\package-import-export\common_utils
+//#p Tools\package-import-export\browser_utils
+//#p Tools\package-import-export\language_utils
+
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Erzeugt und füllt eien memtable aller MASK_IDs der DABFRM:ID
+// @Result: Memtable
+//******************************************************************************
+function CreateAndFillMemMaskenIDs()
+   result := CreateObject('TBeMemTable'),
+   startseq
+      result.CbAddField('MASK_ID', ftString, 9),
+      result.CbAddIndex('MASK_ID', 'MASK_ID', ixPrimary),
+      result.Active := true,
+      DbGoTop(m_oDABFRM),
+      while not eof(m_oDABFRM) do
+         MyAppend(result),
+         result:MASK_ID := alltrim(m_oDABFRM:MASK_ID),
+         MyPost(result),
+         DbSkip(1, m_oDABFRM),
+      end,
+   onerror
+      DestroyObject(result),
+      GU_ShowStdErrorMessage('Fehler in CreateAndFillMemMaskenIDs() ', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Schreibt einen beliebigen Text in das Log-Edit
+// @result: null
+//******************************************************************************
+function WriteToLog(nType, cText, bBold)
+|
+   cNewLine, cRTFHeader,
+   cLineGreen, cLineGreenBold,
+   cLineRed, cLineRedBold,
+   cLineOrange, cLineOrangeBold,
+   cLineGray, cLineGrayBold
+|
+   if not empty(edt_Log) then
+      startseq
+         cRTFHeader      := '{\rtf1\fbidis\ansi\ansicpg0\uc0\deff0\deflang0\deflangfe0' +
+                            '{\fonttbl{\f1\fnil Segoe UI;}}' +
+                            '{\colortbl;' +
+                               '\red255\green0\blue0;' +                        // rot
+                               '\red0\green128\blue0;' +                        // grün
+                               '\red255\green102\blue0;' +                      // orange
+                               '\red185\green185\blue185;}',                    // hellgrau
+         cLineGreen      := '\plain \f1\fs18\cf2 ',
+         cLineGreenBold  := '\par\f1\b\fs20\cf2 ',
+         cLineRed        := '\plain \f1\fs18\cf1 ',
+         cLineRedBold    := '\par\f1\b\fs20\cf1 ',
+         cLineOrange     := '\plain \f1\fs18\cf3 ',
+         cLineOrangeBold := '\par\f1\b\fs20\cf3 ',
+         cLineGray       := '\plain\f1\fs18\cf4 ',
+         cLineGrayBold   := '\par\f1\b\fs20\cf4 ',
+
+
+         // Für die RTF-Formatierung müssen "\" (z. B. Pfade) durch "\\" ersetzt werden
+         cText    := StrTran(cText, '\', '\\'),
+         cNewLine := cRTFHeader,
+
+         case nType
+            // Statusnachrichten -> grün
+            of m_nMessage ::
+               if bBold then
+                  cNewLine += cLineGreenBold,                                   // fett
+               else
+                  cNewLine += cLineGreen,
+               endif,
+
+            // Fehler -> rot
+            of m_nError ::
+               if bBold then
+                  cNewLine += cLineRedBold,                                     // fett
+               else
+                  cNewLine += cLineRed,
+               endif,
+
+            // Bekannte-Fehler -> Orange
+            of m_nWarning ::
+               if bBold then
+                  cNewLine += cLineOrangeBold,                                  // fett
+               else
+                  cNewLine += cLineOrange,
+               endif,
+
+            // Infotexte -> grau
+            of m_nInfo ::
+               if bBold then
+                  cNewLine += cLineGrayBold,                                    // fett
+               else
+                  cNewLine += cLineGray,
+               endif,
+         endcase,
+         cNewLine += cText + '}',                                               prs('WriteToLog', cNewLine),
+
+         // Text in das Log schreiben
+         edt_Log.Text     := ConcatRTF(edt_Log.Text, cNewLine),
+         edt_Log.SelStart := 999999999,                                         // Immer ans Ende des Logs springen
+      onerror
+         SetError('Fehler beim Schreiben in das Log'),
+      stopseq,
+   else
+      writeln(cText),
+   endif,
+end,
+
+//******************************************************************************
+// Log-Ausgabe leeren
+// @result: null
+//******************************************************************************
+function ClearLog()
+   if not empty(edt_Log) then
+      edt_Log.Text := '',
+   endif,
+end,
+
+//******************************************************************************
+// Einen Kommandozeilen-Befehl an das lokal installierte Tortoise abgeben
+//******************************************************************************
+function RunTortoiseCommand(cTortoiseExe, cPath, cCommand)
+   cPath := '/path:' + '"' + AllTrim(cPath) + '"',
+   ShellExecute(, 'open', cTortoiseExe, cCommand + ' ' + cPath),
+end,
+
+//******************************************************************************
+// Einen Kommandozeilen-Befehl an das lokal installierte TortoiseSVN abgeben
+//******************************************************************************
+function RunTortoiseSVNCommand(cPath, cCommand)
+   RunTortoiseCommand('C:\Program Files\TortoiseSVN\bin\TortoiseProc.exe',
+                      cPath, cCommand),
+end,
+
+//******************************************************************************
+// Einen Kommandozeilen-Befehl an das lokal installierte TortoiseGit abgeben
+//******************************************************************************
+function RunTortoiseGitCommand(cPath, cCommand)
+   RunTortoiseCommand('C:\Program Files\TortoiseGit\bin\TortoiseGitProc.exe',
+                      cPath, cCommand),
+end,
+
+//******************************************************************************
+// Öffnet den Dateiauswahl-Dialog
+// @Result: null
+//******************************************************************************
+function OpenPackagePathDialog()
+| oDlg, cFileName |
+   startseq
+      oDlg        := OpenDlg('Package-Info auswählen', 'Package-Info|*.bcp', m_cPredefinedRepoPath),
+      oDlg.Active := True,
+      if oDlg.Selected then
+         if File(oDlg.FileName) then
+            cFileName := oDlg.FileName,
+            CloseForm(oDlg),
+         else
+            SetError('Die Angegebene Datei konnte nicht gefunden werden.'),
+         endif,
+      endif,
+
+      // Wenn ein Package ausgewählt wurde
+      if not empty(cFileName) then
+         edt_PackagePath.Text := cFileName,
+         cmb_DefaultPaths.ItemIndex := -1,
+      endif,
+   onerror
+      SetError('Fehler bei der Auswahl der Package-Info.' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Den Pfad einer Package-Datei zerlegen
+//******************************************************************************
+function CalcPackageDescription( cPackagePath )
+| cFileName, cFilePath, cCurrFolder |
+   Result := '',
+
+   if cPackagePath <> '' then
+      // Dateiname ohne Endung ermitteln
+      cFileName := ExtractFileName(cPackagePath),
+      cFileName := SubStr(cFileName, 1, Rat('.', cFileName) - 1),
+
+      cFilePath := ExtractFilePath(cPackagePath),
+
+      // Den ersten Ordner innerhalb der SVN Struktur ermitteln
+      cCurrFolder := SubStr(cFilePath, Len(m_cPredefinedRepoPath) + 2, Len(cFilePath)),
+      cCurrFolder := SubStr(cCurrFolder, 1, At('\', cCurrFolder) - 1),
+
+      Result := cFileName + ' (' + cCurrFolder + ')',
+   endif,
+end,
+
+//******************************************************************************
+// Gibt den Inhalt einer Datei zurück.
+// @Result: string - Dateiinhalt
+//******************************************************************************
+function ReadFileFromDisc(cFile)
+| oFile |
+   startseq
+      if File(cFile) then
+         oFile := FOpen(cFile, FO_READ),
+         startseq
+            FRead(oFile, Result, oFile.Size),
+         always
+            FClose(oFile),
+         stopseq,
+      else
+         SetError('Die angegebene Datei konnte nicht gefunden werden.'),
+      endif,
+   onerror
+      SetError('Fehler beim Lesen der Datei: "' + cFile + '".' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Eingaben prüfen bevor ein Im- oder Export durchgeführt werden kann
+// @Result: boolean - Eingaben in Ordnung
+//******************************************************************************
+function BeforeImOrExport()
+   Result         := False,
+   m_cPackagePath := edt_PackagePath.Text,                                      // Eingegebenen Pfad übernehmen
+
+   // Pfad angegeben?
+   if empty(m_cPackagePath) then
+      MessageDlg('Bitte geben Sie eine Package-Info-Datei an.'),
+      exit,
+   endif,
+
+   if not File(m_cPackagePath) then
+      MessageDlg('Die angegebene Package-Info konnte nicht gefunden werden.' + crlf +
+                 'Bitte überprüfen Sie die Eingabe.', mtError),
+      exit,
+   endif,
+
+   Result := True,                                                              // Alles OK wenn jede Anweisung ohne Fehler durchlaufen wurde
+end,
+
+
+//******************************************************************************
+// Speichert die übergebenen Daten
+//******************************************************************************
+function ExportFile(cDest, cName, cFiletype, oData, bIgnoreReadOnly, cErrorText:R)
+| cFileName, aFileAttribs |
+   startseq
+      Result     := True,
+      cErrorText := '',
+      ForceDirectories(cDest),
+
+      cFileName := cDest + cName + cFileType,                                   // Vollst. Dateinamen zusammenbauen
+
+      writeln('cName in ExportFile(): ' + cName),
+      writeln('cFilename in ExportFile(): ' + cFilename),
+
+      if File(cFileName) then
+
+         // Schreibschutz existierender Dateien entfernen wenn gewünscht
+         aFileAttribs := FileGetAttr(cFileName),
+         if (aFileAttribs and faReadOnly) > 0 then
+            if bIgnoreReadOnly then
+               FileSetAttr(cFileName, _XOR(aFileAttribs, faReadOnly)),
+            else
+               Result     := False,
+               cErrorText := 'Die bereits existierende Datei ist schreibgeschützt',
+               exit,
+            endif,
+         endif,
+
+         DeleteFile(cFileName),                                                 // Alte evtl. existierende Datei löschen
+      endif,
+
+      SaveFile(oData, cFileName),                                               // Neue Daten exportieren
+   onerror
+      Result := False,
+      SetError('Fehler beim Speichern der Datei.' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Stellt sicher, dass nur CRLF's verwendet werden.
+// Hierzu werden sämtliche Trenner auf einen einheitlichen Markierungstext
+// geändert und anschließend komplett auf CRLF umgestellt.
+// @Result: null
+//******************************************************************************
+function OnlyCRLF(cText)
+| cReplaceMark |
+   cReplaceMark := Chr(35) + Chr(35) + 'NEWLINE' + Chr(35) + Chr(35),
+   // Alle Trenner gegen Marker austauschen
+
+   Result := StrTran(cText, crlf, cReplaceMark),                                // CRLF's austauschen damit nicht nur die CR's eines Umbruchs markiert werden
+   Result := StrTran(Result, chr(10), cReplaceMark),                            // LF's austauschen
+   Result := StrTran(Result, cReplaceMark, crlf),                               // Alle markierten Stellen zu CRLF
+end,
+
+//******************************************************************************
+// Ersetzt die Durch Windows nicht erlaubten Zeichen
+// @Result: null
+//******************************************************************************
+function ReplaceInvalidCharacters(cFileName)
+   Result := cFileName,
+   Result := StrTran(Result, '/', '##' + Str(ASC('/')) + '##' ),
+   Result := StrTran(Result, ':', '##' + Str(ASC(':')) + '##' ),
+   Result := StrTran(Result, '*', '##' + Str(ASC('*')) + '##' ),
+   Result := StrTran(Result, '?', '##' + Str(ASC('?')) + '##' ),
+   Result := StrTran(Result, '"', '##' + Str(ASC('"')) + '##' ),
+   Result := StrTran(Result, '<', '##' + Str(ASC('<')) + '##' ),
+   Result := StrTran(Result, '>', '##' + Str(ASC('>')) + '##' ),
+   Result := StrTran(Result, '|', '##' + Str(ASC('|')) + '##' ),
+//   Result := StrTran(Result, ' ', '##' + Str(ASC(' ')) + '##' ),
+end,
+
+//******************************************************************************
+// Exportiert den Programmtext der aus der DABPRG gelesen wird
+//******************************************************************************
+function ExportProgram(cMainFolder, cSubFolder, cName, cUseProgOpt, bIgnoreReadOnly)
+| cProgrammText, cMetaInformation, bSeekOK, cReadOnlyError,
+  oTXT_ProgOptFile, bProgOptions, cFileName, cFullFileName                                                                                                                        //  Erweiterung: Neue Variable für '.POPT'-File
+|
+
+   bProgOptions       := False,
+   cName              := UTF8ToAnsi(cName),
+
+   startseq
+      m_oDABPRG.IndexName := 'BEZ',
+      bSeekOK             := DBSeek({Upper(cName)}, m_oDABPRG),
+      if(not bSeekOK, SetError('Das Programm konnte nicht gefunden werden.'),),
+
+      // Prüfen ob ungültige Zeichen enthalten sind
+      if not empty(CharOnly('/:*?"<>|', cName)) and not KVU_GET(m_aOptions, m_cOption_ReplaceInvalidCharacter, false) then
+         SetError('Der Programmname enthält ungültige Zeichen: /:*?"<>| '),
+      endif,
+
+      // Wenn kein Ordner angegeben wurde wird die Dateistruktur übernommen
+      if empty(cSubFolder) then
+         cSubFolder := GetProgrammPath(cName),
+      endif,
+
+      // Sonnderbehandlung wenn als Pfad ein '\' angegeben wurde -> Basisverzeichnis verwenden
+      if Trim(cSubFolder) == '\' then
+         cSubFolder := '',                                                                                                                              // Durch das leeren wird der Pfad nicht erweitert
+      endif,
+                                                                                                   prs('ProgrammExport', cName + '.DWP'),
+
+      // Eigentlichen Programmnamen ermitteln
+      // Für kompatibilität alte Logik -> Wenn ein File mit der Syntax nach der alten Logik gefunden wurde
+      // wird dieser Verwendet. Ansonsten neue Logik
+      cFileName := Token(cName, '\', TokenCount(cName, '\')),
+      cFullFileName := m_cBaseSourceOrDestinationPath + cSubFolder + Token(cName, '\', TokenCount(cName, '\')) + '.DWP',
+      if not KVU_GET(m_aOptions, m_cOption_AlwaysExportShortName, false) then
+         if not File(m_cBaseSourceOrDestinationPath + cSubFolder + cFileName + '.DWP') then
+            cFileName := GetWindowsFileName(cName),
+         endif,
+      endif,
+
+      if KVU_GET(m_aOptions, m_cOption_ReplaceInvalidCharacter, false) then
+         cFileName := ReplaceInvalidCharacters(cFileName),
+      endif,
+
+      if len(m_cBaseSourceOrDestinationPath + cSubFolder + cFileName) >= 256 then
+         m_nErrorCount++, // Fehler zählen
+         WriteToLog(m_nError, 'Dateiname: "' + m_cBaseSourceOrDestinationPath + cSubFolder + cFileName + '.DWP" konnte nicht exportiert werden, da der Dateiname die maximale Länge von 256 Zeichen überschitten hat.', False),
+      else
+         // Exportieren
+         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cFileName, '.DWP', m_oDABPRG:PROGRAMM, bIgnoreReadOnly, cReadOnlyError) then
+
+            // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+            if not empty(cReadOnlyError) then
+               m_nErrorCount++,                                                                                                                            // Fehler zählen
+               WriteToLog(m_nWarning, 'Programm: "' + cName + '.DWP" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+            endif,
+         else
+            if cUseProgOpt == 'J' or cUseProgOpt == 'T' then                                                                                               // Erweiterung: Export der "OPTIONS" des Programms aus der DABPRG
+               startseq
+                  oTXT_ProgOptFile := FOpen(m_cBaseSourceOrDestinationPath + cSubFolder + cFileName + '.POPT', fo_Create),
+                  FWriteln(oTXT_ProgOptFile, m_oDABPRG:OPTIONS),
+               always
+                  FClose(oTXT_ProgOptFile),
+               endif,
+               bProgOptions := True,
+            endif,                                                                                                                                         // Erweiterung Ende
+            WriteToLog(m_nMessage, 'Programm: "' + cName + '.DWP" ' + iif(bProgOptions, 'mit', 'ohne') + ' zugewiesenem Ereignis erfolgreich exportiert.', False),
+         endif,
+      endif,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(m_nError, 'Programm: "' + cName + '.DWP" ' + iif(bProgOptions, 'mit zugewiesenem Ereignis', '') + ' konnte nicht exportiert werden. ' + crlf + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importiert das übergebene Programm. Hierbei werden bereits existierende
+// Daten als alt und nicht Aktiv markiert wärend das Importierte Programm
+// automatisch als AKTIV gesetzt wird.
+// Zudem kann hier eine übergebene Maske (cUseMask) eingetragen werden um ein
+// späteres manuelles zuweisen zu sparen.
+// @Result: null
+//******************************************************************************
+function ImportProgram(cMainFolder, cSubFolder, cName, cUseMask, cUseProgOpt)
+|
+   cFullFileName, oFile, cProgramCode, cOldProgramCode, cFileName,
+   bIsUpdate, bHasRealChanges, cFilter, nProgNr, nVersNr, cChangeUser, cRunUser,
+   cProgramOptions, cLogMessage, cFullFileName_AlteLogik, nFoundFiles, cMaskID_From_OldVersion,
+   cPOPTFileName,
+
+   oTXT_ProgOptFile, bProgOptions                                                                                                                                      //  Erweiterung: Neue Variable für '.POPT'-File
+
+|
+   cRunUser                := '',
+   cChangeUser             := '',
+   cProgramOptions         := '',
+   nFoundFiles             := 0,
+   bProgOptions            := False,
+   cMaskID_From_OldVersion := '',
+
+   cName                   := Utf8ToAnsi(cName),
+
+   startseq
+      cFileName := GetWindowsFileName(cName),                                          prs('ImportProgram', cFileName + '.DWP'),
+      // Wenn kein Ordner angegeben wurde wird die Dateistruktur übernommen
+      if empty(cSubFolder) then
+         cSubFolder := GetProgrammPath(cName),
+      endif,
+
+      // Sonnderbehandlung wenn als Pfad ein '\' angegeben wurde -> Basisverzeichnis verwenden
+      if Trim(cSubFolder) == '\' then
+         cSubFolder := '',                                                                       // Durch das leeren wird der Pfad nicht erweitert
+      endif,
+
+      if KVU_GET(m_aOptions, m_cOption_ReplaceInvalidCharacter, false) then
+         cFileName := ReplaceInvalidCharacters(cFileName),
+      endif,
+
+      // Wandelt den Namen in die alte Logik um, damit geprüft werden kann ob das importierte Programm
+      // schon existiert, bzw. ob es eine Überschneidung gibt bei >=2 Programmen wie z.B.
+      // "Test/Programm" und "Test_Programm"
+      cFullFileName           := cMainFolder + cSubFolder + cFileName + '.DWP',                                                    prs('ImportProgram', cFullFileName),
+      cFullFileName_AlteLogik := cMainFolder + cSubFolder + Token(cName, '\', TokenCount(cName, '\')) + '.DWP',    //Alte Logik
+      //neue Logik
+      if File(cFullFileName) then
+         nFoundFiles++,
+      else
+         //alte Logik
+         if cFullFileName <> cFullFileName_AlteLogik AND File(cFullFileName_AlteLogik) then
+            nFoundFiles++,
+            cFullFileName := cFullFileName_AlteLogik,
+         endif,
+      endif,
+
+      cPOPTFileName := Left(cFullFileName, Len(cFullFileName) - 4) + '.POPT', // exchange extension .DWP -> .POPT
+
+      if nFoundFiles > 1 then
+         SetError('Achtung Doppelt'),
+      endif,
+      if nFoundFiles = 0 then
+         SetError('Das Programm konnte im angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+
+      // Programm einlesen
+      cProgramCode := OnlyCRLF(ReadFileFromDisc(cFullFileName)),
+
+      // Bei leeren Programmen nachfragen ob trotzdem importiert werden soll
+      // z. B. zum Deaktivieren von nicht mehr benötigten Programmen
+      if empty(cProgramCode) then
+         if not JN('Das Programm: "' + cName + '.DWP" enthält keine Daten. Soll es ' +
+                   'trotzdem importiert werden?') then
+            WriteToLog(m_nMessage, 'Das Programm: "' + cName + '.DWP" wurde übersprungen.', False),
+            exit,
+         endif,
+      endif,
+
+      // Eingelesene Daten in die DABPRG schreiben
+      // Hier wird immer ein neuer Datensatz angelegt und auf Aktiv gesetzt!!
+
+      // Wenn das Programm bereits existiert muss eine neue Version angelegt werden
+      // Also Programmnummer und Versionsnummer merken.
+      // Außerdem ist es notwendig, dass das Feld OPTIONS in die neue Programmversion
+      // übernommen wird, damit ggf. zugewiesene Codeblock-Events erhalten bleiben
+      startseq
+
+         // Suchen ob es das Programm bereits gibt...
+         m_oDABPRG.IndexName := 'BEZVERSION',                                   // Dieser Index zeigt auch nicht Aktive Programme
+
+         // Nur auf gesuchtes Programm filtern
+         cFilter := 'Upper(BEZ) = "' + PadR(Upper(cName), 128) + '"',           prs('ImportProgram', cFilter),
+         DBFilter(cFilter, m_oDABPRG),
+
+         if not (BOF(m_oDABPRG) and EOF(m_oDABPRG)) then
+            // Das Programm wurde gefunden => Letzter Datensatz ist die höchste Version
+            DBGoBottom(m_oDABPRG),
+
+            nProgNr         := m_oDABPRG:PROGNR,                                // Programmnummer übernehmen
+            nVersNr         := m_oDABPRG:VERSION + 1,                           // Versionsnummer + 1 übernehmen
+            cChangeUser     := m_oDABPRG:USER_BEARB,                            // Programm-Ändern-Rechte übernehmen
+            cRunUser        := m_oDABPRG:USER_START,                            // Programm-Ausführen-Rechte übernehmen
+
+            if cUseProgOpt = 'J' or cUseProgOpt = 'T' then
+               if File(cPOPTFileName) then                                                           // Erweiterung: Import der "OPTIONS" des Programms aus der '.POPT'-File
+                  startseq
+                     oTXT_ProgOptFile := FOpen(cPOPTFileName, fo_read),
+                     cProgramOptions  := FReadLN(oTXT_ProgOptFile),
+                  always
+                     Fclose(oTXT_ProgOptFile),
+                  stopseq,
+                  bProgOptions := True,
+               else
+                  m_nErrorCount++,
+                  WriteToLog(m_nError, 'Die Datei "' + cPOPTFileName + '" wurde nicht gefunden.', False),
+               endif,
+            else
+               cProgramOptions := m_oDABPRG:OPTIONS,                               // Programm-Optionen: Codeblock-Events, etc.
+            endif,                                                                          // Erweiterung Ende
+
+            bIsUpdate       := True,                                            // Programm existiert bereits -> aktualisierung
+            bHasRealChanges := m_oDABPRG:PROGRAMM <> cProgramCode or (cUseProgOpt = 'J' or cUseProgOpt = 'T'),              // Hat das Programm sich auch tatsächlich geändert?    // Erweiterung: Wenn cUseProgOpt = true muss überschrieben werden,
+                                                                                prs('ImportProgram', 'Programmnummer: ' + Str(nProgNr)),                                           //              da neues Ereignis zugewiesen
+                                                                                prs('ImportProgram', 'Versionsnummer: ' + Str(nVersNr)),
+            if bHasRealChanges then
+               // Wenn das Programm AKTIV gesetzt wurde dann muss das geändert werden
+               while not BOF(m_oDABPRG) do
+
+                  // Ist der aktuelle Satz eine Zukünftige Version? (Kann wegen
+                  // der Sortierung des Index nur der Letzte Satz sein!)
+                  if not m_oDABPRG:AKTIV and not m_oDABPRG:READONLY then
+                     DBEdit(m_oDABPRG),
+                     m_oDABPRG:READONLY := True,
+                     DBPost(m_oDABPRG),
+                  endif,
+
+                  // Wenn der aktuelle Satz AKTIV ist kann aufgrund der Sortierung
+                  // keine zukünftige oder aktive Version mehr kommen => Ändern
+                  // und Schleife abbrechen
+                  if m_oDABPRG:AKTIV then
+                     cMaskID_From_OldVersion := m_oDABPRG:MASK_ID,              // merken falls für neue Version keine Mask-ID übergeben wird
+                     DBEdit(m_oDABPRG),
+                     m_oDABPRG:AKTIV := False,
+                     DBPost(m_oDABPRG),
+                     break,
+                  endif,
+
+                  DBSkip(-1, m_oDABPRG),
+               end,
+            endif,
+
+            // Filterung aufheben
+            DBFilter('', m_oDABPRG),
+         else
+            // Filterung aufheben
+            DBFilter('', m_oDABPRG),
+            // Da die Programmnummer bei einem Append nicht automatisch eingefügt wird muss diese
+            // manuell ermittelt werden
+            // Index auf PROGNR dadurch steht das Programm mit der aktuell Höchsten Nummer ganz unten
+            m_oDABPRG.IndexName := 'PROGNR',
+            DBGoBottom(m_oDABPRG),
+            nProgNr         := m_oDABPRG:PROGNR + 1,                            // Neue Programmnummer = Höchste + 1
+            nVersNr         := 1,                                               // Versionsnummer ist immer 1 da es eine Neuanlage ist
+            if File(cPOPTFileName) then                                                                   // Erweiterung: Import der "OPTIONS" des Programms aus der '.POPT'-File
+               startseq
+                  oTXT_ProgOptFile := FOpen(cPOPTFileName, fo_read),
+                  cProgramOptions  := FReadLN(oTXT_ProgOptFile),
+               always
+                  Fclose(oTXT_ProgOptFile),
+               stopseq,
+               bProgOptions := True,
+            else
+               if cUseProgOpt = 'J' or cUseProgOpt = 'T' then
+                  m_nErrorCount++,
+                  WriteToLog(m_nError, 'Die Datei "' + cPOPTFileName + '" wurde nicht gefunden.', False),
+               endif,
+            endif,                                                                                                                         // Erweiterung Ende
+            bIsUpdate       := False,                                           // Programm existiert noch nicht -> keine aktualisierung
+            bHasRealChanges := True,                                            // Wenn das Programm zuvor noch nicht existiert hat, bedeutet das immer, dass tatsächliche Änderungen vorliegen
+         endif,
+
+         // Das Programm wird nur importiert, sofern auch echte Änderungen
+         // vorhanden sind bzw. das Programm neu importiert wird.
+         if bHasRealChanges then
+            DBAppend(m_oDABPRG), // Neuer Datensatz für den Import
+
+            // Standardwerte eintragen
+            m_oDABPRG:PROGNR     := nProgNr,
+            m_oDABPRG:VERSION    := nVersNr,
+            m_oDABPRG:OPTIONS    := cProgramOptions,
+            m_oDABPRG:ERST_VON   := Val(c_usr),
+            m_oDABPRG:AEND_VON   := Val(c_usr),
+            m_oDABPRG:ERST_DAT   := Date(),
+            m_oDABPRG:ERST_TIME  := StrToTime(Time()),
+            m_oDABPRG:AEND_DAT   := Date(),
+            m_oDABPRG:AEND_Time  := StrToTime(Time()),
+
+            // Programmtext und Maske eintragen
+            m_oDABPRG:BEZ        := cName,
+            m_oDABPRG:PROGRAMM   := cProgramCode,
+            m_oDABPRG:MASK_ID    := e2v(cUseMask,cMaskID_From_OldVersion),      // Zuweisen einer Maske (falls leer, dann Vorgängerversion)
+            m_oDABPRG:AKTIV      := True,                                       // Aktiv
+            m_oDABPRG:READONLY   := True,                                       // Nicht veränderbar
+            m_oDABPRG:USER_BEARB := cChangeUser,                                // Programm-Ändern-Rechte (Nur befüllt wenn bereits eine Programmversion vorhanden)
+            m_oDABPRG:USER_START := cRunUser,                                   // Programm-Ausführen-Rechte (Nur befüllt wenn bereits eine Programmversion vorhanden)
+
+            DBPost(m_oDABPRG),
+         endif,
+      always
+         m_oDABPRG.IndexName := 'BEZ',
+      stopseq,
+
+      cLogMessage := 'Programm: "' + cName + '.DWP" ',
+      if bHasRealChanges then
+         cLogMessage += 'erfolgreich ' + iif(bProgOptions, 'mit', 'ohne') + ' zugewiesenem Ereignis ' +  iif(bIsUpdate, 'aktualisiert', 'importiert') + '.',
+      else
+         cLogMessage += 'übersprungen. (Keine inhaltliche Änderung)',
+      endif,
+
+      WriteToLog(iif(bHasRealChanges, m_nMessage, m_nInfo),                     // Bei Import oder echten Aktualisierungen grün, sonst grau
+                 cLogMessage, false),
+   onerror
+      m_nErrorCount++,                                                                                                                                  // Fehler zählen
+      WriteToLog(m_nError, 'Programm: "' + cName + '.DWP" ' + iif(bProgOptions, 'mit zugewiesenem Ereignis', '') + ' konnte nicht importiert werden.' + crlf + GetErrorText(), False),
+                                                                                prs('ImportProgram', 'FEHLER: ' + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Prüfen, ob die aktuelle be Version F12 Masken im JSON Format unterstützt
+//******************************************************************************
+function CanHandleF12JsonFormat(bUseJsonFormat, cName, cExtension)
+| cMinBeVersion:C |
+   cMinBeVersion := '7.2',
+   Result := not bUseJsonFormat or CompareBeVersion(mBeVersion, cMinBeVersion),
+   if not Result then
+      m_nErrorCount++,
+      WriteToLog(m_nWarning, 'F12 Maske: "' + cName + cExtension + '" kann nicht im JSON Format verarbeitet werden, da die aktuelle business express Version das Format nicht unterstützt. Es ist mindestens business express Version ' + cMinBeVersion + ' notwendig.', False),
+   endif,
+end,
+
+//******************************************************************************
+// Datei-Endung einer F12 Maske bestimmen
+//******************************************************************************
+function F12MaskExtension(bUseJsonFormat)
+   Result := iif(bUseJsonFormat, '.BEFJ', '.BEF'),
+end,
+
+//******************************************************************************
+// Exportiert die zugewiesene Maske
+//******************************************************************************
+function ExportMask(cMainFolder, cSubFolder, cName, bAsJson, bIgnoreReadOnly)
+| cMASKID, oField, cReadOnlyError, cExtension, bExportSuccessful, cJSON |
+   startseq
+      cExtension := F12MaskExtension(bAsJson),
+      if CanHandleF12JsonFormat(bAsJson, cName, cExtension) then
+         m_oDABFIL.IndexName := 'DABFIL',
+         DBFilter("DATEI = 520 and FELD = '" + cName + "'", m_oDABFIL),
+         if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
+            SetError('Die angegebene F12 Maske konnte nicht gefunden werden.'),
+         else
+            oField := DBField('WIN_DATA', m_oDABFIL),
+            cName  := StrTran(cName, '@'),
+
+            if bAsJson then
+               cJSON             := m_oDABFIL:WIN_DATA,
+               cJSON             := Call('Tools\package-import-export\f12_utils_converter', 'BIN_ARR_TO_JSON', cJSON), // Umwandlung per Call(), weil die dafür notwendige Funktion 'FormAsExportText' erst ab 7.2 zur Verfügung steht -> in 6.5 gäbe es einen Compile-Fehler
+               bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, cJSON,  bIgnoreReadOnly, cReadOnlyError),
+            else
+               bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, oField, bIgnoreReadOnly, cReadOnlyError),
+            endif,
+            if bExportSuccessful then
+               WriteToLog(m_nMessage, 'F12 Maske: "' + cName + cExtension + '" erfolgreich exportiert.', False),
+            else
+               if not empty(cReadOnlyError) then // Schreibschutz gesetzt und das Entfernen nicht aktiviert? -> orangene Meldung!
+                  m_nErrorCount++,
+                  WriteToLog(m_nWarning, 'F12 Maske: "' + cName + cExtension + '" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               endif,
+            endif,
+         endif,                                                                    prs('MaskenExport', cName),
+      endif,
+   onerror
+      m_nErrorCount++,
+      WriteToLog(m_nError, 'F12 Maske: "' + cName + cExtension + '" konnte nicht exportiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importiert die übergebene Maske
+// @Result: null
+//******************************************************************************
+function ImportMask(cMainFolder, cSubFolder, cName, bAsJson)
+| cFullFileName, oFile, cMaskData, bIsUpdate, bHasRealChanges, cExtension |     prs('MaskenImport', cName),
+
+   function DeleteTrailingCrLf(cText)
+     Result := cText,
+     if Right(Result, 2) = crlf then
+        Result := Left(Result, Len(Result) - 2),
+     endif,
+   end,
+
+   startseq
+      cExtension    := F12MaskExtension(bAsJson),
+      if CanHandleF12JsonFormat(bAsJson, cName, cExtension) then
+         cFullFileName := cMainFolder + cSubFolder + StrTran(cName, '@', '') + cExtension,
+
+         SetErrorIf(not File(cFullFileName), 'Die F12 Maske konnte im angegebenen Verzeichnis "' + cFullFileName + '" nicht gefunden werden.'),
+
+         cMaskData := ReadFileFromDisc(cFullFileName),
+         SetErrorIf(empty(cMaskData),        'Die F12 Maske konnte aus "' + cFullFileName + '" nicht geladen werden oder ist leer.'),
+
+         // Umwandlung aus dem JSON Format?
+         // -> per Call(), weil die dafür notwendige Funktion 'FormAsExportText' erst ab 7.2 zur Verfügung steht -> in 6.5 gäbe es einen Compile-Fehler
+         if bAsJson then
+            cMaskData := DeleteTrailingCrLf(cMaskData),  // Zeilenumbruch am Ende löschen, entsteht wohl durch den Datei-Export, mag der Converter aber nicht...
+            cMaskData := Call('Tools\package-import-export\f12_utils_converter', 'JSON_TO_BIN_ARR', cMaskData),
+         endif,
+
+         // Eingelesene Daten in die DABFIL schreiben
+         m_oDABFIL.IndexName := 'DABFIL',
+         if DBSeek({520, cName}, m_oDABFIL) then
+            DBEdit(m_oDABFIL),
+            bIsUpdate       := True,                                               // Maske existiert -> aktualisierung
+            bHasRealChanges := m_oDABFIL:WIN_DATA <> cMaskData,                    // Prüfen ob Maske tatsächlich verändert wurde
+         else
+            DBAppend(m_oDABFIL),
+            bIsUpdate       := False,                                              // Maske existiert noch nicht -> keine aktualisierung
+            bHasRealChanges := True,                                               // Import ist immer eine echte veränderung
+         endif,
+         m_oDABFIL:DATEI      := 520,                                              // 520 = Maske
+         m_oDABFIL:FELD       := cName,                                            // Name der Maske
+         m_oDABFIL:WIN_DATA   := cMaskData,                                        // Maskendaten (Maske und Metadaten als "ArrToStr()")
+         m_oDABFIL:BUCH_DATUM := Date(),
+         DBPost(m_oDABFIL),
+
+         WriteToLog(iif(bHasRealChanges, m_nMessage, m_nInfo),
+                    'F12 Maske: "' + cName + cExtension + '" erfolgreich ' +
+                    iif(bIsUpdate, 'aktualisiert.', 'importiert.') +
+                    iif(bHasRealChanges, '', ' (Keine inhaltliche Änderung)'),
+                    False),
+      endif,
+   onerror
+      m_nErrorCount++,
+      WriteToLog(m_nError, 'F12 Maske: "' + cName + cExtension + '" konnte nicht importiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Exportiert einen Browser
+//******************************************************************************
+function ExportBrowser(cMainFolder, cSubFolder, cName, bIgnoreReadOnly)
+| oBrowser, bSeekOK, cReadOnlyError, nUserNo |
+   startseq
+      bSeekOK := False,
+      m_oDABBRO.IndexName := 'BROWSER_ID',
+
+      if KVU_Get(m_aOptions, m_cOption_ExportDefaultBrowser, false) then
+         nUserNo := 0,
+      else
+         nUserNo := val(c_usr),
+      endif,
+
+      if DBSeek({cName, nUserNo}, m_oDABBRO) then
+         bSeekOK       := true,
+      endif,
+
+      iif(bSeekOK, '', SetError('Browser ' + cName + ' von User ' + c_usr + ' konnte nicht gefunden werden.')),
+
+      if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, '.BEB', m_oDABBRO:DATA, bIgnoreReadOnly, cReadOnlyError) then
+         // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+         m_nErrorCount++, // Fehler zählen
+         WriteToLog(m_nWarning, 'Browsers: "' + cName + '.BEB" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+      else
+         WriteToLog(m_nMessage, 'Browser: "' + cName + '.BEB" erfolgreich exportiert.', False),
+      endif,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(m_nError, 'Browsers: "' + cName + '.BEB" konnte nicht exportiert werden. ' + crlf + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importiert einen Browser
+//******************************************************************************
+function ImportBrowser(cMainFolder, cSubFolder, cName, cUserNo)
+| cFullFileName, oFile, cBrowserData, bIsUpdate, bHasRealChanges |
+   startseq
+      cFullFileName := cMainFolder + cSubFolder + cName + '.BEB',         prs('BrowserImport', cName),
+      // Browser im Verzeichnis
+      if not File(cFullFileName) then
+         SetError('Der Browser konnte im Angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+      // Datei öffnen und Daten in Variable lesen
+      cBrowserData := ReadFileFromDisc(cFullFileName),
+
+      if empty(cBrowserData) then
+         SetError('Der Browser konnte nicht geladen werden.'),
+      endif,
+
+      // Eingelesene Daten in die DABBRO schreiben oder Default-Browser editieren
+      // ACHTUNG! Der Browser wird ohne Rückfrage überschrieben!
+      m_oDABBRO.IndexName := 'BROWSER_ID',
+      bIsUpdate           := False, // Der Browser existiert noch nicht -> keine aktualisierung
+      bHasRealChanges     := True,  // Ein import ist immer eine echte Änderung
+
+      if not DBSeek({cName, val(cUserNo)}, m_oDABBRO) then
+         DBAppend(m_oDABBRO),
+         m_oDABBRO:USER       := val(cUserNo),
+         m_oDABBRO:BROWSER_ID := Alltrim(cName),
+      else
+         DBEdit(m_oDABBRO),
+         bIsUpdate        := True, // Der Browser existiert bereits -> aktualisierung
+         bHasRealChanges  := m_oDABBRO:DATA <> cBrowserData, // Prüfen ob es sich um eine echte aktualisierung handelt
+      endif,
+
+      m_oDABBRO:DATA       := cBrowserData, // Daten des Browsers ins Feld
+      m_oDABBRO:BUCH_DATUM := Date(),
+      DBPost(m_oDABBRO),
+
+      WriteToLog(iif(bHasRealChanges, m_nMessage, m_nInfo),
+                 'Browser: "' + cName + '.BEB" erfolgreich ' +
+                 iif(cUserNo == '000', ' als Default ', '') +
+                 iif(bIsUpdate, 'aktualisiert.', 'importiert.') +
+                 iif(bHasRealChanges, '', ' (Keine inhaltliche Änderung)'),
+                 False),
+
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(m_nError, 'Browser: "' + cName + '.BEB" konnte nicht importiert werden.' + crlf + GetErrorText(), False),
+      GU_ShowStdErrorMessage('Fehler im Programm ' + Progname(), GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+// hier kommen die neuen Funktionen der Erweiterung
+//##############################################################################
+
+//******************************************************************************
+// Exportieren des zugewiesenen Menüs
+// @Result: null
+//******************************************************************************
+function ExportMenue(cMainFolder, cSubFolder, cID, bIgnoreReadOnly)
+| cMASKID, oField, cReadOnlyError |
+   startseq
+      m_oDABFIL.IndexName := 'DABFIL',  //Index:STRZERO(DATEI,3)+FELD+STRZERO(IF((DATEI=0),RECNO(),0),5)
+      DBFilter("DATEI = 523 and FELD = '" + cID + "'", m_oDABFIL),
+      if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
+         SetError('Die angegebene Menü-Nr konnte nicht gefunden werden.'),
+      else
+         // Exportieren
+         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.BIM', m_oDABFIL:MSK_INHALT, bIgnoreReadOnly, cReadOnlyError) then
+            // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+            if not empty(cReadOnlyError) then
+               m_nErrorCount++, // Fehler zählen
+               WriteToLog(2, 'Menü: "' + cID + '.BIM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+            endif,
+         else
+            WriteToLog(0, 'Menü: "' + cID + '.BIM" erfolgreich exportiert.', False),
+         endif,                                                                    prs('MenüExport', cID),
+      endif,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Menü: "' + cID + '.BIM" konnte nicht exportiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importieren des übergebenen Menüs
+// @Result: null
+//******************************************************************************
+function ImportMenue(cMainFolder, cSubFolder, cName)
+| cFullFileName, oFile, cMenueData, bIsUpdate, cString, cResult, i |
+
+   startseq
+      cFullFileName := cMainFolder + cSubFolder + cName + '.BIM',
+                                                                                prs('MenueImport', cName),
+      if not File(cFullFileName) then
+         SetError('Das Menü konnte im Angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+
+      cMenueData := ReadFileFromDisc(cFullFileName),
+
+      if empty(cMenueData) then
+         SetError('Das Menü konnte nicht geladen werden.'),
+      endif,
+
+      // Eingelesene Daten in die DABFIL schreiben oder
+      // ACHTUNG! Die Maske wird ohne Rückfrage überschrieben!
+      m_oDABFIL.IndexName := 'DABFIL',
+      if DBSeek({523, cName}, m_oDABFIL) then
+         DBEdit(m_oDABFIL),
+         bIsUpdate := True, // Menü existiert -> aktualisierung
+      else
+         DBAppend(m_oDABFIL),
+         bIsUpdate := False, // Menü existiert noch nicht -> keine aktualisierung
+      endif,
+
+      cString := '',
+      cResult := '',
+      cString := cMenueData,
+      cString := BeToken(cString, crlf, 2),
+      cString := BeToken(cString, ' ', 5),
+      for i := 1 to TokenCount(cString, "'") do
+         if SubStr(BeToken(cString, "'", i), 1, 1) <> '#' then
+            cResult += SubStr(BeToken(cString, "'", i), 1),
+         else
+            cResult += Chr(ToString(StrToken(SubStr(BeToken(cString, "'", i), 1), '#', 2))),
+         endif,
+      next,
+      m_oDABFIL:DATEI      := 523,       // 520 = Maske
+      m_oDABFIL:FELD       := cName,     // Name der Maske
+      m_oDABFIL:MSK_INHALT := cMenueData, // Maskendaten
+      m_oDABFIL:BUCH_DATUM := Date(),
+      m_oDABFIL:NAME       := cResult,
+      DBPost(m_oDABFIL),
+      WriteToLog(0, 'Menü: "' + cName + '.BIM" erfolgreich ' +
+                    iif(bIsUpdate, 'aktualisiert.', 'importiert.'), False),
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Menü: "' + cName + '.BIM" konnte nicht importiert werden.' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Exportiert die zugewiesenen Layouts
+// @Result: null
+//******************************************************************************
+function ExportLayouts(cMainFolder, cSubFolder, cName, cID, cReportNr, cReportTyp, bIgnoreReadOnly)
+| cMASKID, oField, cReadOnlyError, cLayoutFileName |
+   startseq
+      cLayoutFileName := cID + '_' + cReportNr + '.RTM',
+
+      m_oDABR10.IndexName := 'DABR11',  // Index: REPORT_ID;REPORT_NR
+      DBFilter("REPORT_ID = '" + cID + "' AND REPORT_NR = " + cReportNr, m_oDABR10),
+      startseq
+         if NoDs(m_oDABR10) then
+            SetError('Das angegebene Layout konnte nicht gefunden werden.'),
+         else
+            oField     := DBField('REPORT', m_oDABR10),
+            // Exportieren
+            if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID + '_' + cReportNr, '.RTM', oField, bIgnoreReadOnly, cReadOnlyError) then
+               // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+               if not empty(cReadOnlyError) then
+                  m_nErrorCount++, // Fehler zählen
+                  WriteToLog(2, 'Layout: "' + cLayoutFileName + '" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               endif,
+            else
+               WriteToLog(0, 'Layout: "' + cLayoutFileName + '" erfolgreich exportiert.', False),
+            endif,
+         endif,
+      always
+         DBFilter('', m_oDABR10),
+      stopseq,
+   onerror
+      m_nErrorCount++,
+      WriteToLog(1, 'Layout: "' + cLayoutFileName + '" konnte nicht exportiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importiert die übergebenen Layouts
+// und legt vorher eine Kopie des überschriebenen Layouts an, die mit 'KOPIE' beginnt
+// @Result: null
+//******************************************************************************
+function ImportLayouts(cMainFolder, cSubFolder, cName, cID, cReportNr, cReportTyp)
+| cFullFileName, cLayoutData, bIsUpdate, aRes, cBackup_REPORT_ID, cLayoutFileName |
+
+   startseq
+      cLayoutFileName := cID + '_' + cReportNr + '.RTM',
+      cFullFileName   := cMainFolder + cSubFolder + cLayoutFileName,
+
+      if not File(cFullFileName) then
+         SetError('Das Layout konnte im Angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+
+      cLayoutData := ReadFileFromDisc(cFullFileName),
+
+      if empty(cLayoutData) then
+         SetError('Das Layout konnte nicht geladen werden.'),
+      endif,
+
+
+      // ACHTUNG! Die Layouts werden ohne Rückfrage überschrieben!
+      //          Zuvor wird jedoch ein Backup angelegt, welches bei Bedarf
+      //          manuell wiederhergestellt werden könnte
+
+      // Backup erzeugen, wenn es das Layout schon gibt
+      m_oDABR10.IndexName := 'DABR11',
+      if DBSeek({cID, Val(cReportNr)}, m_oDABR10) then
+         aRes              := PIEU_CreateBackupForLayout(m_oDM, cID, Val(cReportNr)),
+         cBackup_REPORT_ID := KVU_GetAssert(aRes, 'REPORT_ID'),
+         WriteToLog(m_nInfo, 'Backup für Layout "' + cID + '_' + cReportNr + ' angelegt unter REPORT_ID "' + cBackup_REPORT_ID + '"', False),
+      endif,
+
+      // Layout importieren
+      DbRefresh(m_oDABR10),
+      m_oDABR10.IndexName := 'DABR11',
+      bIsUpdate           := DBSeek({cID, Val(cReportNr)}, m_oDABR10),
+      if bIsUpdate then
+         MyEdit(m_oDABR10),
+      else
+         MyAppend(m_oDABR10),
+      endif,
+      m_oDABR10:REPORT_ID  := cID,                 // ID des Layouts
+      m_oDABR10:BEZ        := Utf8ToAnsi(cName),   // Bez des Layouts
+      m_oDABR10:REPORT_NR  := Val(cReportNr),      // Layout - Nr.
+      m_oDABR10:REPORT_TYP := cReportTyp,          // Report Typ (z.B. E für Scanbeleg)
+      m_oDABR10:REPORT     := cLayoutData,         // Report-Daten
+      m_oDABR10:AEND_DAT   := Date(),
+      m_oDABR10:ERST_DAT   := Date(),
+      m_oDABR10:ERST_VON   := c_usr,
+      m_oDABR10:AEND_VON   := c_usr,
+      m_oDABR10:STANDARD   := False,
+      m_oDABR10:BEMERKUNG  := 'Importiert am ' + DtoC(Date()) + ' von ' + BeUserName(c_usr),
+      MyPost(m_oDABR10),
+
+      WriteToLog(0, 'Layout : "' + cLayoutFileName + '" erfolgreich ' +
+                    iif(bIsUpdate, 'aktualisiert.', 'importiert.'), False),
+   onerror
+      m_nErrorCount++,
+      WriteToLog(1, 'Layout : "' + cLayoutFileName + '" konnte nicht importiert werden.' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Exportiert die zugewiesene Standard-Maske
+// @Result: null
+//******************************************************************************
+function ExportStdMasks(cMainFolder, cSubFolder, cName, cID, bIgnoreReadOnly)
+| cMASKID, oField, cReadOnlyError |
+   startseq
+      m_oDABFRM.IndexName := 'MASK_ID',  //Index:MASK_ID
+      DBFilter("MASK_ID = '" + cID + "'", m_oDABFRM),
+      if (EOF(m_oDABFRM) and BOF(m_oDABFRM)) then
+         SetError('Die angegebene Standard-Maske konnte nicht gefunden werden.'),
+      else
+         // Exportieren
+         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.BEM', m_oDABFRM:DATA, bIgnoreReadOnly, cReadOnlyError) then
+            // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+            if not empty(cReadOnlyError) then
+               m_nErrorCount++, // Fehler zählen
+               WriteToLog(2, 'Standard-Maske: "' + cID + '.BEM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+            endif,
+         else
+            WriteToLog(0, 'Standard-Maske: "' + cID + '.BEM" erfolgreich exportiert.', False),
+         endif,                                                                    prs('Standard-MaskenExport', cID),
+      endif,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Standard-Maske: "' + cID + '.BEM" konnte nicht exportiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importiert die übergebene Standard-Maske
+// @Result: null
+//******************************************************************************
+function ImportStdMasks(cMainFolder, cSubFolder, cName, cID)
+|
+   cFullFileName, oFile, cMenueData, bIsUpdate,
+   cCopyID, cCopyNewID, cCopyName, cCopyMenueData, cCopyBookDate, cCopyHistory
+|
+
+   startseq
+      cFullFileName := cMainFolder + cSubFolder + cID + '.BEM',
+                                                                                prs('Standard-MaskenImport', cName),
+      if not File(cFullFileName) then
+         SetError('Die Standard-Maske konnte im Angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+
+      cMenueData := ReadFileFromDisc(cFullFileName),
+
+      if empty(cMenueData) then
+         SetError('Das Standard-Maske konnte nicht geladen werden.'),
+      endif,
+
+      BeginSuspend(m_oDABFRM),
+      startseq,
+         m_oDABFRM.IndexName := 'MASK_ID',                                         //Index:MASK_ID
+         if DBSeek({cID}, m_oDABFRM) then
+            // Vorhandenen Datensatz Kopieren mit neuer ID und Systemdatum als Suffix
+            // Erst anschließend wird der Datensatz überschrieben
+            cCopyID              := m_oDABFRM:MASK_ID,
+            cCopyName            := Alltrim(m_oDABFRM:BEZ),
+            cCopyMenueData       := m_oDABFRM:DATA,
+            cCopyBookDate        := m_oDABFRM:BUCH_DATUM,
+            cCopyHistory         := m_oDABFRM:HISTORY,
+            DBAppend(m_oDABFRM),
+            while  m_oMemMaskenIDs.CbFindKey({cCopyID}) do
+               cCopyID           := PadL(ToString(Val(cCopyID) + 1), 9, '0'),
+            end,
+            m_oDABFRM:MASK_ID    := cCopyID,
+            cCopyName            := cCopyName + ' (bis ' + Formatdatetime('YYYY-MM-DD', date()) + ')',
+            m_oDABFRM:BEZ        := cCopyName,
+            m_oDABFRM:DATA       := cCopyMenueData,
+            m_oDABFRM:BUCH_DATUM := cCopyBookDate,
+            m_oDABFRM:HISTORY    := cCopyHistory,
+            DBPost(m_oDABFRM),
+            MyAppend(m_oMemMaskenIDs),
+            m_oMemMaskenIDs:MASK_ID := cCopyID,
+            MyPost(m_oMemMaskenIDs),
+
+            DBSeek({cID}, m_oDABFRM),
+            DBEdit(m_oDABFRM),
+            bIsUpdate := True, // Maske existiert -> aktualisierung
+         else
+            DBAppend(m_oDABFRM),
+            bIsUpdate := False, // Maske existiert noch nicht -> keine aktualisierung
+         endif,
+
+         m_oDABFRM:MASK_ID    := cID,         // ID der Maske
+         m_oDABFRM:BEZ        := cName,       // Name der Maske
+         m_oDABFRM:DATA       := cMenueData,  // Std-Maskendaten
+         m_oDABFRM:BUCH_DATUM := Date(),
+         DBPost(m_oDABFRM),
+      always
+         EndSuspend(m_oDABFRM),
+      stopseq,
+
+      WriteToLog(0, 'Standard-Maske : "' + cID + '.BEM" erfolgreich ' +
+                    iif(bIsUpdate, 'aktualisiert und überschriebene Maske mit heutigem Datum als Backup angelegt.', 'importiert.'), False),
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Standard-Maske : "' + cID + '.BEM" konnte nicht importiert werden.' + GetErrorText(), False),
+   stopseq,
+end,
+
+//##############################################################################
+// Ende der neuen Funktionen der Erweiterung
+//##############################################################################
+
+//******************************************************************************
+// Initialisieren der Variablen.
+// @Result: null
+//******************************************************************************
+function InitModel()
+   startseq
+      m_cBaseSourceOrDestinationPath := '', // Pfad zu den Ressourcen zurück setzen
+      // Leeren der Arrays
+      m_aPrograms           := {}, // Programme
+      m_aBrowser            := {}, // Browser
+      m_aMasks              := {}, // F12 Formulare
+      m_aIndMenue           := {}, // Individualmenüs
+      m_aStdMasks           := {}, // Standard-Masken
+      m_aLayouts            := {}, // Layouts
+      m_aBeleg              := {}, // Belege                                                                          // Erweiterung: Neue Arrays zurücksetzen
+      m_aCustomizingObjects := {},
+      m_aOptions            := {},
+   onerror
+      SetError('Fehler beim Initialisieren' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Einlesen der Package-Info und sortieren der Informationen.
+// @Result: null
+//******************************************************************************
+function TextFileToModel(bWritePackageInfo)
+|
+   cPackageInfo, i, j, cLine, cLineErrorInfo, cToken, cTokenType, cTokenValue,
+   cType, cName, cSaveFolder, cUseMask, cOption,
+
+   cID, cStdMask, cReport_Nr, cReport_Typ, cArchiv, cDialog, cArchivTyp, cUseProgOpt,
+   cBez, cReport_ID, cBeleg_Art, cReport_PR, cCopyToAll, cCopyToZero, cF12MaskAsJson,
+   cErrorText, aProgArray
+|
+
+   aProgArray := {},
+   startseq
+      if bWritePackageInfo then
+         WriteToLog(m_nMessage, 'Einlesen der Package-Info-Datei...', True),
+      endif,
+      // Package-Info-Datei einlesen
+      cPackageInfo := ReadFileFromDisc(m_cPackagePath),
+
+      if empty(cPackageInfo) then
+         SetError('Das angegebene Package enthält keine Informationen.'),
+      endif,
+
+      // Sicherstellen, dass Zeilen immer nur mit CRLF's getrennt sind
+      cPackageInfo := OnlyCRLF(cPackageInfo),
+
+      // Für jede Zeile in der Package-Info-Datei
+      for i := 1 to TokenCount(cPackageInfo, crlf) do
+
+         cLine          := AllTrim(StrToken(cPackageInfo, crlf, i)), // aktuelle Zeile einlesen
+         cLineErrorInfo := '(Line: ' + Str(i) + ')',
+
+         cType          := '',
+         cSaveFolder    := '',
+         cName          := '',
+         cUseMask       := '',
+         cUseProgOpt    := '',
+         cID            := '',
+         cBez           := '',
+         cReport_ID     := '',
+         cReport_Nr     := '',
+         cReport_Typ    := '',
+         cReport_PR     := '',
+         cBeleg_Art     := '',
+         cArchiv        := '',
+         cDialog        := '',
+         cArchivTyp     := '',
+         cCopyToAll     := '',
+         cCopyToZero    := '',
+         cF12MaskAsJson := '',
+
+
+         for j := 1 to TokenCount(cLine, ';') do
+            cToken      := Trim(Token(cLine, ';', j)),
+            cTokenType  := Upper(Trim(Token(cToken, '=', 1))),
+            cTokenValue := Trim(Token(cToken, '=', 2)),
+
+
+            case cTokentype
+               of 'PACKAGE_PATH' :: m_cBaseSourceOrDestinationPath := cTokenValue, // Ressourcen-Pfad
+                                    writeln('------------------------------> ' + m_cBaseSourceOrDestinationPath),
+               of 'TYPE'         :: cType          := cTokenValue,
+               of 'FOLDER'       :: cSaveFolder    := Utf8ToAnsi(cTokenValue),        // Ex-/Import-Ordnername (muss nicht angegeben werden)
+               of 'NAME'         :: cName          := cTokenValue,                    // Programmname/Browser-Name/Masken-Name laden
+               of 'USE_MASK'     :: cUseMask       := cTokenValue,                    // Bei Programmen Maske zuweisen?
+               of 'USE_POPT'     :: cUseProgOpt    := cTokenValue,                    // "OPTIONS" = Nr. des dem Programm zugewiesenen Ereignis in der DABPRG      // Erweiterung: neue Typen zum Auslesen der .bcp angelegt
+               of 'ID'           :: cID            := cTokenValue,                    // ID für die Menü-Nummer und Standard-Masken
+               of 'BEZ'          :: cBez           := cTokenValue,
+               of 'REPORT_ID'    :: cReport_ID     := cTokenValue,                    // Alternative ID eigens für Layouts (DB-Feldname)
+               of 'REPORT_NR'    :: cReport_Nr     := cTokenValue,                    // Report-Nr für die Layouts
+               of 'REPORT_TYP'   :: cReport_Typ    := cTokenValue,                    // Reporttyp für die Layouts
+               of 'REPORT_PR'    :: cReport_PR     := cTokenValue,
+               of 'BELEG_ART'    :: cBeleg_Art     := cTokenValue,
+               of 'ARCHIV'       :: cArchiv        := cTokenValue,                    // Archivierung J/N
+               of 'DIALOG'       :: cDialog        := cTokenValue,                    // Druck-Dialog J/N
+               of 'ARCTYP'       :: cArchivTyp     := cTokenValue,                    // Archiv-Typ 0-4
+               of 'COPYTOALL'    :: cCopyToAll     := cTokenValue,                    // Browser für alle User importieren J/N
+               of 'COPYTOZERO'   :: cCopyToZero    := cTokenValue,                    // Browser für User 0 importieren (Default Browser) J/N
+               of 'AS_JSON'      :: cF12MaskAsJson := cTokenValue,                    // F12 Maske im Json-Format importieren und exportieren
+               of 'OPTION'       :: cOption        := cTokenValue,
+            endcase,
+         next,
+
+         // Validieren der Daten:
+         if not empty(cType) then
+            if cType <> 'MENUE' then                                                                                         // Erweiterung: Abfrage - Indi.Menüs haben keinen "Namen" der übergeben wird
+               if empty(cName) and empty(cBez) and empty(cOption) then                                                                                          //----> Note: Beim Import des Individualmenüs ist die Bezeichnung im Browser leer (Indi-M. Editor)
+                  SetError('Es wurde weder "NAME" ,"BEZ" oder "OPTION" angegeben'),                                                               //            Einmal in den Editmodus und den Datensatz speichern behebt das Problem
+               endif,
+            endif,
+
+            // Prüft, ob es beim Import oder Export eine Überschneidung von Programmnamen gibt
+            // (Alte und neue Logik, Beispiel "Test\Programm" und "Test_Programm")
+            if cType == 'PROG' AND seekinarray(GetWindowsFileName(cName), aProgArray) > 0 then
+               cErrorText := 'Überschneidung!' + crlf + crlf +
+                             'Das Package kann nicht eingelesen werden, da bereits ein Programm mit dem selben Namen (' + cName + ') vorhanden ist.' + crlf +
+                             'Information zum Fehler:' + crlf +
+                             'Intern werden alle "\" in "_" umgewandelt. Beispiel:' + crlf +
+                             'Die Programme "Test_Programm" und "Test\Programm" führen beim Export zur Überschneidung!',
+               SetError(cErrorText),
+            endif,
+
+            // Daten dem jeweiligen Array hinzufügen
+            case cType
+               of 'PROG'    :: AAdd(m_aPrograms, {cSaveFolder, cName, cUseMask, cUseProgOpt}),                                // Programme
+                               // Array wird gefüllt für die Prüfung auf Überschneidungen
+                               AAdd(aProgArray,GetWindowsFileName(cName)),
+               of 'BROW'    :: AAdd(m_aBrowser,  {cSaveFolder, cName, cCopyToAll, cCopyToZero}),                              // Browser
+               of 'MASK'    :: AAdd(m_aMasks,    {cSaveFolder, cName, cF12MaskAsJson}),                                       // F12 Formulare
+
+               of 'MENUE'   :: AAdd(m_aIndMenue, {cSaveFolder, cID}),                                                         // ind. Menüs
+               of 'STDMASK' :: AAdd(m_aStdMasks, {cSaveFolder, cName, cID}),                                                  // Standard-Masken
+               of 'LAYOUT'  :: AAdd(m_aLayouts,  {cSaveFolder, cBez,  cReport_ID, cReport_Nr, cReport_Typ}),                  // Layouts
+               of 'BELEG'   :: AAdd(m_aBeleg,    {cSaveFolder, cBez,  cReport_PR, cBeleg_Art, cArchiv, cDialog, cArchivTyp}), // Beleg
+               of 'CUSTOMIZING-OBJECTS' :: AAdd(m_aCustomizingObjects, {cSaveFolder, cName}),
+               of 'OPTIONS' ::  KVU_SET(m_aOptions, cOption, true),
+            endcase,
+         endif,
+      next,
+   onerror
+      SetError('Fehler beim Einlesen der Package-Info' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Anpassungen an den Angaben aus dem Model. z. B. Pfad-Erweiterungen nur mit
+// einem Backslash am Ende.
+// @Result: null
+//******************************************************************************
+function ValidateModel(bWritePackageInfo)
+| i |
+
+   //***************************************************************************
+   // Diese Funktion sucht nach der Angabe des Package-Pfads in der
+   // übergebenen Zeile. Wird hier ein Absoluter Pfad angegeben wird dieser
+   // übernommen.
+   // Wird nur ein relativer Pfad angegeben z.B. Testprogramm\ dann wird der
+   // Pfad der Packagedatei verwendet und der ermittelte Teil angehängt.
+   // Wird gar kein Pfad angegeben wird der Pfad der Package-Datei verwendet.
+   // @Result: null
+   //***************************************************************************
+   function GetPackageDirectory(cPath)
+      startseq
+         Result := '',
+
+         if empty(cPath) then
+            Result := ExtractFilePath(m_cPackagePath), // Pfad der Packagedatei verwenden
+         else
+            if At(':\', cPath) > 0 then // Absoluter Pfad?
+               Result := ValidDirPath(cPath),
+            else
+               Result := ExtractFilePath(m_cPackagePath) + ValidDirPath(cPath),
+            endif,
+         endif,
+      onerror
+         SetError('Fehler beim Ermitteln des Ressourcen-Pfads.' + crlf + GetErrorText()),
+      stopseq,
+   end,
+
+   // Ressourcen-Pfad anpassen
+   m_cBaseSourceOrDestinationPath := GetPackageDirectory(m_cBaseSourceOrDestinationPath),
+
+   // Sicherstellen, dass alle angegebenen Unterverzeichnisse nur einen '\' am Ende enthalten
+   // Für alle Programme,...
+   for i := 1 to ALen(m_aPrograms) do
+      m_aPrograms[i, 1] := ValidDirPath(m_aPrograms[i, 1]),
+   next,
+   // ...Browser...
+   for i := 1 to ALen(m_aBrowser) do
+      m_aBrowser[i, 1] := ValidDirPath(m_aBrowser[i, 1]),
+   next,
+   // ...Masken...
+   for i := 1 to ALen(m_aMasks) do
+      m_aMasks[i, 1] := ValidDirPath(m_aMasks[i, 1]),
+   next,
+
+   // Erweiterungen
+   // ...Individual-Menüs...
+   for i := 1 to ALen(m_aIndMenue) do
+      m_aIndMenue[i, 1] := ValidDirPath(m_aIndMenue[i, 1]),
+   next,
+   // ...Standard-Masken...
+   for i := 1 to ALen(m_aStdMasks) do
+      m_aStdMasks[i, 1] := ValidDirPath(m_aStdMasks[i, 1]),
+   next,
+   // ...Layouts...
+   for i := 1 to ALen(m_aLayouts) do
+      m_aLayouts[i, 1] := ValidDirPath(m_aLayouts[i, 1]),
+   next,
+   // ...und Belege.
+   for i := 1 to ALen(m_aBeleg) do
+      m_aBeleg[i, 1] := ValidDirPath(m_aBeleg[i, 1]),
+   next,
+   // ...und Customizing-Objects.
+   for i := 1 to ALen(m_aCustomizingObjects) do
+      m_aCustomizingObjects[i, 1] := ValidDirPath(m_aCustomizingObjects[i, 1]),
+   next,
+   // Erweiterungen
+
+
+   if bWritePackageInfo then
+      WriteToLog(m_nMessage, 'Insgesamt: ' +
+                 Str(ALen(m_aPrograms)) + ' Programme, ' +
+                 Str(ALen(m_aBrowser)) + ' Browser, ' +
+                 Str(ALen(m_aMasks)) + ' Masken, ' +
+
+                 // Erweiterungen
+                 Str(ALen(m_aIndMenue)) + ' Menüs, ' +
+                 Str(ALen(m_aStdMasks)) + ' Standard-Masken, ' +
+                 Str(ALen(m_aLayouts))  + ' Layouts, ' +
+                 Str(ALen(m_aBeleg))    + ' Belege und ' +
+                 Str(ALen(m_aCustomizingObjects)) + ' customizing-objects Dateien ' +
+                 // Erweiterungen
+
+                 'in der Package-Info-Datei gefunden', False),
+   endif,
+end,
+
+
+//******************************************************************************
+// Import oder Export für die eingelesenen Informationen durchführen.
+// @Result: null
+//******************************************************************************
+function ProcessModel(bIsExport, bIgnoreReadOnly)
+|
+  i, j,
+  oQuery, oDABR70, oBelegImportDM, oBelegExportDM, oTXT_ImportFile, oTXT_ExportFile, oObj,
+  cPathImportFile, cFilePath, cWhere, cSQL, cFileName,
+  aBelegInfos,
+  cNein, cJa
+|
+
+   cNein := 'N',
+   cJa   := 'J',
+   j     :=   0,
+
+   startseq
+      iif(empty(m_cBaseSourceOrDestinationPath), SetError('Es konnte kein Ressourcen-Pfad ermittelt werden'),),
+      DBStartTrans(m_oDM.ADSConnection), // Transaktion für den gesamten Import oder Export
+      startseq
+         // Programme Importieren oder Exportieren
+         if ALen(m_aPrograms) > 0 then
+            WriteToLog(m_nMessage, iif(bIsExport, 'Export ', 'Import ') + 'der Programme', True),
+            for i := 1 to ALen(m_aPrograms) do
+               if bIsExport then
+                  ExportProgram(m_cBaseSourceOrDestinationPath, m_aPrograms[i, 1], m_aPrograms[i, 2], m_aPrograms[i, 4], bIgnoreReadOnly),
+               else                                          // FOLDER          NAME            USE_MASK
+                  ImportProgram(m_cBaseSourceOrDestinationPath, m_aPrograms[i, 1], m_aPrograms[i, 2], m_aPrograms[i, 3], m_aPrograms[i, 4]),
+               endif,
+            next,
+         endif,
+
+         // Browser Importieren oder Exportieren
+         if ALen(m_aBrowser) > 0 then
+            WriteToLog(m_nMessage, iif(bIsExport, 'Export ', 'Import ') + 'der Browser', True),
+            for i := 1 to ALen(m_aBrowser) do
+               if bIsExport then
+                  ExportBrowser(m_cBaseSourceOrDestinationPath, m_aBrowser[i, 1], m_aBrowser[i, 2], bIgnoreReadOnly),
+               else                                          // FOLDER          NAME
+                  // Importierte Browser, die auf andere User kopiert werden sollen, werden hier in Arrays gespeichert und nach der Transaktion kopiert
+                  if m_aBrowser[i,3] <> '' or m_aBrowser[i,4] <> '' then
+                     // Array für das Kopieren an Alle User
+                     if Upper(m_aBrowser[i, 3]) = cJa and Upper(m_aBrowser[i, 4]) = cJa then
+                        ImportBrowser(m_cBaseSourceOrDestinationPath, m_aBrowser[i, 1], m_aBrowser[i, 2], c_usr),
+                        aAdd(m_aBrowsersToCopyToTotal, m_aBrowser[i, 2]),
+                        m_iCopyTotal++,
+                     else
+                        // Array für das Kopieren an alle User ausser User 0
+                        if Upper(m_aBrowser[i, 3]) = cJa and (Upper(m_aBrowser[i, 4]) = cNein or Upper(m_aBrowser[i,4]) = '') then
+                           ImportBrowser(m_cBaseSourceOrDestinationPath, m_aBrowser[i, 1], m_aBrowser[i, 2], c_usr),
+                           aAdd(m_aBrowsersToCopyToAll, m_aBrowser[i, 2]),
+                           m_iCopyAll++,
+                        else
+                           // Array für das Kopieren an User 0
+                           if (Upper(m_aBrowser[i, 3]) = cNein or Upper(m_aBrowser[i,3]) = '') and Upper(m_aBrowser[i, 4]) = cJa then
+                              ImportBrowser(m_cBaseSourceOrDestinationPath, m_aBrowser[i, 1], m_aBrowser[i, 2], '000'),
+                           endif,
+                        endif,
+                     endif,
+                  else
+                     // Sobald keine Angaben gemacht werden soll nur auf eigenen User importiert werden
+                     ImportBrowser(m_cBaseSourceOrDestinationPath, m_aBrowser[i, 1], m_aBrowser[i, 2], c_usr),
+                  endif,
+               endif,
+            next,
+         endif,
+
+         // Masken Importieren oder Exportieren
+         if ALen(m_aMasks) > 0 then
+            WriteToLog(m_nMessage, iif(bIsExport, 'Export ', 'Import ') + 'der Masken', True),
+            for i := 1 to ALen(m_aMasks) do
+               if bIsExport then
+                  ExportMask(m_cBaseSourceOrDestinationPath, m_aMasks[i, 1], m_aMasks[i, 2], m_aMasks[i, 3] == 'J', bIgnoreReadOnly),
+               else
+                  ImportMask(m_cBaseSourceOrDestinationPath, m_aMasks[i, 1], m_aMasks[i, 2], m_aMasks[i, 3] == 'J'),
+               endif,
+            next,
+         endif,
+
+         //#####################################################################
+         // Erweiterungen
+         //#####################################################################
+         // Menüs Importieren oder Exportieren
+         if ALen(m_aIndMenue) > 0 then
+            WriteToLog(0, iif(bIsExport, 'Export ', 'Import ') + 'der Menüs', True),
+            for i := 1 to ALen(m_aIndMenue) do
+               if bIsExport then
+                  ExportMenue(m_cBaseSourceOrDestinationPath, m_aIndMenue[i, 1], m_aIndMenue[i, 2], bIgnoreReadOnly),
+               else                                       // FOLDER              ID
+                  ImportMenue(m_cBaseSourceOrDestinationPath, m_aIndMenue[i, 1], m_aIndMenue[i, 2]),
+               endif,
+            next,
+         endif,
+
+         // Layouts Importieren oder Exportieren
+         if ALen(m_aLayouts) > 0 then
+            WriteToLog(0, iif(bIsExport, 'Export ', 'Import ') + 'der Layouts', True),
+            for i := 1 to ALen(m_aLayouts) do
+               if bIsExport then
+                  ExportLayouts(m_cBaseSourceOrDestinationPath, m_aLayouts[i, 1], m_aLayouts[i, 2], m_aLayouts[i, 3], m_aLayouts[i, 4], m_aLayouts[i,5],bIgnoreReadOnly),
+               else                                       // FOLDER              Name               ID                ReportNr
+                  ImportLayouts(m_cBaseSourceOrDestinationPath, m_aLayouts[i, 1], m_aLayouts[i, 2], m_aLayouts[i, 3], m_aLayouts[i, 4], m_aLayouts[i,5]),
+               endif,
+            next,
+         endif,
+
+         // Standard-Masken Importieren oder Exportieren
+         if ALen(m_aStdMasks) > 0 then
+            WriteToLog(0, iif(bIsExport, 'Export ', 'Import ') + 'der Standard-Masken', True),
+            for i := 1 to ALen(m_aStdMasks) do
+               if bIsExport then
+                  ExportStdMasks(m_cBaseSourceOrDestinationPath, m_aStdMasks[i, 1], m_aStdMasks[i, 2], m_aStdMasks[i, 3], bIgnoreReadOnly),
+               else                                       // FOLDER                 Name               ID
+                  ImportStdMasks(m_cBaseSourceOrDestinationPath, m_aStdMasks[i, 1], m_aStdMasks[i, 2], m_aStdMasks[i, 3]),
+               endif,
+            next,
+         endif,
+
+         // Belege Importieren oder Exportieren
+         if ALen(m_aBeleg) > 0 then
+            WriteToLog(0, iif(bIsExport, 'Export ', 'Import ') + 'der Belege', True),
+            // Where-Statement bilden
+            cWhere := '',
+            for i := 1 to ALen(m_aBeleg) do
+               cWhere          += iif(empty(cWhere), " WHERE REPORT_PR = '" + AllTrim(m_aBeleg[i, 3]) +"'", " or REPORT_PR = '" + AllTrim(m_aBeleg[i, 3]) +"'"),
+               cPathImportFile := ExpandUNCFileName(m_cBaseSourceOrDestinationPath) + Alltrim(m_aBeleg[i, 1]),              // In UNC-Pfad umwandeln
+            next,
+
+            cFilePath          := cPathImportFile + 'BELEGE\Belege.txt',
+
+            if not bIsExport then
+               // Import der .TXT
+               if File(cFilePath) then
+                  oBelegImportDM         := CreateObject('TbeDbGet', 'BELIMPDM'),
+                  startseq
+                     oDABR70             := DbGetTable(oBelegImportDM, waDABR70),
+                     oTXT_ImportFile     := FOpen(cFilePath, FO_Read),
+                     if not eof(oTXT_ImportFile) and not bof(oTXT_ImportFile) then
+                        while not EoF(oTXT_ImportFile) do
+                           aBelegInfos := {},
+                           aBelegInfos := StrToArr(FReadLN(oTXT_ImportFile)),
+                           oDABR70.CbIndexname  := 'BELEG_ART',
+                           if oDABR70.CbFindKey({aBelegInfos[2]}) then
+                              if oDABR70:REPORT_PR == aBelegInfos[1] then
+                                 oDABR70.CbEdit(),
+                              else
+                                 if aBelegInfos[1] == Alltrim(oDABR70:REPORT_PR) then
+                                    WriteToLog(m_nInfo, 'Der Beleg "' + aBelegInfos[1] + '" mit der BELEG_ART "' + Str(aBelegInfos[2]) + '" existiert bereits als "' + Alltrim(oDABR70:REPORT_PR) + '".', False),
+                                 else
+                                    WriteToLog(m_nError, 'Der Beleg "' + aBelegInfos[1] + '" mit der BELEG_ART "' + Str(aBelegInfos[2]) + '" existiert bereits als "' + Alltrim(oDABR70:REPORT_PR) + '".', False),
+                                    m_nErrorCount++,
+                                 endif,
+                              endif,
+                           else
+                              oDABR70.CbIndexname := 'REPORT_PR',
+                              if not oDABR70.CbFindKey({aBelegInfos[1]}) then
+                                 oDABR70.CbAppend(),
+                              else
+                                 WriteToLog(m_nError, 'Der Beleg "' + aBelegInfos[1] + '" existiert bereits mit der BELEG_ART "' + Str(aBelegInfos[2]) + '"', False),
+                                 m_nErrorCount++,
+                              endif,
+                           endif,
+                           if Editmodes(oDABR70) then
+                              oDABR70:REPORT_PR := aBelegInfos[1],
+                              oDABR70:BELEG_ART := aBelegInfos[2],
+                              oDABR70:BEZ       := aBelegInfos[3],
+                              oDABR70:MEMO      := aBelegInfos[4],
+                              oDABR70:BITMAP    := aBelegInfos[5],
+                              oDABR70:ARCH_TYP  := aBelegInfos[6],
+                              oDABR70:AR_OHNE   := aBelegInfos[7],
+                              oDABR70:DLG_OHNE  := aBelegInfos[8],
+                              oDABR70:SCANSET   := aBelegInfos[9],
+                              oDABR70.CbPost(),
+                              WriteToLog(m_nMessage, 'Beleg : "' + aBelegInfos[1] + '" erfolgreich importiert.', False),
+                           endif,
+                        end,
+                     else
+                        WriteToLog(m_nError, 'Die Datei Belege.txt für den Import der Belege ist leer. Import abgebrochen?', False),
+                        m_nErrorCount++,
+                     endif,
+                  always
+                     DestroyObject(oBelegImportDM),
+                     Fclose(oTXT_ImportFile),
+                  stopseq,
+               else
+                  WriteToLog(m_nError, 'Die Datei "Belege.TXT" welche für den Import benötigt wird konnte nicht gefunden werden; Der Default-Pfad ist im Verzeichnis der .BCP Datei im Ordner "BELEGE"', False),
+                  m_nErrorCount++,
+               endif,
+            else
+               // Export der DABR70 in eine .TXT
+               oBelegExportDM         := CreateObject('TbeDbGet', 'BELEXPDM'),
+               startseq
+                  oDABR70             := DbGetTable(oBelegExportDM, waDABR70),
+                  oDABR70.CbIndexname := 'REPORT_PR',
+
+                  // SQL initialisieren
+                  cSQL                := '',
+                  oQuery              := CreateObject('TBeAdsQuery', 'DABR70QUERY'),
+                  oQuery.Active := false,
+                  cSQL                := 'SELECT * FROM "DABR70.ADT" DABR70' + cWhere,
+                  oQuery.SQL          := cSQL,
+                  oQuery.Active       := true,
+                  oQuery.CbFirst(),
+
+                  oTXT_ExportFile     := FOpen(cFilePath, fo_Create),
+
+                  if not nods(oQuery) then
+                     while not oQuery.CbEoF do
+                        aBelegInfos         := {},
+                        aAdd(aBelegInfos, Alltrim(oQuery:REPORT_PR)),
+                        aAdd(aBelegInfos, oQuery:BELEG_ART),
+                        aAdd(aBelegInfos, Alltrim(oQuery:BEZ)),
+                        aAdd(aBelegInfos, oQuery:MEMO),
+                        aAdd(aBelegInfos, oQuery:BITMAP),
+                        aAdd(aBelegInfos, oQuery:ARCH_TYP),
+                        aAdd(aBelegInfos, oQuery:AR_OHNE),
+                        aAdd(aBelegInfos, oQuery:DLG_OHNE),
+                        aAdd(aBelegInfos, oQuery:SCANSET),
+                        writeln(ArrToStr(aBelegInfos)),
+                        FWriteLn(oTXT_ExportFile, ArrToStr(aBelegInfos)),
+                        oQuery.CbNext(),
+                     end,
+                     WriteToLog(m_nMessage, 'Die Belege wurden erfolgreich in den Pfad: "' + cFilePath + '" exportiert.', False),
+                  else
+                     WriteToLog(m_nError, 'Belege für den Export nicht im System gefunden! Export dennoch durchgeführt!', False),
+                  endif,
+               always
+                  DestroyObject(oBelegExportDM),
+                  DestroyObject(oQuery),
+                  FClose(oTXT_ExportFile),
+               stopseq,
+            endif,
+         endif,
+
+         if Alen(m_aCustomizingObjects) > 0 then
+            if CompareBeVersion(mBeVersion, '7.2.1.2') then
+               for i := 1 to Alen(m_aCustomizingObjects) do
+                  cFileName := m_cBaseSourceOrDestinationPath + m_aCustomizingObjects[i, 1] + m_aCustomizingObjects[i, 2],
+
+                        // language - Labels
+                  ImportOrExportLanguages(m_oDM, if(bIsExport, 'EXPORT', 'IMPORT'), cFileName),
+               next,
+            else
+               m_nErrorCount++,
+               WriteToLog(m_nError, 'Export und Import von customizing-objects erst ab Version 7.2.1.2 möglich!', true),
+            endif,
+         endif,
+
+         //#####################################################################
+         // Erweiterungen Ende
+         //#####################################################################
+
+         // Commit ist nur erlaubt wenn keine Fehler aufgetreten sind!
+         if m_nErrorCount = 0 then
+            DBCommit(m_oDM.ADSConnection), // Alle Änderungen bestätigen
+         endif,
+      always
+         if DBInTrans(m_oDM.ADSConnection) then // Noch in Transaktion? => Fehler
+            DBRollBack(m_oDM.ADSConnection),
+         endif,
+         // Wenn Browser mit Option "cCopyToAll" oder "cCopyToZero" vorhanden, dann nach der Transaktion die jeweiligen Browser auf die
+         // jeweiligen User kopieren // MUSS NACH TRANSAKTION STATTFINDEN!!
+         if m_iCopyTotal > 0 then
+            CopyBrowsersToTotalCallLoop(m_aBrowsersToCopyToTotal, m_aBrowserCopyLog),                      // Auf alle User inklusive User 0 kopieren
+         endif,
+         if m_iCopyAll > 0 then
+            CopyBrowsersToAllCallLoop(m_aBrowsersToCopyToAll, m_aBrowserCopyLog),                       // Auf alle User exklusive User 0 kopieren
+         endif,
+         DBResetDM(m_oDM),
+      stopseq,
+   onerror,
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(m_nError, 'Fehler beim Verarbeiten der Package-Info. ' + crlf + GetErrorText(), False),
+      GU_ShowStdErrorMessage('Fehler in der Funktion: "ProcessModel"', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Aufruf der Export- oder Import-Funktionalität für sämtliche relevanten
+// Daten aus der Package-Info-Datei
+//
+// @result: boolean - Die Funktion gibt zurück, ob die ausgeführte Operation
+//                    (Import oder Export) erfolgreich war.
+//******************************************************************************
+function ExportOrImport(bIsExport, bIgnoreReadOnly)
+| i |
+
+   startseq
+      ClearLog(),
+      m_nErrorCount := 0, // ErrorCount zurück setzen bevor ex- oder importiert wird
+      WriteToLog(m_nMessage, iif(bIsExport, 'Export ', 'Import ') + 'gestartet...', True),
+      InitModel(),
+      TextFileToModel(true),
+      ValidateModel(true),
+      if not bIsExport then
+         m_oMemMaskenIDs := CreateAndFillMemMaskenIDs(), // TODO: Eliminieren, kostet in größeren Systemen sehr viel sinnlose Zeit
+      endif,
+      ProcessModel(bIsExport, bIgnoreReadOnly),
+   always
+      result := m_nErrorCount = 0,
+      if result then
+         WriteToLog(m_nMessage, 'Package wurde erfolgreich ' + iif(bIsExport, 'exportiert.', 'importiert.'), True),
+
+         if Alen(m_aBrowserCopyLog) > 0 and not bIsExport then
+            WriteToLog(m_nMessage, 'Gewählte Browser wurden auf gewählte User kopiert: ', True),
+            for i := 1 to aLen(m_aBrowserCopyLog) do
+               WriteToLog(m_nMessage, m_aBrowserCopyLog[i], False),
+            next,
+         endif,
+      else
+         WriteToLog(m_nError, 'Package konnte nicht erfolgreich verarbeitet werden. ' + crlf +
+                    'Es ' +
+                    iif(m_nErrorCount = 1, 'trat ', 'traten ') +
+                    'insgesamt ' + Str(m_nErrorCount) + ' Fehler auf.', True),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+
+   //***************************************************************************
+   function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+      oControl.ReadOnlyStateFromField := not bIsReadOnly,
+      oControl.ReadOnly               := bIsReadOnly,
+   end,
+
+   // Enabled-Zustand der Actions steuern
+   A_SelectPackage.Enabled := not m_bIsProcessing,
+   A_Import.Enabled        := not m_bIsProcessing,
+   A_Export.Enabled        := not m_bIsProcessing,
+   A_Cancel.Enabled        := not m_bIsProcessing,
+
+   // ReadOnly-Zusatand der Eingabe-Controls steuern
+   InputControl_SetReadOnlyState(edt_PackagePath, m_bIsProcessing),
+   chk_IgnoreReadOnly.Enabled := not m_bIsProcessing,
+end,
+
+//******************************************************************************
+// Datenmodul erstellen und Notwendige Tabellen öffnen
+//******************************************************************************
+function OpenDatabase(oOwner:O:=nil)
+   result := CreateObject('TBeDbGet', 'DM_PackageManager_ImportExportGUI', oOwner),
+   startseq
+      // DabPRG - Programme
+      m_oDabPRG := DBGetTable(result, waDabPRG),
+      // DabBRO - Browser
+      m_oDabBRO := DBGetTable(result, waDabBRO),
+      // DabFIL - Formulare
+      m_oDabFIL := DBGetTable(result, waDabFIL),
+
+      //Erweiterungen
+      // DABFRM - Standard-Masken
+      m_oDABFRM := dbgettable(result, waDABFRM, 'DABFRM'),
+      // DabR10 - Layouts
+      m_oDABR10 := DBGetTable(result, waDABR10, 'DABR10'),
+      // DabR70 - Belege
+      m_oDABR70 := DBGetTable(result, waDABR70, 'DABR70'),
+      //Erweiterungen
+   onerror
+      if empty(oOwner) then
+         DestroyObject(result),
+      endif,
+      Raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Übergabeparameter verarbeiten
+// Wird verwendet, wenn das Programm mit einer GFU_*_CustomInfo()-Funktion auf-
+// gerufen wird.
+// Dabei wird Paramter 4 (P4) für die Übergabe der Parameter als Array genutzt.
+// Die im Array enthaltenen Werte müssen per KVU_Set()/KVU_Get() ins Array
+// geschrieben bzw. aus dem Array gelesen werden.
+//
+// @Result: null - keine Rückgabe
+//******************************************************************************
+function ParseParams()
+| cProcessPackageFilePath, cOperation |
+
+   if ValType(m_aParams) == 'A' then
+      cProcessPackageFilePath := KVU_Get(m_aParams, 'packageImportExport.packageFilePath', ''),
+      if not empty(cProcessPackageFilePath) then
+         m_bCommandLineMode_IsActive := true,
+         m_cPackagePath              := cProcessPackageFilePath,
+         cOperation                  := KVU_Get(m_aParams, 'packageImportExport.operation', 'export'),
+         case lower(cOperation)
+            of 'export' :: m_bCommandLineMode_IsExport := true,
+            of 'import' :: m_bCommandLineMode_IsExport := false,
+            otherwise
+               SetError('Ungültige Operation <' + cOperation + '>: Erwarte <export> oder <import>'),
+         endcase,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion generiert anhand des Windows-Usernamen und dem Computernamen
+// des Clients einen eindeutige ID mithilfe dessen der entsprechende Client
+// identifiziert werden kann.
+//
+// @result: string - Client-ID
+//******************************************************************************
+function GenerateClientId()
+   result := WinUserName() + '_' + GetEnv('COMPUTERNAME'),
+end,
+
+//******************************************************************************
+// Diese Funktion speichert Client-spezifische Einstellungen wie z.B. der
+// Basis-Pfad für Repositories.
+//
+// @result: null
+//******************************************************************************
+function SaveSettings()
+|
+   cClientId, nPosClientSettings, aClientSettings, aAllClientSettings,
+   cSettingsString
+|
+
+   // Client spezifische Einstellungen speichern
+   startseq
+      cClientId       := GenerateClientId(),
+      aClientSettings := {
+         cClientId,
+         {
+            m_cPredefinedRepoBasePath,
+            Trim(cmb_Repositories.Value),
+            Trim(edt_PackagePath.Text),
+            pnl_MainBack.Width,
+            edt_InfoText.Visible
+         }
+      },
+
+      // Vor dem Speichern müssen die aktuellen Einstellungen aller Clients
+      // geladen werden um zu Vermeiden, dass ggf. Einstellungen anderer Clients
+      // überschrieben werden.
+      cSettingsString := GetBeParam(m_cClientSettingsKey),
+      if Empty(cSettingsString) then
+         cSettingsString := ArrToStr({aClientSettings}),
+      else
+         aAllClientSettings := StrToArr(cSettingsString),
+         nPosClientSettings := SeekInDimArray(cClientId, aAllClientSettings, 1),
+         if nPosClientSettings = -1 then
+            AAdd(aAllClientSettings, aClientSettings),
+         else
+            aAllClientSettings[nPosClientSettings] := aClientSettings,
+         endif,
+         cSettingsString := ArrToStr(aAllClientSettings),
+      endif,
+
+      SetBeParam(m_cClientSettingsKey, cSettingsString),
+   onerror
+      SetError('Fehler beim Speichern der Client spezifischen Einstellungen' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion lädt die folgenden Client-spezifischen Einstellungen:
+//   * Basis-Pfad für Repositories
+//   * Zuletzt verwendetes Repository
+//   * Zuletzt verwendeter Package-Pfad
+//   * Fenster-Breite
+//
+// @result: null
+//******************************************************************************
+function LoadSettings()
+| cSettingsString, nPosClientSettings, aClientSettings, aAllClientSettings |
+
+   // Client spezifische Einstellungen ermitteln
+   cSettingsString := GetBeParam(m_cClientSettingsKey),
+   if not Empty(cSettingsString) then
+      aAllClientSettings := StrToArr(cSettingsString),
+      nPosClientSettings := SeekInDimArray(GenerateClientId(), aAllClientSettings, 1),
+
+      // Sicherstellen, dass für den aktuellen Client Einstellungen verfügbar sind
+      if nPosClientSettings <> -1 and ALen(aAllClientSettings[nPosClientSettings]) > 1 then
+         // Client spezifische Einstellungen extrahieren und anwenden
+         aClientSettings := aAllClientSettings[nPosClientSettings, 2],
+         // Einstellung an Position 1: Vordefinierter Basis-Pfad für Repositories
+         if ALen(aClientSettings) > 0 then
+            m_cPredefinedRepoBasePath := aClientSettings[1],
+         endif,
+         // Einstellung an Position 2: Vordefinierter Repository-Pfad
+         if ALen(aClientSettings) > 1 then
+            m_cPredefinedRepoPath := aClientSettings[2],
+         endif,
+         // Einstellung an Position 3: Vordefinierter Package-Pfad
+         if ALen(aClientSettings) > 2 then
+            m_cDefaultPackagePath := aClientSettings[3],
+         endif,
+         // Einstellung an Position 4: Fenster-Breite
+         if ALen(aClientSettings) > 3 then
+            pnl_MainBack.Width := aClientSettings[4],
+         endif,
+         // Einstellung an Position 5: Info-Text anzeigen // Diese Einstellung wurde schon einmal vergeben (Boolean), wird jetzt nicht mehr genutzt
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Alle Package-Datein im Standard-SVN Pfad ermitteln und der Combo hinzufügen
+//******************************************************************************
+function FillDefaultPaths()
+|
+   i, cFileName, cFilePath, nMaxLen, cLastFolder, cCurrFolder, aPackageFiles
+|
+   // Noch keine Packages ermittelt
+   if Alen(m_aDefaultPackageFiles) = 0 then
+      cLastFolder   := '',
+      aPackageFiles := {},
+      m_aDefaultPackageFiles := PathSeek('*.BCP', m_cPredefinedRepoPath), // alle Package-Dateien im SVN Pfad
+      // Den längsten Datei-Namen ermitten
+      for i :=1 to Alen(m_aDefaultPackageFiles) do
+         nMaxLen := Max(nMaxLen, Len(ExtractFileName(m_aDefaultPackageFiles[i]))),
+      end,
+
+      for i :=1 to Alen(m_aDefaultPackageFiles) do
+         // Dateiname ohne Endung ermitteln
+         cFileName := ExtractFileName(m_aDefaultPackageFiles[i]),
+         cFileName := SubStr(cFileName, 1, Rat('.', cFileName) - 1),
+
+         cFilePath := ExtractFilePath(m_aDefaultPackageFiles[i]),
+
+         // Den ersten Ordner innerhalb der SVN Struktur ermitteln
+         cCurrFolder := SubStr(cFilePath, Len(m_cPredefinedRepoPath) + 2, Len(cFilePath)),
+         cCurrFolder := SubStr(cCurrFolder, 1, At('\', cCurrFolder) - 1),
+
+         // Ordner als Trenner einfügen
+         if cLastFolder <> cCurrFolder then
+            AAdd(aPackageFiles,  cCurrFolder),
+            cLastFolder := cCurrFolder,
+         endif,
+
+         AAdd(aPackageFiles,
+              StringOfChar(' ', 5) + PadR(cFileName, nMaxLen, ' ') +
+              Right(cFilePath, ALen(cFilePath) - ALen(m_cPredefinedRepoPath) - ALen(cCurrFolder) - 2) +
+              Chr(9) + m_aDefaultPackageFiles[i]),
+      next,
+
+      m_aDefaultPackageFiles := aPackageFiles,
+      cmb_DefaultPaths.Items := m_aDefaultPackageFiles,
+   endif,
+end,
+
+//******************************************************************************
+// Standard-Package Dateien aus "C:\be_svn" ermitteln, und in Auswahl-Combo übernehmen
+// Achtung: u.U. klappt das nicht (z.B. auf einem Terminalserver, da auf
+//                                 das Default-Verzeichnis nicht zugegriffen
+//                                 werden kann)
+// @Result: null
+//******************************************************************************
+function InitPackageList()
+   m_aDefaultPackageFiles := {},
+   startseq
+      SetCursor(crHourGlass),
+      startseq
+         FillDefaultPaths(),
+      always
+         SetCursor(crDefault),
+      stopseq,
+   onerror
+      WriteToLog(m_nWarning, 'Fehler beim Ermitteln der lokal unter "' + m_cPredefinedRepoPath + '" verfügbaren Package-Dateien. ' + crlf + GetErrorText(), true),
+   stopseq,
+end,
+
+//******************************************************************************
+// Verfügbare Repositories im Verzeichnis cRepoBasePath ermitteln.
+//
+// Parameter:
+//  - cRepoBasePath:
+//     Basis-Pfad in dem sich die Repositories befinden
+//  - bFilterList:
+//     Filtert ggf. die Liste der Repositories nach der in aAllowedRepositories
+//     angegebenen Repository-Namen
+//  - aAllowedRepositories:
+//     Liste aller erlaubten Repositories
+//
+// @result: array - Eine Liste aller verfügbarer Repositories (absolute Pfade)
+//******************************************************************************
+function DetermineRepositoryList(cRepoBasePath:C, bFilterList:L, aAllowedRepositories:A)
+| aFileList, i, cRepositoryName |
+
+   result := {},
+   aFileList := DirArray(cRepoBasePath),
+   for i := 1 to ALen(aFileList) do
+      if aFileList[i, 4] = faDirectory then
+         cRepositoryName := aFileList[i, 1],
+         if (not bFilterList or
+             (SeekInArray(cRepositoryName, aAllowedRepositories) <> -1)) and
+            cRepositoryName <> '.' and cRepositoryName <> '..' then
+            AAdd(result, cRepoBasePath + '\' + cRepositoryName),
+         endif,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion lädt die Liste an verfügbaren Repositories und versucht das
+// zuletzt genutzte Repository zu setzen, sofern dieses existiert und in der
+// Liste der verfügbaren Repositories vorhanden ist.
+//
+// @result: null
+//******************************************************************************
+function RestoreRepositoryAndPackage(bShowAllRepos)
+| aFilteredRepositoryList, aDefaultRepositories, i, bFilterRepoList |
+
+   // Die Liste verfügbarar Repositories wird nur auf üblichen Repositories
+   // gefiltert, wenn das Standard Repository Basis-Verzeichnis (C:\) verwendet
+   // wird.
+   // Die üblichen Repositories umfassen die folgenden:
+   //   * C:\be_svn
+   //   * C:\deploy_6_0_62.git (wird nicht mehr verwendet)
+   //   * C:\deploy_6_0_62.svn (wird nicht mehr verwendet)
+   //   * C:\deploy_6_5_65.git
+   //   * C:\deploy_6_5_65.svn
+   //   * <zuletzt verwendetes Repository>
+   bFilterRepoList := m_cPredefinedRepoBasePath == m_cDefaultRepoBasePath,
+
+   if bFilterRepoList then
+      aFilteredRepositoryList := {},
+      AAdd(aFilteredRepositoryList, ExtractFileName(m_cDefaultSVNPath)),     // C:\be_svn soll immer auswählbar sein!
+      AAdd(aFilteredRepositoryList, ExtractFileName(m_cPredefinedRepoPath)), // aktuell vorbelegter Repository-Pfad
+
+      aDefaultRepositories := DirArray(m_cPredefinedRepoBasePath, 'deploy_*_*_*.*'),
+      for i := 1 to ALen(aDefaultRepositories) do
+         AAdd(aFilteredRepositoryList, aDefaultRepositories[i, 1]),
+      next,
+   endif,
+
+   cmb_Repositories.Items := DetermineRepositoryList(
+      m_cPredefinedRepoBasePath,
+      bFilterRepoList,
+      aFilteredRepositoryList
+   ),
+
+   // Standardmäßig selektiert wird das zuletzt gewählte Repository, es sei denn,
+   // dieses existiert nicht, dann wird immer be_svn selektiert.
+   cmb_Repositories.Value := iif(DirectoryExists(m_cPredefinedRepoPath), m_cPredefinedRepoPath, m_cDefaultSVNPath),
+
+   // zuletzt gewählten Package-Pfad wiederherstellen (auch, wenn sich Pfad nicht im aktuellen Repository befindet!)
+   edt_PackagePath.Text := m_cDefaultPackagePath,
+end,
+
+//******************************************************************************
+// Basis-Pfad für Repositories setzen
+// @result: null
+//******************************************************************************
+function SetRepoBasePath(cRepoBasePath:C)
+   m_cPredefinedRepoBasePath := cRepoBasePath,
+   RestoreRepositoryAndPackage(false),
+end,
+
+//******************************************************************************
+// Einstellungs-Dialog anzeigen
+// @result: boolean - Die Funktion gibt zurück, ob die Einstellungen geändert
+//                    und gespeichert wurden.
+//******************************************************************************
+function ShowSettingsDialog()
+|
+   cInputId_BaseRepoPath, cInputId_ShowInfoText,
+   nSaveModalResult, aDialogResult,
+   cRepoBasePath
+|
+
+   result                := false,
+   cInputId_BaseRepoPath := 'BASE_REPOPATH',
+   cInputId_ShowInfoText := 'SHOW_INFOTEXT',
+   nSaveModalResult      := 100,
+
+   aDialogResult := DU_InputDialog(
+      'Einstellungen',
+      'Einstellungen für das Package Import-/Export-Tool',
+      {
+         DU_InputDialog_CreateInputControlDefinition(
+            cInputId_BaseRepoPath,
+            'Basispfad für Repositories',
+            gl_DU_InputControlType_String,
+            '',
+            -1,
+            m_cPredefinedRepoBasePath,
+            true
+         )
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('SAVE', 'Speichern', nSaveModalResult, 151, true),
+         mrCancel
+      },
+      {}
+   ),
+
+   // Wenn im Dialog auf "Speichern" geklickt wurde
+   result := DU_InputDialogResult_GetModalResult(aDialogResult) == nSaveModalResult,
+   if result then
+
+      startseq
+         // Einstellung "Basispfad für Repositories"
+         cRepoBasePath := Trim(DU_InputDialogResult_GetInputValue(aDialogResult, cInputId_BaseRepoPath)),
+         // Abschließendes Backslash "\" ggf. entfernen
+         if Right(cRepoBasePath, 1) = '\' then
+            cRepoBasePath := Left(cRepoBasePath, Len(cRepoBasePath) - 1),
+         endif,
+         // Neuen  Basis-Pfad für Repositories setzen sofern:
+         //  * Der User einen abweichenden Pfad angegeben hat
+         if cRepoBasePath <> m_cPredefinedRepoBasePath then
+            // * Und der angegebene Pfad existiert
+            if DirectoryExists(cRepoBasePath) then
+               SetRepoBasePath(cRepoBasePath),
+            else
+               SetError('Verzeichnis <' + cRepoBasePath + '> existiert nicht!'),
+            endif,
+         endif,
+
+      onerror
+         MessageDlg('Fehler beim Speichern der Einstellungen:' + CRLF + GetErrorText(), mtError),
+      stopseq,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Wechseln des Repositories
+//******************************************************************************
+function cmb_RepositoriesChange( Sender )
+| cCheckForModificationsText |
+
+   m_cPredefinedRepoPath := Sender.Value,
+   m_cRepositoryType     := SubStr(m_cPredefinedRepoPath, RAt('.' , m_cPredefinedRepoPath) + 1),
+
+   // Text-Hint für Package-Listen Control ermitteln
+   cmb_DefaultPaths.TextHintProperties.TextHint := 'Gefundene Package Dateien im Pfad "' +
+                                                   m_cPredefinedRepoPath + '" ...',
+   cmb_DefaultPaths.Value := '',
+   cmb_DefaultPaths.Text  := '',
+   // Package-Pfad leeren, wenn sich das Repository geändert hat
+   edt_PackagePath.Text := iif(edt_PackagePath.Text = m_cPredefinedRepoPath, edt_PackagePath.Text, ''),
+
+   // Caption des Buttons "Check for modifications ..." je nach Repository-Typ
+   // anpassen
+   cCheckForModificationsText     := iif(Lower(m_cRepositoryType) == 'git', 'Git', 'SVN') + ' Check for modifications (Package-Pfad)',
+   A_ShowRepositoryStatus.Caption := cCheckForModificationsText,
+
+   // Package-Liste neu laden
+   InitPackageList(),
+end,
+
+//******************************************************************************
+// Event: Bei Auswahl eines Packages den Package-Pfad übernehmen
+//******************************************************************************
+function cmb_DefaultPathsChange( Sender )
+| cComboDisplayText |
+  if cmb_DefaultPaths.ItemIndex > -1 then
+     cComboDisplayText          := CalcPackageDescription(cmb_DefaultPaths.Value),
+     edt_PackagePath.Text       := cmb_DefaultPaths.Value,
+     cmb_DefaultPaths.ItemIndex := -1,
+     cmb_DefaultPaths.Text      := cComboDisplayText,
+     MyFocusControl(oForm, edt_PackagePath),
+  endif,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+
+   startseq
+      // Einstellungen speichern
+      SaveSettings(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Schließen des Programms', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey)
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Info-Text einblenden / ausblenden
+//******************************************************************************
+function A_ShowInfoTextExecute( Sender )
+   A_ShowInfoText.Checked := not A_ShowInfoText.Checked,
+   edt_InfoText.Visible := A_ShowInfoText.Checked,
+
+   if edt_InfoText.Visible then
+      edt_InfoText.Text := Lookup(waDABPRG, 'BEZ', {{'Tools\package-import-export\info.txt'}}, 'PROGRAMM', ''),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Package-Datei auswählen
+//******************************************************************************
+function A_SelectPackageExecute( Sender )
+   OpenPackagePathDialog(),
+end,
+
+//******************************************************************************
+// Action: Package importieren
+//******************************************************************************
+function A_ImportExecute( Sender )
+| nOldCursor |
+   m_aBrowsersToCopyToTotal    := {},
+   m_aBrowsersToCopyToAll      := {},
+   m_aBrowserCopyLog           := {},
+
+   m_iCopyTotal                := 0,
+   m_iCopyAll                  := 0,
+   m_bIsProcessing := True,
+   startseq
+      ActionsEnabled(),
+      if BeforeImOrExport() then
+         if JN('ACHTUNG:' + crlf +
+               'Bitte nur bestätigen wenn Sie die Informationen zum Import' + crlf +
+               'vollständig gelesen und verstanden haben.' + crlf +
+               'Soll der Vorgang fortgesetzt werden?') then
+            nOldCursor := SetCursor(crHourglass),
+            startseq
+               ExportOrImport(False, chk_IgnoreReadOnly.Checked),
+            always
+               SetCursor(nOldCursor),
+            stopseq,
+         endif,
+      endif,
+   always
+      m_bIsProcessing := False,
+      ActionsEnabled(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Package exportieren
+//******************************************************************************
+function A_ExportExecute( Sender )
+| nOldCursor |
+   startseq
+      m_aExportProgramms := {},
+      m_bIsProcessing    := True,
+      startseq
+         ActionsEnabled(),
+         if BeforeImOrExport() then
+            nOldCursor := SetCursor(crHourglass),
+            startseq
+               ExportOrImport(True, chk_IgnoreReadOnly.Checked),
+            always
+               SetCursor(nOldCursor),
+            stopseq,
+         endif,
+      always
+         m_bIsProcessing := False,
+         ActionsEnabled(),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Package Import-/Export-Tool beenden
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Einstellungen für das Package Import-Export Tool Anzeigen
+//******************************************************************************
+function A_ShowSettingsExecute( Sender )
+   ShowSettingsDialog(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_OpenPackageDirectoryInFileManagerExecute( Sender )
+  if BeforeImOrExport() then // Package-Auswahl validieren...
+     // Erstmal Package einlesen etc., damit die Variable m_cBaseSourceOrDestinationPath gefüllt wird
+     WriteToLog(m_nWarning, 'Lese Package-File für Pfad-Ermittlung...', false),
+     m_nErrorCount := 0,
+     InitModel(),
+     TextFileToModel(false),
+     ValidateModel(false),
+     WriteToLog(m_nWarning, 'Aktueller Package-Basis-Pfad: ' + AllTrim(m_cBaseSourceOrDestinationPath), false),
+
+     ShellExecute(m_cBaseSourceOrDestinationPath),
+  endif,
+end,
+
+//******************************************************************************
+// Action: Zeige den Dialog "Check for modifications" für das
+//         Package-Verzeichnis an
+//******************************************************************************
+function A_ShowRepositoryStatusExecute( Sender )
+| cCommand |
+
+  if BeforeImOrExport() then // Package-Auswahl validieren...
+
+     // Erstmal Package einlesen etc., damit die Variable m_cBaseSourceOrDestinationPath gefüllt wird
+     WriteToLog(m_nWarning, 'Lese Package-File für Pfad-Ermittlung...', false),
+     m_nErrorCount := 0,
+     InitModel(),
+     TextFileToModel(false),
+     ValidateModel(false),
+     WriteToLog(m_nWarning, 'Aktueller Package-Basis-Pfad: ' + AllTrim(m_cBaseSourceOrDestinationPath), false),
+
+     // '/remote' löst sofort einen Remote-Refresh aus
+     cCommand := '/command:repostatus /remote',
+     if m_cRepositoryType == 'git' then
+        // Bei aktivem Entwicklermodus muss TortoiseGit verwendet werden
+        RunTortoiseGitCommand(m_cBaseSourceOrDestinationPath, cCommand),
+     else
+        // Entwicklermodus nicht aktiv -> TortoiseSVN verwenden
+        RunTortoiseSVNCommand(m_cBaseSourceOrDestinationPath, cCommand),
+     endif,
+  endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+//      oForm.FormStyle   := fsMDIChild,
+//      oForm.Windowstate := wsMaximized,
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'package-import-export',
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                            := FindObject(oForm, "A_Cancel"),
+   A_Export                            := FindObject(oForm, "A_Export"),
+   A_Import                            := FindObject(oForm, "A_Import"),
+   A_OpenPackageDirectoryInFileManager := FindObject(oForm, "A_OpenPackageDirectoryInFileManager"),
+   A_SelectPackage                     := FindObject(oForm, "A_SelectPackage"),
+   A_ShowInfoText                      := FindObject(oForm, "A_ShowInfoText"),
+   A_ShowRepositoryStatus              := FindObject(oForm, "A_ShowRepositoryStatus"),
+   A_ShowSettings                      := FindObject(oForm, "A_ShowSettings"),
+   actions                             := FindObject(oForm, "actions"),
+   bar_main                            := FindObject(oForm, "bar_main"),
+   BeBarButton1                        := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                        := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                        := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4                        := FindObject(oForm, "BeBarButton4"),
+   BeBarManager                        := FindObject(oForm, "BeBarManager"),
+   bipnl_Head                          := FindObject(oForm, "bipnl_Head"),
+   bipnl_Log                           := FindObject(oForm, "bipnl_Log"),
+   btn_Cancel                          := FindObject(oForm, "btn_Cancel"),
+   btn_Export                          := FindObject(oForm, "btn_Export"),
+   btn_Import                          := FindObject(oForm, "btn_Import"),
+   btn_OpenPath                        := FindObject(oForm, "btn_OpenPath"),
+   chk_IgnoreReadOnly                  := FindObject(oForm, "chk_IgnoreReadOnly"),
+   cmb_DefaultPaths                    := FindObject(oForm, "cmb_DefaultPaths"),
+   cmb_Repositories                    := FindObject(oForm, "cmb_Repositories"),
+   dock_main                           := FindObject(oForm, "dock_main"),
+   edt_InfoText                        := FindObject(oForm, "edt_InfoText"),
+   edt_Log                             := FindObject(oForm, "edt_Log"),
+   edt_PackagePath                     := FindObject(oForm, "edt_PackagePath"),
+   pnl_Background                      := FindObject(oForm, "pnl_Background"),
+   pnl_Buttons                         := FindObject(oForm, "pnl_Buttons"),
+   pnl_MainBack                        := FindObject(oForm, "pnl_MainBack"),
+   pnl_PackagePath                     := FindObject(oForm, "pnl_PackagePath"),
+   pnl_SelectedPath                    := FindObject(oForm, "pnl_SelectedPath"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzt die Standardeinstellungen der Oberfläche
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   m_nErrorCount      := 0,
+   m_bIsProcessing    := false,
+
+   btn_OpenPath.Caption     := '',
+   cmb_Repositories.MapList := false, // Notwendig, damit der Pfad des ausgewählten
+                                      // Repositories ausgelesen werden kann.
+   oForm.PositionSaveID     := m_cPositionSaveID,
+
+   // Zuletzt verwendete Einstellungen laden
+   startseq
+      LoadSettings(),
+   onerror
+      MessageDlg('Warnung: Die Einstellungen für die Benutzeroberfläche konnten nicht geladen werden!' + CRLF +
+                 '-> Verwende Standard-Einstellungen', mtWarning),
+   stopseq,
+
+   if Empty(m_cPredefinedRepoBasePath) then
+      m_cPredefinedRepoBasePath := m_cDefaultRepoBasePath,
+   endif,
+
+   // Zuletzt gewähltes Package wiederherstellen
+   RestoreRepositoryAndPackage(false),
+   InitPackageList(),
+
+   MyFocusControl(oForm, edt_PackagePath),
+
+   // be 7 ReDesign
+   bipnl_Head.ColorMode     := ipcmInfo,
+   bipnl_Log.ColorMode      := ipcmInfo,
+
+   // Action aus der Zeit von SVN -> erstmal deaktivieren, schauen, ob das noch jemand nutzt...
+   A_ShowRepositoryStatus.Visible := false,
+
+   // Info-Button initial ausblenden
+   A_ShowInfoText.Checked := true,
+   ActionExecute(A_ShowInfoText),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_bCommandLineMode_IsActive := false,
+
+m_aBrowsersToCopyToTotal    := {},
+m_aBrowsersToCopyToAll      := {},
+m_aBrowserCopyLog           := {},
+
+m_iCopyTotal                := 0,
+m_iCopyAll                  := 0,
+
+startseq
+   ParseParams(),
+   if m_bCommandLineMode_IsActive then
+      m_oDM := OpenDatabase(),
+      startseq
+         m_bCommandLineMode_Result := ExportOrImport(m_bCommandLineMode_IsExport, true),
+      always
+         DestroyObject(m_oDM),
+      stopseq,
+   else
+      InitForm(),
+      LoadGUI(),
+      m_oDM := OpenDatabase(oForm),
+      SetDefaults(),
+      ShowGUI(),
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   if not m_bCommandLineMode_IsActive then
+      DestroyObject(oForm),
+   endif,
+stopseq,
+
+iif(m_bCommandLineMode_IsActive, m_bCommandLineMode_Result, oForm)
+
+

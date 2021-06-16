@@ -1,0 +1,57 @@
+//******************************************************************************
+// temp. Tabelle löschen, sofern noch vorhanden
+//******************************************************************************
+TRY DROP TABLE #GROUPED; CATCH ALL END;
+
+//******************************************************************************
+// Daten gruppieren
+//******************************************************************************
+SELECT
+      10 AS SORT_KZ,
+      STANDORT,
+
+      @GROUPBY_1@ AS GROUP_1,
+
+      Round(SUM(                                @RE_WERT_FELD@),     2)   AS RE_WERT,                       // "Gesamt"
+
+      Round(SUM(iif(TERMINAW <= 2,              @RE_WERT_FELD@, 0)), 2)   AS RE_WERT_HORIZONT_BIS_2,        // "<=  2 Wochen" => -xxx bis 2
+      Round(SUM(iif(TERMINAW BETWEEN 3  AND 4,  @RE_WERT_FELD@, 0)), 2)   AS RE_WERT_HORIZONT_3_BIS_4,      // "<=  4 Wochen" => 3 bis 4
+      Round(SUM(iif(TERMINAW BETWEEN 5  AND 12, @RE_WERT_FELD@, 0)), 2)   AS RE_WERT_HORIZONT_5_BIS_12,     // "<= 12 Wochen" => 5 bis 12
+      Round(SUM(iif(TERMINAW BETWEEN 13 AND 52, @RE_WERT_FELD@, 0)), 2)   AS RE_WERT_HORIZONT_13_BIS_52,    // "<= 52 Wochen" => 13 bis 52
+      Round(SUM(iif(TERMINAW >= 53,             @RE_WERT_FELD@, 0)), 2)   AS RE_WERT_HORIZONT_AB_53         // " > 52 Wochen" => 53 und größer
+
+   INTO #GROUPED
+   FROM @HIST_TABELLE@
+   WHERE     HISKOPF_ID = @HISKOPF_ID@
+         AND STANDORT   = @STANDORT@
+   GROUP BY
+      STANDORT,
+      @GROUPBY_1@
+
+  ;
+
+//******************************************************************************
+// Summenzeile bilden und in temp. Tabelle anfügen
+//******************************************************************************
+INSERT INTO #GROUPED
+   SELECT
+         20           AS SORT_KZ,
+         STANDORT     AS STANDORT,
+         CAST(null AS SQL_INTEGER) AS GROUP_1,
+         // MIN(GROUP_1)
+         
+         Round(Sum(RE_WERT), 2)                    AS RE_WERT,
+         Round(Sum(RE_WERT_HORIZONT_BIS_2), 2)     AS RE_WERT_HORIZONT_BIS_2,
+         Round(Sum(RE_WERT_HORIZONT_3_BIS_4), 2)   AS RE_WERT_HORIZONT_3_BIS_4,
+         Round(Sum(RE_WERT_HORIZONT_5_BIS_12), 2)  AS RE_WERT_HORIZONT_5_BIS_12,
+         Round(Sum(RE_WERT_HORIZONT_13_BIS_52), 2) AS RE_WERT_HORIZONT_13_BIS_52,
+         Round(Sum(RE_WERT_HORIZONT_AB_53), 2)     AS RE_WERT_HORIZONT_AB_53
+      FROM #GROUPED
+      GROUP BY
+         STANDORT
+   ;
+
+//******************************************************************************
+// Daten zurück geben
+//******************************************************************************
+SELECT * FROM #GROUPED

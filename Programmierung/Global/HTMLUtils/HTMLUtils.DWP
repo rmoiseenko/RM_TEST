@@ -1,0 +1,590 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Funktionen zum erstellen einer abstrakten HTML-Dokument Struktur, die per
+//   HTML_GenerateCode()/HTML_GenerateFile() in HTML-Code übersetzt werden kann.
+//
+// Namespace/Prefix: "HTML_"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Interne Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// HTMLTree-Object validieren
+//   Die Funktion prüft:
+//     * ClassName von oHTMLTree muss 'TBeasCbServiceOutputParam' sein
+//
+// @result: null
+//******************************************************************************
+function _HTML_ValidateHTMLTreeObject_Internal(oHTMLTree:O, cParameterName:C)
+| cRequiredElementName, cExpectedClassName, cActualClassName, cDataType |
+
+   cRequiredElementName := 'htmlTreeObjectId',
+   cExpectedClassName   := 'TBeasCbServiceOutputParam',
+   cActualClassName     := ClassName(oHTMLTree),
+   cDataType            := ValType(oHTMLTree),
+   SetErrorIf(
+      cActualClassName <> cExpectedClassName,
+      'Datentyp <' + cDataType + iif(cDataType == 'O', ':' + cActualClassName, '') +
+      '> ist für Parameter <' + cParameterName + '> ungültig, erwarte <O:' + cExpectedClassName + '>'
+   ),
+   SetErrorIf(
+      not oHTMLTree.ParamExists('htmlTreeObjectId'),
+      'Parameter <' + cParameterName + '> beinhaltet nicht das erforderliche Element <' + cRequiredElementName + '>'
+   ),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Root-Element des HTMLTree-Objects ermitteln
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_GetRootElement_Internal(oHTMLTree:O)
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   result := oHTMLTree.Param('root'),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Ein neues Attribute zum "attributes"-Element eines HTML-Objects hinzufügen
+// @result: object - TBeasCustomServiceParamItem, neu angelegtes Attribut
+//******************************************************************************
+function _HTML_AddAttribute_Internal(oAttributesObject:O, cAttributeName:C, cAttributeValue:C, bHasValue:L)
+   result := oAttributesObject.AddComplexElement(cAttributeName),
+   result.AddElement('value',    iif(bHasValue, cAttributeValue, '')),
+   result.AddElement('hasValue', bHasValue),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Attribute-Object ermitteln
+//
+// @result:
+//   object - TBeasCustomServiceParamItem
+//   null   - Wenn das angegebene Attribut nicht existiert
+//******************************************************************************
+function _HTML_GetAttributeObject_Internal(oHTMLNode:O, cAttributeName:C)
+| oAttributes |
+
+   // TODO: Klassenenamen validieren:
+//   SetErrorIf(ClassName(oHTMLTreeOrNode) == 'TBeasCustomServiceParamItem'),
+//   SetErrorIf(ClassName(oHTMLTreeOrNode) <> 'TBeasCbServiceOutputParam'),
+
+   oAttributes := oHTMLNode.Element('attributes'),
+   if oAttributes.ElementExists(cAttributeName) then
+      result := oAttributes.Element(cAttributeName),
+   else
+      result := null,
+   endif,
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+//
+//******************************************************************************
+// Neues HTML-Element anfügen
+// @result: object - TTreeNodeEx
+//******************************************************************************
+function _HTML_Add_Internal(oHTMLTreeOrNode:O, cTagName:C, bIsSingleTagElement:L, aAttributes:A)
+| oAttributes, i |
+
+   if ClassName(oHTMLTreeOrNode) == 'TBeasCbServiceOutputParam' then
+      result := HTML_GetRootElement_Internal(oHTMLTreeOrNode),
+   else
+      result := oHTMLTreeOrNode.Element('children'),
+   endif,
+   result := result.AddComplexElement('htmlElement'),
+
+   result.AddElement('tagName', cTagName),
+   result.AddElement('single',  bIsSingleTagElement),
+   result.AddArrayElement('children'),
+   oAttributes := result.AddComplexElement('attributes'),
+
+   for i := 1 to ALen(aAttributes) do
+      if not Empty(aAttributes[i]) then
+         HTML_AddAttribute_Internal(oAttributes, aAttributes[i, 1], aAttributes[i, 2], aAttributes[i, 2] <> null),
+      endif,
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// HTML-Object erzeugen
+// @result: object - TBeasCbServiceOutputParam
+//******************************************************************************
+function _HTML_Create()
+   result := CreateObject('TBeasCbServiceOutputParam'),
+   result.InitCbParam(),
+   result.AddArrayParam('root'),
+   result.AddParam('isDocumentInitialized', false),
+
+   // Zusätzliches Element "htmlTreeObjectId" dient dazu, um feststellen zu
+   // können, ob es sich bei dem TBeasCbServiceOutputParam-Object definitiv um
+   // ein durch diese Funktion erzeugtes HTMLTree-Object handelt.
+   result.AddParam('htmlTreeObjectId', ''),
+end,
+
+//******************************************************************************
+// HTML-Object zerstören
+// @result: null
+//******************************************************************************
+function _HTML_Destroy(oHTMLTree:O)
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   DestroyObject(oHTMLTree),
+end,
+
+//******************************************************************************
+// Child-Elemente anhand dessen Tag-Name ermitteln
+// @result: array of object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_GetChildElementsByTagName(oHTMLTreeOrNode:O, cTagName:C)
+| oChildren, oElement, i |
+
+   result := {},
+
+   if ClassName(oHTMLTreeOrNode) == 'TBeasCbServiceOutputParam' then
+      oChildren := HTML_GetRootElement_Internal(oHTMLTreeOrNode),
+   else
+      oChildren := oHTMLTreeOrNode.Element('children'),
+   endif,
+
+   for i := 0 to oChildren.ElementCount - 1 do
+      oElement := oChildren.ElementByIndex(i),
+      if oElement.ElementValue('tagName') == cTagName then
+         AAdd(result, oElement),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Neues Attribut mit Wert dem übergebenen HTML-Element anfügen
+// HINWEIS: Wenn das Attribut mit dem angegebenen Namen bereits existiert, wird
+//          der Angegebene Wert dem Attribut hinzugefügt
+//
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_AddAttribute(oHTMLNode:O, cAttributeName:C, cAttributeValue:C)
+| oAttributes |
+
+   oAttributes := oHTMLNode.Element('attributes'),
+   result      := HTML_AddAttribute_Internal(oAttributes, cAttributeName, cAttributeValue, true),
+end,
+
+//******************************************************************************
+// HTML-Klasse(n) in HTML-Element setzen
+// @result: null
+//******************************************************************************
+function _HTML_SetClass(oHTMLNode:O, cClassString:C)
+| oAttribute |
+
+   oAttribute := HTML_GetAttributeObject_Internal(oHTMLNode, 'class'),
+   if oAttribute == null then
+      oAttribute := HTML_AddAttribute(oHTMLNode, 'class', cClassString),
+   else
+      oAttribute.UpdateElementValue('value', cClassString),
+   endif,
+end,
+
+//******************************************************************************
+// HTML-Klasse(n) in HTML-Element hinzufügen
+// @result: null
+//******************************************************************************
+function _HTML_AddClass(oHTMLNode:O, cAdditionalClassString:C)
+| oAttribute, cCurrentClassString |
+
+   oAttribute := HTML_GetAttributeObject_Internal(oHTMLNode, 'class'),
+   if oAttribute == null then
+      oAttribute := HTML_AddAttribute(oHTMLNode, 'class', cAdditionalClassString),
+   else
+      cCurrentClassString := oAttribute.ElementValue('value'),
+      oAttribute.UpdateElementValue('value', cCurrentClassString + ' ' + cAdditionalClassString),
+   endif,
+end,
+
+//******************************************************************************
+// HTML-Klasse(n) in HTML-Element als Attribut-Object ermitteln
+// @result: string - HTML-Klasse(n) als string
+//******************************************************************************
+function _HTML_GetClass(oHTMLNode:O)
+| oClass |
+
+   oClass := HTML_GetAttributeObject_Internal(oHTMLNode, 'class'),
+   result := iif(oClass == null, '', oClass.ElementValue('value')),
+end,
+
+//******************************************************************************
+// HTML-Element Attribut erzeugen.
+// Die Rückgabe kann dann für die Übergabe an die HTML_Add...()-Funktionen
+// verwendet werden.
+//
+// @result: array - HTML-Element Attribut
+//******************************************************************************
+function _HTML_Attribute(cName:C, cValue:C)
+   result := {cName, cValue},
+end,
+
+//******************************************************************************
+// HTML-Element Attribut ohne Wert erzeugen.
+// Die Rückgabe kann dann für die Übergabe an die HTML_Add...()-Funktionen
+// verwendet werden.
+//
+// @result: array - HTML-Element Attribut
+//******************************************************************************
+function _HTML_Attribute_NoValue(cName:C)
+   result := HTML_Attribute(cName, null),
+end,
+
+//******************************************************************************
+// Neues HTML-Element anfügen
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_Add(oHTMLTreeOrNode:O, cTagName:C, uAttributes:U:='')
+   uAttributes := iif(Empty(uAttributes), {}, uAttributes),
+   result      := HTML_Add_Internal(oHTMLTreeOrNode, cTagName, false, uAttributes),
+end,
+
+//******************************************************************************
+// HTML-Element ohne End-Tag erzeugen
+//
+// Beispiele für Single-Tag HTML-Elemente:
+//  * <!DOCTYPE html>
+//  * <br>
+//  * <hr>
+//
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_AddSingle(oHTMLTreeOrNode:O, cTagName:C, uAttributes:U:='')
+   uAttributes := iif(Empty(uAttributes), {}, uAttributes),
+   result      := HTML_Add_Internal(oHTMLTreeOrNode, cTagName, true, uAttributes),
+end,
+
+//******************************************************************************
+// Reines HTML-Text Element erzeugen
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_AddText(oHTMLTreeOrNode:O, cText:C)
+   result := HTML_Add_Internal(oHTMLTreeOrNode, '_text', true, {}),
+   result.UpdateElementValue('value', cText),
+end,
+
+//******************************************************************************
+// HTML-Tabellenelement hinzufügen
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_AddTable(oHTMLTreeOrNode:O, aHeaders:A, aData:A)
+| oRow, i, n, oTableHead, oTableBody |
+
+   result     := HTML_Add(oHTMLTreeOrNode, 'table', {HTML_Attribute('class', 'table table-striped table-hover')}),
+   oTableHead := HTML_Add(result, 'thead'),
+   oRow       := HTML_Add(oTableHead, 'tr'),
+   // Header hinzufügen
+   for i := 1 to ALen(aHeaders) do
+      HTML_AddText(HTML_Add(oRow, 'th'), ToString(aHeaders[i])),
+   next,
+
+   oTableBody := HTML_Add(result, 'tbody'),
+   // Daten-Rows hinzufügen
+   for i := 1 to ALen(aData) do
+      oRow := HTML_Add(oTableBody, 'tr'),
+      for n := 1 to ALen(aData[i]) do
+         HTML_AddText(HTML_Add(oRow, 'td'), ToString(aData[i, n])),
+      next,
+   next,
+end,
+
+//******************************************************************************
+// HTML-Hyperlink erzeugen
+// @result: object - TBeasCustomServiceParamItem
+//******************************************************************************
+function _HTML_AddHyperlink(oHTMLTreeOrNode:O,
+                            cText:C,
+                            cURI:C,
+                            bOpenHyperlinkInNewTab:L:=false)
+| aHyperlinkAttributes |
+
+   aHyperlinkAttributes := {HTML_Attribute('href', cURI)},
+   // Ggf. Hyperlink in neuem Tab öffenen, wenn dieser angeklickt wird
+   if bOpenHyperlinkInNewTab then
+      AAdd(aHyperlinkAttributes, HTML_Attribute('target', '_blank')),
+   endif,
+
+   result := HTML_Add(oHTMLTreeOrNode, 'a', aHyperlinkAttributes),
+   HTML_AddText(result, cText),
+end,
+
+//******************************************************************************
+// Die Funktion prüft, ob das übergebene HTMLTree-Object als Dokument
+// initialisiert ist.
+//
+// @result: boolean
+//******************************************************************************
+function _HTML_IsDocumentInitialized(oHTMLTree:O)
+   // Validierungen
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   result := oHTMLTree.ParamValue('isDocumentInitialized'),
+end,
+
+//******************************************************************************
+// HTML-Object als HTML-Dokument initialisieren und den Body-Knoten zurückgeben
+// @result: object - TBeasCustomServiceParamItem (HTML-Body)
+//******************************************************************************
+function _HTML_InitDocument(oHTMLTree:O,
+                            cTitle:C,
+                            bUseDefaultResources:L:=true,
+                            bSupportMobileDevices:L:=true)
+| oHTML, oHead, oTitle, oIsDocumentInitialized |
+
+   // Validierungen
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   SetErrorIf(HTML_IsDocumentInitialized(oHTMLTree), 'HTML-Dokument wurde bereits initialisiert'),
+
+   HTML_AddSingle(oHTMLTree, '!DOCTYPE', {HTML_Attribute_NoValue('html')}),
+   oHTML  := HTML_Add(oHTMLTree, 'html'),
+   oHead  := HTML_Add(oHTML,     'head'),
+   oTitle := HTML_Add(oHead,     'title'),
+   HTML_AddText(oTitle, cTitle),
+
+   if bSupportMobileDevices then
+      // Unterstützung für mobile Geräte:
+      // Sorgt dafür, dass Text auf mobilen Geräten in einer angenehmen
+      // Schriftgröße angezeigt werden.
+      HTML_Add(oHead, 'meta', {
+         HTML_Attribute('name',    'viewport'),
+         HTML_Attribute('content', 'width=device-width, initial-scale=1'),
+      }),
+   endif,
+
+   if bUseDefaultResources then
+      // Standard CSS und JavaScript Ressourcen einbinden:
+      //   * Bootstrap CSS-file
+      HTML_Add(oHead, 'link', {
+         HTML_Attribute('rel',  'stylesheet'),
+         HTML_Attribute('type', 'text/css'),
+         HTML_Attribute('href', 'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css')
+      }),
+      //   * JQuery script-file
+      HTML_Add(oHead, 'script', {
+         HTML_Attribute('src', 'https://code.jquery.com/jquery-3.1.1.min.js')
+      }),
+      //   * Bootstrap script-file
+      HTML_Add(oHead, 'script', {
+         HTML_Attribute('src', 'https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js')
+      }),
+   endif,
+
+   // HTML-Body im Dokument hinzufügen und zurückgeben
+   result := HTML_Add(oHTML, 'body'),
+
+   // Dokument wurde initialisiert -> Flag setzen
+   oIsDocumentInitialized := oHTMLTree.Param('isDocumentInitialized'),
+   oIsDocumentInitialized.SetValue(true),
+end,
+
+//******************************************************************************
+// Webseite im Brwoser automatisch alle nIntervalInSeconds Sekunden neu laden
+// @result: null
+//******************************************************************************
+function _HTML_EnableAutoRefresh(oHTMLTree:O, nIntervalInMilliSeconds:N)
+| aElements, oChildren, oElement, oHead, oScript, i |
+
+   // Validierungen
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   SetErrorIf(not HTML_IsDocumentInitialized(oHTMLTree),
+              'Das Objekt muss erst als HTML-Dokument initialisiert werden um die AutoRefresh Funktion nutzen zu können'),
+
+   oHead     := nil,
+   aElements := HTML_GetChildElementsByTagName(oHTMLTree, 'html'),
+   if ALen(aElements) > 0 then
+      oElement  := aElements[1],
+      oChildren := oElement.Element('children'),
+      for i := 0 to oChildren.ElementCount - 1 do
+         oElement := oChildren.Element(i),
+         if oElement.ElementValue('tagName') == 'head' then
+            oHead := oElement,
+            break,
+         endif,
+      next,
+   endif,
+
+   SetErrorIf(Empty(oHead), 'HTML-Dokument enthält kein Element "head"'),
+
+   oScript := HTML_Add(oHead, 'script', {HTML_Attribute('type', 'text/javascript')}),
+   HTML_AddText(
+      oScript,
+      'setTimeout(function() {'        + CRLF +
+      '    window.location.reload(1);' + CRLF +
+      '}, ' + Str(nIntervalInMilliSeconds) + ');'
+   ),
+end,
+
+//******************************************************************************
+// Die Funktion generiert HTML-Code anhand eines HTML-Tree Objects.
+// @result: string - HTML-Code
+//******************************************************************************
+function _HTML_GenerateCode(oHTMLTree:O)
+| cExpectedClassname, cParamClassName |
+
+   //***************************************************************************
+   // Interne Funktion zum generieren des HTML-Codes.
+   // Die Funktion wird rekursiv aufgerufen.
+   //
+   // @result: string - HTML-Code
+   //***************************************************************************
+   function Generate_Internal(oNode:O, nIndentLevel:N)
+   |
+      cTagName, cCodeLine,
+      aProperties, aAttributes, oAttribute, i,
+      bIsTextElement, bIsSingleElement
+   |
+
+      //************************************************************************
+      // Eine Zeile im HTML-Dokument schreiben (mit Einrückung und Zeilenumbruch)
+      // @result: string - Code-Zeile
+      //************************************************************************
+      function AddCodeLine(cHTMLText:C, nIndentLevel:N)
+         result := Replicate('  ', nIndentLevel) + cHTMLText + Chr(10),
+      end,
+
+      //************************************************************************
+      // Verarbeite rekursiv alle untergeordneten Knoten von oParent.
+      // @result: string - HTML-Code
+      //************************************************************************
+      function ProcessChildren(oChildren:O, nIndentLevel:N)
+      | i |
+
+         result := '',
+         if oChildren.ElementsAvailable then
+            for i := 0 to oChildren.ElementCount - 1 do
+               result += Generate_Internal(oChildren.ElementByIndex(i), nIndentLevel),
+            next,
+         endif,
+      end,
+
+      result := '',
+      if ClassName(oNode) == 'TBeasCbServiceOutputParam' then
+         oNode := HTML_GetRootElement_Internal(oNode),
+         result += ProcessChildren(oNode, nIndentLevel),
+      else
+         cTagName       := oNode.ElementValue('tagName'),
+         bIsTextElement := cTagName == '_text',
+         if bIsTextElement then
+            result += AddCodeLine(oNode.ElementValue('value'), nIndentLevel),
+         else
+            bIsSingleElement := oNode.ElementValue('single'),
+            aAttributes      := oNode.Element('attributes'),
+
+            cCodeLine := '<' + cTagName,
+            for i := 0 to aAttributes.ElementCount - 1 do
+               oAttribute := aAttributes.ElementByIndex(i),
+               cCodeLine += ' '  + oAttribute.Name,
+               if oAttribute.ElementExists('hasValue') and
+                  oAttribute.ElementValue('hasValue') then
+                  cCodeLine += '="' + oAttribute.ElementValue('value') + '"',
+               endif,
+            next,
+            cCodeLine += '>',
+            result += AddCodeLine(cCodeLine, nIndentLevel),
+         endif,
+
+         // Wenn das Element Child-Nodes besitzt, diese ebenfalls verarbeiten
+         result += ProcessChildren(oNode.Element('children'), nIndentLevel + 1),
+
+         // Ende-Tag nur schreiben wenn:
+         //  * das Element kein reines Text-Element ist
+         //  * das Element keinen End-Tag besitzt (z.B. "<!DOCTYPE html>" oder "<br>")
+         if not bIsTextElement and not bIsSingleElement then
+            result += AddCodeLine('</' + cTagName + '>', nIndentLevel),
+         endif,
+      endif,
+   end,
+
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   result := Generate_Internal(oHTMLTree, 0),
+end,
+
+//******************************************************************************
+// Die Funktion generiert eine HTML-Datei anhand eines HTML-Tree Objects.
+// @result: null
+//******************************************************************************
+function _HTML_GenerateFile(oHTMLTree:O, cFileName:C)
+| cCode, oFile |
+
+   cCode := HTML_GenerateCode(oHTMLTree),
+   // HTML-Code in Datei exportieren
+   oFile := FOpen(cFileName, fo_Create),
+   startseq
+      FWrite(oFile, cCode),
+   always
+      FClose(oFile),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Debugging-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// HTML-Object als JSON-String ausgeben
+// @result: null
+//******************************************************************************
+function _HTML_Debug_Dump(oHTMLTree:O)
+   HTML_ValidateHTMLTreeObject_Internal(oHTMLTree, 'oHTMLTree'),
+   WriteLn(oHTMLTree.CbToJSONStringIndent()),
+end,
+
+//******************************************************************************
+// Debug-Funktion zum Anzeigen des HTML-Objects als HTML-Webseite im Webbrowser.
+// @result: null
+//******************************************************************************
+function _HTML_Debug_ShowInBrowser(oHTMLTree:O, bUseEmbeddedWebBrowser:L:=false)
+| oForm, oWebBrowser, cCode, cFileName |
+
+   if bUseEmbeddedWebBrowser then
+      cCode := HTML_GenerateCode(oHTMLTree),
+      // HTML-Webseite in eingebetteten Webbrowser anzeigen
+      oForm := CreateObject('TFormEx'),
+      startseq
+         oForm.OrigCapt := 'Debug - Anzeige des HTML-Objekts im Webbrowser',
+         // Webbrowser erstellen
+         oWebBrowser       := CreateObject('TBeCbEmbeddedWebBrowser', 'WebBrowser', oForm, oForm),
+         oWebBrowser.Align := alClient,
+         oWebBrowser.CbLoadFromString(cCode),
+         ShowModal(oForm),
+      always
+         DestroyObject(oForm),
+      stopseq,
+   else
+      // HTML-Code in temporäre Datei exportieren und im Standard-Webbrowser
+      // anzeigen
+      cFileName := GetTempPath() + 'be_html_export.html',
+      HTML_GenerateFile(oHTMLTree, cFileName),
+      shellexecute(null, 'open', cFileName),
+   endif,
+end,
+

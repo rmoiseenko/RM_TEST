@@ -1,0 +1,240 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dialog zur Auswahl eines Projekts auf dessen Basis ein neues
+//               Projekt erstellt wird.
+//               Hierbei kann gewählt werden, ob auch Vorgänge und
+//               Vorgangs-Leistungen kopiert werden sollen.
+//               Befindet sich der Benutzer im Supervisor-Modus kann auch ein
+//               Demo-Projekt erstellt werden.
+//##############################################################################
+//##############################################################################
+
+|
+   m_nPresetProject:P1:=1, m_aProgResult,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_OK, ActionList, bipnl_Headline, btn_Cancel, btn_OK,
+   chk_CopyTaskEfforts, chk_CopyTasks, chk_CreateDemoProject,
+   edt_TemplateFromProject, lbl_ProjectDescription, lbl_TemplateFromProject,
+   pnl_BackPanel, pnl_ButtonPanel, pnl_DemoBackPanel
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuert die Button-Verfügbarkeit und aktualisiert das Label zur Anzeige der
+// Projekt-Bezeichnung
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bEnabledControls |
+   bEnabledControls := not chk_CreateDemoProject.Checked,
+   // Controls disablen wenn ein Demo-Projekt erstellt werden soll
+   edt_TemplateFromProject.Enabled := bEnabledControls,
+   lbl_ProjectDescription.Enabled  := bEnabledControls,
+   chk_CopyTasks.Enabled           := bEnabledControls,
+   chk_CopyTaskEfforts.Enabled     := bEnabledControls and
+                                      chk_CopyTasks.Checked,
+   lbl_ProjectDescription.Caption := Lookup(waDABPRJ,
+                                            'ID',
+                                            {{Val(edt_TemplateFromProject.Text)}},
+                                            'BEZ',
+                                            'Ungültige Projekt-ID'),
+end,
+
+//******************************************************************************
+// Validierung der Eingaben.
+// @Result: Boolean - Eingaben OK/Nicht OK
+//******************************************************************************
+function ValidateInput()
+| nID |
+   Result := True,
+   nID    := Val(edt_TemplateFromProject.Text),
+
+   if empty(nID) and not chk_CreateDemoProject.Checked then
+      MessageDlg('Bitte wählen Sie ein Projekt aus', mtError),
+      Result := False,
+      exit,
+   endif,
+
+   // Projekt gültig?
+   if Lookup(waDABPRJ, 'ID', {{nID}}, 'ID', -1) <> nID and
+      not chk_CreateDemoProject.Checked then
+      MessageDlg('Das gewählte Projekt ist ungültig', mtError),
+      Result := False,
+   endif,
+end,
+
+//******************************************************************************
+// In dieser Funktion wird das Programm-Rückgabe-Array je nach Auswahl befüllt
+// @Result: null
+//******************************************************************************
+function FillResultArray()
+   AAdd(m_aProgResult, Val(edt_TemplateFromProject.Text)), // Vorlage-ID
+   AAdd(m_aProgResult, chk_CopyTasks.Checked),             // Vorgänge kopieren?
+   AAdd(m_aProgResult, chk_CopyTaskEfforts.Checked),       // Vorgags-Leistungen kopieren?
+   AAdd(m_aProgResult, chk_CreateDemoProject.Checked),     // Demo-Projekt erstellen?
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim Wechsel der Auswahl Button-Stati aktualisieren und Bezeichnung des
+// Projekts neu setzen
+//******************************************************************************
+function edt_TemplateFromProjectChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Soll ein Demo-Projekt erstellt werden, dürfen die anderen Controls nicht
+// mehr befüllt werden
+//******************************************************************************
+function chk_CreateDemoProjectClick( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim de-/aktivieren der Checkbox muss die Checkbox zum Kopieren der Vorgangs-
+// Leistungen deaktiviert werden
+//******************************************************************************
+function chk_CopyTasksClick( Sender )
+   if not chk_CopyTasks.Checked then
+      chk_CopyTaskEfforts.Checked := False, // Auch den Haken entfernen
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim klicken auf den Button zur Suche eines Vorlage-Projekts Auswahl anzeigen
+//******************************************************************************
+function edt_TemplateFromProjectBtnClick( Sender )
+| nProject |
+   startseq
+      // Projektsuche verwenden um eine Auswahl treffen zu lassen
+      nProject := ProjMgmtGUI_ShowSearchDialog(oForm, '', m_nPresetProject),
+      // Nur übernehmen wenn auch eine Auswahl getroffen wurde
+      if nProject > -1 then
+         edt_TemplateFromProject.Text := nProject,
+      endif,
+   onerror
+      MessageDlg('Fehler bei der Auswahl des Projekts' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim Bestätigen der Auswahl muss anhand der gewählten Optionen entschieden
+// werden, wie das Rückgabe-Array befüllt wird
+//******************************************************************************
+function A_OKExecute( Sender )
+   if ValidateInput() then
+      FillResultArray(),
+      CloseForm(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Beim Abbrechen wird nur das Fenster geschlossen, die Rückgabe des Programms
+// ist ein leeres Array
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Standard-Einstellungen für die Oberfläche setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   chk_CopyTasks.Checked        := True,
+   chk_CopyTaskEfforts.Enabled  := chk_CopyTasks.Checked,
+   chk_CopyTaskEfforts.Checked  := True,
+
+   pnl_DemoBackPanel.Visible    := mbeSupervisor,
+   oForm.Constraints.MinWidth   := 400,
+   oForm.Constraints.MaxWidth   := 400,
+   oForm.Constraints.MaxHeight  := 198,
+   oForm.Height                 := 1, // Durch die Constraints wird das Fenster
+                                      // automatisch auf die kleinstmögliche Größe
+                                      // gestellt => ist das
+                                      // Projekt-Demo-Erstellen-Panel sichtbar
+                                      // ist das Fenster größer
+   edt_TemplateFromProject.Text   := m_nPresetProject,
+   lbl_ProjectDescription.Caption := Lookup(waDABPRJ, 'ID', {{m_nPresetProject}}, 'BEZ', ''),
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   oForm          := LoadForm('@PROJTEMPL', Application),
+   oForm.OrigCapt := 'Projektmanagement', // '... aus Vorlage erstellen...' steht schon im Info-Panel
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_Cancel                := FindObject(oForm, "A_Cancel"),
+      A_OK                    := FindObject(oForm, "A_OK"),
+      ActionList              := FindObject(oForm, "ActionList"),
+      bipnl_Headline          := FindObject(oForm, "bipnl_Headline"),
+      btn_Cancel              := FindObject(oForm, "btn_Cancel"),
+      btn_OK                  := FindObject(oForm, "btn_OK"),
+      chk_CopyTaskEfforts     := FindObject(oForm, "chk_CopyTaskEfforts"),
+      chk_CopyTasks           := FindObject(oForm, "chk_CopyTasks"),
+      chk_CreateDemoProject   := FindObject(oForm, "chk_CreateDemoProject"),
+      edt_TemplateFromProject := FindObject(oForm, "edt_TemplateFromProject"),
+      lbl_ProjectDescription  := FindObject(oForm, "lbl_ProjectDescription"),
+      lbl_TemplateFromProject := FindObject(oForm, "lbl_TemplateFromProject"),
+      pnl_BackPanel           := FindObject(oForm, "pnl_BackPanel"),
+      pnl_ButtonPanel         := FindObject(oForm, "pnl_ButtonPanel"),
+      pnl_DemoBackPanel       := FindObject(oForm, "pnl_DemoBackPanel"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   SetDefaults(),
+   m_aProgResult := {},
+   ShowModal(oForm),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+m_aProgResult

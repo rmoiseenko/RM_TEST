@@ -1,0 +1,315 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Basic Package - File Utils
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion konvertiert die Dateigröße (Angabe in Bytes) als String in ein
+// visuell lesbares Format.
+//
+// @Result: null
+//******************************************************************************
+function _BP_FU_FileSizeToString(nSizeInByte:N)
+   Result := Str(nSizeInByte),
+   if nSizeInByte <= 1024 then
+      Result := Str(nSizeInByte) + ' Byte',
+   else
+      if nSizeInByte <= 1024 * 1024 then
+         Result := Str(Round(nSizeInByte / 1024, 0)) + ' KB',
+      else
+         if nSizeInByte <= 1024 * 1024 * 1024 then
+            Result := Str(Round(nSizeInByte / 1024 / 1024, 2)) + ' MB',
+         else
+            Result := Str(Round(nSizeInByte / 1024 / 1024 / 1024, 2)) + ' GB',
+         endif,
+      endif,
+   endif,
+end,
+
+//##############################################################################
+// Prozess erstellen
+//##############################################################################
+
+//******************************************************************************
+// REQ-424
+//******************************************************************************
+// Diese Funktion dient zum Starten einer weiteren be-Instanz im selben
+// Datenbestand mit dynamischer Parameterübergabe.
+// Die Funktion eignet sich besonders für das Starten von
+// Codeblock-Programmen per /CALL-Parameter.
+//
+// Parameter:
+//  - aAdditionalParams:
+//     Ein Array mit mehreren zusätzlich durch den Anwender definierten Parametern.
+//      -> Beispiel: {{'NODESK'}, ...} => BE_32.exe ... /NODESK ...
+//     Werte für Parameter werden mit Array-Paaren definiert.
+//      -> Beispiel: {.., {'PASS', 'BE32'}, ...} => BE_32.exe ... /PASS:BE32 ...
+//     HINWEIS:
+//      Wenn in aAdditionalParams der Parameter USER definiert ist, dann wird
+//      der Funktions-Parameter uUser (s.u.) ignoriert.
+//     ACHTUNG:
+//      Wenn USER definiert ist, muss auch ein Kennwort für den User definiert
+//      sein. Entweder als Hash (LOGINHASH) oder als Klartext (PASS).
+//
+//  - bWaitForProcess:
+//     Der Parameter steuert ob auf das Ende des Prozesses gewartet werden soll.
+//
+//  - cOnProcessFinishedCallback:
+//     Name der Callback-Funktion, die nach Ende des Prozesses ausgeführt werden
+//     soll.
+//     Die Übergabe eines Leerstrings ('') bedeutet "Kein Callback zuweisen"
+//     ACHTUNG: Die Callback-Funktion muss folgende Voraussetzungen erfüllen:
+//      * Der Codeblock, in dem die Funktion enthalten ist, muss Presistent sein,
+//        d.h. es ist der Aufruf von "SetPersistent(True)," notwendig
+//      * Am Ende der Callback-Funktion muss IMMER das Sender-Objekt (in diesem
+//        Fall die TBeProcess-Instanz) zerstört werden.
+//         -> Beispiel:
+//         function CallbackFunction(Sender:O)
+//            // Code der Callback-Funktion ...
+//            DestroyObject(Sender),
+//         end,
+//
+//  - nLocation:
+//     Neue be-Instanz startet im Standort nLocation. Wenn nLocation = -1 dann
+//     wird der Parameter /LOCATION=... nicht explizit beim Start übergeben.
+//
+//  - nDepartment:
+//     Neue be-Instanz startet in Abteilung nDepartment. Wenn nDepartment = -1
+//     dann wird der Parameter /DEPART=... nicht explizit beim Start übergeben.
+//
+//  - uUser:
+//     User-Nummer oder User-Name, der für die Anmeldung in der neuen be-Instanz
+//     verwendet wird.
+//     Wenn uUser = '' oder uUser = -1, wird die neue be-Instanz mit dem User,
+//     der aktuellen be-Instanz gestartet.
+//
+// @Result: null
+//******************************************************************************
+function _CreateBeProcess(aAdditionalParams:A,
+                          bWaitForProcess:L,
+                          cOnProcessFinishedCallback:C,
+                          nLocation:N,
+                          nDepartment:N,
+                          uUser:U)
+|
+   oProcess,
+   cWorkingDirectory, cExecutable, cParamString,
+   bProcessFinishCallbackAssigned,
+
+   cUserName, cUserDataType,
+   cPasswordHash,
+
+   cParamKey_User,
+   cParam_NoAutomaticLogin
+|
+
+   //***************************************************************************
+   // Einen Parameter dem Param-String hinzufügen
+   //***************************************************************************
+   function AddParam(cParam:C, uValue:U)
+      if not Empty(Trim(cParam)) then
+         SetErrorIf(Left(cParam, 1) == '/', 'Parameter in aAdditionalParams dürfen nicht mit führendem Slash ("/") angegeben werden'),
+         cParamString += ' /' + cParam + iif(Empty(uValue), '', ':' + ToString(uValue)),
+      endif,
+   end,
+
+   //***************************************************************************
+   // Alle zusätzlichen Parameter an den Param-String anfügen
+   // @Result: null
+   //***************************************************************************
+   function AddParamsByArray(aParamsArray:A)
+   | i, aParamItem, cParamValue |
+
+      for i := 1 to ALen(aParamsArray) do
+         aParamItem := aParamsArray[i],
+         if ALen(aParamItem) > 0 then
+            cParamValue := '',
+            if ALen(aParamItem) > 1 then
+               cParamValue := aParamItem[2],
+            endif,
+            AddParam(aParamItem[1], cParamValue),
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // Parameter-Array validieren
+   // @Result: null
+   //***************************************************************************
+   function ValidateParamsArray(aParamsArray:A)
+   | i, aParamItem |
+
+      for i := 1 to ALen(aParamsArray) do
+         aParamItem := aParamsArray[i],
+         SetErrorIf(ValType(aParamItem) <> 'A', 'Parameter müssen als Array bzw. als Key-Value-Paar definiert sein'),
+      next,
+   end,
+
+   //***************************************************************************
+   // Login-Hash für User ermitteln.
+   //
+   // ACHTUNG:
+   //  Der Login-Hash kann nur ermittelt werden, wenn das Kennwort des Users in
+   //  der DabUSR entweder als Hash oder als Klartext vorliegt.
+   //  Ist das Kennwort verschlüsselt, dann ist dies nicht möglich und führt zu
+   //  einer ausführlichen Exception.
+   //  Sobald im Codeblock Funktionen zum entschlüsseln solcher Kennwörter
+   //  existieren kann der Login-Hash für alle Kennwort-Typen ermittelt werden.
+   //
+   // @Result: string
+   //***************************************************************************
+   function DetermineLoginHash(cUserName:C)
+   | aPasswordInfo |
+
+      //************************************************************************
+      function DetermineHashByEncryptionType(cEncryptedPassword:C, nEncryptionType:N)
+         case nEncryptionType
+            of -1  :: Result := CalcHashString(Upper(cEncryptedPassword), 2, 8), // phetNone
+            of 1   :: SetError('Das Kennwort für den angegebenen User ist verschlüsselt und kann deshalb nicht für den automatischen Login genutzt werden'), // phetEncrypted
+            of 2   :: SetError('Das Kennwort für den angegebenen User ist verschlüsselt und kann deshalb nicht für den automatischen Login genutzt werden'), // phetSHA512Encrypted
+            of 512 :: Result := cEncryptedPassword,                              // phetSHA512
+            otherwise
+               SetError('Ungültiger Verschlüsselungstyp: ' + Str(nEncryptionType)),
+         endcase,
+      end,
+
+      aPasswordInfo := Lookup(waDabUSR, 'LOGIN', {{cUserName}}, '{PW_ENCRP, PW_ENC_TYP}', {}),
+      Result        := DetermineHashByEncryptionType(aPasswordInfo[1], aPasswordInfo[2]),
+   end,
+
+   //***************************************************************************
+   // Funktion stellt sicher, dass der User mit dem Login-Namen cUserName
+   // existiert.
+   //
+   // @Result: null
+   //***************************************************************************
+   function AssertUserExists(cUserName:C)
+      SetErrorIf(Empty(Lookup(waDabUSR, 'LOGIN', {{cUserName}}, 'Trim(LOGIN)', nil)), 'User <' + cUserName + '> existiert nicht'),
+   end,
+
+   cParamKey_User                 := 'USER',
+   cParam_NoAutomaticLogin        := 'LOGINKEY:',
+   cWorkingDirectory              := mbedefault + 'BE32\',
+   cExecutable                    := CbApplication.ExeName,
+   cParamString                   := '/P:..',
+   bProcessFinishCallbackAssigned := False,
+
+   oProcess := CreateObject('TBeProcess'),
+   startseq
+      // Falls vorhanden, OnProcessFinished-Callback zuweisen
+      if not Empty(AllTrim(cOnProcessFinishedCallback)) then
+         bProcessFinishCallbackAssigned :=
+            AssignEvent(oProcess, 'OnProcessFinished', cOnProcessFinishedCallback) <> nil,
+         // TODO:
+         //  Ggf. sollte hier eine Exception ausgelöst werden, wenn das
+         //  übergebene Callback nicht zugewiesen werden konnte:
+         // SetErrorIf(not bProcessFinishCallbackAssigned,
+         //            'Callback <' + cOnProcessFinishedCallback + '> konnte nicht zugewiesen werden')
+      endif,
+
+      // Array für zusätzliche Parameter validieren
+      ValidateParamsArray(aAdditionalParams),
+
+      // User ermitteln
+      cUserName := '',
+      if KVU_Find(aAdditionalParams, cParamKey_User) = -1 then
+         // Wenn kein User in aAdditionalParams angegeben wurde, wird der User
+         // aus uUser ermittelt, sofern dieser nicht leer oder -1 ist.
+         // Ansonsten wird die neue be-Instanz mit dem aktuell angemeldeten User
+         // gestartet.
+         cUserDataType := ValType(uUser),
+         if not Empty(uUser) and (cUserDataType <> 'N' or uUser <> -1) then
+            case cUserDataType
+               of 'N' :: cUserName := Lookup(waDabUSR, 'USER_NR', {{uUser}}, 'Trim(LOGIN)', ''),
+               of 'C' ::
+                  uUser := Trim(uUser),
+                  if (Len(uUser) = 3) and (CharOnly('0123456789', uUser) == uUser) then
+                     cUserName := Lookup(waDabUSR, 'USER_NR', {{uUser}}, 'Trim(LOGIN)', ''),
+                  else
+                     cUserName := uUser,
+                  endif,
+               otherwise
+                  SetError('Datentyp <' + cUserDataType + '> ist für Parameter <' + 'uUser' + '> ungültig, erwarte <' + 'N' + '> oder <' + 'C' + '>'),
+            endcase,
+            // Sicherstellen, dass der User im Benutzer-Stamm existiert
+            AssertUserExists(cUserName),
+            // Passwort-Hash ermitteln
+            cPasswordHash := DetermineLoginHash(cUserName),
+            // Verhindern, dass die Anmeldung mit dem aktuellen User automatisch
+            // erfolgt:
+            //  Parameter "LOGINKEY:" an die Kommandozeile anhängen, damit von
+            //  TBeProcess nicht automatisch ein Authentication-Key generiert wird.
+            AddParam(cParam_NoAutomaticLogin, ''),
+            // User an die Kommandozeile anfügen
+            AddParam(cParamKey_User, cUserName),
+            AddParam('LOGINHASH', cPasswordHash),
+         endif,
+      else
+         // Sobald der User über aAdditionalParams mit 'USER' angegeben wurde
+         // wird der Parameter uUser ignoriert.
+         // Es muss sichergestellt werden, dass für den angegebenen User ein
+         // Kennwort angegeben wurde. Entweder als Hash per 'LOGINHASH' oder als
+         // Klartext per 'PASS':
+         cUserName := KVU_GetAssert(aAdditionalParams, cParamKey_User),
+         // Sicherstellen, dass der User im Benutzer-Stamm existiert
+         AssertUserExists(cUserName),
+         // Sicherstellen, dass ein Passwort für den User angegben wurde
+         SetErrorIf(not (KVU_Find(aAdditionalParams, 'PASS')      <> -1 or
+                         KVU_Find(aAdditionalParams, 'LOGINHASH') <> -1),
+                    'Für User <' + cUserName + '> wurde kein Passwort angegeben!' + CRLF +
+                    'Das Passwort muss entweder als Hash per LOGINHASH oder als Klartext per PASS angegeben werden.'),
+
+         // Verhindern, dass die Anmeldung mit dem aktuellen User automatisch
+         // erfolgt:
+         //  Parameter "LOGINKEY:" an die Kommandozeile anhängen, damit von
+         //  TBeProcess nicht automatisch ein Authentication-Key generiert wird.
+         AddParam(cParam_NoAutomaticLogin, ''),
+      endif,
+
+      // Standort und Abteilung ermitteln
+      if nLocation <> -1 then
+         AddParam('LOCATION', Str(nLocation)),
+      endif,
+      if nDepartment <> -1 then
+         AddParam('DEPART', Str(nDepartment)),
+      endif,
+
+      // Zusätzliche Parameter an die Kommandozeile anfügen
+      AddParamsByArray(aAdditionalParams),
+
+      oProcess.CurrentDirectory := cWorkingDirectory,
+      oProcess.CommandLine      := cExecutable + ' ' + cParamString,
+      oProcess.FreeOnTerminate  := bProcessFinishCallbackAssigned,
+
+      // Ggf. auf das Ende des Prozesses warten
+      // ACHTUNG:
+      //  Falls ein Callback zugewiesen wurde, darf die Option "poWaitOnExit"
+      //  nicht gesetzt werden, da sonst das Callback nicht ausgeführt werden
+      //  würde.
+      if bWaitForProcess and not bProcessFinishCallbackAssigned then
+         // 2 => poWaitOnExit (TProcessOption)
+         oProcess.Options := _or(oProcess.Options, 2),
+      endif,
+
+      oProcess.Active := True, // Prozess starten
+
+      // Warten auf das Ende des Prozesses selbst übernehmen sofern ein Callback
+      // gesetzt wurde.
+      if bWaitForProcess and bProcessFinishCallbackAssigned then
+         while oProcess.Running do
+            // Hier darf kein "ProcessMsg()," aufgerufen werden, damit die
+            // aufrufende be-Instanz blockiert ist, solange der Kind-Prozess
+            // ausgeführt wird.
+            Sleep(200),
+         end,
+      endif,
+   always
+      // Das TBeProcess-Objekt darf nicht zerstört werden, wenn dem Objekt ein
+      // ProcessFinished-Callback zugewiesen ist, weil das Callback sonst nicht
+      // mehr ausgeführt werden kann.
+      if not bProcessFinishCallbackAssigned then
+         DestroyObject(oProcess),
+      endif,
+   stopseq,
+end,

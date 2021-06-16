@@ -1,0 +1,73 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Reorg um nachträglich Artikel-Nr. in Feld ARTNR zu schreiben
+//               Kam mit der Einführung des neuen Feldes DMSVER:ARTNR
+//
+//##############################################################################
+//##############################################################################
+
+|
+  m_oDM, m_oDab010, m_oDMSVER
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Öffnet alle notwendigen Tabellen
+// @Result: null
+//******************************************************************************
+function OpenDataBase(oDM)
+   m_oDab010               := DbGetTable(oDM, waDab010, 'ARTNR_RE'),
+   m_oDab010.IndexName     := 'DAB01G',
+   m_oDab010.WriteProtocol := true,
+
+   m_oDMSVER               := DbGetTable(oDM, waDMSVER, 'DMSVER_RE'),
+   m_oDMSVER.IndexName     := 'WORKAREA',
+   m_oDMSVER.WriteProtocol := true,
+end,
+
+//******************************************************************************
+// Schreibt die ArtNr in die DMSVER pro waDab010-DS
+// @Result: null
+//******************************************************************************
+function ArtNr_Reorg()
+   m_oDMSVER.CbFirst(),
+   m_oDMSVER.CbSetRange({waDab010}, {waDab010}),
+   Browse(, m_oDMSVER),
+   while not m_oDMSVER.CbEof do
+      if m_oDMSVER:WORKAREA = waDab010 and empty(m_oDMSVER:ARTNR) and m_oDab010.CbFindKey({m_oDMSVER:DS_ID}) then
+         m_oDMSVER.CbEdit(),
+         m_oDMSVER:ARTNR := m_oDab010:ARTNR,
+         m_oDMSVER.CbPost(),
+      endif,
+      m_oDMSVER.CbNext(),
+   end,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oDM := CreateObject('TbeDbGet', 'DMS_ARTNR'),
+   startseq
+      OpenDataBase(m_oDM),
+      ArtNr_Reorg(),
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj())
+stopseq,

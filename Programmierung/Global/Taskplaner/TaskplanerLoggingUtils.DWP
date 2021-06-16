@@ -1,0 +1,242 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+   gl_TSKPL_SenderIdentifier_Scheduler:_C,
+   gl_TSKPL_SenderIdentifier_Task:_C,
+   gl_TSKPL_Log_TaskID:_N,
+
+   gl_TSKPL_EventCode_SchedulerCreated:_N,
+   gl_TSKPL_EventCode_SchedulerDeleted:_N,
+   gl_TSKPL_EventCode_SchedulerStarted:_N,
+   gl_TSKPL_EventCode_SchedulerStopped:_N,
+   gl_TSKPL_EventCode_SchedulerEnabledHasToRun:_N,
+   gl_TSKPL_EventCode_SchedulerDisabledHasToRun:_N,
+
+   gl_TSKPL_EventCode_TaskCustomLog:_N,
+   gl_TSKPL_EventCode_TaskCreated:_N,
+   gl_TSKPL_EventCode_TaskActivated:_N,
+   gl_TSKPL_EventCode_TaskDeactivated:_N,
+   gl_TSKPL_EventCode_TaskExecuted:_N,
+   gl_TSKPL_EventCode_TaskFinished:_N,
+   gl_TSKPL_EventCode_TaskDeleted:_N,
+   gl_TSKPL_EventCode_TaskTransferred:_N,
+   gl_TSKPL_EventCode_TaskNotExecuted:_N,
+   gl_TSKPL_EventCode_AlgorithmError:_N
+
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_TSKPL_SenderIdentifier_Scheduler := 'S',
+gl_TSKPL_SenderIdentifier_Task      := 'T',
+gl_TSKPL_Log_TaskID                 := -1,
+
+// Scheduler
+gl_TSKPL_EventCode_SchedulerCreated          := 110,
+gl_TSKPL_EventCode_SchedulerDeleted          := 120,
+gl_TSKPL_EventCode_SchedulerStarted          := 130,
+gl_TSKPL_EventCode_SchedulerStopped          := 140,
+gl_TSKPL_EventCode_SchedulerEnabledHasToRun  := 150,
+gl_TSKPL_EventCode_SchedulerDisabledHasToRun := 160,
+
+// Task
+gl_TSKPL_EventCode_TaskCustomLog   := 200,
+gl_TSKPL_EventCode_TaskCreated     := 210,
+gl_TSKPL_EventCode_TaskActivated   := 220,
+gl_TSKPL_EventCode_TaskDeactivated := 230,
+gl_TSKPL_EventCode_TaskExecuted    := 240,
+gl_TSKPL_EventCode_TaskFinished    := 250,
+gl_TSKPL_EventCode_TaskDeleted     := 260,
+gl_TSKPL_EventCode_TaskTransferred := 270,
+gl_TSKPL_EventCode_TaskNotExecuted := 280,
+
+// Algorithmus
+gl_TSKPL_EventCode_AlgorithmError := 310,
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function _TSKPLTASK_UPDATE_LastLogMessage(oDM:O, nSchedulerId:N, nTaskId:N, oTSKPLLOG:O, cMessage:C)
+| oTSKPLTASK, bDataModuleAvailable , bTaskExist |
+   bDataModuleAvailable := not Empty(oDM) and ClassOf(oDM, 'TBeDbGet'),
+   if bDataModuleAvailable then
+      oTSKPLTASK := DbGetTable(oDM, waTSKPLTASK),
+   else
+      oTSKPLTASK := BeOpen(waTSKPLTASK),
+   endif,
+   startseq
+      bTaskExist := oTSKPLTASK.CbFindKey({nTaskId}),
+      if bTaskExist then
+        MyEdit(oTSKPLTASK),
+        oTSKPLTASK:LASTSTATUS := oTSKPLLOG:TYPE,
+        oTSKPLTASK:LAST_MSG   := Trim(AttribTranslate(gl_TSKPL_Config_AttributeTableID_TaskStatusGUI, Str(oTSKPLLOG:TASK_ST_G)) + ': ' + cMessage),
+        MyPost(oTSKPLTASK),
+      endif,
+   always
+      if not bDataModuleAvailable then
+         BeClose(oTSKPLTASK),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteLog_Internal(oDM:O, nSchedulerId:N, nTaskId:N, nEventCode:N, cMessage:C)
+| oTSKPLLOG, bDataModuleAvailable, oTSKPLSCHED, nTaskStatus, bOldLockErrorState |
+   bDataModuleAvailable := not Empty(oDM) and ClassOf(oDM, 'TBeDbGet'),
+   if bDataModuleAvailable then
+      oTSKPLLOG := DbGetTable(oDM, waTSKPLLOG),
+      // muss mit Aliasnamen aufgerugen werden, weil Post im GUI gespert ist
+      oTSKPLSCHED := instanceTable(oDM, waTSKPLSCHED, 'TSKPLSCHED_LOG', nSchedulerId),
+   else
+      oTSKPLLOG := BeOpen(waTSKPLLOG),
+      cbs(oTSKPLLOG),
+
+      oTSKPLSCHED             := BeOpen(waTSKPLSCHED),
+      myseek({ nSchedulerId}, oTSKPLSCHED),
+      bOldLockErrorState      := oTSKPLSCHED.ShowLockErr,
+      oTSKPLSCHED.ShowLockErr := true,
+   endif,
+
+   startseq
+      if not (nEventCode = gl_TSKPL_EventCode_SchedulerDeleted) then
+         myedit(oTSKPLSCHED),
+         oTSKPLSCHED:LAST_RESP := GetAdsServerTime(),
+         mypost(oTSKPLSCHED),
+      endif,
+
+      MyAppend(oTSKPLLOG),
+      oTSKPLLOG:SCHEDUL_ID := nSchedulerId,
+      oTSKPLLOG:TASK_ID    := nTaskId,
+      oTSKPLLOG:TYPE       := nEventCode,
+      oTSKPLLOG:SCHED_ST   := TSKPL_GetSchedulerStatus(nSchedulerId),
+      oTSKPLLOG:SCHED_ST_G := TSKPL_GetSchedulerStatusGui(nSchedulerId, oTSKPLLOG:SCHED_ST),
+      oTSKPLLOG:MEMO       := Trim(cMessage),
+
+      if (nTaskId > 0) and (nEventCode <> gl_TSKPL_EventCode_TaskDeleted) then
+         oTSKPLLOG:SENDER     := gl_TSKPL_SenderIdentifier_Task,
+         oTSKPLLOG:TASK_PARAM := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'Trim(STARTPARAM)', ''),
+         nTaskStatus          := TSKPL_GetTaskStatus(nTaskId),
+         oTSKPLLOG:TASK_ST    := nTaskStatus,
+         if (nEventCode = gl_TSKPL_EventCode_TaskFinished) and (nTaskStatus = gl_TSKPL_TaskStatus_Ready) then
+           nTaskStatus := gl_TSKPL_TaskStatus_Finished
+         endif,
+         oTSKPLLOG:TASK_ST_G  := TSKPL_GetTaskStatusGui(nTaskId, nTaskStatus),
+      else
+         oTSKPLLOG:SENDER := gl_TSKPL_SenderIdentifier_Scheduler,
+      endif,
+
+      MyPost(oTSKPLLOG),
+      TSKPLTASK_UPDATE_LastLogMessage(oDM, nSchedulerId, nTaskId, oTSKPLLOG, cMessage),
+   always
+      if not bDataModuleAvailable then
+         BeClose(oTSKPLLOG),
+         oTSKPLSCHED.ShowLockErr := bOldLockErrorState,
+         BeClose(oTSKPLSCHED),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteLog_Scheduler(nSchedulerId:N, nEventCode:N, cMessage:C)
+   TSKPL_WriteLog_Internal(nil, nSchedulerId, 0, nEventCode, cMessage),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteLog_Scheduler_DM(oDM:O, nSchedulerId:N, nEventCode:N, cMessage:C)
+   TSKPL_WriteLog_Internal(oDM, nSchedulerId, 0, nEventCode, cMessage),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteLog_Task(nTaskId:N, nEventCode:N, cMessage:C)
+| nSchedulerId |
+   nSchedulerId := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'SCHEDUL_ID'),
+   TSKPL_WriteLog_Internal(nil, nSchedulerId, nTaskId, nEventCode, cMessage),
+end,
+
+//******************************************************************************
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteLog_Task_DM(oDM:O, nTaskId:N, nEventCode:N, cMessage:C)
+| nSchedulerId, oTSKPLTASK |
+   // keinen Lookup, Transaktionen beaufsichtigen
+   oTSKPLTASK := DbGetTable(oDM, waTSKPLTASK, 'TSKPLTASK_LOOKUP_LOG'),
+   if oTSKPLTASK.CbFindKey({nTaskId}) then
+      nSchedulerId := oTSKPLTASK:SCHEDUL_ID,
+      TSKPL_WriteLog_Internal(oDM, nSchedulerId, nTaskId, nEventCode, cMessage),
+   endif,
+end,
+
+//******************************************************************************
+// Benutzerdefinierten Log-Eintrag in einem Task-Programm schreiben
+//
+// HINWEIS:
+//  - Sofern die Task-ID nicht existiert, wird kein Fehler ausgelöst.
+//    Aber es wird auch kein Log-Eintrag geschrieben!
+//  - Neuere Funktion ist TSKPL_Log. Am besten sollte die neue Funktion
+//    verwendet  werden
+//
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_WriteCustomLog(nTaskID:N, cMessage:C)
+| aTaskInfo |
+
+   aTaskInfo := Lookup(waTSKPLTASK, 'ID', {{nTaskID}}, '{not Eof(), SCHEDUL_ID}', {False, 0}),
+   if aTaskInfo[1] then
+      TSKPL_WriteLog_Internal(nil, aTaskInfo[2], nTaskID, gl_TSKPL_EventCode_TaskCustomLog, cMessage),
+   endif,
+end,
+
+//******************************************************************************
+// Benutzerdefinierten Log-Eintrag in einem Task-Programm schreiben
+// falls die Logs in einem untergeordnten Programm aufgerufen werden sollen,
+// kann der Programmname vom übergeordeten Programm übergeben werden, damit
+// der Log trotzdem funktioniert
+// @Result: null
+//******************************************************************************
+function _TSKPL_Log(cMessage:C, cProgName:C:='')
+| aTaskInfo, nTaskID, nProgID |
+   nTaskID := 0,
+   if IsBeDBVersion7() then
+      nTaskID := val(CbApplication.GetParam('TSKPL_ID')),                       // funktioniert nur bei Aufruf des Tasks in 'neuer be-Instanz', sonst Rückgabe empty()
+      if nTaskID = 0 then
+         nTaskID := gl_TSKPL_Log_TaskID,                                        // diese Variable wird gesetzt direkt vor dem Aufruf des Tasks in 'aktueller be-Instanz'
+      endif,
+   else
+      cProgName := e2v(cProgName, Progname()),
+      nProgID   := LookUp(waDabPRG, 'BEZ', {{cProgname}}, "PROGNR",0),
+      nTaskID   := ToFloat(GetBeParam('TSKP' + Str(nProgID))),
+   endif,
+   if not empty(nTaskID) then
+      aTaskInfo := Lookup(waTSKPLTASK, 'ID', {{nTaskID}}, '{not Eof(), SCHEDUL_ID}', {False, 0}),
+      if aTaskInfo[1] then
+         TSKPL_WriteLog_Internal(nil, aTaskInfo[2], nTaskID, gl_TSKPL_EventCode_TaskCustomLog, cMessage),
+      endif,
+   endif,
+end,
+

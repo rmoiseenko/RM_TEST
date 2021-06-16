@@ -1,0 +1,518 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Allgemeine Taskplaner-Utils
+//##############################################################################
+//##############################################################################
+
+|
+   gl_TSKPL_StartType_Once:_N     := 10,
+   gl_TSKPL_StartType_Daily:_N    := 20,
+   gl_TSKPL_StartType_Weekly:_N   := 30,
+   gl_TSKPL_StartType_Monthly:_N  := 40,
+   gl_TSKPL_StartType_Yearly:_N   := 50,
+   gl_TSKPL_StartType_Periodic:_N := 60,
+
+   gl_TSKPL_StartKind_Codeblock:_N  := 10,
+   gl_TSKPL_StartKind_BeInstance:_N := 20,
+
+   gl_TSKPL_MonthOffset_AfterBegin:_N := 10,
+   gl_TSKPL_MonthOffset_BeforeEnd:_N  := 20,
+
+   // Scheduler Status
+   gl_TSKPL_SchedulerStatus_Running:_N    := 10,
+   gl_TSKPL_SchedulerStatus_Terminated:_N := 20,
+   gl_TSKPL_SchedulerStatus_Inactive:_N   := 30,
+
+   // Scheduler Status GUI
+   gl_TSKPL_SchedulerStatusGui_OK_Inactive:_N      := 10,
+   gl_TSKPL_SchedulerStatusGui_Error_Inactive:_N   := 20,
+   gl_TSKPL_SchedulerStatusGui_OK_Terminated:_N    := 30,
+   gl_TSKPL_SchedulerStatusGui_Error_Terminated:_N := 40,
+   gl_TSKPL_SchedulerStatusGui_OK_Running:_N       := 50,
+
+   // Task Status
+   gl_TSKPL_TaskStatus_Ready:_N   := 10,
+   gl_TSKPL_TaskStatus_Running:_N := 20,
+   gl_TSKPL_TaskStatus_Finished:_N:= 30, // gleich wie *gl_TSKPL_TaskStatus_Ready* aber kann niemals *gl_TSKPL_TaskStatusGui_Missed* sein
+
+   // Task Status Gui
+   gl_TSKPL_TaskStatusGui_Inactive_SchedulerDeactivated:_N := 10,
+   gl_TSKPL_TaskStatusGui_Error_SchedulerHasToRun:_N       := 20,
+   gl_TSKPL_TaskStatusGui_Inactive_SchedulerTerminated:_N  := 30,
+   gl_TSKPL_TaskStatusGui_Error_SchedulerTerminated:_N     := 40,
+   gl_TSKPL_TaskStatusGui_Missed:_N                        := 50,
+   gl_TSKPL_TaskStatusGui_Ready:_N                         := 60,
+   gl_TSKPL_TaskStatusGui_Inactive_TaskInactive:_N         := 70,
+   gl_TSKPL_TaskStatusGui_Running:_N                       := 80,
+
+   // Task Monatlich Zeitpläne
+   gl_TSKPL_Algorithm_MonthSpecialType_BoM:_C            := 'bom',
+   gl_TSKPL_Algorithm_MonthSpecialType_EoM:_C            := 'eom',
+   gl_TSKPL_Algorithm_MonthSpecialType_BoM_WithOffset:_C := 'move_bom',
+   gl_TSKPL_Algorithm_MonthSpecialType_EoM_WithOffset:_C := 'move_eom'
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion prüft ob der übergebene StartType gültig ist.
+// @result: boolean
+//******************************************************************************
+function _TSKPL_StartType_IsValid(nStartType:N)
+   result := nStartType = gl_TSKPL_StartType_Once    or
+             nStartType = gl_TSKPL_StartType_Daily   or
+             nStartType = gl_TSKPL_StartType_Weekly  or
+             nStartType = gl_TSKPL_StartType_Monthly or
+             nStartType = gl_TSKPL_StartType_Yearly  or
+             nStartType = gl_TSKPL_StartType_Periodic,
+end,
+
+//******************************************************************************
+// Konvertiert ein Locale (https://de.wikipedia.org/wiki/Locale) in eine
+// be-Sprachnummer.
+//
+// @Result: numeric - be-Sprachnummer, -1 bei nicht unterstütztem Locale
+//******************************************************************************
+function _TSKPL_LocaleToBeLanguage(cLocale:C)
+   case Lower(Left(cLocale, 2))
+      of 'de' :: Result := 4, // Deutsch
+      of 'en' :: Result := 6, // Englisch
+      otherwise
+         Result := 4, // Default-Sprache ist "Deutsch"
+   endcase,
+end,
+
+//******************************************************************************
+// Ermittelt die Zeit für den angegebenen Index aus einem TimeBound-Array.
+// @Result: TDateTime - Zeit
+//******************************************************************************
+function _TSKPL_GetTimeFromTimeBoundArray(aTimeBound:A, nIndex:N)
+| nHours, nMinutes |
+   if ALen(aTimeBound) > 1 and (nIndex = 1 or nIndex = 2) then
+      // TODO: Validierung von aTimeBound
+      // TODO: Validierung von nIndex
+
+      nHours   := aTimeBound[nIndex, 1],
+      nMinutes := aTimeBound[nIndex, 2],
+      Result   := EncodeTime(nHours, nMinutes, 0, 0),
+   endif,
+end,
+
+//******************************************************************************
+// Steuerung des Labels - Anzeige der Start-Optionen und Einstellungen
+// @Result: Beschreibung der Start Option
+//******************************************************************************
+function _TSKPL_StartOptionsArrayToText(nStartType:N, aStartOptions:A)
+| aCheckedDays, i |
+
+   //***************************************************************************
+   function FormatTime(dTime:DT)
+      Result := FormatDateTime('HH:NN', dTime) + ' Uhr',
+   end,
+
+   //***************************************************************************
+   // Liefert zurück die restliche Nummern von 1 bis 7, die sich in dem
+   // Input-Array nicht befinden
+   // @Result: null
+   //***************************************************************************
+   function GetInvertedValues(aArray:A)
+   | i |
+
+      Result := {},
+      for i := 1 to 7 do
+         if SeekInArray(i, aArray) = -1 then
+            AAdd(Result, i),
+         endif,
+      next,
+   end,
+
+   Result       := '',
+   aCheckedDays := {},
+
+   if ALen(aStartOptions) = 0 then
+      Result += 'nicht konfiguriert',
+   else
+      case nStartType
+         of gl_TSKPL_StartType_Once     ::
+            Result += 'einmalig, ',
+            Result += 'am '   + FormatDateTime('DD.MM.YYYY', KVU_Get(aStartOptions, 'execution.Date', 0)),
+            Result += ', um ' + FormatTime(KVU_Get(aStartOptions, 'execution.Time', 0)),
+         of gl_TSKPL_StartType_Daily    ::
+            Result += 'täglich, jeden ',
+            aCheckedDays := GetInvertedValues(KVU_Get(aStartOptions, 'execution.ExceptDays', {})),
+            for i := 1 to ALen(aCheckedDays) do
+               Result += LongDayNames(aCheckedDays[i]),
+               if i = Alen(aCheckedDays) - 1 then
+                  Result += ' und ',
+               else
+                  Result += ', ',
+               endif,
+            next,
+            Result += 'um ' + FormatTime(KVU_Get(aStartOptions, 'execution.Time', 0)),
+         of gl_TSKPL_StartType_Weekly   ::
+            Result += 'wöchentlich, jeden ',
+            Result += iif(KVU_Get(aStartOptions, 'execution.WeekRotation', 0) > 1, Str(KVU_Get(aStartOptions, 'execution.WeekRotation', 0)) + '. ', ''),
+            Result += LongDayNames(KVU_Get(aStartOptions, 'execution.Weekday', -1)),
+            Result += ' um ' + FormatTime(KVU_Get(aStartOptions, 'execution.Time', 0)),
+         of gl_TSKPL_StartType_Monthly  ::
+            Result += 'monatlich, jeden ',
+            case KVU_Get(aStartOptions, 'execution.MonthSpecial', gl_TSKPL_Algorithm_MonthSpecialType_BoM)
+               of gl_TSKPL_Algorithm_MonthSpecialType_BoM            :: Result += 'ertsen Tag ',
+               of gl_TSKPL_Algorithm_MonthSpecialType_EoM            :: Result += 'letzten  Tag ',
+               of gl_TSKPL_Algorithm_MonthSpecialType_BoM_WithOffset :: Result += Str(KVU_Get(aStartOptions, 'execution.DayOfMonth', '1')) + '. Tag ',
+               of gl_TSKPL_Algorithm_MonthSpecialType_EoM_WithOffset :: Result += Str(KVU_Get(aStartOptions, 'execution.DayOfMonth', '1')) + '. Tag vor Monatsende ',
+               otherwise
+            endcase,
+            Result += 'um ' + FormatTime(KVU_Get(aStartOptions, 'execution.Time', 0)),
+         of gl_TSKPL_StartType_Yearly   ::
+            Result += 'jährlich, jeden ',
+            Result += Str(KVU_Get(aStartOptions, 'execution.Day', 1)) + '. ',
+            Result += CMonth(SToD('2001' + StrZero(KVU_Get(aStartOptions, 'execution.Month', 1), 2) + '01')) + ' ',
+            Result += 'um ' + FormatTime(KVU_Get(aStartOptions, 'execution.Time', 0)),
+         of gl_TSKPL_StartType_Periodic ::
+            Result += 'zyklisch, alle ',
+            Result += ToString(KVU_Get(aStartOptions, 'execution.Interval', '')),
+            if KVU_Get(aStartOptions, 'execution.IntervalUnit', '') = 'm' then
+               Result += ' Minuten',
+            else
+               Result += ' Stunden',
+            endif,
+            Result += ', am ',
+            aCheckedDays := GetInvertedValues(KVU_Get(aStartOptions, 'execution.ExceptDays', {})),
+            for i := 1 to ALen(aCheckedDays) do
+               Result += LongDayNames(aCheckedDays[i]),
+               if i = Alen(aCheckedDays) - 1 then
+                  Result += ' und ',
+               else
+                  Result += ', ',
+               endif,
+            next,
+            if ALen(KVU_Get(aStartOptions, 'execution.TimeBound', {})) > 0 then
+               Result += iif(
+                  KVU_Get(aStartOptions, 'execution.BlockInner', False) = True,
+                  'nicht zwischen ', 'nur zwischen '
+               ),
+               Result += FormatTime(TSKPL_GetTimeFromTimeBoundArray(KVU_Get(aStartOptions, 'execution.TimeBound', {{0,0},{0,0}}), 1)),
+               Result += ' und ',
+               Result += FormatTime(TSKPL_GetTimeFromTimeBoundArray(KVU_Get(aStartOptions, 'execution.TimeBound', {{0,0},{0,0}}), 2)),
+            endif,
+         otherwise
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+// Allgemeine Prüfung, ob eine Semaphore mit dem angegebenen Schlüssel existiert
+// @Result: boolean
+//******************************************************************************
+function _TSKPL_IsSepamhoreLocked(cSemaphoreKey:C)
+| oDabSEM |
+
+   oDabSEM := BeOpen(waDabSEM, 'SEMAPHORE'),
+   startseq
+      oDabSEM.CbRefresh(),
+      if oDabSEM.CbFindKey({cSemaphoreKey}) then
+         if DbLock(oDabSEM) then
+            DbUnlock(oDabSEM),
+            Result := False,
+         else
+            Result := True,
+         endif,
+      else
+        Result := False,
+      endif,
+   always
+      BeClose(oDabSEM),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Scheduler)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Scheduler-KeepAlive ermitteln
+// @Result: datetime - letzte Rückmeldung
+//******************************************************************************
+function _TSKPL_GetSchedulerKeepAlive(nSchedulerID:N)
+| dtLastResp, dOldestActive |
+
+   dOldestActive := GetAdsServerTime() - (gl_TSKPL_SchedulerTimeOut * (1/24/60/60)),
+
+   dtLastResp := Lookup(waTSKPLSCHED, 'ID', {{nSchedulerID}}, 'LAST_RESP', , , , , true),
+   if dtLastResp < dOldestActive then
+      Result := False,
+   else
+      Result := True,
+   endif,
+end,
+
+//******************************************************************************
+// Semaphor-Key für Scheduler erzeugen
+// @Result: string - Semaphor-Key
+//******************************************************************************
+function _TSKPL_GenerateSchedulerSemaphoreKey(nSchedulerID:N)
+   Result := 'BE_TSKPL_SCHEDULER_' + Str(nSchedulerID),
+end,
+
+//******************************************************************************
+// Prüfen ob eine Semaphore für den angegebenen Scheduler existiert
+// @Result: boolean
+//******************************************************************************
+function _TSKPL_IsSchedulerSepamhoreLocked(nSchedulerID:N)
+   Result := TSKPL_IsSepamhoreLocked(TSKPL_GenerateSchedulerSemaphoreKey(nSchedulerID)),
+end,
+
+//******************************************************************************
+// Scheduler-Status abhängig von Keep-Alive und Semaphore ermitteln
+// @Result: numeric - Scheduler-Status
+//******************************************************************************
+function _TSKPL_GetSchedulerStatus(nSchedulerID:N)
+| oTSKPLSCHED, nSchedulerStatusFromTable |
+
+   oTSKPLSCHED := BeOpen(waTSKPLSCHED, 'ID'),
+   startseq
+      // CbRefresh() ausführen, damit der aktuellste Zustand der Tabelle
+      // vorliegt, weil diese ggf. von anderen be-Instanzen verändert worden
+      // sein kann.
+      oTSKPLSCHED.CbRefresh(),
+      SetErrorIf(not oTSKPLSCHED.CbFindKey({nSchedulerID}),
+                 'Scheduler mit ID <' + Str(nSchedulerID) + '> existiert nicht'),
+      nSchedulerStatusFromTable := oTSKPLSCHED:STATUS,
+   always
+      BeClose(oTSKPLSCHED),
+   stopseq,
+
+   case nSchedulerStatusFromTable
+      of gl_TSKPL_SchedulerStatus_Inactive ::
+         Result := gl_TSKPL_SchedulerStatus_Inactive,
+
+      of gl_TSKPL_SchedulerStatus_Running ::
+         if TSKPL_GetSchedulerKeepAlive(nSchedulerID) then
+            Result := gl_TSKPL_SchedulerStatus_Running,
+         else
+            if TSKPL_IsSchedulerSepamhoreLocked(nSchedulerID) then
+               Result := gl_TSKPL_SchedulerStatus_Running,
+            else
+               Result := gl_TSKPL_SchedulerStatus_Inactive,
+            endif,
+         endif,
+
+      of gl_TSKPL_SchedulerStatus_Terminated ::
+         if TSKPL_GetSchedulerKeepAlive(nSchedulerID) then
+            Result := gl_TSKPL_SchedulerStatus_Terminated,
+         else
+            if TSKPL_IsSchedulerSepamhoreLocked(nSchedulerID) then
+               Result := gl_TSKPL_SchedulerStatus_Terminated,
+            else
+               Result := gl_TSKPL_SchedulerStatus_Inactive,
+            endif,
+         endif,
+
+      otherwise
+         Result := gl_TSKPL_SchedulerStatus_Inactive,
+   endcase,
+end,
+
+//******************************************************************************
+// Scheduler-Status für die Anzeige (GUI) ermitteln
+// @Result: numeric - Scheduler-Status
+//******************************************************************************
+function _TSKPL_GetSchedulerStatusGUI(nSchedulerID:N, nSchedulerStatus:N)
+| oTSKPLSCHED, bHasToRun |
+
+   // "Soll laufen" Flag ermitteln
+   oTSKPLSCHED := BeOpen(waTSKPLSCHED, 'ID'),
+   startseq
+      oTSKPLSCHED.CbRefresh(),
+      SetErrorIf(not oTSKPLSCHED.CbFindKey({nSchedulerID}),
+                 'Scheduler mit ID <' + Str(nSchedulerID) + '> existiert nicht'),
+      bHasToRun := oTSKPLSCHED:HASTORUN,
+   always
+      BeClose(oTSKPLSCHED),
+   stopseq,
+
+   // Scheduler-Status für Anzeige interpretieren
+   case nSchedulerStatus
+      of gl_TSKPL_SchedulerStatus_Running :: Result := gl_TSKPL_SchedulerStatusGui_OK_Running,
+      of gl_TSKPL_SchedulerStatus_Inactive ::
+            if bHasToRun then
+               Result := gl_TSKPL_SchedulerStatusGui_Error_Inactive,
+            else
+               Result := gl_TSKPL_SchedulerStatusGui_OK_Inactive,
+            endif,
+      of gl_TSKPL_SchedulerStatus_Terminated ::
+            if bHasToRun then
+               Result := gl_TSKPL_SchedulerStatusGui_Error_Terminated,
+            else
+               Result := gl_TSKPL_SchedulerStatusGui_OK_Terminated,
+            endif,
+      otherwise
+   endcase,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Task)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Semaphor-Key für Task erzeugen
+// @Result: string - Semaphor-Key
+//******************************************************************************
+function _TSKPL_GenerateTaskSemaphoreKey(nTaskId:N)
+   Result := 'BE_TSKPL_TASK_' + Str(nTaskId),
+end,
+
+//******************************************************************************
+// Prüfen ob eine Semaphore für den angegebenen Task existiert
+// @Result: boolean
+//******************************************************************************
+function _TSKPL_IsTaskSepamhoreLocked(nTaskId:N)
+   Result := TSKPL_IsSepamhoreLocked(TSKPL_GenerateTaskSemaphoreKey(nTaskId)),
+end,
+
+//******************************************************************************
+// Task-Status abhängig von der Task-Semaphore ermitteln
+// @Result: numeric - Task-Status
+//******************************************************************************
+function _TSKPL_GetTaskStatus(nTaskId:N)
+| oTSKPLTASK, nTaskStatusFromTable |
+
+   oTSKPLTASK := BeOpen(waTSKPLTASK, 'ID'),
+   startseq
+      oTSKPLTASK.CbRefresh(),
+      SetErrorIf(not oTSKPLTASK.CbFindKey({nTaskId}),
+                 'Task mit ID <' + Str(nTaskId) + '> existiert nicht'),
+      nTaskStatusFromTable := oTSKPLTASK:STATUS,
+   always
+      BeClose(oTSKPLTASK),
+   stopseq,
+
+   case nTaskStatusFromTable
+      of gl_TSKPL_TaskStatus_Ready   ::
+           Result := gl_TSKPL_TaskStatus_Ready,
+      of gl_TSKPL_TaskStatus_Running ::
+           if TSKPL_IsTaskSepamhoreLocked(nTaskId) then
+              Result := gl_TSKPL_TaskStatus_Running,
+           else
+              Result := gl_TSKPL_TaskStatus_Ready,
+           endif,
+      otherwise
+   endcase,
+end,
+
+//******************************************************************************
+// Task-Status für die Anzeige (GUI) ermitteln
+// @Result: numeric - Task-Status
+//******************************************************************************
+function _TSKPL_GetTaskStatusGUI(nTaskId:N, nTaskStatus:N)
+|
+   bTaskActive, dtTaskStartNext, bTaskFinised,
+   nSchedulerId, nSchedulerStatus, nSchedulerStatusGUI
+|
+   if nTaskStatus = gl_TSKPL_TaskStatus_Finished then
+     bTaskFinised := true,
+     nTaskStatus := gl_TSKPL_TaskStatus_Ready,
+   else
+     bTaskFinised := false,
+   endif,
+
+   bTaskActive         := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'ACTIVE'),
+   dtTaskStartNext     := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'START_NEXT'),
+   nSchedulerId        := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'SCHEDUL_ID'),
+   nSchedulerStatus    := TSKPL_GetSchedulerStatus(nSchedulerId),
+   nSchedulerStatusGUI := TSKPL_GetSchedulerStatusGUI(nSchedulerId, nSchedulerStatus),
+
+   case nTaskStatus
+      of gl_TSKPL_TaskStatus_Running :: Result := gl_TSKPL_TaskStatusGUI_Running,
+      of gl_TSKPL_TaskStatus_Ready ::
+         if bTaskActive then
+           case nSchedulerStatusGUI
+              of gl_TSKPL_SchedulerStatusGUI_OK_Running ::
+                    if (not bTaskFinised) and (dtTaskStartNext <> 0) and (dtTaskStartNext < GetAdsServerTime()) then
+                       Result := gl_TSKPL_TaskStatusGUI_Missed,
+                    else
+                       Result := gl_TSKPL_TaskStatusGUI_Ready,
+                    endif,
+              of gl_TSKPL_SchedulerStatusGUI_Error_Terminated ::
+                    Result := gl_TSKPL_TaskStatusGUI_Error_SchedulerTerminated,
+              of gl_TSKPL_SchedulerStatusGUI_OK_Terminated ::
+                    Result := gl_TSKPL_TaskStatusGUI_Inactive_SchedulerTerminated,
+              of gl_TSKPL_SchedulerStatusGUI_Error_Inactive ::
+                    Result := gl_TSKPL_TaskStatusGUI_Error_SchedulerHasToRun,
+              of gl_TSKPL_SchedulerStatusGUI_OK_Inactive ::
+                    Result := gl_TSKPL_TaskStatusGUI_Inactive_SchedulerDeactivated,
+              otherwise
+           endcase,
+         else
+            Result := gl_TSKPL_TaskStatusGUI_Inactive_TaskInactive,
+         endif,
+      otherwise
+   endcase,
+end,
+
+//******************************************************************************
+// Ein Datum in ein Array umstellen
+// @Result: Array
+//******************************************************************************
+function _ConvertDateTimeToArray(dtDateToConvert)
+| nY, nM, nD, nH, nN, nS, nMs |
+   result := Dim(7),
+   DecodeDateTime(dtDateToConvert, nY, nM, nD, nH, nN, nS, nMs),
+   result := {nY, nM, nD, nH, nN, nS, nMs},
+end,
+
+//******************************************************************************
+// Ein Array in ein Datum umstellen
+// @Result: DateTime
+//******************************************************************************
+function _ConvertArrayToDateTime(Arr)
+   result := EncodeDateTime(Arr[1], Arr[2], Arr[3], Arr[4], Arr[5], Arr[6], Arr[7]),
+end,
+
+//***************************************************************************
+function _TSKPL_RoundStartDate(aExecutionPlanOptions:A, dtCalcBase:DT)
+| dtInterval, dtStartDate |
+   dtStartDate := KVU_Get(aExecutionPlanOptions, 'execution.StartFirst', dtCalcBase),
+   case KVU_GET(aExecutionPlanOptions, 'execution.IntervalUnit', 'h')
+      of 'h' :: dtInterval := Encodetime(KVU_GET(aExecutionPlanOptions, 'execution.Interval', 2), 0, 0, 0),
+      of 'm' :: dtInterval := EncodeTime(0, KVU_GET(aExecutionPlanOptions, 'execution.Interval', 2), 0, 0),
+   otherwise
+      SetError('"' + KVU_GET(aExecutionPlanOptions, 'execution.IntervalUnit', 'h') + '" ist keine bekannte Einheit [h, m]'),
+   endcase,  
+   result := Int((dtCalcBase - dtStartDate) / dtInterval) * dtInterval + dtStartDate,
+   result := ConvertArrayToDateTime(ConvertDateTimeToArray(result)),
+   if dtCalcBase > result then
+     result := result + dtInterval,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _GetDayStart(aDateTime)
+| nY, nM, nD, nH, nN, nS, nMs |
+   DecodeDateTime(aDateTime, nY, nM, nD, nH, nN, nS, nMs),
+   Result := EncodeDateTime(nY, nM, nD, 0, 0, 0, 0),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _GetDayEnd(aDateTime)
+| nY, nM, nD, nH, nN, nS, nMs |
+   DecodeDateTime(aDateTime, nY, nM, nD, nH, nN, nS, nMs),
+   Result := EncodeDateTime(nY, nM, nD, 23, 59, 59, 999),
+end,
+
+

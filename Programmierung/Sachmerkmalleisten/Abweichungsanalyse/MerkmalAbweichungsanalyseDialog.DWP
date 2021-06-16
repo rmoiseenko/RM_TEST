@@ -1,0 +1,367 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Fenster zum Anzeigen der Abweichungen von Merkmalen in Sach-
+//               merkmalleisten zu der Definition des Merkmals.
+//
+// Parameter:
+//   1. <unbenutzt>
+//   2. <unbenutzt>
+//   3. CustomInfo-Array, Format:
+//      {
+//         <Modus>, <Je nach Modus: Sachmerkmalleisten-ID/Merkmals-ID>
+//      }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_aParams:P4,
+
+   m_nMode,
+   m_nItemID,
+
+
+   m_oDifferences,
+   m_bOnlyShowDifferences,
+
+   m_nModeSML,
+   m_nModeAttribute,
+
+   m_cPositionSaveID,
+   m_cBrowserID,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, chk_OnlyShowDifferences, ds_Differences, grd_Differences,
+   ipnl_Settings, pnl_Grid, pnl_Settings
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveID := '@SMLDIFFPOS',
+m_cBrowserID      := '@ATTRDIFF',
+
+m_nModeSML        := 1,
+m_nModeAttribute  := 2,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Modus als String in einen eindeutigen numerischen Wert konvertieren.
+// Die Funktion validiert zusätzlich den Modus-String und löst ggf. Exceptions
+// aus.
+//
+// @Result: integer, Modus als numerischer Wert
+//******************************************************************************
+function DetermineMode(cModeString:C)
+   Result := 0, // ungültiger Modus
+   case cModeString
+      of 'SACHMERKMALLEISTE' :: Result := m_nModeSML,
+      of 'MERKMAL'           :: Result := m_nModeAttribute,
+      otherwise
+         SetError('Ungültiger Modus <' + cModeString + '>'),
+   endcase,
+end,
+
+//******************************************************************************
+// Abweichungs-MemTable initialisieren (Felder anlegen, etc.)
+// @Result: null
+//******************************************************************************
+function InitDifferencesTable(oTable:O)
+| aFields, i, oFieldSML_ID, oFieldV_INDEX |
+
+   aFields := {
+      // Feldname    Typ        Größe   Abweichungs-Feld?
+      {'V_INDEX',    ftInteger, 0,      False},
+      {'SML_ID',     ftInteger, 0,      False},
+      {'ITEM_ID',    ftInteger, 0,      False},
+      {'MODUS',      ftInteger, 0,      False},
+      {'ABWEICHUNG', ftBoolean, 0,      False},
+      {'BEZ',        ftMemo,    9,      True},
+      {'DRUCKEN',    ftBoolean, 0,      True},
+      {'MERKM_TYP',  ftInteger, 0,      True},
+      {'DATEN_TYP',  ftInteger, 0,      True},
+      {'MMT',        ftInteger, 0,      True},
+      {'VORGABE',    ftMemo,    9,      True},
+      {'FORMAT',     ftString,  256,    True},
+      {'CODEBLOCK',  ftMemo,    9,      True},
+      {'GROESSE',    ftInteger, 0,      True}
+   },
+
+   for i := 1 to ALen(aFields) do
+      oTable.CbAddField(aFields[i, 1], aFields[i, 2], aFields[i, 3]),
+      if aFields[i, 4] then // Ggf. Abweichungsfelder anlegen
+         // Feld: Eigenschaft des Merkmals in der Sachmerkmalleiste
+         oTable.CbAddField('SML_' + aFields[i, 1], aFields[i, 2], aFields[i, 3]),
+         // Feld: Ist eine Abweichung für dieses Feld vorhanden?
+         oTable.CbAddField('ABW_' + aFields[i, 1], ftBoolean, 0),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Abweichungsdatensatz hinzufügen
+// @Result: null
+//******************************************************************************
+function AddAttribDifferenceRecord(oTable:O, oSMLMKM:O, oSMLZEL:O, nMode:N)
+   oTable.CbAppend(),
+   oTable:V_INDEX       := oSMLMKM:V_INDEX,
+   oTable:SML_ID        := oSMLZEL:SML_ID,
+   oTable:MODUS         := nMode,
+   // Eigenschaften des Merkmals laut Definition
+   oTable:BEZ           := oSMLMKM:BEZ,
+   oTable:DRUCKEN       := oSMLMKM:DRUCKEN,
+   oTable:MERKM_TYP     := oSMLMKM:MERKM_TYP,
+   oTable:DATEN_TYP     := oSMLMKM:DATEN_TYP,
+   oTable:MMT           := oSMLMKM:MMT,
+   oTable:VORGABE       := oSMLMKM:VORGABE,
+   oTable:FORMAT        := oSMLMKM:FORMAT,
+   oTable:CODEBLOCK     := oSMLMKM:CODEBLOCK,
+   oTable:GROESSE       := oSMLMKM:GROESSE,
+   // Eigenschaften des Merkmals in der Sachmerkmalleiste
+   oTable:SML_BEZ       := oSMLZEL:BEZ,
+   oTable:SML_DRUCKEN   := oSMLZEL:DRUCKEN,
+   oTable:SML_MERKM_TYP := oSMLZEL:MERKM_TYP,
+   oTable:SML_DATEN_TYP := oSMLZEL:DATEN_TYP,
+   oTable:SML_MMT       := oSMLZEL:MMT,
+   oTable:SML_VORGABE   := oSMLZEL:VORGABE,
+   oTable:SML_FORMAT    := oSMLZEL:FORMAT,
+   oTable:SML_CODEBLOCK := oSMLZEL:CODEBLOCK,
+   oTable:SML_GROESSE   := oSMLZEL:GROESSE,
+   // Abweichungsfelder
+   oTable:ABW_BEZ       := oTable:BEZ       <> oTable:SML_BEZ,
+   oTable:ABW_DRUCKEN   := oTable:DRUCKEN   <> oTable:SML_DRUCKEN,
+   oTable:ABW_MERKM_TYP := oTable:MERKM_TYP <> oTable:SML_MERKM_TYP,
+   oTable:ABW_DATEN_TYP := oTable:DATEN_TYP <> oTable:SML_DATEN_TYP,
+   oTable:ABW_MMT       := oTable:MMT       <> oTable:SML_MMT,
+   oTable:ABW_VORGABE   := oTable:VORGABE   <> oTable:SML_VORGABE,
+   oTable:ABW_FORMAT    := oTable:FORMAT    <> oTable:SML_FORMAT,
+   oTable:ABW_CODEBLOCK := oTable:CODEBLOCK <> oTable:SML_CODEBLOCK,
+   oTable:ABW_GROESSE   := oTable:GROESSE   <> oTable:SML_GROESSE,
+   // Generell Abweichung vorhanden?
+   oTable:ABWEICHUNG    := oTable:ABW_BEZ       or oTable:ABW_DRUCKEN   or
+                           oTable:ABW_MERKM_TYP or oTable:ABW_DATEN_TYP or
+                           oTable:ABW_MMT       or oTable:ABW_VORGABE   or
+                           oTable:ABW_FORMAT    or oTable:ABW_CODEBLOCK or
+                           oTable:ABW_GROESSE,
+   oTable.CbPost(),
+end,
+
+//******************************************************************************
+// Abweichungs-MemTable befüllen
+// @Result: null
+//******************************************************************************
+function FillDifferencesTable_Attribute(oTable:O, nAttributeID:N, nMode:N)
+| oSMLZEL, oSMLMKM |
+
+   oSMLZEL := CreateObject('TBeAdsQuery'),
+   startseq
+      oSMLMKM := BeOpen(waSMLMKM, 'ID'),
+      startseq
+         SetErrorIf(
+            not oSMLMKM.CbFindKey({nAttributeID}),
+            'Merkmal mit ID <' + Str(nAttributeID) + '> existiert nicht'
+         ),
+         oSMLZEL.SQL    := 'SELECT * FROM ' + DbSQLTableName(waSMLZEL) + ' WHERE V_INDEX = ' + Str(oSMLMKM:V_INDEX) + ' ORDER BY SML_ID',
+         oSMLZEL.Active := True,
+         oSMLZEL.CbFirst(),
+
+         // Abweichungstabelle befüllen
+         if not (oSMLMKM.CbEof and oSMLMKM.CbBof) then
+            while not oSMLZEL.CbEof do
+               AddAttribDifferenceRecord(oTable, oSMLMKM, oSMLZEL, nMode),
+               oSMLZEL.CbNext(),
+            end,
+         endif,
+      always
+         DestroyObject(oSMLMKM),
+      stopseq,
+   always
+      DestroyObject(oSMLZEL),
+   stopseq,
+end,
+
+//******************************************************************************
+// Abweichungs-MemTable befüllen
+// @Result: null
+//******************************************************************************
+function FillDifferencesTable_SML(oTable:O, nSMLID:N, nMode:N)
+| oSMLZEL, oSMLMKM, cFilter |
+
+   oSMLZEL := CreateObject('TBeAdsQuery'),
+   startseq
+      oSMLMKM := CreateObject('TBeAdsQuery'),
+      startseq
+         oSMLZEL.SQL    := 'SELECT * FROM ' + DbSQLTableName(waSMLZEL) + ' WHERE MERKM_TYP = 2 AND SML_ID = ' + Str(nSMLID) + ' ORDER BY V_INDEX',
+         oSMLZEL.Active := True,
+         oSMLZEL.CbFirst(),
+
+         if oSMLZEL.CbBof and oSMLZEL.CbEof then
+            cFilter := 'ID = -1',
+         else
+            cFilter := '',
+            while not oSMLZEL.CbEof do
+               cFilter += iif(Empty(cFilter), '', ' OR '),
+               cFilter += 'V_INDEX = ' + Str(oSMLZEL:V_INDEX),
+               oSMLZEL.CbNext(),
+            end,
+         endif,
+
+         oSMLMKM.SQL    := 'SELECT * FROM ' + DbSQLTableName(waSMLMKM) + ' WHERE ' + cFilter  + ' ORDER BY V_INDEX',
+         oSMLMKM.Active := True,
+
+         oSMLZEL.CbFirst(),
+         oSMLMKM.CbFirst(),
+
+         // Abweichungstabelle befüllen
+         while not (oSMLZEL.CbEof or oSMLMKM.CbEof) do
+            AddAttribDifferenceRecord(oTable, oSMLMKM, oSMLZEL, nMode),
+            oSMLZEL.CbNext(),
+            oSMLMKM.CbNext(),
+         end,
+
+      always
+         DestroyObject(oSMLMKM),
+      stopseq,
+   always
+      DestroyObject(oSMLZEL),
+   stopseq,
+end,
+
+//******************************************************************************
+// Filter für Abweichungs-Memtable aktualisieren
+// @Result: null
+//******************************************************************************
+function RefreshDifferencesTableFilter(oTable:O, bOnlyShowDifferences:L)
+   oTable.Filtered := False,
+   if bOnlyShowDifferences then
+      oTable.Filter   := 'ABWEICHUNG',
+      oTable.Filtered := True,
+   endif,
+end,
+
+//******************************************************************************
+// Parameter aus dem CustomInfo-Array ermitteln
+// @Result: null
+//******************************************************************************
+function ParseParams()
+   SetErrorIf(ALen(m_aParams) <> 2,         'CustomInfo-Array muss genau 2 Elemente enthalten!'),
+   SetErrorIf(ValType(m_aParams[1]) <> 'C', 'Erstes Element des CustomInfo-Arrays muss vom Typ <String> sein!'),
+   SetErrorIf(ValType(m_aParams[2]) <> 'N', 'Zweites Element des CustomInfo-Arrays muss vom Typ <Numeric> sein!'),
+
+   m_nMode   := DetermineMode(m_aParams[1]),
+   m_nItemID := m_aParams[2],
+end,
+
+//******************************************************************************
+// benötigte Tabellen öffnen und mit GUI verbinden
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   GU_LinkTableToGUI(m_oDifferences, ds_Differences, grd_Differences, m_cBrowserID, False),
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Abweichungsanalyse',
+
+   m_bOnlyShowDifferences          := True,
+   chk_OnlyShowDifferences.Checked := m_bOnlyShowDifferences,
+
+   RefreshDifferencesTableFilter(m_oDifferences, m_bOnlyShowDifferences),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim aktivieren/deaktivieren der Einstellung "Nur Abweichungen anzeigen"
+//******************************************************************************
+function chk_OnlyShowDifferencesClick( Sender )
+   m_bOnlyShowDifferences := Sender.Checked,
+   RefreshDifferencesTableFilter(m_oDifferences, m_bOnlyShowDifferences),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm                   := LoadForm("@SMLDIFF", Application),
+   chk_OnlyShowDifferences := FindObject(oForm, "chk_OnlyShowDifferences"),
+   ds_Differences          := FindObject(oForm, "ds_Differences"),
+   grd_Differences         := FindObject(oForm, "grd_Differences"),
+   ipnl_Settings           := FindObject(oForm, "ipnl_Settings"),
+   pnl_Grid                := FindObject(oForm, "pnl_Grid"),
+   pnl_Settings            := FindObject(oForm, "pnl_Settings"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   ParseParams(),
+
+   m_oDifferences := CreateObject('TBeMemTable', 'DifferencesMemTable'),
+   startseq
+      InitDifferencesTable(m_oDifferences),
+      m_oDifferences.Active := True,
+
+      case m_nMode
+         of m_nModeAttribute ::
+            FillDifferencesTable_Attribute(m_oDifferences, m_nItemID, m_nMode),
+
+         of m_nModeSML ::
+            FillDifferencesTable_SML(m_oDifferences, m_nItemID, m_nMode),
+
+         otherwise
+            SetError('Ungültiger Modus <' + Str(m_nMode) + '>'),
+      endcase,
+
+      startseq
+         LoadGUI(),
+         OpenDataBaseAndLinkToGUI(),
+         SetDefaults(),
+         ShowModal(oForm),
+      always
+         DestroyObject(oForm),
+      stopseq,
+   always
+      DestroyObject(m_oDifferences),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+

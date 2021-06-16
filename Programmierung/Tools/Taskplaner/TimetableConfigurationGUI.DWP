@@ -1,0 +1,608 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzer Oberfläche für Zeitplan-Konfigurator
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_oDummy:P3,
+   m_aParams:P4,
+
+   m_nStartType,
+
+   m_aResult,
+
+   m_cPositionSaveID,
+   m_aDefaultValues,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Save, Actions, BePanel1, btn_Cancel, btn_Save,
+   chk_PeBlockInner, chk_WeEvery, chkl_DaDays, chkl_PeDays, cmb_MoWhen,
+   cmb_PeBlockInner, cmb_PeTime, cmb_WeDays, cmb_YeDays, cmb_YeMonths, dtp_DaAt,
+   dtp_MoUm, dtp_OnAm, dtp_OnUm, dtp_PeTo, dtp_PeUp, dtp_WeUm, dtp_YeAt,
+   edt_MoSpecialDay, edt_PeEvery, edt_WeWeeks, lbl_DaAm, lbl_DaAt, lbl_MoAm,
+   lbl_MoDays, lbl_MoUm, lbl_OnAm, lbl_OnUm, lbl_PeAm, lbl_PeEvery, lbl_WeAm,
+   lbl_WeUm, lbl_WeWeeks, lbl_YeAt, lbl_YeOnDay, lbl_YeOnMonth,
+   pc_TimetableConfig, pnl_Main, rbtn_MoErsten, rbtn_MoLetzten, rbtn_MoSpecial,
+   ts_Daily, ts_Monthly, ts_Once, ts_Periodic, ts_Weekly, ts_Yearly
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveID := '@TSTTCONFP',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion für entsprechende Komponenten zu aktualisieren
+// @Result: null
+//******************************************************************************
+function RefreshControls()
+| bNoMonthSpecial |
+   case m_nStartType
+      of gl_TSKPL_StartType_Once     :: ,
+      of gl_TSKPL_StartType_Daily    :: ,
+      of gl_TSKPL_StartType_Weekly   :: edt_WeWeeks.ReadOnlyStateFromField := chk_WeEvery.Checked,
+                                        edt_WeWeeks.ReadOnly := not chk_WeEvery.Checked,
+      of gl_TSKPL_StartType_Monthly  ::
+         bNoMonthSpecial           := not rbtn_MoSpecial.Checked,
+         edt_MoSpecialDay.ReadOnly := bNoMonthSpecial,
+         cmb_MoWhen.ReadOnly       := bNoMonthSpecial,
+         if bNoMonthSpecial then
+            edt_MoSpecialDay.Text := '',
+            cmb_MoWhen.ItemIndex  := -1,
+         endif,
+
+
+      of gl_TSKPL_StartType_Yearly   ::
+      of gl_TSKPL_StartType_Periodic ::
+         cmb_PeBlockInner.ReadOnly   := not chk_PeBlockInner.Checked,
+         dtp_PeUp.ReadOnly         := not chk_PeBlockInner.Checked,
+         dtp_PeTo.ReadOnly         := not chk_PeBlockInner.Checked,
+      otherwise
+   endcase,
+end,
+
+//******************************************************************************
+// Ersätzt die Indexen der Tagen mit Montag als ersten Tag
+// @Result: Array mit entsprechenden ControlIndex für Tages
+//******************************************************************************
+function DayIndexToControlIndex(aUncheckedDays:A)
+| i, nTemp |
+
+   for i := 1 to ALen(aUncheckedDays) do
+      nTemp := aUncheckedDays[i] - 1,
+      if nTemp = 0 then
+         nTemp := 7,
+      endif,
+      aUncheckedDays[i] := nTemp,
+   next,
+   Result := aUncheckedDays,
+end,
+
+//******************************************************************************
+// Ersätzt die Indexen der Tagen mit Sonntag als ersten Tag
+// @Result: Array mit entsprechenden ControlIndex für Tages
+//******************************************************************************
+function ControlIndexToDayIndex(aCheckedDays:A)
+| i, nTemp |
+
+   for i := 1 to ALen(aCheckedDays) do
+      nTemp := aCheckedDays[i] + 1,
+      if nTemp = 8 then
+         nTemp := 1,
+      endif,
+      aCheckedDays[i] := nTemp,
+   next,
+   Result := aCheckedDays,
+end,
+
+//******************************************************************************
+// Liefert zurück die restliche Nummern von 1 bis 7, die sich in dem Input-Array
+// nicht befinden
+// @Result: null
+//******************************************************************************
+function GetInvertedValues(aArray:A)
+| i |
+
+   Result := {},
+   for i := 1 to 7 do
+      if SeekInArray(i, aArray) = -1 then
+         AAdd(Result, i),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Setzt die Tage im Combobox
+// @Result: null
+//******************************************************************************
+function FillCombo_YeDays()
+| aDays, nEomDay, i |
+   aDays := {},
+   if cmb_YeMonths.Value > 0 then
+      nEomDay := Day(EOM(CToD('01.'+ StrZero(cmb_YeMonths.Value, 2)+ '.2015'))),
+      for i := 1 to nEomDay do
+         AAdd(aDays, i ),
+      next,
+      cmb_YeDays.Items := aDays,
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| aDays, aDaysWithValues, aMonths, i, aDayValues |
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Zeitplan konfigurieren',
+
+   aDayValues := {2, 3, 4, 5, 6, 7, 1},
+   aDays      := {},
+   for i := 1 to ALen(aDayValues) do
+      AAdd(aDays, LongDayNames(aDayValues[i])),
+   next,
+
+   aDaysWithValues := {},
+   for i := 1 to ALen(aDayValues) do
+      AAdd(aDaysWithValues, LongDayNames(aDayValues[i]) + Chr(9) + Str(aDayValues[i])),
+   next,
+
+   aMonths := {
+      'Januar' + Chr(9) + '1',
+      'Februar' + Chr(9) + '2',
+      'März' + Chr(9) + '3',
+      'April' + Chr(9) + '4',
+      'Mai' + Chr(9) + '5',
+      'Juni' + Chr(9) + '6',
+      'Juli' + Chr(9) + '7',
+      'August' + Chr(9) + '8',
+      'September' + Chr(9) + '9',
+      'Oktober' + Chr(9) + '10',
+      'November' + Chr(9) + '11',
+      'Dezember' + Chr(9) + '12'
+   },
+
+   chkl_DaDays.Items    := aDays,
+   cmb_WeDays.Items     := aDaysWithValues,
+   cmb_MoWhen.Items     := {'nach Monatsbeginn' + Chr(9) + Str(gl_TSKPL_MonthOffset_AfterBegin),
+                            'vor Monatsende'    + Chr(9) + Str(gl_TSKPL_MonthOffset_BeforeEnd)},
+   cmb_YeMonths.Items   := aMonths,
+   cmb_PeTime.Items     := {'Minuten' + Chr(9) + 'm', 'Stunden' + Chr(9) + 'h'},
+   cmb_PeBlockInner.Items := {'nicht zwischen', 'nur zwischen'},
+   chkl_PeDays.Items    := aDays,
+
+   ts_Once.TabVisible     := False,
+   ts_Daily.TabVisible    := False,
+   ts_Weekly.TabVisible   := False,
+   ts_Monthly.TabVisible  := False,
+   ts_Yearly.TabVisible   := False,
+   ts_Periodic.TabVisible := False,
+
+   case m_nStartType
+      of gl_TSKPL_StartType_Once     ::
+         ts_Once.TabVisible := True,
+         MyFocusControl(oForm, dtp_OnAm),
+         dtp_OnAm.Date      := KVU_Get(m_aDefaultValues, 'execution.Date', 0),
+         dtp_OnUm.Time      := KVU_Get(m_aDefaultValues, 'execution.Time', 0),
+      of gl_TSKPL_StartType_Daily    ::
+         ts_Daily.TabVisible      := True,
+         MyFocusControl(oForm, dtp_DaAt),
+         dtp_DaAt.Time            := KVU_Get(m_aDefaultValues, 'execution.Time', 0),
+         chkl_DaDays.CheckedItems := GetInvertedValues(DayIndexToControlIndex(KVU_Get(m_aDefaultValues, 'execution.ExceptDays', {}))),
+      of gl_TSKPL_StartType_Weekly   ::
+         ts_Weekly.TabVisible := True,
+         MyFocusControl(oForm, cmb_WeDays),
+         cmb_WeDays.Value     := KVU_Get(m_aDefaultValues, 'execution.Weekday', 2),
+         edt_WeWeeks.Text     := iif(Val(KVU_Get(m_aDefaultValues, 'execution.WeekRotation', 0)) > 1, KVU_Get(m_aDefaultValues, 'execution.WeekRotation', 0), ''),
+         chk_WeEvery.Checked  := not Empty(edt_WeWeeks.Text),
+         dtp_WeUm.Time        := KVU_Get(m_aDefaultValues, 'execution.Time', 0),
+
+      of gl_TSKPL_StartType_Monthly  ::
+         ts_Monthly.TabVisible := True,
+         dtp_MoUm.Time         := KVU_Get(m_aDefaultValues, 'execution.Time', 0),
+         case KVU_Get(m_aDefaultValues, 'execution.MonthSpecial', 'bom')
+            of 'bom'      :: rbtn_MoErsten.Checked  := True,
+                             MyFocusControl(oForm, rbtn_MoErsten),
+            of 'eom'      :: rbtn_MoLetzten.Checked := True,
+                             MyFocusControl(oForm, rbtn_MoLetzten),
+            of 'move_bom' :: rbtn_MoSpecial.Checked := True,
+                             edt_MoSpecialDay.Text  := Str(KVU_Get(m_aDefaultValues, 'execution.DayOfMonth', '0')),
+                             cmb_MoWhen.Value       := gl_TSKPL_MonthOffset_AfterBegin,
+                             MyFocusControl(oForm, rbtn_MoSpecial),
+            of 'move_eom' :: rbtn_MoSpecial.Checked := True,
+                             edt_MoSpecialDay.Text  := Str(KVU_Get(m_aDefaultValues, 'execution.DayOfMonth', '0')),
+                             cmb_MoWhen.Value       := gl_TSKPL_MonthOffset_BeforeEnd,
+                             MyFocusControl(oForm, rbtn_MoSpecial),
+            otherwise
+         endcase,
+      of gl_TSKPL_StartType_Yearly   ::
+         ts_Yearly.TabVisible     := True,
+         MyFocusControl(oForm, cmb_YeMonths),
+         dtp_YeAt.Time         := KVU_Get(m_aDefaultValues, 'execution.Time', 0),
+         cmb_YeMonths.Value    := Val(KVU_Get(m_aDefaultValues, 'execution.Month', '1')),
+         cmb_YeDays.Value      := Val(KVU_Get(m_aDefaultValues, 'execution.Day', '1')),
+      of gl_TSKPL_StartType_Periodic ::
+         ts_Periodic.TabVisible      := True,
+         MyFocusControl(oForm, edt_PeEvery),
+         edt_PeEvery.Text            := ToString(KVU_Get(m_aDefaultValues, 'execution.Interval', '')),
+         cmb_PeTime.Value            := KVU_Get(m_aDefaultValues, 'execution.IntervalUnit', 'm'),
+         chkl_PeDays.CheckedItems    := GetInvertedValues(DayIndexToControlIndex(KVU_Get(m_aDefaultValues, 'execution.ExceptDays', {}))),
+
+         if ALen(KVU_Get(m_aDefaultValues, 'execution.TimeBound', {})) > 0 then
+            chk_PeBlockInner.Checked    := True,
+            cmb_PeBlockInner.ItemIndex  := iif(KVU_Get(m_aDefaultValues, 'execution.BlockInner', False), 0, 1),
+            dtp_PeUp.Time := TSKPL_GetTimeFromTimeBoundArray(KVU_Get(m_aDefaultValues, 'execution.TimeBound', {{0,0},{0,0}}), 1),
+            dtp_PeTo.Time := TSKPL_GetTimeFromTimeBoundArray(KVU_Get(m_aDefaultValues, 'execution.TimeBound', {{0,0},{0,0}}), 2),
+         else
+            chk_PeBlockInner.Checked    := False,
+            cmb_PeBlockInner.ItemIndex  := -1,
+         endif,
+      otherwise
+   endcase,
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Übernimmt die Parameters von vorhärige Maske
+// @Result: null
+//******************************************************************************
+function ParseParams()
+   SetErrorIf(ALen(m_aParams) < 2, 'Anzahl Elemente im Parameter Array muss 2 sein!'),
+   m_nStartType     := m_aParams[1],
+   m_aDefaultValues := StrToArr(m_aParams[2]),
+end,
+
+//******************************************************************************
+//
+// @Result: Matrix mit Zeiten
+//******************************************************************************
+function  GetTimeBound(tTimeUp:DT, tTimeTo:DT)
+   Result := {{0, 0}, {0, 0}}, // Array[2, 2] erstellen
+
+   Result[1,1] := Val(FormatDateTime('H', tTimeUp)),
+   Result[1,2] := Val(FormatDateTime('N', tTimeUp)),
+   Result[2,1] := Val(FormatDateTime('H', tTimeTo)),
+   Result[2,2] := Val(FormatDateTime('N', tTimeTo)),
+end,
+
+//******************************************************************************
+// Validierung der Kontrolen vor der Speicherung
+// @Result: null
+//******************************************************************************
+function ValidateControls(nStartType:N, cErrorText:R)
+   Result := False,
+   case nStartType
+      of gl_TSKPL_StartType_Once     ::
+         Result := not Empty(dtp_OnAm.Date),
+      of gl_TSKPL_StartType_Daily    ::
+         Result := ALen(chkl_DaDays.CheckedItems) > 0,
+      of gl_TSKPL_StartType_Weekly   ::
+         Result := cmb_WeDays.ItemIndex > -1 and
+                   iif(chk_WeEvery.Checked, not Empty(edt_WeWeeks.Text), True),
+      of gl_TSKPL_StartType_Monthly  ::
+         Result := not Empty(edt_MoSpecialDay.Text) = rbtn_MoSpecial.Checked and
+                   Val(edt_MoSpecialDay.Text)       < 21 and
+                   iif(rbtn_MoSpecial.Checked, cmb_MoWhen.ItemIndex > -1, True),
+      of gl_TSKPL_StartType_Yearly   ::
+         Result := cmb_YeMonths.ItemIndex > -1,
+      of gl_TSKPL_StartType_Periodic ::
+         Result := not Empty(edt_PeEvery.Text) and Val(edt_PeEvery.Text) < 60       and
+                   cmb_PeTime.ItemIndex > -1                                        and
+                   iif(chk_PeBlockInner.Checked, cmb_PeBlockInner.ItemIndex > -1, True) and
+                   ALen(chkl_PeDays.CheckedItems) > 0,
+      otherwise
+         SetError('Ungültiger Start-Typ <' + Str(m_nStartType) + '>'),
+   endcase,
+
+   if Result then
+      // Spezifische Validierung für bestimmte Zeitplan-Konfigurationen
+      case nStartType
+         of gl_TSKPL_StartType_Once ::
+            Result     := (dtp_OnAm.Date + dtp_OnUm.Time) >= GetAdsServerTime(),
+            cErrorText := iif(Result, '', 'Datum darf nicht in der Vergangenheit liegen!'),
+         otherwise
+      endcase,
+   else
+      cErrorText := 'Erwartete Felder müssen gesetzt sein!',
+   endif,
+end,
+
+//******************************************************************************
+// Startoptionen für einmalige ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Once()
+   Result := {},
+   KVU_Set(Result, 'execution.Date', CToD(DToC(dtp_OnAm.Date))),
+   KVU_Set(Result, 'execution.Time', dtp_OnUm.Time),
+end,
+
+//******************************************************************************
+// Startoptionen für tägliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Daily()
+   Result := {},
+   KVU_Set(Result, 'execution.ExceptDays', GetInvertedValues(ControlIndexToDayIndex(chkl_DaDays.CheckedItems))),
+   KVU_Set(Result, 'execution.Time',       dtp_DaAt.Time),
+end,
+
+//******************************************************************************
+// Startoptionen für wöchentliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Weekly()
+   Result := {},
+   KVU_Set(Result, 'execution.Weekday',      Val(cmb_WeDays.Value)),
+   KVU_Set(Result, 'execution.WeekRotation', iif(chk_WeEvery.Checked, Val(edt_WeWeeks.Text), 0)),
+   KVU_Set(Result, 'execution.Time',         dtp_WeUm.Time),
+end,
+
+//******************************************************************************
+// Startoptionen für monatliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Monthly()
+| nDayOfMonth, mMonthSpecial |
+
+   Result      := {},
+   nDayOfMonth := 0,
+
+   if rbtn_MoErsten.Checked then
+      mMonthSpecial := 'bom',
+   endif,
+   if rbtn_MoLetzten.Checked then
+      mMonthSpecial := 'eom',
+   endif,
+   if rbtn_MoSpecial.Checked then
+      if cmb_MoWhen.Value = gl_TSKPL_MonthOffset_AfterBegin then
+         mMonthSpecial := 'move_bom',
+      else
+         mMonthSpecial := 'move_eom',
+      endif,
+      nDayOfMonth := Val(edt_MoSpecialDay.Text),
+   endif,
+
+   KVU_Set(Result, 'execution.DayOfMonth',   nDayOfMonth),
+   KVU_Set(Result, 'execution.MonthSpecial', mMonthSpecial),
+   KVU_Set(Result, 'execution.Time',         dtp_MoUm.Time),
+end,
+
+//******************************************************************************
+// Startoptionen für jährliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Yearly()
+   Result := {},
+   KVU_Set(Result, 'execution.Day',   cmb_YeDays.Value),
+   KVU_Set(Result, 'execution.Month', cmb_YeMonths.Value),
+   KVU_Set(Result, 'execution.Time',  dtp_YeAt.Time),
+end,
+
+//******************************************************************************
+// Startoptionen für zyklische ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Periodic()
+| cIntervalUnit |
+   Result        := {},
+   cIntervalUnit := '',
+
+   if cmb_PeTime.ItemIndex = 0 then
+      cIntervalUnit := 'm',
+   else
+      cIntervalUnit := 'h',
+   endif,
+   //WriteLn(GetTimeBound(dtp_PeUp.Time, dtp_PeTo.Time)),
+   KVU_Set(Result, 'execution.Interval',     Val(edt_PeEvery.Text)),
+   KVU_Set(Result, 'execution.IntervalUnit', cIntervalUnit),
+   KVU_Set(Result, 'execution.ExceptDays',   GetInvertedValues(ControlIndexToDayIndex(chkl_PeDays.CheckedItems))),
+   KVU_Set(Result, 'execution.BlockInner',   iif(cmb_PeBlockInner.ItemIndex = 0, True, False)),
+   if chk_PeBlockInner.Checked then
+      KVU_Set(Result, 'execution.TimeBound', GetTimeBound(dtp_PeUp.Time, dtp_PeTo.Time)),
+   else
+      KVU_Set(Result, 'execution.TimeBound', {}),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExKeyPress( Sender, cKey )
+   case Asc(cKey)
+      of 27 ::
+         CloseForm(Sender),
+   endcase,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_YeMonthsChange( Sender )
+   if cmb_YeMonths.Value > 0 then
+      cmb_YeDays.Enabled := True,
+      cmb_YeDays.Value   := 1,
+      FillCombo_YeDays(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Steuerung der Zeiten bei Zykliche-Zeitplan
+//******************************************************************************
+function chk_PeBlockInnerClick( Sender )
+   RefreshControls(),
+   if not chk_PeBlockInner.Checked then
+      cmb_PeBlockInner.ItemIndex := -1,
+      dtp_PeUp.Time := 0,
+      dtp_PeTo.Time := 0,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Bei alle RadioButtons ist das selbe Event aufgerufen
+//******************************************************************************
+function RadioButton_OnClick( Sender )
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Steuerung der Rotaion bei Wöchentliche Zeitplan
+//******************************************************************************
+function chk_WeEveryClick( Sender )
+   RefreshControls(),
+   if not chk_WeEvery.Checked then
+      edt_WeWeeks.Text := '',
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Aktion: Abbrechen bei Zeitplan Einstellungen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Aktion: Speicherung der Zeitplan Änderungen
+//******************************************************************************
+function A_SaveExecute( Sender )
+| aStartOptions, bError, cErrorText |
+
+   aStartOptions := {},
+   bError        := False,
+   cErrorText    := '',
+
+   startseq
+      if ValidateControls(m_nStartType, cErrorText) then
+         case m_nStartType
+            of gl_TSKPL_StartType_Once     :: aStartOptions := SetStartOptions_Once(),
+            of gl_TSKPL_StartType_Daily    :: aStartOptions := SetStartOptions_Daily(),
+            of gl_TSKPL_StartType_Weekly   :: aStartOptions := SetStartOptions_Weekly(),
+            of gl_TSKPL_StartType_Monthly  :: aStartOptions := SetStartOptions_Monthly(),
+            of gl_TSKPL_StartType_Yearly   :: aStartOptions := SetStartOptions_Yearly(),
+            of gl_TSKPL_StartType_Periodic :: aStartOptions := SetStartOptions_Periodic(),
+         endcase,
+
+         m_aResult := {True, ArrToStr(aStartOptions)},
+         CloseForm(oForm),
+      else
+         MessageDlg('Fehler beim Speichern:' + CRLF + cErrorText, mtError),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm              := LoadForm("@TSKPLCONF", Application),
+   A_Cancel           := FindObject(oForm, "A_Cancel"),
+   A_Save             := FindObject(oForm, "A_Save"),
+   Actions            := FindObject(oForm, "Actions"),
+   BePanel1           := FindObject(oForm, "BePanel1"),
+   btn_Cancel         := FindObject(oForm, "btn_Cancel"),
+   btn_Save           := FindObject(oForm, "btn_Save"),
+   chk_PeBlockInner   := FindObject(oForm, "chk_PeBlockInner"),
+   chk_WeEvery        := FindObject(oForm, "chk_WeEvery"),
+   chkl_DaDays        := FindObject(oForm, "chkl_DaDays"),
+   chkl_PeDays        := FindObject(oForm, "chkl_PeDays"),
+   cmb_MoWhen         := FindObject(oForm, "cmb_MoWhen"),
+   cmb_PeBlockInner   := FindObject(oForm, "cmb_PeBlockInner"),
+   cmb_PeTime         := FindObject(oForm, "cmb_PeTime"),
+   cmb_WeDays         := FindObject(oForm, "cmb_WeDays"),
+   cmb_YeDays         := FindObject(oForm, "cmb_YeDays"),
+   cmb_YeMonths       := FindObject(oForm, "cmb_YeMonths"),
+   dtp_DaAt           := FindObject(oForm, "dtp_DaAt"),
+   dtp_MoUm           := FindObject(oForm, "dtp_MoUm"),
+   dtp_OnAm           := FindObject(oForm, "dtp_OnAm"),
+   dtp_OnUm           := FindObject(oForm, "dtp_OnUm"),
+   dtp_PeTo           := FindObject(oForm, "dtp_PeTo"),
+   dtp_PeUp           := FindObject(oForm, "dtp_PeUp"),
+   dtp_WeUm           := FindObject(oForm, "dtp_WeUm"),
+   dtp_YeAt           := FindObject(oForm, "dtp_YeAt"),
+   edt_MoSpecialDay   := FindObject(oForm, "edt_MoSpecialDay"),
+   edt_PeEvery        := FindObject(oForm, "edt_PeEvery"),
+   edt_WeWeeks        := FindObject(oForm, "edt_WeWeeks"),
+   lbl_DaAm           := FindObject(oForm, "lbl_DaAm"),
+   lbl_DaAt           := FindObject(oForm, "lbl_DaAt"),
+   lbl_MoAm           := FindObject(oForm, "lbl_MoAm"),
+   lbl_MoDays         := FindObject(oForm, "lbl_MoDays"),
+   lbl_MoUm           := FindObject(oForm, "lbl_MoUm"),
+   lbl_OnAm           := FindObject(oForm, "lbl_OnAm"),
+   lbl_OnUm           := FindObject(oForm, "lbl_OnUm"),
+   lbl_PeAm           := FindObject(oForm, "lbl_PeAm"),
+   lbl_PeEvery        := FindObject(oForm, "lbl_PeEvery"),
+   lbl_WeAm           := FindObject(oForm, "lbl_WeAm"),
+   lbl_WeUm           := FindObject(oForm, "lbl_WeUm"),
+   lbl_WeWeeks        := FindObject(oForm, "lbl_WeWeeks"),
+   lbl_YeAt           := FindObject(oForm, "lbl_YeAt"),
+   lbl_YeOnDay        := FindObject(oForm, "lbl_YeOnDay"),
+   lbl_YeOnMonth      := FindObject(oForm, "lbl_YeOnMonth"),
+   pc_TimetableConfig := FindObject(oForm, "pc_TimetableConfig"),
+   pnl_Main           := FindObject(oForm, "pnl_Main"),
+   rbtn_MoErsten      := FindObject(oForm, "rbtn_MoErsten"),
+   rbtn_MoLetzten     := FindObject(oForm, "rbtn_MoLetzten"),
+   rbtn_MoSpecial     := FindObject(oForm, "rbtn_MoSpecial"),
+   ts_Daily           := FindObject(oForm, "ts_Daily"),
+   ts_Monthly         := FindObject(oForm, "ts_Monthly"),
+   ts_Once            := FindObject(oForm, "ts_Once"),
+   ts_Periodic        := FindObject(oForm, "ts_Periodic"),
+   ts_Weekly          := FindObject(oForm, "ts_Weekly"),
+   ts_Yearly          := FindObject(oForm, "ts_Yearly"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aResult := {False, ''},
+startseq
+   ParseParams(),
+   LoadGUI(),
+   SetDefaults(),
+   ShowModal(oForm),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+m_aResult
+

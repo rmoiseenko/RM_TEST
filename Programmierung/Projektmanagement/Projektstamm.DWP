@@ -1,0 +1,1286 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm ist die Standardoberfläche für die Verwaltung
+//               von Projekten.
+//               Es beinhaltet die Stammdatenpflege, die Pflege von Vorgängen
+//               und Vorgangsleistungen und bietet einige Möglichkeiten an um
+//               sich eine Übersicht über ein Projekt zu verschaffen.
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1, m_cFormRefKey:P2,
+   m_cDefaultSaveId, m_oDM, m_bStarting, m_oIndiMenu,
+   m_oDockPanelLeft, m_oDockPanelRight, m_oDockPanelBottom,
+   m_nLastProjectId:N:=-1,
+   m_nProjectIdBeforeInsert:N:=-2,
+   m_bTaskAndEffortDockInBrowseMode:L:=True,
+   m_bSalesProfitDockInBrowseMode:L:=True,
+   m_oDockingSaver:U:=nil, m_cDockingSaveId,
+
+   m_aDockingForms,
+
+   // Business-Objekte
+   m_oProjController, m_oProjBo,
+
+   // Tabellen
+   m_oDABPRJ, m_oDAB020, m_oAVGQuery, m_oOverviewProjectPostings,
+   m_oOverviewUserPostings, m_oPositionMem,
+
+   // Browser-Konstanten
+   m_cMasterPostingsBrowser, m_cChangesTrackingBrowser,
+   m_ProjectPostingsBrowser, m_cUserPostingsBrowser,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CancelProject, A_DeleteProject, A_DesignPrintProjectOverview,
+   A_NewProject, A_NewProjectFromTemplate, A_OpenChangeTracking,
+   A_OpenGanttDiagramm, A_OpenProjectLinks, A_OpenTaskAndEffortsDock,
+   A_PrintProjectOverview, A_RefreshChangesTracking,
+   A_RefreshOverviewProjectPostings, A_RefreshOverviewUserPostings,
+   A_RefreshProjectPostingsHistory, A_SaveProject, A_SearchProject,
+   A_ShowAcquirePostings, A_ShowPostingsOverviewByDate,
+   A_ShowPostingsOverviewByEmployee, A_ShowProjectsOverview, A_ShowSalesProfit,
+   A_ShowSinglePos, bipnl_ChangesTrackingHeadline, bipnl_MasterPostingsHeadline,
+   bipnl_OverviewProjectPostings, bipnl_OverviewUserPostings, bm_Toolbars,
+   btn_GotoCustomer, btn_RefreshChangesTracking,
+   btn_RefreshOverviewProjectPostings, btn_RefreshOverviewUserPostings,
+   btn_RefreshProjectPostingsHistory, cmb_Master_Authority, cmb_Master_Priority,
+   cmb_MasterType, cmb_ProjectStatus, cmb_StatusLightEffort,
+   cmb_StatusLightOverall, cmb_StatusLightResult, cmb_StatusLightTime,
+   ds_DAB020, ds_DABAVG, ds_DABPRJ, ds_OverviewProjectPostings,
+   ds_OverviewUserPostings, dtp_ByEmployeeFrom, dtp_ByEmployeeTo,
+   dtp_ChangesTrackingDateFrom, dtp_Master_End, dtp_Master_Start,
+   edt_ChangesFrom, edt_Description, edt_LongDescription, edt_ProjectCustomer,
+   edt_ProjectCustomerName, edt_ProjectID, grd_ChangesTracking,
+   grd_MasterPostings, grd_OverviewProjectPostings, grd_OverviewUserPostings,
+   lbl_ByEmployeeDateFrom, lbl_ByEmployeeTo, lbl_Desc, lbl_Lights,
+   lbl_Master_Authority, lbl_Master_End, lbl_Master_Priority, lbl_Master_Start,
+   lbl_ProjectCustomer, lbl_ProjectID, lbl_Status, lbl_StatusLightEffort,
+   lbl_StatusLightOverall, lbl_StatusLightResult, lbl_StatusLightTime, lbl_Type,
+   MainActionList, menu_Main, mnu_AcquirePostings, mnu_Blank,
+   mnu_ChangeTracking, mnu_DeleteProject, mnu_DesignProjectOverview, mnu_Edit,
+   mnu_Info, mnu_Line, mnu_Line2, mnu_Links, mnu_NeuesProjektausVorlage,
+   mnu_NewProject, mnu_PrintProjectOverview, mnu_ProjectPostingOverviewByDate,
+   mnu_ProjectPostingOverviewByEmployee, mnu_ProjectsOverview, mnu_SalesProfit,
+   mnu_SearchProject, mnu_ShowSinglePos, mnu_TasksAndEfforts,
+   NProjektChartanzeigen1, OverviewActionList, pctrl_DetailOptions,
+   pnl_BackMain, pnl_ChangesTrackingBack, pnl_ChangesTrackingFilterPanel,
+   pnl_ChangesTrackingOptions, pnl_DetailedOpt, pnl_Mainoptions, pnl_MainPanel,
+   pnl_MasterData, pnl_MasterDataBack, pnl_MasterDataBottomBack,
+   pnl_MasterPostings, pnl_MasterTop, pnl_OverviewAllPostingsOfProject,
+   pnl_OverviewBackpanel, pnl_OverviewProjectPostingsHeadpanel,
+   pnl_OverviewUserPostings, pnl_OverviewUserPostingsHeadBack, pnl_PrjInfo,
+   pnl_RefreshProjectPostingsHistory, pnl_SumsByEmployeeFilter,
+   spl_MasterDataTopBottomSpl, spl_OverviewSplitter, spl_TrackingAndPostingsSpl,
+   tab_MasterData, tb_CanProj, tb_DelProj, tb_Main, tb_NewProj,
+   tb_NewProjectFromTemplate, tb_SavProj, tb_SearchProject
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cDefaultSaveId := '@PRJST' + c_usr, // Key für die Speicherung der letzten Einstellungen
+m_cDockingSaveId := '@PRJSTDOCK',     // Key für die Speicherung der Dockings
+
+// Browser
+m_cMasterPostingsBrowser  := '@PRBKNGSBR', // "Buchungsübersicht für gesamtes Projekt"
+m_cChangesTrackingBrowser := '@CHANGETR',  // "Änderungsverfolgung"
+m_ProjectPostingsBrowser  := '@PRJAGP',    // "Gesamtübersicht Projekt"
+m_cUserPostingsBrowser    := '@PRJAGSU',   // "Gesamt-Summen Arbeitsleistung des Projekts je MA"
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Wenn ein Projekt-Kunde eingetragen wird dann wird beim speichern eine
+// Projektverknüpfung angelegt.
+//******************************************************************************
+function CreateCustomerLink()
+| nCustomerID |
+   nCustomerID := 0,
+   if not empty(edt_ProjectCustomer.Text) then
+      nCustomerID := Lookup(waDAB000, 'DAB001', {{Val(edt_ProjectCustomer.Text)}}, 'ID', 0),
+      if nCustomerID > 0 then
+         m_oProjBo.CbRelationShips.CbAddRelationShipByDestID(waDAB000, nCustomerID, mStandort, 20, 10), // ART = automatisch
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Wenn die Positionierungstabelle geposted wird muss hier geprüft werden
+// ob eine Positionierung des Projektes möglich und notwendig ist
+//******************************************************************************
+function DoAfterPositionMemPost()
+   startseq
+      startseq
+         if m_oPositionMem:CURRPROJ <> m_oPositionMem:DESTPROJ then
+            if m_oPositionMem:ALLOWPOSITIONING then
+               m_oProjBo.CBGoToID(m_oPositionMem:DESTPROJ),
+            else
+               MessageDlg('Das gewünschte Projekt kann nicht angezeigt werden, da sich das Projekt' + crlf +
+                          '"' + AllTrim(m_oProjBo.CbDescription) + '"' + crlf +
+                          'aktuell im Bearbeitungsmodus befindet.',
+                          mtInformation),
+            endif,
+         else
+            // Projektstamm in den Vordergrund holen
+            GFU_ShowMDIChild('PROJEKTMANAGEMENT_MASTER', 'Projektmanagement\Projektstamm'),
+         endif,
+      always
+         DBEdit(m_oPositionMem), // Tabelle immer zurück in den Editmodus setzen
+      stopseq,
+   onerror
+      SetError('Fehler beim Positionieren' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Erstellt die Tabelle die die externe Projektpositionierung ermöglicht
+// Diese Tabelle bleibt immer im Editmodus und wird intern nie geposted.
+// Daraus lässt sich schließen, dass ein Post auf diese Tabelle von außen
+// ausgelöst werden musste.
+//******************************************************************************
+function InitPositionMem()
+   m_oPositionMem           := CreateObject('TMemCalcTable', 'PRJPOSMEM', oForm, oForm),
+   m_oPositionMem.AliasName := 'PROJECTPOSITION',
+
+   MyAddMemfield(m_oPositionMem, 'ALLOWPOSITIONING', 'ftBoolean',,),
+   MyAddMemfield(m_oPositionMem, 'CURRPROJ', 'ftInteger',,),
+   MyAddMemfield(m_oPositionMem, 'DESTPROJ', 'ftInteger',,),
+
+   m_oPositionMem.Active := True,
+
+   AssignEvent(m_oPositionMem, 'AfterPost', 'DoAfterPositionMemPost'),
+
+   DBAppend(m_oPositionMem),
+   m_oPositionMem:ALLOWPOSITIONING := True,
+   m_oPositionMem:CURRPROJ         := m_oProjBo.CbID,
+   m_oPositionMem:DESTPROJ         := m_oProjBo.CbID,
+end,
+
+//******************************************************************************
+// Auswertung "Gesamtübersicht Projekt" aktualisieren
+//******************************************************************************
+function RefreshProjectOverview()
+| nOldCursor |
+   prs('RefreshProjectOverview START', m_oProjBO.CbID),
+   if not empty(m_oOverviewProjectPostings) then
+      if m_oProjBO.CbID > 0 and not m_oProjBO.CbInInsertMode() then
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            ProjMgmt_GetProjectOverviewWithValues(m_oOverviewProjectPostings, False, 'ID = ' + Str(m_oProjBO.CbID)),
+         always
+            SetCursor(nOldCursor),
+         stopseq
+      else
+         DeleteAllData(m_oOverviewProjectPostings),
+      endif,
+   endif,
+   prs('RefreshProjectOverview ENDE', m_oProjBO.CbID),
+end,
+
+//******************************************************************************
+// Auswertung "Gesamt-Summen Arbeitsleistung des Projekts je MA" aktualisieren
+//******************************************************************************
+function RefreshSumForProjectByEmployee()
+| nOldCursor, cDateFilter, cDateFrom, cDateTo |
+   prs('RefreshSumForProjectByEmployee START', m_oProjBO.CbID),
+   if not empty(m_oOverviewUserPostings) then
+      if m_oProjBO.CbID > 0 and not m_oProjBO.CbInInsertMode() then
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            // Datums-Filter berechnen
+            cDateFilter := '',
+            if not empty(dtp_ByEmployeeFrom.Date) then
+               cDateFrom   := FormatDateTime('YYYY-MM-DD', dtp_ByEmployeeFrom.Date),
+               cDateFilter := "DATUM >= '" + cDateFrom + "'",
+            endif,
+            if not empty(dtp_ByEmployeeTo.Date) then
+               if not empty(cDateFilter) then
+                  cDateFilter := cDateFilter + ' AND ',
+               endif,
+
+               cDateTo := FormatDateTime('YYYY-MM-DD', dtp_ByEmployeeTo.Date),
+               cDateFilter += "DATUM <= '" + cDateTo + "'",
+            endif,
+            ProjMgmt_GetPerformanceSumForProjectByEmployee(m_oOverviewUserPostings, m_oProjBO.CbID, True, cDateFilter),
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      else
+         DeleteAllData(m_oOverviewUserPostings),
+      endif,
+   endif,
+   prs('RefreshSumForProjectByEmployee ENDE', m_oProjBO.CbID),
+end,
+
+//******************************************************************************
+// Aktualisiert die Änderungsverfolgungsdaten
+//******************************************************************************
+function RefreshTrackingData()
+| nOldID, nOldCursor |
+   prs('RefreshTrackingData START', m_oProjBO.CbID),
+   if m_oProjBO.CbID > 0 and not m_oProjBO.CbInInsertMode() then
+      if not empty(m_oAVGQuery) then
+         // Letzte Position im Query merken
+         nOldID := iif(BOF(m_oAVGQuery) and EOF(m_oAVGQuery), -1, m_oAVGQuery:ID),
+
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            // Query neu ausführen
+            ProjMgmt_GetChangeTrackingValues(m_oAVGQuery,
+                                             m_oProjBO.CbID,
+                                             {{-1}},
+                                             dtp_ChangesTrackingDateFrom.Date,
+                                             False,
+                                             True),
+
+            // Versuchen, letzte Position wieder herzustellen
+            if not DBLocate('ID', {nOldID}, 0, m_oAVGQuery) then
+               DBGoBottom(m_oAVGQuery),
+            endif,
+         always
+            SetCursor(nOldCursor),
+         stopseq
+      endif,
+   else
+      // leeres Result-Set ermitteln
+      ProjMgmt_GetChangeTrackingValues(m_oAVGQuery, -1, {{-1}}, , False, True),
+   endif,
+   prs('RefreshTrackingData ENDE', m_oProjBO.CbID),
+end,
+
+//******************************************************************************
+// Aktualisiert den Enabled-Status der Actions
+//******************************************************************************
+function ActionsEnabled()
+|
+   bNewAndDelEnabled, bProjectSaveCanEnabled, bMemoExists, bProjectAvailable,
+   bCanSelectOtherProject
+|
+
+   if m_bStarting then
+      exit,
+   endif,
+
+   prs('  ActionsEnabled() START', m_oProjBO.CBID),
+
+   bProjectAvailable                   := not Empty(m_oProjBo) and m_oProjBo.CbId > 0,
+   bCanSelectOtherProject              := m_oProjBo.CbInBrowseMode() and
+                                          m_bTaskAndEffortDockInBrowseMode and
+                                          m_bSalesProfitDockInBrowseMode,
+
+   // Projektspezifische Controls
+   A_NewProject.Enabled                := bCanSelectOtherProject,
+   A_NewProjectFromTemplate.Enabled    := bCanSelectOtherProject and bProjectAvailable,
+   A_DeleteProject.Enabled             := bCanSelectOtherProject and bProjectAvailable,
+   A_SaveProject.Enabled               := not m_oProjBo.CbInBrowseMode(),
+   A_CancelProject.Enabled             := not m_oProjBo.CbInBrowseMode(),
+   A_SearchProject.Enabled             := bCanSelectOtherProject,
+
+   // Refresh-Buttons
+   A_RefreshOverviewProjectPostings.Enabled := bProjectAvailable,
+   A_RefreshOverviewUserPostings.Enabled    := bProjectAvailable,
+
+   // Projektübersicht-Layout bearbeiten sicht-/unsichtbar schalten
+   A_DesignPrintProjectOverview.Visible := mBeSupervisor,
+   A_DesignPrintProjectOverview.Enabled := mBeSupervisor and m_oProjBO.CbInBrowseMode(),
+   A_PrintProjectOverview.Enabled       := m_oProjBO.CbInBrowseMode(),  
+
+   // externes Positionieren erlauben / verhindern
+   DBEdit(m_oPositionMem),
+   m_oPositionMem:ALLOWPOSITIONING := bCanSelectOtherProject,
+   prs('  ActionsEnabled() ENDE', m_oProjBO.CBID),
+end,
+
+//******************************************************************************
+// Liest die Daten zur gewählten Projekt-Kundennummer aus und setzt diese ins
+// ReadOnly-Edit.
+//******************************************************************************
+function SetProjectCustomerEditText()
+| cText |
+   prs('SetProjectCustomerEditText START', m_oProjBO.CbID),
+   cText := '',
+   if (m_oProjBO.CbID > 0) and (m_oDABPRJ:KDNR > 0) then
+      // Indexnamen variieren wenn Fibu vorhanden, darum wird hier kein Index-Name verwendet
+      cText := Lookup(waDAB000, 1, {{m_oDABPRJ:KDNR}}, 'ConcatTrenner(ConcatTrenner(Trim(NAME1), Trim(NAME2), " "), Trim(NAME3), " ")', '???'),
+   endif,
+
+   edt_ProjectCustomerName.Text := cText,
+   btn_GoToCustomer.Enabled := m_oDABPRJ:KDNR > 0,
+   prs('SetProjectCustomerEditText ENDE', m_oProjBO.CbID),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Projektstammsatzes
+//******************************************************************************
+function DoOnDABPRJAfterScroll()
+   if m_bStarting then
+      exit,
+   endif,
+
+   prs('ds_DABPRJ SCROLL Update START', m_oProjBO.CbID),
+
+   // Auswertungen nur aktualisieren, wenn sich das angezeigte Projekt geändert hat
+   if m_oProjBO.CbID <> m_nLastProjectId then
+      RefreshProjectOverview(),          // "Gesamtübersicht Projekt"
+      RefreshSumForProjectByEmployee(),  // "Gesamt-Summen Arbeitsleistung des Projekts je MA"
+      RefreshTrackingData(),             // "Änderungsverfolgung für gesamtes Projekt"
+   endif,
+
+   // Anzeige "Buchungshistorie für gesamtes Projekt" aktualisieren
+   DBScope({m_oProjBo.CbID}, {m_oProjBo.CbID}, m_oDAB020),
+   DBGoBottom(m_oDAB020),
+
+   SetProjectCustomerEditText(),      // Anzeige des Kunden-Namens neben der Kunden-Nr. // TODO: Gesamte Funktion AfterScroll muss an die Passende Stelle im Code verschoben werden.
+
+   // Aktuelles Projekt in der Positionierungstabelle vermerken
+   if m_oProjBO.CbID > 0 then
+      DBEdit(m_oPositionMem),
+      m_oPositionMem:CURRPROJ := m_oDABPRJ:ID,
+      m_oPositionMem:DESTPROJ := m_oDABPRJ:ID,
+   endif,
+
+   m_nLastProjectId := m_oProjBO.CbID,
+
+   ActionsEnabled(),
+
+   prs('ds_DABPRJ SCROLL Update ENDE', m_oProjBO.CbID),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Projektstammsatzes
+//******************************************************************************
+function DoOnDABPRJBeforeInsertOrEdit()
+   if not DbInTrans(m_oDM.AdsConnection) then
+      DbStartTrans(m_oDM.AdsConnection),
+   endif,
+end,
+
+//******************************************************************************
+// Öffnet die Tabellen und erstellt das ProjectBO
+//******************************************************************************
+function OpenDataBase()
+   startseq
+      m_oDM := CreateObject('TBeDbGet', 'MainDM', oForm, oForm), // Haupt-Datenmodul erstellen
+
+      // Business-Objekte erstellen und auf das selbe DatenModul setzen
+      m_oProjController                := CreateObject('TBeProjectBusinessController', 'Proj_Controller', oForm),
+      m_oProjController.CBDataModule   := m_oDM,
+      m_oProjBo                        := CreateObject('TBeProjectBo', 'Proj_Bo', oForm, oForm),
+      m_oProjBo.CBDataModule           := m_oDM,
+
+      // Projekttabelle öffnen
+      m_oDABPRJ                 := DBGetTable(m_oDM, waDABPRJ),
+      m_oDABPRJ.CheckReadAccess := raFilter, // Lese-Recht prüfen
+      m_oDABPRJ.CheckUserRights := True,     // Neu-/Lösch-/Ändern-Recht prüfen
+      ds_DABPRJ.DataSet         := m_oDABPRJ,
+      AssignEvent(m_oDABPRJ, 'AfterScroll', 'DoOnDABPRJAfterScroll'),
+      AssignEvent(m_oDABPRJ, 'BeforeEdit', 'DoOnDABPRJBeforeInsertOrEdit'),
+      AssignEvent(m_oDABPRJ, 'BeforeInsert', 'DoOnDABPRJBeforeInsertOrEdit'),
+
+      // Tabelle "Buchungsübersicht für gesamtes Projekt" öffnen
+      m_oDAB020                          := DBGetTable(m_oDM, waDAB020, 'PRJ020'),
+      m_oDAB020.IndexName                := 'PRJ_ID',
+      m_oDAB020.CheckReadAccess          := raFilter,
+      DBFilter('BUART = ''L''', m_oDAB020), // Nur Projekt-Buchungen anzeigen
+      ds_DAB020.DataSet                  := m_oDAB020,
+      grd_MasterPostings.ID              := m_cMasterPostingsBrowser,
+      grd_MasterPostings.RegisterDataSet := m_oDAB020,
+      grd_MasterPostings.ReadWriteProps  := False,
+
+      // MemTable "Änderungsverfolgung"
+      m_oAVGQuery                         := CreateObject('TBeAdsQuery', 'DABAVG_GRID', m_oDM),
+      m_oAVGQuery.AliasName               := 'DABAVG_GRID',
+      ProjMgmt_GetChangeTrackingValues(m_oAVGQuery, m_oProjBO.CbID, {{-1}}, , True, True),
+      ds_DABAVG.DataSet                   := m_oAVGQuery,
+      grd_ChangesTracking.DataSource      := ds_DABAVG,
+      grd_ChangesTracking.RegisterDataSet := m_oAVGQuery,
+      grd_ChangesTracking.ID              := m_cChangesTrackingBrowser,
+      grd_ChangesTracking.ReadWriteProps  := False,
+
+      // MemTable "Gesamtübersicht Projekt"
+      m_oOverviewProjectPostings                  := CreateObject('TMemCalcTable', 'OverviewProjectPostings', m_oDM),
+      m_oOverviewProjectPostings.AliasName        := 'MEM_PRJAGP',
+      ProjMgmt_GetProjectOverviewWithValues(m_oOverviewProjectPostings, True, ''),
+      ds_OverviewProjectPostings.DataSet          := m_oOverviewProjectPostings,
+      grd_OverviewProjectPostings.DataSource      := ds_OverviewProjectPostings,
+      grd_OverviewProjectPostings.RegisterDataSet := m_oOverviewProjectPostings,
+      grd_OverviewProjectPostings.ID              := m_ProjectPostingsBrowser,
+      grd_OverviewProjectPostings.ReadWriteProps  := False,
+
+      // MemTable "Gesamt-Summen Arbeitsleistung des Projekts je MA"
+      m_oOverviewUserPostings                  := CreateObject('TMemCalcTable', 'OverviewUserPostings', m_oDM),
+      m_oOverviewUserPostings.AliasName        := 'MEM_PRJAGSU',
+      ProjMgmt_GetPerformanceSumForProjectByEmployee(m_oOverviewUserPostings, m_oProjBO.CbID, False, ''),
+      ds_OverviewUserPostings.DataSet          := m_oOverviewUserPostings,
+      grd_OverviewUserPostings.DataSource      := ds_OverviewUserPostings,
+      grd_OverviewUserPostings.RegisterDataSet := m_oOverviewUserPostings,
+      grd_OverviewUserPostings.ID              := m_cUserPostingsBrowser,
+      grd_OverviewUserPostings.ReadWriteProps  := False,
+
+
+      // Tabelle zum externen Positionieren des Project-Bo's
+      InitPositionMem(),
+   onerror
+      SetError('Fehler beim Öffnen der Tabellen' + crlf + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Einstellungen speichern
+//******************************************************************************
+function SaveSettings()
+| aArr |
+   aArr := {},
+   // Alle relevanten Daten für den nächsten Aufruf in das Array laden
+   AAdd(aArr, m_oDABPRJ:ID),                           // Speichern der zuletzt ausgewählten ID
+   AAdd(aArr, pnl_OverviewBackPanel.Height),           // Speichern des Horizontalen splitters in den Stammdaten
+   AAdd(aArr, pnl_OverviewAllPostingsOfProject.Width), // Speichern des Vertikalen splitters zwischen den Buchungsübersichten
+   AAdd(aArr, pnl_ChangesTrackingBack.Width),          // Panelbreite der Änderungsverfolgung speichern
+
+   SetBeParam(m_cDefaultSaveId, ArrToStr(aArr)),       // Parameterarray speichern
+
+   m_oDockingSaver.CbWriteDockings(), // Alle Dockings speichern (inkl. Dockings aus Indi-Menü)
+end,
+
+//******************************************************************************
+// Beim Schließen des Projektstamms muss bei allen offenen Dockings, die nicht
+// eingedockt sind, das UserDefinedEvent entfernt werden. Ansonsten wird
+// versucht auf das Event im bereits zerstörten Projektstamm zuzugreifen, was
+// zu einem Absturz von Be führt.
+//******************************************************************************
+function RemoveUserDefinedEvent()
+| i, oDocking |
+   startseq
+      for i := 1 to ALen(m_aDockingForms) do
+         oDocking := m_aDockingForms[i, 2],
+         // Kein Parent = Nicht gedockt
+         if empty(GetParent(oDocking)) then
+            AssignEvent(oDocking.CbHelper, 'OnCbUserDefinedEvent', ''), // Event entfernen
+         endif,
+      next,
+   onerror
+      SetError('Fehler beim Entfernen der Events aller nicht angedockten Fenster' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim Wechsel des Supervisor-Modus den Menüpunkt für das Drucklayout
+// ein-/ausblenden
+//******************************************************************************
+function FormExAfterAdminModeChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Abdocken im Edit-Modus nicht erlaubt
+//******************************************************************************
+function pctrl_DetailOptionsUnDock( Sender, Client, Target, Allow )
+   Allow := m_oPositionMem:ALLOWPOSITIONING,
+end,
+
+//******************************************************************************
+// Event: Formular wird zerstört
+//******************************************************************************
+function FormExDestroy( Sender )
+   startseq
+      GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+      RemoveUserDefinedEvent(),                     // UserdefinedEvent von StayOnTop-Dockings entfernen
+   onerror
+      MessageDlg('Fehler beim Zerstören des Formulars' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Wechseln der Tabs wird der jeweilige Tab aktualisiert
+//******************************************************************************
+function pctrl_DetailOptionsChange( Sender )
+   if not m_bStarting then
+      if pctrl_DetailOptions.ActivePage = tab_MasterData then // Auf "Stammdaten & Übersicht" gewechselt
+         RefreshTrackingData(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen des Fensters prüfen ob noch Tabellen im Editmode sind
+//******************************************************************************
+function FormExCloseQuery( Sender, bAllowClose )
+   startseq                                                                     prs('## FormExCloseQuery() ##', ''),
+      bAllowClose := True,
+      if not m_oProjBo.CbInBrowseMode() then
+         if JN('Das Projekt befindet sich noch im Bearbeitungsmodus.' + crlf +
+               'Änderungen verwerfen?') then
+            m_oProjBO.CBCancel(),
+         else
+            bAllowClose := False,
+         endif,
+      endif,
+
+      SaveSettings(), // Einstellungen speichern
+   onerror
+      SetError('Fehler in FormExCloseQuery' + crlf + GetErrorText(), mtError),
+   stopseq
+end,
+
+//******************************************************************************
+// Event: Speichern des zuletzt markierten Projekts
+//******************************************************************************
+function FormExClose( Sender, Action)
+   startseq
+      Action := caFree, // = Form zerstören
+   onerror
+      SetError('Fehler in FormExClose' + crlf + GetErrorText(), mtError),
+   stopseq
+end,
+
+//******************************************************************************
+// Event: State-Change der Projekt-Tabelle
+//******************************************************************************
+function ds_DABPRJStateChange( Sender )
+
+   function DbStateToText(nDbState)
+      Result := '?',
+      case nDbState
+         of dsEdit   :: Result := 'dsEdit',
+         of dsInsert :: Result := 'dsInsert',
+         of dsBrowse :: Result := 'dsBrowse',
+      endcase,
+   end,
+
+   prs('ds_DABPRJ STATE Change', 'Start - DbState() is ' + DbStateToText(DbState(m_oDABPRJ))),
+   ActionsEnabled(),
+   prs('ds_DABPRJ STATE Change', 'Ende'),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Projektstammsatzes
+//******************************************************************************
+function ds_DABPRJDataChange( Sender )
+   if not m_oProjBo.CbInBrowseMode() then
+      prs('ds_DABPRJ DATA Change START', m_oProjBO.CbID),
+      SetProjectCustomerEditText(), // Nach Änderung im Feld "KDNR" sofort Anzeige aktualisieren
+      prs('ds_DABPRJ DATA Change ENDE', m_oProjBO.CbID),
+   endif,
+end,
+
+//******************************************************************************
+// Event: User-Defined Event jedes Dockings
+// - Docking-Zustand aller Dockings speichern
+//******************************************************************************
+function DoCbUserDefinedEvent( Sender, cKey, uParams )
+| cDockingClassID, nPos, aDockInfo, oDockParent, oDockingForm, cDockingID |
+
+   case cKey
+      of 'DESTROY' ::
+         if not empty(Sender) and ClassOf(Sender, 'TFormEx') then
+            oDockingForm := Sender,
+            cDockingID   := uParams[1],
+            m_aDockingForms := GFU_FormRefArr_FormDestroyed(m_aDockingForms, cDockingID),
+         endif,
+
+      of 'BrowseModeChanged' ::
+         if Sender = GFU_FormRefArr_FindForm(m_aDockingForms, 'PRJ_VORLEI') then
+            if m_bTaskAndEffortDockInBrowseMode <> uParams then
+                                                m_bTaskAndEffortDockInBrowseMode := uParams,
+                                             endif,
+         else if Sender = GFU_FormRefArr_FindForm(m_aDockingForms, 'PRJ_SALESPROF') then
+            if m_bSalesProfitDockInBrowseMode <> uParams then
+                                                m_bSalesProfitDockInBrowseMode := uParams,
+                                             endif,
+   endif,
+   endif,
+   endcase,
+
+   // z.b. die Edit-Modes der Dockings beeinflussen die Actions... deshalb - Refresh:
+   if cKey <> 'Destroy' then
+      ActionsEnabled(),
+   endif,
+end,
+
+//******************************************************************************
+// Wenn ein Docking wiederhergestellt wurde
+//******************************************************************************
+function DoOnDockingRestored( Sender )
+   ProjMgmtGUI_FixDocking(Sender),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Aktualisieren der Änderungsverfolgung über das gesamte Projekt
+//******************************************************************************
+function A_RefreshChangesTrackingExecute( Sender )
+   startseq
+      RefreshTrackingData(),
+   onerror
+      MessageDlg('Fehler beim Aktualisieren der Änderungsverfolgung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Docking anzeigen und
+//******************************************************************************
+function ShowDocking(cDockKey, cProgPath, oMasterTable, oAction)
+|  aResultForm |
+   aResultForm     := GFU_ShowForm( m_aDockingForms, cDockKey, oForm, oMasterTable, cProgPath),
+   Result          := aResultForm[1],
+   m_aDockingForms := aResultForm[2],
+   AssignEvent(Result.CbHelper, 'OnCbUserDefinedEvent', 'DoCbUserDefinedEvent'),
+   m_oDockingSaver.CbAddDocking( oAction, Result),
+end,
+
+//******************************************************************************
+// Action: Öffnen des Verkauf Einzelpositionen-Dockings
+//******************************************************************************
+function A_ShowSinglePosExecute( Sender )
+| aResultForm |
+   startseq
+      Result := ShowDocking('PRJ_SINGPOS', 'Projektmanagement\Dockings\Verkauf Einzelpositionen',
+                            m_oDABPRJ, A_ShowSinglePos),
+   onerror
+      MessageDlg('Fehler beim Öffnen des Verkauf Einzelpositionen-Dockings' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnen des Buchungs-Übersichts-Dockings nach Mitarbeiter
+//******************************************************************************
+function A_ShowPostingsOverviewByEmployeeExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_STOVEEMP', 'Projektmanagement\Dockings\Übersicht Buchungen nach Mitarbeiter',
+                            nil, A_ShowPostingsOverviewByEmployee),
+   onerror
+      MessageDlg('Fehler beim Öffnen des Übersicht Buchungen nach Mitarbeiter-Dockings' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnen des Buchungs-Übersichts-Dockings
+//******************************************************************************
+function A_ShowPostingsOverviewByDateExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_STOVE', 'Projektmanagement\Dockings\Übersicht Buchungen',
+                            nil, A_ShowPostingsOverviewByDate),
+   onerror
+      MessageDlg('Fehler beim Öffnen des Übersicht-Buchungen Dockings' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnen des Vorgänge & Leistungs-Dockings
+//******************************************************************************
+function A_OpenTaskAndEffortsDockExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_VORLEI', 'Projektmanagement\Dockings\Vorgänge und Leistungen',
+                            m_oDABPRJ, A_OpenTaskAndEffortsDock),
+   onerror
+      MessageDlg('Fehler beim Öffnen des Vorgänge&Leistungs-Dockings' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Zeigt das Projekt-Chart-Docking an
+//******************************************************************************
+function A_OpenGanttDiagrammExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_CHART', 'Projektmanagement\Dockings\Gantt-Diagramm',
+                            m_oDABPRJ, A_OpenGanttDiagramm),
+   onerror
+      MessageDlg('Fehler beim Öffnen des Gantt-Diagramm-Dockings' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnen des Projekt-Verknüpfungs-Dockings
+//******************************************************************************
+function A_OpenProjectLinksExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_LINKS', 'Projektmanagement\Dockings\Verknüpfungen',
+                            m_oDABPRJ, A_OpenProjectLinks),
+   onerror
+      MessageDlg('Fehler beim Öffnen der Projekt-Verknüpfungs-Übersicht' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnen des Projektübergreifenden Plan-/Ist-Auswertungs-Docking
+//******************************************************************************
+function A_OpenChangeTrackingExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_PACHTR', 'Projektmanagement\Dockings\Plan-Ist-Verfolgung',
+                            m_oDABPRJ, A_OpenChangeTracking),
+   onerror
+      MessageDlg('Fehler beim Öffnen der Plan-/Ist-Auswertung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Übersicht über alle Projekte anzeigen
+//******************************************************************************
+function A_ShowProjectsOverviewExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_UBERS', 'Projektmanagement\Dockings\Projekt Übersicht',
+                            nil, A_ShowProjectsOverview),
+   onerror
+      MessageDlg('Fehler bei der Auswahl des Projekts' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Projektzeit-Erfassung anzeigen
+//******************************************************************************
+function A_ShowAcquirePostingsExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_ZEIBUC', 'Projektmanagement\Dockings\Projektzeit Erfassung',
+                            nil, A_ShowAcquirePostings),
+   onerror
+      MessageDlg('Fehler beim Öffnen der Projektzeit-Erfassung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Projekt Verkaufserlöse anzeigen
+//******************************************************************************
+function A_ShowSalesProfitExecute( Sender )
+   startseq
+      Result := ShowDocking('PRJ_SALESPROF', 'Projektmanagement\Dockings\Verkaufserlöse',
+                            m_oDABPRJ, A_ShowSalesProfit),
+   onerror
+      MessageDlg('Fehler beim Öffnen der Projekt Verkaufserlöse' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Drucken einer Übersicht über das gesamte Projekt
+//******************************************************************************
+function A_PrintProjectOverviewExecute( Sender )
+   startseq
+      ProjMgmtGUI_PrintProjectOverview(m_oProjBo.CbID, False), // 2. Parameter = Layout-Mode
+   onerror
+      MessageDlg('Fehler beim Drucken der Projekt-Übersicht' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Printdesigner für die Projektübersicht öffnen
+//******************************************************************************
+function A_DesignPrintProjectOverviewExecute( Sender )
+   startseq
+      ProjMgmtGUI_PrintProjectOverview(m_oProjBo.CbID, True), // 2. Parameter = Layout-Mode
+   onerror
+      MessageDlg('Fehler beim Bearbeiten des Projekt-Übersichts-Layouts' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Auswertung "Gesamtübersicht Projekt" aktualisieren
+//******************************************************************************
+function A_RefreshOverviewProjectPostingsExecute( Sender )
+   startseq
+      RefreshProjectOverview(),
+   onerror
+      MessageDlg('Fehler beim Aktualisieren der Projekt-Gesamtübersicht' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Auswertung "Buchungshistorie für gesamtes Projekt" aktualisieren
+//******************************************************************************
+function A_RefreshProjectPostingsHistoryExecute( Sender )
+   startseq
+      DbRefresh(m_oDAB020),
+   onerror
+      MessageDlg('Fehler beim Aktualisieren der Buchungshistorie' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Auswertung "Gesamt-Summen Arbeitsleistung des Projekts je MA" aktualisieren
+//******************************************************************************
+function A_RefreshOverviewUserPostingsExecute( Sender )
+   startseq
+      RefreshSumForProjectByEmployee(),
+   onerror
+      MessageDlg('Fehler beim Aktualisieren der Gesamt-Summen Arbeitsleistung des Projekts je Mitarbeiter' + crlf +
+                 GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Erstellt ein neues Projekt
+//******************************************************************************
+function A_NewProjectExecute( Sender )
+   prs('A_NewProjectExecute', '-----------------------------------'),
+   startseq
+      if not Editmodes(m_oDABPRJ) and
+         ProjMgmtGUI_CheckProjectManagementRights(m_oDABPRJ, 0, 'N', True) then
+         m_nProjectIdBeforeInsert       := m_oProjBo.CbID, // Wird benötigt, um nach einem Abbruch des Insert-Modes, diese Projekt wieder zu positionieren. (Übergangslösung wegen speziellem BO-Verhalten)
+         m_oProjBo.CBInsert(),
+         oForm.ActiveControl            := edt_Description,
+         pctrl_DetailOptions.ActivePage := tab_MasterData,
+      endif,
+   onerror
+      MessageDlg('Fehler beim Anlegen des Projekts' + crlf + crlf + GetErrorText(), mtError),
+   stopseq,
+   prs('A_NewProjectExecute', '-----------------------------------ENDE'),
+end,
+
+//******************************************************************************
+// Action:  Neues Projekt aus Vorlage erzeugen
+// Hinweis: hier muss ein eigenes Datemodul und ein eigener
+//          ProjectBusinessController verwendet werden, da sich sonst die
+//          bereits instanziierten Business-Objekte und die interne Funktion
+//          des Controllers beeinflussen
+//******************************************************************************
+function A_NewProjectFromTemplateExecute( Sender )
+| nPrjID, nNewPrjID, oDM, oPrjController |
+   startseq
+      if ProjMgmtGUI_CheckProjectManagementRights(m_oDABPRJ, 0, 'N', True) then
+         oDM := CreateObject('TBeDBGet', 'CRTMPPRO', oForm),
+         startseq
+            ProjMgmtGUI_CreateNewProjectFromTemplate(oForm, m_oProjBo.CbID, oDM),
+         always
+            DestroyObject(oDM),
+         stopseq,
+      endif,
+   onerror
+      MessageDlg('Fehler beim Erstellen eines neuen Projekts aus Vorlage' + crlf + GetErrorText(), mtError),
+   stopseq
+end,
+
+//******************************************************************************
+// Action: Löscht das aktuelle Projekt
+//******************************************************************************
+function A_DeleteProjectExecute( Sender )
+| bDeleteProject, nActualProfit |
+   startseq
+      if m_oProjBo.CbId > 0 and
+         ProjMgmtGUI_CheckProjectManagementRights(m_oDABPRJ, 0, 'D', True) then
+         if JN('Projekt "' + Str(m_oProjBo.CbId) + ' - ' + AllTrim(m_oProjBo.CbDescription ) + '" löschen?',) then
+            bDeleteProject := True,
+            DbRefresh(m_oProjBo.CbTable),
+            if m_oProjBo.CbActualProfit <> 0 then
+               nActualProfit  := FormatFloat('#,##0.00', m_oProjBo.CbActualProfit) + ' €',
+               bDeleteProject := JN('Für das Projekt "' + Str(m_oProjBo.CbId) + ' - ' + AllTrim(m_oProjBo.CbDescription ) + '" sind bereits Ist-Erlöse (' + nActualProfit + ') vorhanden.' + CrLf +
+                                    'Projekt trotzdem löschen?'),
+            endif,
+
+            // Projekt löschen
+            if bDeleteProject then
+               m_oProjBo.CBDelete(),
+            endif,
+         endif,
+      endif,
+   onerror
+      MessageDlg('Fehler beim Löschen des Projekts' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Speichert die aktuellen Änderungen ab
+//******************************************************************************
+function A_SaveProjectExecute( Sender )
+| oErrObj |
+   startseq
+      startseq
+         m_oProjBo.CBPost(),
+      onerror
+         oErrObj := GetErrorObj(),
+         if ClassName(oErrObj) = 'ECheckRightsAbort' then
+            Prs('A_SaveProjectExecute', 'Error: ' + GetErrorText()),
+            exit,
+         else
+            SetError(ClassName(oErrObj) + ': ' + GetErrorText()),
+         endif,
+      stopseq,
+
+      CreateCustomerLink(),
+      DBCommit(m_oProjBo.CbDataModule.ADSConnection),
+
+      RefreshTrackingData(), // nur die "Änderungsverfolgung" kann sich jetzt geändert haben
+   onerror
+      MessageDlg('Fehler beim Speichern des Projekts' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Bricht die Bearbeitung/Erstellung des aktuellen Projektes ab
+//******************************************************************************
+function A_CancelProjectExecute( Sender )
+   startseq
+      prs('A_CancelProjectExecute', '-----------------------------------'),
+      if JN('Änderungen verwerfen?') then
+         m_oProjBo.CBCancel(),
+         DbRollback(m_oDM.AdsConnection),
+         if m_nProjectIdBeforeInsert <> -2 then
+            m_oProjBo.CbGotoID(m_nProjectIdBeforeInsert),
+            m_nProjectIdBeforeInsert := -2,
+         endif,
+      endif,
+      prs('A_CancelProjectExecute', '-----------------------------------ENDE'),
+   onerror
+      MessageDlg('Fehler beim Abbrechen der Projektbearbeitung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aufruf des Suchfensters
+//******************************************************************************
+function A_SearchProjectExecute( Sender )
+| nPrjID |
+   startseq
+      nPrjID := ProjMgmtGUI_ShowSearchDialog(nil, '', m_oDABPRJ:ID),
+      if nPrjID > -1 then
+         m_oProjBo.CbGoToID(nPrjID),
+      endif,
+   onerror
+      SetError('Fehler bei der Auswahl des Projekts' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Dockings wieder herstellen
+//******************************************************************************
+function RestoreDockings( )
+| oDocking |
+   startseq
+      // Alle Dockings wiederherstellen
+      m_oDockingSaver.CbReadDockings(),
+
+      // Nach dem Wiederherstellen immer die erste Tabkarte öffnen, das
+      // entspricht dem Standard-Verhalten
+      pctrl_DetailOptions.ActivePage := tab_MasterData,
+   onerror
+      MessageDlg('Fehler beim Laden der Dockings' + crlf + GetErrorText(), mtError),
+      SaveSettings(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Setzt die Grundeinstellungen und initialisiert die Variablen
+//******************************************************************************
+function SetDefaults()
+| cLoadedParams, aParams, nProject |
+   prs('SetDefaults()', ''),
+   // Letzte Einstellungen laden
+   cLoadedParams  := GetBeParam(m_cDefaultSaveId),
+   aParams        := iif(empty(cLoadedParams), {}, StrToArr(cLoadedParams)),
+
+   // Wenn ID gespeichert wurde auf zuletzt positioniertes Projekt springen
+   nProject := 0,
+   if ALen(aParams) > 0 and not empty(aParams[1]) then
+      nProject := aParams[1],
+   endif,
+   if not DBSeek({nProject}, m_oDABPRJ) then
+      DBGoTop(m_oDABPRJ),
+   endif,
+
+   // letzte Panel-Größen wieder herstellen (wegen Splitter)
+   pnl_OverviewBackPanel.Height           := iif( ALen(aParams) > 1 and not empty(aParams[2]),
+                                                  aParams[2],
+                                                  pnl_MasterDataBack.Height / 3 ),
+
+   pnl_OverviewAllPostingsOfProject.Width := iif( ALen(aParams) > 2 and not empty(aParams[3]),
+                                                  aParams[3],
+                                                  pnl_MasterDataBack.Width / 2 ),
+
+   pnl_ChangesTrackingBack.Width          := iif( ALen(aParams) > 3 and not empty(aParams[4]),
+                                                  aParams[4],
+                                                  pnl_MasterDataBack.Width / 2 ),
+
+   // Dockings wiederherstellen
+   RestoreDockings(),
+end,
+
+//******************************************************************************
+// Lädt das Form in Abhängigkeit des Owners
+//******************************************************************************
+function InitForm()
+   GFU_FormRefArr_Init(m_aDockingForms),
+   if empty(oOwner) then
+      oForm := LoadForm("@PROJSTAMM", CBApplication.MainForm),
+   else
+      oForm             := LoadForm("@PROJSTAMM", oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := '@PROJSM',
+end,
+
+//****************************************************************************** // TODO: TDockPanel durch CB Version (gibt es noch nicht) ablösen und per Formular einbinden
+// Dock-Panels für Zusatz-Fenster und Individual-Dockings
+// @Result: null
+//******************************************************************************
+function CreateDockPanels()
+   m_oDockPanelLeft              := CreateObject('TDockPanel', 'DockLeft', oForm, pnl_MainPanel),
+   m_oDockPanelLeft.Align        := alLeft,
+   m_oDockPanelLeft.AutoSize     := True,
+   m_oDockPanelLeft.BevelOuter   := bvNone,
+   m_oDockPanelLeft.DockSite     := True,
+   m_oDockPanelLeft.Caption      := '',
+   m_oDockPanelLeft.Width        := 0,
+
+   m_oDockPanelRight             := CreateObject('TDockPanel', 'DockRight', oForm, pnl_MainPanel),
+   m_oDockPanelRight.Align       := alRight,
+   m_oDockPanelRight.AutoSize    := True,
+   m_oDockPanelRight.BevelOuter  := bvNone,
+   m_oDockPanelRight.DockSite    := True,
+   m_oDockPanelRight.Caption     := '',
+   m_oDockPanelRight.Width       := 0,
+
+   m_oDockPanelBottom            := CreateObject('TDockPanel', 'DockBottom', oForm, pnl_MainPanel),
+   m_oDockPanelBottom.Align      := alBottom,
+   m_oDockPanelBottom.AutoSize   := True,
+   m_oDockPanelBottom.BevelOuter := bvNone,
+   m_oDockPanelBottom.DockSite   := True,
+   m_oDockPanelBottom.Caption    := '',
+   m_oDockPanelBottom.Height     := 0,
+
+   m_oDockingSaver                             := CreateObject('TBeCbDockingSaver', 'DockingSaver', oForm, pnl_MainPanel),
+   m_oDockingSaver.CbMainForm                  := oForm,
+   m_oDockingSaver.CbSaveDockingsFromIndiMenus := True,
+   m_oDockingSaver.CbWinPositionID             := m_cDockingSaveId,
+   AssignEvent(m_oDockingSaver, 'OnDockingRestored', 'DoOnDockingRestored'),
+end,
+
+//******************************************************************************
+// Erstellt das Individualmenü
+// @Result: null
+//******************************************************************************
+function CreateIndiMenu()
+   // Indi-Menu initialisieren und anzeigen
+   if gl_ProjectFormIndiMenuId > 0 then
+      m_oIndiMenu          := CreateObject("TBeCustomMenuPanel", "CustomMenuPanel", oForm),
+      m_oIndiMenu.ID       := gl_ProjectFormIndiMenuId,
+      m_oIndiMenu.Showmenu,
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_CancelProject                      := FindObject(oForm, "A_CancelProject"),
+      A_DeleteProject                      := FindObject(oForm, "A_DeleteProject"),
+      A_DesignPrintProjectOverview         := FindObject(oForm, "A_DesignPrintProjectOverview"),
+      A_NewProject                         := FindObject(oForm, "A_NewProject"),
+      A_NewProjectFromTemplate             := FindObject(oForm, "A_NewProjectFromTemplate"),
+      A_OpenChangeTracking                 := FindObject(oForm, "A_OpenChangeTracking"),
+      A_OpenGanttDiagramm                  := FindObject(oForm, "A_OpenGanttDiagramm"),
+      A_OpenProjectLinks                   := FindObject(oForm, "A_OpenProjectLinks"),
+      A_OpenTaskAndEffortsDock             := FindObject(oForm, "A_OpenTaskAndEffortsDock"),
+      A_PrintProjectOverview               := FindObject(oForm, "A_PrintProjectOverview"),
+      A_RefreshChangesTracking             := FindObject(oForm, "A_RefreshChangesTracking"),
+      A_RefreshOverviewProjectPostings     := FindObject(oForm, "A_RefreshOverviewProjectPostings"),
+      A_RefreshOverviewUserPostings        := FindObject(oForm, "A_RefreshOverviewUserPostings"),
+      A_RefreshProjectPostingsHistory      := FindObject(oForm, "A_RefreshProjectPostingsHistory"),
+      A_SaveProject                        := FindObject(oForm, "A_SaveProject"),
+      A_SearchProject                      := FindObject(oForm, "A_SearchProject"),
+      A_ShowAcquirePostings                := FindObject(oForm, "A_ShowAcquirePostings"),
+      A_ShowPostingsOverviewByDate         := FindObject(oForm, "A_ShowPostingsOverviewByDate"),
+      A_ShowPostingsOverviewByEmployee     := FindObject(oForm, "A_ShowPostingsOverviewByEmployee"),
+      A_ShowProjectsOverview               := FindObject(oForm, "A_ShowProjectsOverview"),
+      A_ShowSalesProfit                    := FindObject(oForm, "A_ShowSalesProfit"),
+      A_ShowSinglePos                      := FindObject(oForm, "A_ShowSinglePos"),
+      bipnl_ChangesTrackingHeadline        := FindObject(oForm, "bipnl_ChangesTrackingHeadline"),
+      bipnl_MasterPostingsHeadline         := FindObject(oForm, "bipnl_MasterPostingsHeadline"),
+      bipnl_OverviewProjectPostings        := FindObject(oForm, "bipnl_OverviewProjectPostings"),
+      bipnl_OverviewUserPostings           := FindObject(oForm, "bipnl_OverviewUserPostings"),
+      bm_Toolbars                          := FindObject(oForm, "bm_Toolbars"),
+      btn_GotoCustomer                     := FindObject(oForm, "btn_GotoCustomer"),
+      btn_RefreshChangesTracking           := FindObject(oForm, "btn_RefreshChangesTracking"),
+      btn_RefreshOverviewProjectPostings   := FindObject(oForm, "btn_RefreshOverviewProjectPostings"),
+      btn_RefreshOverviewUserPostings      := FindObject(oForm, "btn_RefreshOverviewUserPostings"),
+      btn_RefreshProjectPostingsHistory    := FindObject(oForm, "btn_RefreshProjectPostingsHistory"),
+      cmb_Master_Authority                 := FindObject(oForm, "cmb_Master_Authority"),
+      cmb_Master_Priority                  := FindObject(oForm, "cmb_Master_Priority"),
+      cmb_MasterType                       := FindObject(oForm, "cmb_MasterType"),
+      cmb_ProjectStatus                    := FindObject(oForm, "cmb_ProjectStatus"),
+      cmb_StatusLightEffort                := FindObject(oForm, "cmb_StatusLightEffort"),
+      cmb_StatusLightOverall               := FindObject(oForm, "cmb_StatusLightOverall"),
+      cmb_StatusLightResult                := FindObject(oForm, "cmb_StatusLightResult"),
+      cmb_StatusLightTime                  := FindObject(oForm, "cmb_StatusLightTime"),
+      ds_DAB020                            := FindObject(oForm, "ds_DAB020"),
+      ds_DABAVG                            := FindObject(oForm, "ds_DABAVG"),
+      ds_DABPRJ                            := FindObject(oForm, "ds_DABPRJ"),
+      ds_OverviewProjectPostings           := FindObject(oForm, "ds_OverviewProjectPostings"),
+      ds_OverviewUserPostings              := FindObject(oForm, "ds_OverviewUserPostings"),
+      dtp_ByEmployeeFrom                   := FindObject(oForm, "dtp_ByEmployeeFrom"),
+      dtp_ByEmployeeTo                     := FindObject(oForm, "dtp_ByEmployeeTo"),
+      dtp_ChangesTrackingDateFrom          := FindObject(oForm, "dtp_ChangesTrackingDateFrom"),
+      dtp_Master_End                       := FindObject(oForm, "dtp_Master_End"),
+      dtp_Master_Start                     := FindObject(oForm, "dtp_Master_Start"),
+      edt_ChangesFrom                      := FindObject(oForm, "edt_ChangesFrom"),
+      edt_Description                      := FindObject(oForm, "edt_Description"),
+      edt_LongDescription                  := FindObject(oForm, "edt_LongDescription"),
+      edt_ProjectCustomer                  := FindObject(oForm, "edt_ProjectCustomer"),
+      edt_ProjectCustomerName              := FindObject(oForm, "edt_ProjectCustomerName"),
+      edt_ProjectID                        := FindObject(oForm, "edt_ProjectID"),
+      grd_ChangesTracking                  := FindObject(oForm, "grd_ChangesTracking"),
+      grd_MasterPostings                   := FindObject(oForm, "grd_MasterPostings"),
+      grd_OverviewProjectPostings          := FindObject(oForm, "grd_OverviewProjectPostings"),
+      grd_OverviewUserPostings             := FindObject(oForm, "grd_OverviewUserPostings"),
+      lbl_ByEmployeeDateFrom               := FindObject(oForm, "lbl_ByEmployeeDateFrom"),
+      lbl_ByEmployeeTo                     := FindObject(oForm, "lbl_ByEmployeeTo"),
+      lbl_Desc                             := FindObject(oForm, "lbl_Desc"),
+      lbl_Lights                           := FindObject(oForm, "lbl_Lights"),
+      lbl_Master_Authority                 := FindObject(oForm, "lbl_Master_Authority"),
+      lbl_Master_End                       := FindObject(oForm, "lbl_Master_End"),
+      lbl_Master_Priority                  := FindObject(oForm, "lbl_Master_Priority"),
+      lbl_Master_Start                     := FindObject(oForm, "lbl_Master_Start"),
+      lbl_ProjectCustomer                  := FindObject(oForm, "lbl_ProjectCustomer"),
+      lbl_ProjectID                        := FindObject(oForm, "lbl_ProjectID"),
+      lbl_Status                           := FindObject(oForm, "lbl_Status"),
+      lbl_StatusLightEffort                := FindObject(oForm, "lbl_StatusLightEffort"),
+      lbl_StatusLightOverall               := FindObject(oForm, "lbl_StatusLightOverall"),
+      lbl_StatusLightResult                := FindObject(oForm, "lbl_StatusLightResult"),
+      lbl_StatusLightTime                  := FindObject(oForm, "lbl_StatusLightTime"),
+      lbl_Type                             := FindObject(oForm, "lbl_Type"),
+      MainActionList                       := FindObject(oForm, "MainActionList"),
+      menu_Main                            := FindObject(oForm, "menu_Main"),
+      mnu_AcquirePostings                  := FindObject(oForm, "mnu_AcquirePostings"),
+      mnu_Blank                            := FindObject(oForm, "mnu_Blank"),
+      mnu_ChangeTracking                   := FindObject(oForm, "mnu_ChangeTracking"),
+      mnu_DeleteProject                    := FindObject(oForm, "mnu_DeleteProject"),
+      mnu_DesignProjectOverview            := FindObject(oForm, "mnu_DesignProjectOverview"),
+      mnu_Edit                             := FindObject(oForm, "mnu_Edit"),
+      mnu_Info                             := FindObject(oForm, "mnu_Info"),
+      mnu_Line                             := FindObject(oForm, "mnu_Line"),
+      mnu_Line2                            := FindObject(oForm, "mnu_Line2"),
+      mnu_Links                            := FindObject(oForm, "mnu_Links"),
+      mnu_NeuesProjektausVorlage           := FindObject(oForm, "mnu_NeuesProjektausVorlage"),
+      mnu_NewProject                       := FindObject(oForm, "mnu_NewProject"),
+      mnu_PrintProjectOverview             := FindObject(oForm, "mnu_PrintProjectOverview"),
+      mnu_ProjectPostingOverviewByDate     := FindObject(oForm, "mnu_ProjectPostingOverviewByDate"),
+      mnu_ProjectPostingOverviewByEmployee := FindObject(oForm, "mnu_ProjectPostingOverviewByEmployee"),
+      mnu_ProjectsOverview                 := FindObject(oForm, "mnu_ProjectsOverview"),
+      mnu_SalesProfit                      := FindObject(oForm, "mnu_SalesProfit"),
+      mnu_SearchProject                    := FindObject(oForm, "mnu_SearchProject"),
+      mnu_ShowSinglePos                    := FindObject(oForm, "mnu_ShowSinglePos"),
+      mnu_TasksAndEfforts                  := FindObject(oForm, "mnu_TasksAndEfforts"),
+      NProjektChartanzeigen1               := FindObject(oForm, "NProjektChartanzeigen1"),
+      OverviewActionList                   := FindObject(oForm, "OverviewActionList"),
+      pctrl_DetailOptions                  := FindObject(oForm, "pctrl_DetailOptions"),
+      pnl_BackMain                         := FindObject(oForm, "pnl_BackMain"),
+      pnl_ChangesTrackingBack              := FindObject(oForm, "pnl_ChangesTrackingBack"),
+      pnl_ChangesTrackingFilterPanel       := FindObject(oForm, "pnl_ChangesTrackingFilterPanel"),
+      pnl_ChangesTrackingOptions           := FindObject(oForm, "pnl_ChangesTrackingOptions"),
+      pnl_DetailedOpt                      := FindObject(oForm, "pnl_DetailedOpt"),
+      pnl_Mainoptions                      := FindObject(oForm, "pnl_Mainoptions"),
+      pnl_MainPanel                        := FindObject(oForm, "pnl_MainPanel"),
+      pnl_MasterData                       := FindObject(oForm, "pnl_MasterData"),
+      pnl_MasterDataBack                   := FindObject(oForm, "pnl_MasterDataBack"),
+      pnl_MasterDataBottomBack             := FindObject(oForm, "pnl_MasterDataBottomBack"),
+      pnl_MasterPostings                   := FindObject(oForm, "pnl_MasterPostings"),
+      pnl_MasterTop                        := FindObject(oForm, "pnl_MasterTop"),
+      pnl_OverviewAllPostingsOfProject     := FindObject(oForm, "pnl_OverviewAllPostingsOfProject"),
+      pnl_OverviewBackpanel                := FindObject(oForm, "pnl_OverviewBackpanel"),
+      pnl_OverviewProjectPostingsHeadpanel := FindObject(oForm, "pnl_OverviewProjectPostingsHeadpanel"),
+      pnl_OverviewUserPostings             := FindObject(oForm, "pnl_OverviewUserPostings"),
+      pnl_OverviewUserPostingsHeadBack     := FindObject(oForm, "pnl_OverviewUserPostingsHeadBack"),
+      pnl_PrjInfo                          := FindObject(oForm, "pnl_PrjInfo"),
+      pnl_RefreshProjectPostingsHistory    := FindObject(oForm, "pnl_RefreshProjectPostingsHistory"),
+      pnl_SumsByEmployeeFilter             := FindObject(oForm, "pnl_SumsByEmployeeFilter"),
+      spl_MasterDataTopBottomSpl           := FindObject(oForm, "spl_MasterDataTopBottomSpl"),
+      spl_OverviewSplitter                 := FindObject(oForm, "spl_OverviewSplitter"),
+      spl_TrackingAndPostingsSpl           := FindObject(oForm, "spl_TrackingAndPostingsSpl"),
+      tab_MasterData                       := FindObject(oForm, "tab_MasterData"),
+      tb_CanProj                           := FindObject(oForm, "tb_CanProj"),
+      tb_DelProj                           := FindObject(oForm, "tb_DelProj"),
+      tb_Main                              := FindObject(oForm, "tb_Main"),
+      tb_NewProj                           := FindObject(oForm, "tb_NewProj"),
+      tb_NewProjectFromTemplate            := FindObject(oForm, "tb_NewProjectFromTemplate"),
+      tb_SavProj                           := FindObject(oForm, "tb_SavProj"),
+      tb_SearchProject                     := FindObject(oForm, "tb_SearchProject"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      pctrl_DetailOptions.DockSite := True,
+      dtp_ChangesTrackingDateFrom.Date := Date() - 14, // Die letzten 14-Tage in der Änderungsverfolgung anzeigen
+   onerror
+      DestroyObject(oForm),
+      SetError('Fehler beim Laden der Oberfläche' + crlf + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Ist die Projektmanagement Lizenz nicht vorhanden werden die intern
+   // verwendeten BOs / BCs nicht erzeugt und das Fenster befindet sich dann in
+   // einem unbrauchbarem Zustand, daher ohne Lizenz das Programm gar nicht erst starten
+   if IsLicense(liProjectManagement) then
+      startseq
+         // Flag für Erstinitialisierung setzen
+         LockDesktop('Lade' + crlf + 'Projektmanagement'),
+         startseq
+            m_bStarting := True,                                                   prs('## MAIN PROGRAMM ##', 'm_bStarting := TRUE'),
+            startseq
+               InitForm(),
+               LoadGUI(),
+               CreateDockPanels(),
+               CreateIndiMenu(),
+               OpenDataBase(),
+            always
+               m_bStarting := False,                                               prs('## MAIN PROGRAMM ##', 'm_bStarting := FALSE'),
+            stopseq,
+
+            SetDefaults(),
+         always
+            UnlockDesktop(),
+         stopseq,
+      onerror
+         SetError(GetErrorText()),
+      stopseq,
+      ShowGUI(),
+   else
+      MessageDlg(GetLangText(45206), mtInformation),  // 'Lizenz für das Projektmanagement nicht gefunden!'
+   endif,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

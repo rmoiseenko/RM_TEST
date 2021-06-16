@@ -1,0 +1,372 @@
+DECLARE @termin_wochen_abstand_startdatum Date;
+DECLARE @auswertung_fuer_standort         Integer;
+DECLARE @inland_landnr                    Char(3);
+DECLARE @angebote_ab_termin               Char(9);
+DECLARE @DABPAR_INTERCOMPANY              CURSOR;
+
+
+@termin_wochen_abstand_startdatum = @PARAM_DATUM_START_WOCHEN_ABSTAND@; // Das Startdatum für die Berechnung von Termin-Abständen sollte immer der
+                                                                        // Montag in der Historisierungswoche sein, damit alle Termine in der
+                                                                        // Folge-Woche als "1 Woche" Differenz gelten usw.
+                                                                        // z.B. '2016-05-30'
+@auswertung_fuer_standort         = @PARAM_STANDORT@;          // z.B. 0
+@inland_landnr                    = @PARAM_INLAND_LANDNR@;     // z.B. '004' für Deutschland
+@angebote_ab_termin               = @PARAM_ANGEBOT_AB_TERMIN@; // z.B: '20150101' oder ''
+
+//******************************************************************************
+// temp. Tabelle löschen, sofern noch vorhanden
+//******************************************************************************
+TRY DROP TABLE #HISVKEK_VERKAUF_TEMP; CATCH ALL END;
+
+//******************************************************************************
+// Quell-Daten in temporäre Tabelle laden
+// => Dauer: bis zu 30 Sek. je nach Datenmenge
+//******************************************************************************
+SELECT
+      // Standort / Lieferstandort / Intercompany
+      DAB055.STANDORT                    AS STO_AUF,     // Auftrags-Standort
+      DABPAR.STO_FIRMA                   AS STO_AUFFN,   // Firmen-Nr. des Auftrags-Standorts
+
+      DAB055.STANDORT <> DAB055.STO_LIEF AS STO_IS_LF,   // Ist "Auslieferung durch anderen Standort?"-Fall
+      DAB055.STO_LIEF                    AS STO_LIEF,    // Liefer-Standort
+      DABPAR_STO_LIEF.STO_FIRMA          AS STO_LIEFFN,  // Firmen-Nr. des Liefer-Standort
+
+      false                              AS STO_IS_IC,   // Ist "Intercompany-Auftrag"? (Ware wird zwischen zwei Standorten bewegt / verkauft)
+      -1                                 AS IC_EMPFSTO,  // Intercompany: Standort-Nummer des Empfänger-Standorts (abgeleitet aus DAB055:KDNR)
+      CAST(Null AS SQL_INTEGER)          AS IC_EMPFFN,   // Intercompany: Firmen-Nr. des Empfänger-Standorts
+
+      DAB055.ABTEILUNG                   AS ABTEILUNG,
+
+      // Positions-Basis-Daten
+      DAB055.ARTNR            AS ARTNR,
+      DAB010.ARTTYP           AS DAB010_ARTTYP,
+      CAST(DAB010.NKSTELLEN AS SQL_INTEGER) AS DAB010_NKSTELLEN,   // Cast. wg. DBF-NUMERIC
+      DAB010.PROD_ABT         AS DAB010_PROD_ABT,
+      DAB010.ARTGRUPPE        AS DAB010_ARTGRUPPE,
+      DAB055.KOSTENST         AS DAB055_KOSTENST,
+      DAB050.EMPF_TYP         AS DAB050_EMPF_TYP,
+      DAB055.KDNR             AS DAB055_KDNR,
+      DAB050.TYP              AS DAB050_TYP,
+      DAB050.LLANDNR          AS DAB050_LLANDNR,
+      CAST(0 AS SQL_INTEGER)  AS DAB050_LLAND_REG,
+      DAB050.AUF_ART          AS DAB050_AUF_ART,
+      DAB050.PRJ_ID           AS DAB050_PRJ_ID,
+      DAB050.WAEKZ            AS DAB050_WAEKZ,            // Auftrags-Währung
+      DAB055.VERTRETER        AS DAB055_VERTRETER,
+      DAB055.VERTRETER2       AS DAB055_VERTRETER2,
+
+      // Termine
+      CAST('' AS SQL_CHAR(8)) AS DAB055_TERMINW,  // Wunsch-Termin, Char(8)
+      CAST(null AS SQL_DATE)  AS DAB055_TERMINWD, // Wunsch-Termin, Date
+
+      DAB055.TERMIN           AS DAB055_TERMIN,    // Liefer-Termin, Char(8)
+      DAB055.TERM_INDEX       AS DAB055_TERM_INDEX,// Liefer-Termin, Char(9), sortierbar
+      CAST( iif(DAB055.TERM_INDEX <> '' AND DAB055.TERMIN <> 'KW.99.99',
+                 CREATETIMESTAMP(CAST(SubString(DAB055.TERM_INDEX, 1, 4) AS SQL_INTEGER),
+                                 CAST(SubString(DAB055.TERM_INDEX, 5, 2) AS SQL_INTEGER),
+                                 CAST(SubString(DAB055.TERM_INDEX, 7, 2) AS SQL_INTEGER),
+                                 0, 0, 0, 0),
+                 null) AS SQL_DATE)
+                              AS DAB055_TERMIND,   // Liefer-Termin, Date
+      CAST(0 AS SQL_INTEGER)  AS DAB055_TERMINAW,  // "Abstand in Wochen" des Liefer-Termins zum Historisierungs-Datum
+
+      // Rahmen / Abruf-Infos
+      iif(DAB055.TERMIN = 'KW.99.99', true, false) AS DAB055_ABRUF_AUF, // Position ist Abruf-Rahmenposition?
+
+      // Vorgangs-Nummer
+      DAB055.APNUMMER                           AS DAB055_APNUMMER,
+      DAB055.ID                                 AS DAB055_ID,
+
+      // Inputfelder für die Berechnung von Kennzahlen (Mengen & Werte)
+
+      // Allgemeine Parameter
+      DABPAR.STDWAE_NR                          AS DABPAR_STDWAE_NR,        // Nummer der Eigenwährung
+      DABWAE_DPAR.WAENK                         AS DABPAR_DABWAE_WAENK,     // Nachkomma-Stellen der Eigenwährung
+
+      // -> Aus Auftragskopf
+      DAB050.GESRABATT                          AS DAB050_GESRABATT,
+      DAB050.GESRABATT2                         AS DAB050_GESRABATT2,
+
+      DABWAE_D050.WAENK                         AS DAB050_DABWAE_WAENK,     // Währungs-NK-Stellen der Auftrags-Währung
+      (DABWAE_D050.WAEDM   * DABWAE_D050.WAEEH) AS DAB050_DABWAE_VK_TEILER, // Währungs-Umrechnung für den Verkauf
+      (DABWAE_D050.WAEDMEK * DABWAE_D050.WAEEH) AS DAB050_DABWAE_EK_TEILER, // Währungs-Umrechnung für den Einkauf
+
+      // -> Aus Auftragsposition
+      DAB055.AMENGE                             AS DAB055_AMENGE,
+      DAB055.BMENGE                             AS DAB055_BMENGE,
+      iif(DAB050.TYP = 'A',
+          DAB055.AMENGE,
+          DAB055.BMENGE)                        AS DAB055_GESAMTMENGE,
+      DAB055.RMENGE                             AS DAB055_RMENGE,
+      DAB055.VMENGE                             AS DAB055_VMENGE,
+      DAB055.LMENGE                             AS DAB055_LMENGE,
+      DAB055.FMENGE                             AS DAB055_FMENGE,
+      DAB055.FMENGEMAX                          AS DAB055_FMENGEMAX,
+      DAB055.EKP                                AS DAB055_EKP,
+      DAB055.PE                                 AS DAB055_PE,
+      DAB055.PWERT                              AS DAB055_PWERT,
+      DAB055.RABATT_KZ                          AS DAB055_RABATT_KZ,
+      iif( DAB055.RABATT_KZ IN ('J', 'G'),
+          (  (100 - DAB050.GESRABATT)
+           * (100 - DAB050.GESRABATT2) / 10000),
+           1)                                   AS DAB055_GESRABATT_FAKTOR, // Gesamt-Rabatt-Multiplikator - sofern Position rabatt-Fähig
+
+       // Felder für berechnete Kennzahlen
+       CAST(0 AS SQL_DOUBLE) AS GESAMTBESTAND_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS GESAMTBESTAND_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS GESAMTBESTAND_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS GESAMTBESTAND_RE_WERT,
+
+       CAST(0 AS SQL_DOUBLE) AS ANGEBOT_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS ANGEBOT_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS ANGEBOT_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS ANGEBOT_RE_WERT,
+
+       CAST(0 AS SQL_DOUBLE) AS LIEFER_RUECKSTAND_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS LIEFER_RUECKSTAND_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS LIEFER_RUECKSTAND_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS LIEFER_RUECKSTAND_RE_WERT,
+
+       CAST(0 AS SQL_DOUBLE) AS RESERVIERT_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS RESERVIERT_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS RESERVIERT_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS RESERVIERT_RE_WERT,
+
+       CAST(0 AS SQL_DOUBLE) AS VERSAND_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS VERSAND_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS VERSAND_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS VERSAND_RE_WERT,
+
+       CAST(0 AS SQL_DOUBLE) AS FAKTURA_RUECKSTAND_MENGE,
+       CAST(0 AS SQL_DOUBLE) AS FAKTURA_RUECKSTAND_EK_WERT,
+       CAST(0 AS SQL_DOUBLE) AS FAKTURA_RUECKSTAND_RE_WERTFW,
+       CAST(0 AS SQL_DOUBLE) AS FAKTURA_RUECKSTAND_RE_WERT
+
+
+   INTO #HISVKEK_VERKAUF_TEMP
+   FROM "DAB055.ADT" DAB055
+
+   INNER JOIN "DAB050.ADT" DAB050          ON (DAB050.ANUMMER  = Left(DAB055.APNUMMER, 6))
+   INNER JOIN "DABWAE.ADT" DABWAE_D050     ON (DABWAE_D050.STANDORT     = DAB050.STANDORT AND DABWAE_D050.WAENR = DAB050.WAEKZ)  // Währungs-Tabelle zur Auftragswährung (DAB050)
+   INNER JOIN "DABPAR.ADT" DABPAR          ON (DABPAR.STANDORT          = DAB055.STANDORT AND DABPAR.ABTEILUNG = 0)              // Join Allgemeine Parameter zu Auftrags-Standort
+   INNER JOIN "DABPAR.ADT" DABPAR_STO_LIEF ON (DABPAR_STO_LIEF.STANDORT = DAB055.STO_LIEF AND DABPAR_STO_LIEF.ABTEILUNG = 0)     // Join Allgemeine Parameter zu "Lieferung durch"-Standort
+   INNER JOIN "DABWAE.ADT" DABWAE_DPAR     ON (DABWAE_DPAR.STANDORT     = DABPAR.STANDORT AND DABWAE_DPAR.WAENR = DABPAR.STDWAE_NR)  // Währungs-Tabelle zur Eigenwährung (DABPAR)
+   INNER JOIN @DAB010_TABLENAME@ DAB010          ON (DAB010.ARTNR   = DAB055.ARTNR AND DAB010.STANDORT = DAB055.STANDORT)
+
+   WHERE
+             (DAB055.STANDORT = @auswertung_fuer_standort OR DAB055.STO_LIEF = @auswertung_fuer_standort)
+
+             // Achtung: Sofern DAB050 hier als Filter-Bedingung genutzt wird (z.B. DAB050.TYP), wird die Ausführung sehr viel langsamer
+         AND (    (DAB055.AMENGE <> 0 AND DAB055.BMENGE = 0 AND DAB055.TERM_INDEX >= @angebote_ab_termin) // Angebote, nur Positionen, deren Termin nicht schon weit in der Verg. liegt... (dynamisch)
+               OR (DAB055.BMENGE <> DAB055.FMENGE) ) // Aufträge, die nicht komplett abgeschlossen sind
+   ;
+
+//******************************************************************************
+// Termin-Abstände berechnen (Abstand zwischen Historisierung und Liefertermin in ganzen Wochen)
+//******************************************************************************
+UPDATE #HISVKEK_VERKAUF_TEMP
+   SET DAB055_TERMINAW = TIMESTAMPDIFF( SQL_TSI_WEEK, @termin_wochen_abstand_startdatum, DAB055_TERMIND )
+   WHERE DAB055_TERMIND is not null
+   ;
+
+// Rahmen-Positionen sind 9999 Wochen in der Zukunft
+UPDATE #HISVKEK_VERKAUF_TEMP
+   SET DAB055_TERMINAW = 9999
+   WHERE DAB055_ABRUF_AUF = true
+   ;
+
+//******************************************************************************
+// Alle Positionen markieren, die eine Intercompany-Lieferung darstellen
+//******************************************************************************
+OPEN @DABPAR_INTERCOMPANY AS SELECT DISTINCT STANDORT, STO_KDNR, STO_FIRMA FROM "DABPAR.ADT" DABPAR;
+
+WHILE FETCH @DABPAR_INTERCOMPANY DO
+   UPDATE #HISVKEK_VERKAUF_TEMP
+       SET
+          STO_IS_IC  = true,
+          IC_EMPFSTO = @DABPAR_INTERCOMPANY.STANDORT,
+          IC_EMPFFN  = @DABPAR_INTERCOMPANY.STO_FIRMA
+       WHERE DAB055_KDNR = @DABPAR_INTERCOMPANY.STO_KDNR;
+END WHILE;
+
+CLOSE @DABPAR_INTERCOMPANY;
+
+//******************************************************************************
+// Zuordnung "Empfänger-Land" zu "Empfänger-Region"
+//******************************************************************************
+UPDATE #HISVKEK_VERKAUF_TEMP SET DAB050_LLAND_REG = 0  WHERE DAB050_LLAND_REG <> 0;                                                                                       // DAB050_LLAND_REG am Anfang überall auf 0 setzen
+UPDATE #HISVKEK_VERKAUF_TEMP SET DAB050_LLAND_REG = 90 WHERE DAB050_LLAND_REG = 0 AND STO_IS_IC = true;                                                                   // 90 = Intercompany
+UPDATE #HISVKEK_VERKAUF_TEMP SET DAB050_LLAND_REG = 10 WHERE DAB050_LLAND_REG = 0 AND (DAB050_LLANDNR = @inland_landnr OR DAB050_LLANDNR = '' OR DAB050_LLANDNR is null); // 10 = Inland
+UPDATE #HISVKEK_VERKAUF_TEMP SET DAB050_LLAND_REG = 20 WHERE DAB050_LLAND_REG = 0 AND DAB050_LLANDNR IN (SELECT LANDNR
+                                                                                                            FROM @DIA020_TABLENAME@
+                                                                                                            WHERE     EG_KZ = 'J'
+                                                                                                                  AND (EG_AB  is null OR EG_AB  <= @PARAM_HISTORISIERUNGS_DATUM@)
+                                                                                                                  AND (EG_BIS is null OR EG_BIS >= @PARAM_HISTORISIERUNGS_DATUM@)
+                                                                                                                                                                         );  // 20 = EU
+UPDATE #HISVKEK_VERKAUF_TEMP SET DAB050_LLAND_REG = 30 WHERE DAB050_LLAND_REG = 0;                                                                                        // 30 = Drittland
+
+//******************************************************************************
+// Kennzahlen für Gesamt-Menge berechnen
+//******************************************************************************
+UPDATE #HISVKEK_VERKAUF_TEMP
+
+   SET
+      GESAMTBESTAND_MENGE     = DAB055_GESAMTMENGE,
+      GESAMTBESTAND_EK_WERT   = Round(DAB055_GESAMTMENGE * DAB055_EKP / DAB055_PE,  DABPAR_DABWAE_WAENK),   // Menge x EKP / PE
+      GESAMTBESTAND_RE_WERTFW = Round(DAB055_PWERT       * DAB055_GESRABATT_FAKTOR, DAB050_DABWAE_WAENK)
+   ;
+
+//******************************************************************************
+// Kennzahlen für Angebotsbestand berechnen
+//******************************************************************************
+UPDATE #HISVKEK_VERKAUF_TEMP
+
+   SET
+      ANGEBOT_MENGE     = GESAMTBESTAND_MENGE,
+      ANGEBOT_EK_WERT   = GESAMTBESTAND_EK_WERT,
+      ANGEBOT_RE_WERTFW = iif(DAB055_PWERT > 0, GESAMTBESTAND_RE_WERTFW, 0) // negative Angebotswerte werden nicht als Angebots-Wert ausgegeben (nur die Menge), entspricht der Logik im Std.-Fenster "Rückstände", Modus "Angebot"
+   WHERE     DAB050_TYP IN ('A') // OR DAB050_TYP IS NULL // Null-Werte dürfen eig. nicht vorkommen - sind Fehler in den Daten
+         AND STO_AUF = @auswertung_fuer_standort
+   ;
+
+//******************************************************************************
+// Kennzahlen für Aufträge und Lieferungen berechnen
+//******************************************************************************
+UPDATE  #HISVKEK_VERKAUF_TEMP
+   SET
+      LIEFER_RUECKSTAND_MENGE  =     Round(DAB055_BMENGE - DAB055_VMENGE - DAB055_LMENGE, DAB010_NKSTELLEN),   // TODO: Lieferrückstand wird sowohl im Auftrags-Standort als auch im Lieferstandort angezeigt.
+                                                                                                               //       Das ist im Standard auch so. Fenster "Rückstände", Modus "Lieferrückstand"
+      RESERVIERT_MENGE         = DAB055_RMENGE,
+      VERSAND_MENGE            = DAB055_VMENGE,
+      FAKTURA_RUECKSTAND_MENGE = iif(STO_AUF = @auswertung_fuer_standort,
+                                     Round(DAB055_VMENGE + DAB055_LMENGE - DAB055_FMENGE, DAB010_NKSTELLEN),
+                                     0)
+   WHERE DAB050_TYP IN ('N', 'L')
+   ;
+
+UPDATE  #HISVKEK_VERKAUF_TEMP
+   SET
+      LIEFER_RUECKSTAND_EK_WERT     = Round((LIEFER_RUECKSTAND_MENGE  / GESAMTBESTAND_MENGE) * GESAMTBESTAND_EK_WERT,   DABPAR_DABWAE_WAENK),     // Anteiliger Wert am Gesamt-EK_WERT
+      LIEFER_RUECKSTAND_RE_WERTFW   = Round((LIEFER_RUECKSTAND_MENGE  / GESAMTBESTAND_MENGE) * GESAMTBESTAND_RE_WERTFW, DAB050_DABWAE_WAENK),     // Anteiliger Wert am Gesamt-RE_WERT
+
+      RESERVIERT_EK_WERT            = Round((RESERVIERT_MENGE         / GESAMTBESTAND_MENGE) * GESAMTBESTAND_EK_WERT,   DABPAR_DABWAE_WAENK), // Anteiliger Wert am Gesamt-EK_WERT
+      RESERVIERT_RE_WERTFW          = Round((RESERVIERT_MENGE         / GESAMTBESTAND_MENGE) * GESAMTBESTAND_RE_WERTFW, DAB050_DABWAE_WAENK), // Anteiliger Wert am Gesamt-RE_WERT
+
+      VERSAND_EK_WERT               = 0, // TODO: erfordert die Daten aus den DAB020-'A'-Sätzen, da DAB020:EKP/PE von dort kommen müssen
+      VERSAND_RE_WERTFW             = Round((VERSAND_MENGE            / GESAMTBESTAND_MENGE) * GESAMTBESTAND_RE_WERTFW, DAB050_DABWAE_WAENK),    // Anteiliger Wert am Gesamt-RE_WERT
+
+      FAKTURA_RUECKSTAND_EK_WERT    = 0, // TODO: erfordert die Daten aus den DAB020-'A'-Sätzen, da DAB020:EKP/PE von dort kommen müssen
+      FAKTURA_RUECKSTAND_RE_WERTFW  = Round((FAKTURA_RUECKSTAND_MENGE / GESAMTBESTAND_MENGE) * GESAMTBESTAND_RE_WERTFW, DAB050_DABWAE_WAENK)      // Anteiliger Wert am Gesamt-RE_WERT
+
+   WHERE DAB050_TYP IN ('N', 'L')
+   ;
+
+//******************************************************************************
+// Umrechnung von "RE_WERTFW" auf "RE_WERT" => in Eigenwährung
+//******************************************************************************
+UPDATE #HISVKEK_VERKAUF_TEMP
+   SET
+      GESAMTBESTAND_RE_WERT      = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, GESAMTBESTAND_RE_WERTFW,      Round(GESAMTBESTAND_RE_WERTFW        / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK)),
+      ANGEBOT_RE_WERT            = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, ANGEBOT_RE_WERTFW,            Round(ANGEBOT_RE_WERTFW              / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK)),
+      LIEFER_RUECKSTAND_RE_WERT  = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, LIEFER_RUECKSTAND_RE_WERTFW,  Round(LIEFER_RUECKSTAND_RE_WERTFW    / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK)),
+      RESERVIERT_RE_WERT         = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, RESERVIERT_RE_WERTFW,         Round(RESERVIERT_RE_WERTFW           / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK)),
+      VERSAND_RE_WERT            = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, VERSAND_RE_WERTFW,            Round(VERSAND_RE_WERTFW              / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK)),
+      FAKTURA_RUECKSTAND_RE_WERT = iif(DAB050_WAEKZ = DABPAR_STDWAE_NR, FAKTURA_RUECKSTAND_RE_WERTFW, Round(FAKTURA_RUECKSTAND_RE_WERTFW   / DAB050_DABWAE_VK_TEILER, DABPAR_DABWAE_WAENK))
+   ;
+
+//******************************************************************************
+// Statements fürs Debugging
+//******************************************************************************
+// SELECT * FROM "DABWAE.ADT"
+// SELECT STANDORT FROM "DAB050.ADT"
+// SELECT * FROM #HISVKEK_VERKAUF_TEMP
+
+// Summen-Berechnung auf Basis der temp. Tabelle
+//SELECT
+//      DAB050_EMPF_TYP,
+//      Round(SUM(ANGEBOT_RE_WERT), 2)            AS AN_RE_WT,
+//      Round(SUM(LIEFER_RUECKSTAND_RE_WERT), 2)  AS LR_RE_WT,
+//      Round(SUM(RESERVIERT_RE_WERT), 2)         AS RV_RE_WT,
+//      Round(SUM(VERSAND_RE_WERT), 2)            AS VS_RE_WT,
+//      Round(SUM(FAKTURA_RUECKSTAND_RE_WERT), 2) AS FR_RE_WT
+//   FROM #HISVKEK_VERKAUF_TEMP
+//   GROUP BY DAB050_EMPF_TYP
+
+// Summen-Berechnung auf Basis der HISVK
+//SELECT
+//      EMPF_TYP,
+//      Round(SUM(AN_RE_WT), 2)   AS AN_RE_WT,
+//      Round(SUM(LR_RE_WT), 2)   AS LR_RE_WT,
+//      Round(SUM(RV_RE_WT), 2)   AS RV_RE_WT,
+//      Round(SUM(VS_RE_WT), 2)   AS VS_RE_WT,
+//      Round(SUM(FR_RE_WT), 2)   AS FR_RE_WT
+//   FROM "HISVK.ADT"
+//   GROUP BY EMPF_TYP
+
+//******************************************************************************
+// TODO: Naturalrabatt wird aktuell nicht berücksichtigt -> FEHLER ausgeben
+//******************************************************************************
+// SELECT DAB055_APNUMMER FROM #HISVKEK_VERKAUF_TEMP WHERE DAB055_FMENGEMAX <> 0; 
+
+//******************************************************************************
+// Selekt der temp. Tabelle inkl. Umbenennungen, als Ausgangsbasis für die
+//    Übertragung in die HISVK
+//******************************************************************************
+SELECT
+      ABTEILUNG                      AS ABTEILUNG,
+
+      STO_AUF                        AS STO_AUF,
+      STO_AUFFN                      AS STO_AUFFN,
+      STO_IS_LF                      AS STO_IS_LF,
+      STO_LIEF                       AS STO_LIEF,
+      STO_LIEFFN                     AS STO_LIEFFN,
+      STO_IS_IC                      AS STO_IS_IC,
+      IC_EMPFSTO                     AS IC_EMPFSTO,
+      IC_EMPFFN                      AS IC_EMPFFN,
+      ARTNR                          AS ARTNR,
+      DAB010_ARTTYP                  AS ARTTYP,
+      DAB010_PROD_ABT                AS PROD_ABT,
+      DAB010_ARTGRUPPE               AS ARTGRUPPE,
+      DAB055_KOSTENST                AS KOSTENST,
+      DAB050_EMPF_TYP                AS EMPF_TYP,
+      DAB055_KDNR                    AS KDNR,
+      DAB050_TYP                     AS DAB050_TYP,
+      DAB050_LLANDNR                 AS LLANDNR,
+      DAB050_LLAND_REG               AS LLAND_REG,
+      DAB050_AUF_ART                 AS AUF_ART,
+      DAB050_PRJ_ID                  AS PRJ_ID,
+      DAB050_WAEKZ                   AS WAEKZ,
+      DAB055_VERTRETER               AS VERTRETER,
+      DAB055_VERTRETER2              AS VERTRETER2,
+      DAB055_TERMINW                 AS TERMINW,
+      DAB055_TERMINWD                AS TERMINWD,
+      DAB055_TERMIN                  AS TERMIN,
+      DAB055_TERMIND                 AS TERMIND,
+      DAB055_TERMINAW                AS TERMINAW,
+      DAB055_ABRUF_AUF               AS ABRUF_AUF,
+      DAB055_APNUMMER                AS APNUMMER,
+      DAB055_ID                      AS DAB055_ID,
+      //DAB050_GESRABATT               AS GESRABATT,
+      //DAB050_GESRABATT2              AS GESRABATT2,
+      //DAB055_PWERT                   AS PWERT, 
+      ANGEBOT_MENGE                  AS AN_MENGE,
+      ANGEBOT_EK_WERT                AS AN_EK_WT,
+      ANGEBOT_RE_WERTFW              AS AN_RE_WTFW,
+      ANGEBOT_RE_WERT                AS AN_RE_WT,
+      LIEFER_RUECKSTAND_MENGE        AS LR_MENGE,
+      LIEFER_RUECKSTAND_EK_WERT      AS LR_EK_WT,
+      LIEFER_RUECKSTAND_RE_WERTFW    AS LR_RE_WTFW,
+      LIEFER_RUECKSTAND_RE_WERT      AS LR_RE_WT,
+      RESERVIERT_MENGE               AS RV_MENGE,
+      RESERVIERT_EK_WERT             AS RV_EK_WT,
+      RESERVIERT_RE_WERTFW           AS RV_RE_WTFW,
+      RESERVIERT_RE_WERT             AS RV_RE_WT,
+      VERSAND_MENGE                  AS VS_MENGE,
+      VERSAND_EK_WERT                AS VS_EK_WT,
+      VERSAND_RE_WERTFW              AS VS_RE_WTFW,
+      VERSAND_RE_WERT                AS VS_RE_WT,
+      FAKTURA_RUECKSTAND_MENGE       AS FR_MENGE,
+      FAKTURA_RUECKSTAND_EK_WERT     AS FR_EK_WT,
+      FAKTURA_RUECKSTAND_RE_WERTFW   AS FR_RE_WTFW,
+      FAKTURA_RUECKSTAND_RE_WERT     AS FR_RE_WT
+   FROM #HISVKEK_VERKAUF_TEMP

@@ -1,0 +1,37 @@
+| nEvtNo:P1, oForm:P2 |
+
+// Aufruf erfolgt nach dem Erstellen eines business express Haupt-Formulars
+// Der Formularname kann über "ClassName(oForm)" eindeutig abgefragt werden
+// Ein TBeCustomMenuPanel (Individual-Menu) kann mit oForm als Owner erstellt werden
+
+startseq,
+  // Bei Aufruf aus der Programmierung
+  if EditorMode() then
+     GMU_ShowIndiMenuEditor(),
+  else
+
+     GMU_CreateIndiMenu(belmMain,   oForm, 100,  'Schlieen1'),      // (ERP)             Admin-Tools
+     GMU_CreateIndiMenu(belmProg,   oForm, 100,  ''),               // (Programmierung)  Admin-Tools
+     GMU_CreateIndiMenu(belmPrMan,  oForm, 100,  ''),               // (PrintManager)    Admin-Tools
+     GMU_CreateIndiMenu(belmReport, oForm, 100,  ''),               // (Reportgenerator) Admin-Tools
+     GMU_CreateIndiMenu(belmFiBu,   oForm, 100,  ''),               // (FiBu)            Admin-Tools
+
+     GMU_CreateIndiMenu(belmMain,   oForm, 1004, 'mnuCustOrders'),  // (ERP)             Projektmanagement
+
+     GMU_CreateIndiMenu(belmMain,   oForm, 1018, 'mnuReorg'),       // (ERP)             Festwerte Zusatz
+     GMU_CreateIndiMenu(belmMain,   oForm, 1014, 'mnuReorg'),       // (ERP)             Sachmerkmalleisten
+     GMU_CreateIndiMenu(belmMain,   oForm, 1021, 'mnuReorg'),       // (ERP)             CAD-Schnittstelle
+     GMU_CreateIndiMenu(belmMain,   oForm, 1022, 'mnuReorg'),       // (ERP)             Electronic data interchange (EDI)
+     GMU_CreateIndiMenu(belmMain,   oForm, 1013, 'Schlieen1'),      // (ERP)             Protokoll Bestandsberichtigung
+     
+     GMU_CreateIndiMenu(belmMain,   oForm, 1011, 'OffeneAuftrge1'), // (ERP)             Verfügbarkeitsprüfung oberhalb von "Produktion" -> "Offene Aufträge"
+     GMU_CreateIndiMenu(belmMain,   oForm, 1016, 'OffeneAuftrge1'), // (ERP)             Kapazitätsauswertung Grobplanung
+     GMU_CreateIndiMenu(belmMain,   oForm, 1017, 'OffeneAuftrge1'), // (ERP)             "Dummy für Trenner"
+
+     GMU_CreateIndiMenu(belmMain,   oForm,  600, 'barib_Analysis', true, ''),     // (ERP)  Wartung und Instandhaltung
+
+  endif,
+onerror
+   MessageDlg('Fehler im Programm "' + ProgName() + '"' + crlf + GetErrorText(), mtError),
+stopseq,
+

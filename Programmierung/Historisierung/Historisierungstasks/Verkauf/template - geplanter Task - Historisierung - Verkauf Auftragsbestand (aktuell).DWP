@@ -1,0 +1,35 @@
+//------------------------------------------------------------------------------
+// Vorlage für ein Programm
+//     "geplante Tasks\Historisierung - Verkauf Auftragsbestand (aktuell)"
+//
+//------------------------------------------------------------------------------
+
+//##############################################################################
+//##############################################################################
+//
+//  Dieses Programm wird per Taskplaner
+//     jeden Tag um xx:xx Uhr (z.B. 01:00 Uhr Morgens)
+//  ausgeführt, um den zum Ende des vortages aktuellen Auftragsbestand im Verkauf
+//  zu berechnen und für Auswertungen bereit zu stellen.
+//
+//  HINWEIS: Das Programm muss für jeden Standort einzeln ausgeführt werden!
+//
+//##############################################################################
+//##############################################################################
+
+| m_aParams, m_aResult, nHISKOPF_ID |
+
+//******************************************************************************
+// 1. Schritt: Historisierung anstoßen
+//******************************************************************************
+m_aParams := {},
+KVU_Set(m_aParams, 'HIST_TYPE', gl_HIS_HistorizationType_SalesOrderBacklog_Current), // Ziel-Tabelle: HISVKAKT.ADT (aktueller Stand ohne weitere Historisierungs-Zeitpunkte)
+KVU_Set(m_aParams, 'STANDORT',  mStandort),
+
+m_aResult   := Call('Historisierung\Historisierungstasks\Verkauf\Auftragsbestand_task', m_aParams),
+nHISKOPF_ID := KVU_GetAssert(m_aResult, 'HISKOPF_ID'),
+
+//******************************************************************************
+// 2. Schritt: (optionale) Individuelle Nachbearbeitung der Daten
+//******************************************************************************
+// ... hier implementieren ... (<nHISKOPF_ID> zeigt die gerade angelegte ID an)

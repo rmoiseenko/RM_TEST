@@ -1,0 +1,38 @@
+//******************************************************************************
+// Für dieses SQL Script wird das Ergebnis des Scripts
+// "Projektmanagement\SQL\Änderungsverfolgung Vorgang bzw. Projekt" benötigt
+//   => SELECT * FROM #PLAN_IST_GROUPED
+//******************************************************************************
+
+//******************************************************************************
+// Zu jedem Berichtszeitpunkt soll zusätzlich der damals aktuelle Wert des
+// Feldes "STATUS" ermittelt werden
+//******************************************************************************
+SELECT RESULT.*,
+       (  SELECT TOP 1 WERT_INT
+            FROM "DabAVG.ADT" DABAVG_STATUS
+            WHERE DABAVG_STATUS.DS_WA    = 260 AND
+                  DABAVG_STATUS.DS_ID    = RESULT.PRJ_ID AND
+                  DABAVG_STATUS.FELDNAME = 'STATUS' AND
+                  DABAVG_STATUS.ERSTELLT <= CREATETIMESTAMP( RESULT.VS_YEAR, RESULT.VS_MONTH, RESULT.VS_DAY,
+                                                             23, 59, 59, 999) // Nur Änderungen selektieren, die bis zu diesem Tag(es-Ende) geschehen sind
+            ORDER BY DABAVG_STATUS.ERSTELLT DESC )                            // 'TOP 1' i.V.m der Sortierfolge 'DESC' selektiert dann die letzte Änderung am
+                                                                              // relevanten Tag (oder die letzte vorher gültige Änderung...)
+            AS STATUS_VERLAUF,
+       (  SELECT TOP 1 WERT_INT
+            FROM "DabAVG.ADT" DABAVG_STATUS
+            WHERE DABAVG_STATUS.DS_WA    = 260 AND
+                  DABAVG_STATUS.DS_ID    = RESULT.PRJ_ID AND
+                  DABAVG_STATUS.FELDNAME = 'SA_GESAMT' AND
+                  DABAVG_STATUS.ERSTELLT <= CREATETIMESTAMP( RESULT.VS_YEAR, RESULT.VS_MONTH, RESULT.VS_DAY,
+                                                             23, 59, 59, 999) // Nur Änderungen selektieren, die bis zu diesem Tag(es-Ende) geschehen sind
+            ORDER BY DABAVG_STATUS.ERSTELLT DESC )                            // 'TOP 1' i.V.m der Sortierfolge 'DESC' selektiert dann die letzte Änderung am
+                                                                              // relevanten Tag (oder die letzte vorher gültige Änderung...)
+            AS SA_GESAMT_VERLAUF
+  FROM #PLAN_IST_GROUPED RESULT
+  ORDER BY
+     VS_YEAR,
+//     VS_MONTH,   //    Die Monate werden vorerst nicht in die Gruppierung eingebunden, damit die KW
+                   //    nicht gesplittet werden. Desshalb müssen die Monate auch aus der Sortierung entfallen
+     ISOWEEK_NR,
+     VS_DAY

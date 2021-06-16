@@ -1,0 +1,169 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_cFormClassID, m_cWinPosSaveId, m_cBrowserId,
+  m_oDM, m_oDab510,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, ds_Dab510, ds_MasterTable, grid_Dab510
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@MDIDEMO_S",
+m_cWinPosSaveId := "@MDIDEMO_S",
+m_cBrowserId    := "@MDIDEMO_S",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, waDab010, 'TBeRightsTable'),
+
+   // eigenes Datenmodul erstellen
+   m_oDM     := CreateObject('TBeDbGet', '', oForm),
+
+   // notwendige Tabelle(n) öffnen
+   m_oDab510         := DbGetTable(m_oDM, waDab510),
+   ds_Dab510.DataSet           := m_oDab510,
+   grid_Dab510.DataSource      := ds_Dab510,
+   grid_Dab510.RegisterDataSet := m_oDab510,
+   grid_Dab510.ID              := m_cBrowserId,
+   grid_Dab510.ReadWriteProps  := False,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )                                  prs('ds_MasterTableScroll_Update', 'START'),
+   if not empty(m_oMasterTable) and not empty(m_oDab510) then
+      DbFilter('ARTNR = "' + PadR(m_oMasterTable:ARTNR, mBeArtNoLen) + '"', m_oDab510),
+   endif,                                                                       prs('ds_MasterTableScroll_Update', 'END'),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)                                           prs('FormExClose', 'START'),
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )                                                prs('SupplierDocking => FormExDestroy', 'START'),
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),                             prs('SupplierDocking => FormExDestroy', 'END'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.FormStyle   := fsNormal,
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik   
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      ds_Dab510      := FindObject( oForm, "ds_Dab510" ),
+      ds_MasterTable := FindObject( oForm, "ds_MasterTable" ),
+      grid_Dab510    := FindObject( oForm, "grid_Dab510" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.OrigCapt := 'Docking Zulieferer',
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable           := DBOpen(waDab010),
+      m_oMasterTable.IndexName := 'DAB011',
+      DBSeek({'B-1'}, m_oMasterTable),
+   endif,
+   
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

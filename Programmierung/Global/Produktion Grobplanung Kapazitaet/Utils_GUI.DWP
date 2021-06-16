@@ -1,0 +1,914 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Produktions Grobplanung Kapatitäts-Auswertung / Betrachtung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PGKU' steht für 'P'roduktions 'G'robplanung 'K'apatitäts 'U'tils
+//
+// GUI-Utils
+//
+//##############################################################################
+//##############################################################################
+
+
+|
+   gl_PGKU_GUI_nBackgroundColor:_U,
+   gl_PGKU_GUI_nGrayLineColor:_U,
+   gl_PGKU_GUI_cFontName:_U,
+   gl_PGKU_GUI_nGrayFontColor:_U,
+   gl_PGKU_GUI_nGrayFontColor_Intense:_U,
+   gl_PGKU_GUI_nPersonenBaseColor:_U,
+   gl_PGKU_GUI_nRessourcenBaseColor:_U,
+
+   gl_PGKU_GUI_NachfrageSeries_Array:_U:=nil
+|
+
+gl_PGKU_GUI_nBackgroundColor          := clWhite,
+gl_PGKU_GUI_nGrayLineColor            := GetBeDesignColor(dcbWhite, dcgLevel2),
+gl_PGKU_GUI_cFontName                 := 'Segoe UI',
+gl_PGKU_GUI_nGrayFontColor            := GetBeDesignColor(dcbBlack, dcgLevel2),
+gl_PGKU_GUI_nGrayFontColor_Intense    := GetBeDesignColor(dcbBlack, dcgLevel4),
+gl_PGKU_GUI_nPersonenBaseColor        := dcbCyan,
+gl_PGKU_GUI_nRessourcenBaseColor      := dcbOrange,
+
+
+gl_PGKU_GUI_NachfrageSeries_Array :=
+    {
+       // Status (numerisch),                 anzeigen in GUI
+       {gl_PGKU_AuftragsStatus_Angebot,       false},
+       {gl_PGKU_AuftragsStatus_Geplant,       true},
+       {gl_PGKU_AuftragsStatus_Disponiert,    false},
+
+       {gl_PGKU_AuftragsStatus_Eroeffnet,     true},
+       {gl_PGKU_AuftragsStatus_Freigegeben,   true},
+       {gl_PGKU_AuftragsStatus_aktiv,         true},
+
+       {gl_PGKU_AuftragsStatus_abgeschlossen, true}
+    },
+
+//******************************************************************************
+// Funktion bestimmt die Bezeichnung eines Auftrags-Status
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsStatus_DisplayValue(nStatus)
+| nPos |
+   Result := 'unknown status ' + Str(nStatus),
+
+   case nStatus
+      of gl_PGKU_AuftragsStatus_Angebot       :: Result := 'Angebot',
+      of gl_PGKU_AuftragsStatus_Geplant       :: Result := 'Geplant',
+      of gl_PGKU_AuftragsStatus_Disponiert    :: Result := 'Disponiert',
+      of gl_PGKU_AuftragsStatus_Eroeffnet     :: Result := 'Offen',
+      of gl_PGKU_AuftragsStatus_Freigegeben   :: Result := 'Kommissioniert',
+      of gl_PGKU_AuftragsStatus_aktiv         :: Result := 'Aktiv',
+      of gl_PGKU_AuftragsStatus_abgeschlossen :: Result := 'Abgeschlossen',
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion bestimmt die Farbe für einen Auftrags-Status
+// @Result: Farbcode
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsStatus_Color(nStatus)
+| nPos |
+   Result := clNone,
+
+   case nStatus
+      of gl_PGKU_AuftragsStatus_Angebot       :: Result := dcbYellow,
+      of gl_PGKU_AuftragsStatus_Geplant       :: Result := dcbYellow,
+      of gl_PGKU_AuftragsStatus_Disponiert    :: Result := dcbYellow,
+      of gl_PGKU_AuftragsStatus_Eroeffnet     :: Result := dcbCyan,
+      of gl_PGKU_AuftragsStatus_Freigegeben   :: Result := dcbPurple,
+      of gl_PGKU_AuftragsStatus_aktiv         :: Result := dcbGreen,
+      of gl_PGKU_AuftragsStatus_abgeschlossen :: Result := dcbWhite,
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion liefert ein SQL-Case-Teil-Statement, mit dessen Hilfe in SQL-Statements eine
+//    Text-Übersetzung des Auftrags-Status möglich ist (primär für SQL Exporte nach Excel)
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsStatus_SQLBezeichnung(cSQLInput_Expression, cSQLFieldAlias, nIndent)
+| i, nCurStatus, cIndent |
+
+   cIndent := Replicate(' ', nIndent),
+
+   Result :=
+      'CASE ' + cSQLInput_Expression + crlf,
+
+   for i := 1 to ALen(gl_PGKU_AuftragsStatus_Liste) do
+      nCurStatus := gl_PGKU_AuftragsStatus_Liste[i],
+      Result     += cIndent + '   WHEN ' + Str(nCurStatus) + ' THEN ''' + Str(nCurStatus) + ' - ' + PGKU_GUI_GetAuftragsStatus_DisplayValue(nCurStatus) + '''' + crlf,
+   next,
+
+   Result +=
+      cIndent + 'ELSE ''unbekannter Status ('' + TRIM(CAST('+ cSQLInput_Expression + ' AS SQL_CHAR)) + '')'''  + crlf +
+      cIndent + 'END               AS "' + AllTrim(cSQLFieldAlias) + '"',
+end,
+
+//******************************************************************************
+// Funktion bestimmt die Farbe für einen Auftrags-Status im Zustand "normal"
+// @Result: Farbcode
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsStatus_BaseColor(nStatus, bBorderColor)
+| nBaseColor |
+   nBaseColor := PGKU_GUI_GetAuftragsStatus_Color(nStatus),
+   Result     := GetBeDesignColor(nBaseColor, iif(bBorderColor, dcgLevel4, dcgLevel2)),
+end,
+
+//******************************************************************************
+// Funktion bestimmt die Farbe für einen Auftrags-Status im Zustand "hervorgehoben"
+// @Result: Farbcode
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsStatus_HighlightColor(nStatus, bBorderColor)
+| nBaseColor |
+   nBaseColor := PGKU_GUI_GetAuftragsStatus_Color(nStatus),
+   Result     := GetBeDesignColor(nBaseColor, iif(bBorderColor, dcgLevel5, dcgLevel3)),
+end,
+
+//******************************************************************************
+// Funtkion ermittelt für einen Kapa-Bedarfs-Satz (PGKBDP) die Baugruppe des Auftrags
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetAuftragsBaugruppenInfos(nAUF_WA, nAUF_ID)
+   Result := '',
+
+   if nAUF_WA > 0 then
+      case nAUF_WA
+         of {waDab035, waDab215} ::
+            Result      := LookUp(waPGKBDK, 'AUF_WA_ID', {{nAUF_WA, nAUF_ID}}, 'ARTNR_BG', '?'),
+
+         otherwise Result := 'WA ' + Str(nAUF_WA) + ' not handled',
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+// Funtkion ermittelt für einen Kapa-Bedarfs-Satz (PGKBDP) die Nummer und Bezeichung des Auftrags
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetAuftragskopfDesc(nAUF_WA, nAUF_ID)
+| cTypDesc, cNummerDesc |
+   Result   := '',
+
+   if nAUF_WA > 0 then
+      cTypDesc := '',
+      case nAUF_WA
+         of waDab035 ::
+            cTypDesc    := 'Fert.Auftrag',
+            cNummerDesc := LookUp(waPGKBDK, 'AUF_WA_ID', {{nAUF_WA, nAUF_ID}}, 'BESTPOSNR', '?'),
+            Result      := cTypDesc + ' (' + AllTrim(cNummerDesc) + ')',
+
+         of waDab215 ::
+            cTypDesc    := 'Dispo.Vorschlag',
+            Result      := cTypDesc + ' (' + Str(nAUF_ID) + ')',
+
+         otherwise Result := 'WA ' + Str(nAUF_WA) + ' not handled',
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion bestimmt die Bezeichnung eines Arbeitsgang-Status
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetArbeitsgangStatus_DisplayValue(nStatus)
+| nPos |
+   Result := 'unknown status ' + Str(nStatus),
+
+   case nStatus
+      of gl_PGKU_ArbeitsgangStatus_Offen      :: Result := 'Offen',
+      of gl_PGKU_ArbeitsgangStatus_Begonnen   :: Result := 'Begonnen',
+      of gl_PGKU_ArbeitsgangStatus_Teilfertig :: Result := 'Teilfertig',
+      of gl_PGKU_ArbeitsgangStatus_Fertig     :: Result := 'Fertig',
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion liefert ein SQL-Case-Teil-Statement, mit dessen Hilfe in SQL-Statements eine
+//    Text-Übersetzung des Arbeitsgang-Status möglich ist (primär für SQL Exporte nach Excel)
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_ArbeitsgangStatus_SQLBezeichnung(cSQLInput_Expression, cSQLFieldAlias, nIndent)
+| i, nCurStatus, cIndent |
+
+   cIndent := Replicate(' ', nIndent),
+
+   Result :=
+      'CASE ' + cSQLInput_Expression + crlf,
+
+   for i := 1 to ALen(gl_PGKU_ArbeitsgangStatus_Liste) do
+      nCurStatus := gl_PGKU_ArbeitsgangStatus_Liste[i],
+      Result     += cIndent + '   WHEN ' + Str(nCurStatus) + ' THEN ''' + Str(nCurStatus) + ' - ' + PGKU_GUI_GetArbeitsgangStatus_DisplayValue(nCurStatus) + '''' + crlf,
+   next,
+
+   Result +=
+      cIndent + 'ELSE ''unbekannter Status ('' + TRIM(CAST('+ cSQLInput_Expression + ' AS SQL_CHAR)) + '')'''  + crlf +
+      cIndent + 'END               AS "' + AllTrim(cSQLFieldAlias) + '"',
+end,
+
+//******************************************************************************
+// Funktion bestimmt die Bezeichnung einer Arbeitsgang-Bereitschaft
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetArbeitsgangBereitschaft_DisplayValue(nBereitschaft)
+| nPos |
+   Result := 'unknown status ' + Str(nBereitschaft),
+
+   case nBereitschaft
+      of gl_PGKU_ArbeitsgangBereitschaft_NichtBereit    :: Result := 'nicht bereit',
+      of gl_PGKU_ArbeitsgangBereitschaft_Teilbereit     :: Result := 'teilw. bereit',
+      of gl_PGKU_ArbeitsgangBereitschaft_KomplettBereit :: Result := 'bereit',
+      of gl_PGKU_ArbeitsgangBereitschaft_Abgeschlossen  :: Result := 'abgeschlossen',
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion liefert ein SQL-Case-Teil-Statement, mit dessen Hilfe in SQL-Statements eine
+//    Text-Übersetzung des Arbeitsgang-Bereitschaft möglich ist (primär für SQL Exporte nach Excel)
+// @Result: String
+//******************************************************************************
+function _PGKU_GUI_GetArbeitsgangBereitschaft_SQLBezeichnung(cSQLInput_Expression, cSQLFieldAlias, nIndent)
+| i, nCurStatus, cIndent |
+
+   cIndent := Replicate(' ', nIndent),
+
+   Result :=
+      'CASE ' + cSQLInput_Expression + crlf,
+
+   for i := 1 to ALen(gl_PGKU_ArbeitsgangBereitschaft_Liste) do
+      nCurStatus := gl_PGKU_ArbeitsgangBereitschaft_Liste[i],
+      Result     += cIndent + '   WHEN ' + Str(nCurStatus) + ' THEN ''' + Str(nCurStatus) + ' - ' + PGKU_GUI_GetArbeitsgangBereitschaft_DisplayValue(nCurStatus) + '''' + crlf,
+   next,
+
+   Result +=
+      cIndent + 'ELSE ''unbekannter Status ('' + TRIM(CAST('+ cSQLInput_Expression + ' AS SQL_CHAR)) + '')'''  + crlf +
+      cIndent + 'END               AS "' + AllTrim(cSQLFieldAlias) + '"',
+end,
+
+//******************************************************************************
+// Formatiert den Anzeigetext für Kapazitäts-Angebots / Nedarfswerte die in Minuten vorliegen
+// @Result: Formatierter Anzeige-Text
+//******************************************************************************
+function _PGKU_GUI_CalcMinutesDisplayValue_NkStellen(nMinutes, nNkStellenStunden, nNkStellenMinuten)
+   Result := '',
+
+   if nMinutes <> 0 then
+      if Abs(nMinutes) < 60 then
+         Result := FormatStd(nMinutes, nNkStellenMinuten) + ' min',
+      else
+         Result := FormatStd( Round(nMinutes / 60, nNkStellenStunden), nNkStellenStunden ) + ' h',
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Formatiert den Anzeigetext für Kapazitäts-Angebots / Nedarfswerte die in Minuten vorliegen
+// @Result: Formatierter Anzeige-Text
+//******************************************************************************
+function _PGKU_GUI_CalcMinutesDisplayValue(nMinutes)
+   Result := PGKU_GUI_CalcMinutesDisplayValue_NkStellen(nMinutes, 2, 0),
+end,
+
+//******************************************************************************
+// Formatiert den Anzeigetext für Zeitpunkt-Termine
+// @Result: Formatierter Anzeige-Text
+//******************************************************************************
+function _PGKU_GUI_CalcTimestampDisplayValue(dTimeStamp)
+   Result := '',
+
+   if not empty(dTimeStamp) then
+      Result := FormatDateTime('DD.MM.YY  hh:mm', dTimeStamp),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für die Erstellung von SQL-Statements zur Auswertung von
+// Angebot und Bedarf
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erzeugt aus dem übergebenen Filter-Array @aQualiResFilterArray einen
+// SQL-Kompatiblen Filter-Ausdruck zur Nutzung in SQL-Where-Bedingungen
+// @Result: String
+//******************************************************************************
+function _PGKU_SQL_BuildQualiAndResFilter(cTableAlias, cResIdFieldName, cQualiIDFieldName, aQualiResFilterArray)
+| i |
+   Result := '',
+   if not empty(cTableAlias) then
+      cTableAlias := cTableAlias + '.',
+   endif,
+   for i := 1 to ALen(aQualiResFilterArray) do
+      if aQualiResFilterArray[i, 2] > 0 then
+         Result := ConcatTrenner(Result, '(' + cTableAlias + cQualiIDFieldName + ' = ' + Str(aQualiResFilterArray[i, 2]) + ')', ' OR '),
+      else
+         Result := ConcatTrenner(Result, '(' + cTableAlias + 'RESTYP = ''' + aQualiResFilterArray[i, 1] + ''' AND ' + cTableAlias + cResIdFieldName + ' = ' + Str(aQualiResFilterArray[i, 3]) + ')', ' OR '),
+      endif,
+   end,
+end,
+
+//******************************************************************************
+// Funkion liefert ein SQL-Query für die Ermittlung des verdichteten
+// Kapazitätsangebots
+// - Dabei werden verschiedene Platzhalter durch konkrete Werte ersetzt, die im
+//   SQL-Text vorkommen können
+// @Result: String, SQL-Query-Text
+//******************************************************************************
+function _PGKU_SQL_Angebot_LoadAndReplaceSQLPlaceholder(cSQLResourceName, nStandort, dToday, dDatumFrom, dDatumTo, aQualiResFilterArray, bUseActualData)
+| cQualiAndResSQLFilter |
+   cQualiAndResSQLFilter := PGKU_SQL_BuildQualiAndResFilter('PGKANG', 'RES_ID', 'QUALI', aQualiResFilterArray),
+   if not empty(cQualiAndResSQLFilter) then
+      cQualiAndResSQLFilter := 'AND (' + cQualiAndResSQLFilter + ')',
+   endif,
+
+   Result := PGKU_LoadSQLScriptByName(cSQLResourceName),
+
+   // Wenn Ist-Daten angezeigt werden, dann wird das gesamte Angebot über den Betrachtungszeitraum geladen
+   // Bei Plan-Daten-Betrachtung wird das Angebot inkl. heute in die Zukunft betrachtet. Angebot
+   // der "Vergangenheit" ist ja schon nicht mehr verfügbar und das Angebot wird
+   // bei Planwerten verglichen mit dem Rest-Kapa-Bedarf.
+   if not bUseActualData then
+      dDatumFrom := dToday,
+   endif,
+
+   Result := StrTran(Result, '@STANDORT@',             Str(nStandort)),
+   Result := StrTran(Result, '@DATUM_VON@',            DateToSql(dDatumFrom, true)),
+   Result := StrTran(Result, '@DATUM_BIS@',            DateToSql(dDatumTo,   true)),
+   Result := StrTran(Result, '@QUALI_AND_RES_FILTER@', cQualiAndResSQLFilter),
+end,
+
+//##############################################################################
+//##############################################################################
+// Quali-Tree
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Fügt den Root-Knoten dem Quali-Tree hinzu
+// @Result: keine Rückgabe
+//******************************************************************************
+function _PGKU_QualiTree_AddRootKnoten(oMemQualiTree, nEbene, nNewID)
+   MyAppend(oMemQualiTree),
+   oMemQualiTree:ID              := nNewID,
+   oMemQualiTree:RESTYP          := '',
+   oMemQualiTree:MASTER_QUALI_ID := 0,
+   oMemQualiTree:ROOT_KNOTEN     := true,
+   oMemQualiTree:QUALI_ID        := -1, // Dummy-Quali-ID, damit Rekursion im Baum funktioniert
+   oMemQualiTree:RES_ID          := 0,
+   oMemQualiTree:BEZ             := 'Alle Personen & Ressourcen',
+   oMemQualiTree:EBENE           := nEbene,
+   MyPost(oMemQualiTree),
+end,
+
+//******************************************************************************
+// Fügt die Qualifikation des aktuellen oDabVTM-Datensatzes dem Quali-Tree hinzu
+// @Result: keine Rückgabe
+//******************************************************************************
+function _PGKU_QualiTree_AddQuali(oDabVTM, oMemQualiTree, nEbene, nNewID)
+   MyAppend(oMemQualiTree),
+   oMemQualiTree:ID              := nNewID,
+   oMemQualiTree:RESTYP          := oDabVTM:KATEG_TYP,
+   oMemQualiTree:MASTER_QUALI_ID := iif(oDabVTM:MASTER_TYP = 0, -1, oDabVTM:MASTER_TYP), // die beiden Root-Knoten "Alle Mitarbeiter" und "Alle Ressorucen" verweisen auf den künstlichen Root-Knoten
+   oMemQualiTree:ROOT_KNOTEN     := false,
+   oMemQualiTree:QUALI_ID        := oDabVTM:VORG_TYP,
+   if oDabVTM:FLAG = 2 then // 2 = "Alle Mitarbeiter"-Root-Knoten
+      oMemQualiTree:BEZ          := 'Alle Personen', // Der Begriff Mitarbeiter ist hier eigentlich verwirrend..
+   else
+      oMemQualiTree:BEZ          := oDabVTM:BEZ,
+   endif,
+   oMemQualiTree:EBENE           := nEbene,
+   MyPost(oMemQualiTree),
+end,
+
+//******************************************************************************
+// Fügt eine Ressource dem Quali-Tree hinzu
+// @Result: keine Rückgabe
+//******************************************************************************
+function _PGKU_QualiTree_AddResource(oMemQualiTree, cResTyp, nResourceID, cDesc, nMasterQualiId, nEbene, bPost, nNewID)
+   MyAppend(oMemQualiTree),
+   oMemQualiTree:ID               := nNewID,
+   oMemQualiTree:ROOT_KNOTEN      := false,
+   oMemQualiTree:RESTYP           := cResTyp,
+   oMemQualiTree:MASTER_QUALI_ID  := nMasterQualiId,
+   oMemQualiTree:RES_ID           := nResourceID,
+   oMemQualiTree:BEZ              := cDesc,
+   oMemQualiTree:EBENE            := nEbene,
+   if bPost then
+      MyPost(oMemQualiTree),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion erzeugt einen ADS-Datenbank-Filter-Ausdruck zur Filterung von
+//   Betriebseintritt / Austritt (Personen) und Verfügbar ab/bis (Ressourcen)
+//   im anzuzeigenden Datums-Bereich @dDateFrom bis @dDateTo
+// @Result: DB-Filter-Sring
+//******************************************************************************
+function _PGKU_QualiTree_GetResourceValidFilter(dDateFrom, dDateTo)
+   Result :=      '(empty(DATUM_EIN) OR DATUM_EIN <= ' + DbFilterDatumString(dDateTo)   + ')' +
+             ' and (empty(DATUM_AUS) OR DATUM_AUS >= ' + DbFilterDatumString(dDateFrom) + ')',
+   Result := '( ' + Result + ' )',
+end,
+
+//******************************************************************************
+// Funktion baut einen Qualifikations-Baum rekursiv auf
+// => der Baum wird in die überg. MemTable @oMemQualiTree geschrieben
+//
+// Parameter
+//    @nMasterQualiID    : Übergeordnete Qualifikations-ID
+//    @bIncludeResources : Ressourcen hinzufügen, die im Quali-Baum eindeutig zugeordnet sind
+//    @cResTypes         : Ressourcen-Typen, die hinzugefügt werden sollen
+//                         zulässige Werte: 'R' / 'M' / 'RM'
+//    @nTreeIDCounter    : ID-Counter-Variable zur Vergabe der Memtable:ID
+//
+// @Result: keine Rückgabe
+//******************************************************************************
+function _PGKU_QualiTree_BuildTree(oDM, oMemQualiTree, nMasterQualiID, dDateFrom, dDateTo, bIncludeResources, nEbene, cResTypes, nTreeIDCounter:R)
+| oDabVTM, oDab262, oDab330, oVTMBookMark, cFilter, oDabResources, bPersons, bResources, aMostDetailedQuali, cRessourcenDetailQualiID,
+  nResourceId, cResourceDesc, oMemBookMark, cQualiIdStringUntergeordnet, cQualiIdStringEigeneEbene, cResourceValidFilter |
+
+   // Wenn die Funktion für die oberste Ebene aufgerufen wird, dann erstmal den übergeordneten Eintrag erstellen
+   if nMasterQualiID = 0 then
+      nTreeIDCounter++, // Ref-Variable!
+      PGKU_QualiTree_AddRootKnoten(oMemQualiTree, nEbene, nTreeIDCounter),
+      nEbene += 1,
+   endif,
+
+   oDabVTM           := DbGetTable(oDM, waDabVTM, 'QUALI_TREE_DABVTM'), // braucht einen eigenen Alias, damit es sich nicht mit der Verwendung in PGKU_GetMostDetailedQualiFromQualiFuncList() beißt, siehe unten
+   oDabVTM.IndexName := 'MASTER_TYP', // Ausdruck: "MASTER_TYP;PRIORI;BEZ;VORG_TYP"
+
+   oDab262           := DbGetTable(gl_oDM, waDab262),
+   oDab330           := DbGetTable(gl_oDM, waDab330),
+
+   bPersons   := 'M' $ cResTypes,
+   bResources := 'R' $ cResTypes,
+
+   oMemQualiTree.CbIndexName := '', // Wichtig, der Aufbau des Baums erfordert physikalische Sortierreihenfolge der MemTable
+
+   cQualiIdStringEigeneEbene := '',
+
+   DbSeek({nMasterQualiID}, oDabVTM),
+   while not EoF(oDabVTM) and oDabVTM:MASTER_TYP = nMasterQualiID do
+      // 1 = Qualifikations-Sätze
+      // 2 = "Alle Mitarbeiter"-Root-Knoten
+      // 3 = "Alle Ressourcen"-Root-Knoten
+      if oDabVTM:FLAG = 1
+         or (bPersons   and oDabVTM:FLAG = 2)
+         or (bResources and oDabVTM:FLAG = 3) then
+         // WriteLn('betrete Schleife für Master-ID: ' + Str(nMasterQualiID)),
+
+         // Qualifikation dem Baum hinzufügen
+         cQualiIdStringEigeneEbene := ConcatTrenner(cQualiIdStringEigeneEbene, Str(oDabVTM:VORG_TYP), '/'),
+         nTreeIDCounter++, // Ref-Variable!
+         PGKU_QualiTree_AddQuali(oDabVTM, oMemQualiTree, nEbene, nTreeIDCounter),
+         oMemBookMark := oMemQualiTree.CbBookMark,
+
+         // Baum-Funktion Rekursiv aufrufen, Rückgabe ist die Liste der untergeordneten Qualifikationen als String
+         oVTMBookMark                := oDabVTM.CbBookmark,
+         cQualiIdStringUntergeordnet := PGKU_QualiTree_BuildTree(oDM, oMemQualiTree, oDabVTM:VORG_TYP, dDateFrom, dDateTo, bIncludeResources, nEbene + 1, cResTypes, nTreeIDCounter),
+         oDabVTM.CbBookmark          := oVTMBookMark,
+
+         // In die eigene Ebene die untergeordneten Qualis eintragen
+         oMemQualiTree.CbBookMark := oMemBookMark,
+         MyEdit(oMemQualiTree),
+         oMemQualiTree:QUALI_ID_STRING        := ConcatTrenner(Str(oDabVTM:VORG_TYP), cQualiIdStringUntergeordnet, '/'), ,
+         oMemQualiTree:QUALI_IS_MOST_DETAILED := empty(cQualiIdStringUntergeordnet),
+         MyPost(oMemQualiTree),
+
+         cQualiIdStringEigeneEbene := ConcatTrenner(cQualiIdStringEigeneEbene, cQualiIdStringUntergeordnet, '/'),
+
+         //*********************************************************************
+         // Untergeordnete Ressourcen zur Qualifikation laden ?
+         // => hierbei die Ressource nur aufnehmen, wenn
+         //     - die Qualifikation auf unterster Ebene liegt
+         //     - die Ressource der Quali. eindeutig zugeordnet ist
+         //*********************************************************************
+         if bIncludeResources then
+            cFilter              := "CONTAINS(GRUPPE, '" + Str(oDabVTM:VORG_TYP) + "')",
+            cResourceValidFilter := PGKU_QualiTree_GetResourceValidFilter(dDateFrom, dDateTo),
+            cFilter              := ConcatTrenner(cFilter, cResourceValidFilter, ' AND '),
+            oDabResources        := nil,
+            case oDabVTM:KATEG_TYP
+               of 'R' :: oDabResources := oDab330,
+               of 'M' :: oDabResources := oDab262,
+            endcase,
+            DbFilter(cFilter, oDabResources),
+            DbGoTop(oDabResources),
+            while not EoF(oDabResources) do
+
+               // -> Ist die Ressource dieser Quali eindeutig zugeordnet?
+               // -> Und liegt die Qualifikation auf unterster Ebene?
+               aMostDetailedQuali        := PGKU_GetMostDetailedQualiFromQualiFuncList(oDM, oDabResources:GRUPPE), // Achtung: Nutzt intern eine DabVTM mit Standard-Alias
+               cRessourcenDetailQualiID  := aMostDetailedQuali[2],
+               case oDabVTM:KATEG_TYP
+                  of 'R' :: nResourceId   := oDab330:ID,
+                            cResourceDesc := AllTrim(oDab330:BEZ),
+                  of 'M' :: nResourceId   := oDab262:PERSNR,
+                            cResourceDesc := AllTrim(oDab262:NAME),
+               endcase,
+               if cRessourcenDetailQualiID = oDabVTM:VORG_TYP then
+                  nTreeIDCounter++, // Ref-Variable!
+                  PGKU_QualiTree_AddResource(oMemQualiTree, oDabVTM:KATEG_TYP, nResourceId, cResourceDesc, oDabVTM:VORG_TYP, nEbene + 1, true, nTreeIDCounter),
+               else
+                  // WriteLn('Ressource ' + Str(nResourceId) + ' / "' + cResourceDesc + '" ist der Qualifikation ' + Str(oDabVTM:VORG_TYP) + ' / "' + AllTrim(oDabVTM:BEZ) + '" zugeordnet: Die Zuordnung ist nicht eindeutig bzw. nicht auf detailliertester Ebene'),
+               endif,
+               DbSkip(1, oDabResources),
+            end,
+         endif,
+      endif,
+
+      DbSkip(1, oDabVTM),
+   end,
+
+   Result := cQualiIdStringEigeneEbene,
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine Memtable, die als Basis für den Qualifikations-Baum dient
+// @Result: Memtable-Instanz
+//******************************************************************************
+function _PGKU_QualiTree_CreateMemtable(oOwner)
+   Result := Createobject('TBeMemTable', 'MEM_QUALI_TREE', oOwner),
+
+   Result.CbAddField('ID',                             ftInteger,  0), // künstliche Datensatz-ID
+
+   Result.CbAddField('SELECTED',                       ftBoolean,  0), // Markierung "ausgewählt" (für merhfach-Auswahl)
+
+   Result.CbAddField('ROOT_KNOTEN',                    ftBoolean,  0), // handelt es sich um den übergeordneten "Alle Personen & Ressourcen-Knoten?"
+   Result.CbAddField('RESTYP',                         ftString,   1), // Ressourcen-Typ
+   Result.CbAddField('MASTER_QUALI_ID',                ftInteger,  0), // übergeordnete Quali-ID
+   Result.CbAddField('QUALI_ID',                       ftInteger,  0), // eigene Quali-ID
+   Result.CbAddField('QUALI_IS_MOST_DETAILED',         ftBoolean,  0), // ist die Qualifikation auf der untersten Ebene?
+   Result.CbAddField('RES_ID',                         ftInteger,  0), // Ressourcen-ID
+   Result.CbAddField('BEZ',                            ftString,  40), // Bezeichnung
+   Result.CbAddField('EBENE',                          ftInteger,  0), // Ebene im Baum
+
+   Result.CbAddField('QUALI_ID_STRING',                ftMemo,     0), // Liste von untergeordneten Quali-ID's
+
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT',           ftFloat,    0), // Kapazitätsangebot   in Stunden
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE',         ftFloat,    0), // Kapazitätsnachfrage in Stunden
+   Result.CbAddField('UEBERLASTETE_PERIODEN',          ftInteger,  0), // Anzahl der Überlasteten Perioden im gesamten Zeitraum
+   Result.CbAddField('HAS_UEBERLASTETE_PERIODEN',      ftBoolean,  0), // Zeigt an, ob die Quali / die Ressource selbst überlastete Perioden hat oder untergeordnete Qualis / Ressourcen diese haben
+
+   Result.Active := true,
+
+   Result.CbAddIndex('RESTYP_QUALI_ID', 'RESTYP;QUALI_ID', ixPrimary),   // TODO: Indices werden aktuell nicht genutzt, da CbFindKey() nicht immer korrekt funktioniert hat.
+   Result.CbAddIndex('RESTYP_RES_ID',   'RESTYP;RES_ID',   ixPrimary),   //       Umgestellt auf CbLocate() - dowi-id:368855
+
+   Result.CbIndexName := '', // physikalische Sortierung !
+end,
+
+//******************************************************************************
+// Lädt einen SQL-Text und ersetzt die Platzhalter
+// @Result: SQL-Text
+//******************************************************************************
+function _PGKU_QualiTree_LoadAndReplaceSQLPlaceholder(cSQLResourceName, nStandort, dDatumFrom, dDatumTo, cResTypSQLList, bGroupByQuali)
+| cSQL |
+
+   cSQL := PGKU_LoadSQLScriptByName(cSQLResourceName),
+   cSQL := StrTran(cSQL, '@STANDORT@', Str(nStandort)),
+
+   cSQL := StrTran(cSQL, '@DATUM_VON@', DateToSql(dDatumFrom, true)),
+   cSQL := StrTran(cSQL, '@DATUM_BIS@', DateToSql(dDatumTo, true)),
+
+   cSQL := StrTran(cSQL, '@DATUM_ZEIT_VON@', DateTimeToSql(dDatumFrom,   true)),
+   cSQL := StrTran(cSQL, '@DATUM_ZEIT_BIS@', DateTimeToSql(dDatumTo + 1, true)),
+
+   cSQL := StrTran(cSQL, '@RESTYP_LIST@', cResTypSQLList),
+
+   // Gruppierung nach Qualifikation oder Ressource?
+   cSQL := StrTran(cSQL, '@GROUP_BY_QUALI@', iif(    bGroupByQuali, '', '//')),
+   cSQL := StrTran(cSQL, '@GROUP_BY_RES@',   iif(not bGroupByQuali, '', '//')),
+
+   Result := cSQL,
+end,
+
+//******************************************************************************
+// Funktion lädt per SQL das Kapazitätsangebot und die Nachfrage und überträgt
+//    diese Infos in die übergebene Qualifikations-Baum-Memtable @oMemQualiTree
+// @Result: Array der Form
+//             { WarnungsInfoText }
+//******************************************************************************
+function _PGKU_QualiTree_LoadAngebotUndNachfrage(oMemQualiTree, nStandort, dDatumFrom, dDatumTo, bIncludeResources, cResTypes, bUseActualData, nTreeIDCounter:R)
+| cSQL, cSQLResourceName, cDemandSQLBlockName, cDemandSQLBlockSQL, oQuery, bPersons, bResources, cResTypSQLList, cDesc, oQualiTreeField, i, bGroupByQuali, cWarnText, cWarnTextNeu |
+
+   cWarnText      := '',
+   bPersons       := 'M' $ cResTypes,
+   bResources     := 'R' $ cResTypes,
+   cResTypSQLList := '',
+   cResTypSQLList := ConcatTrenner(cResTypSQLList, iif(bPersons,   "'M'", ''), ', '),
+   cResTypSQLList := ConcatTrenner(cResTypSQLList, iif(bResources, "'R'", ''), ', '),
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.ProtocolActive := false,
+      for i := 1 to iif(bIncludeResources, 2, 1) do
+         bGroupByQuali := i = 1, // i = 2 => GroupByResources
+
+         // 1. Schritt: Details laden
+         cSQLResourceName := 'Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_vs_bedarf_mit_ueberlast_perioden_zaehler',
+         cSQL             := PGKU_QualiTree_LoadAndReplaceSQLPlaceholder(cSQLResourceName, nStandort, dDatumFrom, dDatumTo, cResTypSQLList, bGroupByQuali),
+
+         if bUseActualData then
+            cDemandSQLBlockName := 'Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_vs_bedarf_mit_ueberlast_perioden_zaehler_bedarf_nach_istwerten',
+         else
+            cDemandSQLBlockName := 'Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_vs_bedarf_mit_ueberlast_perioden_zaehler_bedarf_nach_planwerten',
+         endif,
+         cDemandSQLBlockSQL  := PGKU_QualiTree_LoadAndReplaceSQLPlaceholder(cDemandSQLBlockName, nStandort, dDatumFrom, dDatumTo, cResTypSQLList, bGroupByQuali),
+
+         cSQL             := StrTran(cSQL, '@KAPA_DEMAND_SQL_SCRIPT@', cDemandSQLBlockSQL),
+
+         // WriteLn('PGKU_QualiTree_LoadAngebotUndNachfrage - Schritt 1 '+ PadR('', 80, '#') + crlf + cSQL + crlf + crlf),
+         oQuery.SQL    := cSQL,
+         DbExecSQL(oQuery),
+
+         // 2. Schritt: Ergebnis-temp-Table übertragen
+         cSQL             := 'SELECT * FROM #kapa_per_quali_res',
+         // WriteLn('PGKU_QualiTree_LoadAngebotUndNachfrage - Schritt 2 '+ PadR('', 80, '#') + crlf + cSQL + crlf + crlf),
+
+         oQuery.SQL    := cSQL,
+         oQuery.Active := true,
+
+
+         DbGoTop(oQuery),
+         while not eof(oQuery) do
+
+            if bGroupByQuali then
+
+               // oMemQualiTree.CbIndexName := 'RESTYP_QUALI_ID',
+               // if not oMemQualiTree.CbFindKey({oQuery:RESTYP, oQuery:QUALI}) then   // TODO: Warum funktioniert CbFindKey nicht zuverlässig? (dowi-id:368855)
+
+               if not oMemQualiTree.CbLocate('RESTYP;QUALI_ID', {oQuery:RESTYP, oQuery:QUALI}, 0) then
+                  cWarnTextNeu := 'Es liegt Kapazitätsangebot bzw. -bedarf für eine unbekannte Qualifikation vor. ' +
+                                  'Resourcentyp: "' + oQuery:RESTYP + '", Qualifikation: <' + Str(oQuery:QUALI) + '>. ' +
+                                  'Die Daten wurden nicht in den Qualifikationsbaum übernommen.',
+                  cWarnText    := ConcatTrenner(cWarnText, cWarnTextNeu, crlf),
+               else
+                  oMemQualiTree.CbEdit(),
+                  oMemQualiTree:KAPA_STUNDEN_ANGEBOT      := oQuery:KAPA_STUNDEN_ANGEBOT,
+                  oMemQualiTree:KAPA_STUNDEN_NACHFRAGE    := oQuery:KAPA_STUNDEN_BEDARF,
+                  oMemQualiTree:UEBERLASTETE_PERIODEN     := oQuery:UEBERLASTETE_PERIODEN,
+                  oMemQualiTree:HAS_UEBERLASTETE_PERIODEN := oQuery:UEBERLASTETE_PERIODEN > 0,
+                  oMemQualiTree.CbPost(),
+               endif,
+
+            else
+               // oMemQualiTree.CbIndexName := 'RESTYP_RES_ID',
+               // if not oMemQualiTree.CbFindKey({oQuery:RESTYP, oQuery:RES_ID}) then  // TODO: Warum funktioniert CbFindKey nicht zuverlässig? (dowi-id:368855)
+
+               if not oMemQualiTree.CbLocate('RESTYP;RES_ID', {oQuery:RESTYP, oQuery:RES_ID}, 0) then
+                  // WriteLn('restyp: "' + oQuery:RESTYP + '" / res-id: ' + Str(oQuery:RES_ID)  + ' not found in oMemQualiTree - cannot transer data from query => appending'),
+
+                  if oQuery:RESTYP = 'R' then
+                     cDesc := LookUp(waDab330, 'ID',     {{oQuery:RES_ID}}, 'BEZ',  '?'),
+                  else
+                     cDesc := LookUp(waDab262, 'DAB263', {{oQuery:RES_ID}}, 'NAME', '?'),
+                  endif,
+
+                  nTreeIDCounter++, // Ref-Variable (!)
+                  PGKU_QualiTree_AddResource(oMemQualiTree, oQuery:RESTYP, oQuery:RES_ID, 'nicht zugeordnet: ' + cDesc, 0, 0, false, nTreeIDCounter),
+               else
+                  oMemQualiTree.CbEdit(),
+               endif,
+
+               oMemQualiTree:KAPA_STUNDEN_ANGEBOT      := oQuery:KAPA_STUNDEN_ANGEBOT,
+               oMemQualiTree:KAPA_STUNDEN_NACHFRAGE    := oQuery:KAPA_STUNDEN_BEDARF,
+               oMemQualiTree:UEBERLASTETE_PERIODEN     := oQuery:UEBERLASTETE_PERIODEN,
+               oMemQualiTree:HAS_UEBERLASTETE_PERIODEN := oQuery:UEBERLASTETE_PERIODEN > 0,
+               oMemQualiTree.CbPost(),
+            endif,
+
+            DbSkip(1, oQuery),
+         end,
+
+         // Browse(, oQuery),
+      next,
+
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   Result         := {cWarnText},
+end,
+
+//******************************************************************************
+// Funktion läuft rekursiv durch eine bereits gefüllte Quali-Baum-Memtable und berechnet
+//    für die Qualifikationen, die nicht auf unterster Ebene liegen die Summen
+//    für Angebot, Nachfrage und "Überlastete Perioden" aus den
+//    untergeordneten Qualifikations- und Ressourcen-Daten
+// @Result: Array der Form
+//             { Kap. Stunden Angebot,
+//               Kap.Stunden Nachfrage,
+//               Anzahl überl. Perioden,
+//               cWarnungsInfoText }
+//******************************************************************************
+function _PGKU_QualiTree_CalcHigherLevelQualiValues(oMemQualiTree, nMasterQualiID)
+| nOldId, cFilter, aSubResult, cWarning |
+   Result := {0, 0, 0, ''},
+
+   // Memtable filtern auf alle Unterpositionen
+   oMemQualiTree.CbIndexName := '',
+   cFilter                   := "MASTER_QUALI_ID = " + Str(nMasterQualiID),
+   oMemQualiTree.CbFilter    := cFilter,
+   oMemQualiTree.CbFiltered  := true,
+   DbGoTop(oMemQualiTree),
+
+   while not Eof(oMemQualiTree) do
+      if oMemQualiTree:QUALI_ID <> 0 then
+
+         // Daten von den untersteten Qualifikationen (hoch)summieren
+         if oMemQualiTree:QUALI_IS_MOST_DETAILED then
+            Result[1] := Result[1] + oMemQualiTree:KAPA_STUNDEN_ANGEBOT,
+            Result[2] := Result[2] + oMemQualiTree:KAPA_STUNDEN_NACHFRAGE,
+            Result[3] := Result[3] + oMemQualiTree:UEBERLASTETE_PERIODEN,
+         endif,
+
+         // Immer rekursiv aufrufen
+         nOldId     := oMemQualiTree:ID,                                        // WriteLn('springe in ', oMemQualiTree:QUALI_ID, oMemQualiTree:BEZ),
+         aSubResult := PGKU_QualiTree_CalcHigherLevelQualiValues(oMemQualiTree, oMemQualiTree:QUALI_ID),
+
+         oMemQualiTree.CbFiltered := false,
+         oMemQualiTree.CbFilter   := cFilter,
+         oMemQualiTree.CbFiltered := true,
+         if not oMemQualiTree.CbLocate('ID', {nOldId}, 0) then
+            SetError('could''t locate qualitree memtable', nOldId),
+         endif,
+
+         // Summe in Quali eintragen
+         MyEdit(oMemQualiTree),
+         if not oMemQualiTree:QUALI_IS_MOST_DETAILED then
+
+            oMemQualiTree:KAPA_STUNDEN_ANGEBOT       := aSubResult[1],
+            // auch wenn eine Quali nicht auf unterster Ebene liegt, könnte diese
+            // genutzt worden sein in einer Ressourcen-Anforderung. Dann entstehen Nachfrage-Sätze für diese Quali.
+            // => das widerspricht eigentlich dem Konzept / den Grundannahmen, aber hier werden dennoch solche Infos
+            // nicht verworfen, sonst würde der Quali-Baum andere Infos anzeigen als das Chart und die Chart-Detail-Auflistung
+            if oMemQualiTree:KAPA_STUNDEN_NACHFRAGE <> 0 then
+               cWarning := 'Es liegt Kapazitätsbedarf für eine Qualifikation vor, die nicht auf der untersten Ebene liegt. ' +
+                           'Resourcentyp: "' + oMemQualiTree:RESTYP + '", Kapazitätsbedarf: ' + PadR(FormatStd(oMemQualiTree:KAPA_STUNDEN_NACHFRAGE, 2) + ' h', 10) + ' Qualifikation: "' + AllTrim(oMemQualiTree:BEZ) + '"',
+               aSubResult[2] := aSubResult[2] + oMemQualiTree:KAPA_STUNDEN_NACHFRAGE,
+               aSubResult[4] := aSubResult[4] + iif(empty(aSubResult[4]), '', crlf) + cWarning,
+            endif,
+            oMemQualiTree:KAPA_STUNDEN_NACHFRAGE     := aSubResult[2],
+         endif,
+         oMemQualiTree:HAS_UEBERLASTETE_PERIODEN     := oMemQualiTree:HAS_UEBERLASTETE_PERIODEN or aSubResult[3] > 0,
+         MyPost(oMemQualiTree),
+
+         Result[1] := Result[1] + aSubResult[1],
+         Result[2] := Result[2] + aSubResult[2],
+         Result[3] := Result[3] + aSubResult[3],
+         if not empty(aSubResult[4]) then
+            Result[4] := Result[4] + iif(empty(Result[4]), '', crlf) + aSubResult[4],
+         endif,
+
+      else
+         // Von den Ressourcen-Datensätzen holen wir uns nur noch
+         // Überlast-Perioden-Infos, Angebot und Nachfrage wurde schon von den Qualis auf unterster Ebene geholt
+         // => Das ist dann relevant, wenn für eine Einzel-Ressouce eine Überlast vorliegt, auf Quali-Ebene
+         //    aber nicht.
+         if oMemQualiTree:RES_ID > 0 then
+            // WriteLn('   ', oMemQualiTree:RES_ID, oMemQualiTree:BEZ),
+            Result[3] := Result[3] + oMemQualiTree:UEBERLASTETE_PERIODEN,
+         endif,
+      endif,
+
+      DbSkip(1, oMemQualiTree),
+   end,
+
+   oMemQualiTree.CbFiltered := false,
+   oMemQualiTree.CbFilter   := '',
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für die Anzeige von Aufgaben-Status in der GUI
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion ermittelt für einen Auftrag (FA oder Dipo etc.), identifiziert über
+// die Workarea und ID, Informationen zum Status des Sync.Aufgaben
+// => kann genutzt werden für die Anzeige in z.B. der Maske Dab035 oder Dab215
+//
+//   Beispiel-Nutzungs-Code in einem TBeCalcEdit
+//
+//      aRes      := GetGuiInfoFromSyncJobs(waDab035, ID),
+//      cInfotext := aRes[1],
+//      nColor    := aRes[2],
+//      GU_SetAllControlColors(SELF, iif(nColor = clNone, clBtnFace, nColor)),
+//      cInfotext
+//
+// @Result: Array im Format {Info-text zur Anzeige in der GUI, Farb-Code}
+//******************************************************************************
+function _PGKU_GUI_GetSyncJobsInfoForOrder(nWorkarea, nID)
+| cInfotext, nColor, aRes |
+   cInfotext := '',
+   nColor    := clnone,
+
+
+   if not empty(nWorkarea) and not empty(nID) then
+      aRes := LookUp(waPGKSYA, 'DS_WA_DS_ID', {{nWorkarea, nID}}, '{not EoF(), FEHLER}', {false, false}, ,,,true),
+
+      if aRes[1] then
+         if not aRes[2] then
+            cInfotext := 'Aufgabe vorhanden',
+            nColor    := GetBeDesignColor(dcbOrange, dcgLevel3),
+         else
+            cInfotext := 'Fehler',
+            nColor    := GetBeDesignColor(dcbRed, dcgLevel3),
+         endif,
+      else
+        cInfotext := 'Terminiert',
+        nColor    := GetBeDesignColor(dcbGreen, dcgLevel3),
+      endif,
+   endif,
+
+   Result := {cInfotext, nColor},
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für den Export nach Excel
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion führt das SQL-Statement @cSQL aus und exportiert das Ergebnis nach
+//    @cDestFileName
+// @Result: Export erfolgreich ja/nein
+//******************************************************************************
+function _PGKU_GUI_Export_SQLQueryToExcel(cSQL, cDestFileNamePreset, cDataDesc, bOpenExcelFileAfterExport)
+| oQuery, nExportCount, cDestFileName, aSaveDialog, nOldCursor |
+
+   Result := false,
+
+   cDestFileName := '',
+   aSaveDialog := SaveDlg('Daten exportieren', 'Excel|*.xlsx', mBeDefault, cDestFileNamePreset), // TCbSaveDlg = class(TSaveDialog)
+   startseq
+      aSaveDialog.Options := _Or(aSaveDialog.Options, 2), // 2 = ofOverwritePrompt => Nachfragen beim Überschreiben einer bereits vorhandenen Datei
+      aSaveDialog.Active := true,
+      if aSaveDialog.DoSave then
+         cDestFileName := aSaveDialog.FileName,
+      endif,
+   always
+      DestroyObject(aSaveDialog),
+   stopseq,
+
+   if empty(cDestFileName) then
+      exit,
+   endif,
+
+   // Export-Datei erst löschen - ExportExcelFile() liefert keinen ordentlichen Fehler, wenn der Export
+   // nicht geklappt hat - daher selbst sicherstellen, dass die Zieldatei nicht schon
+   // vorhanden ist und übeschreibbar ist (=löschbar)
+   if File(cDestFileName) then
+      if not DeleteFile(cDestFileName) then
+         SetError('Die Zieldatei "' + cDestFileName + '" existiert schon und konnte nicht gelöscht werden.'),
+      endif,
+   endif,
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+
+      oQuery := CreateObject('TBeAdsQuery'),
+      startseq
+         oQuery.SQL    := cSQL,
+         oQuery.Active := true,
+
+         if NoDs(oQuery) then
+            MessageDlg('Die aktuelle Auswahl enthält keine Daten für "' + cDataDesc + '"'),
+         else
+            nExportCount := ExportExcelFile(cDestFileName, oQuery, true, false, false),  // WritelN(nExportCount),
+            if nExportCount < 1 then
+               MessageDlg('Der Export nach Excel war nicht erfolgreich.' + crlf +
+                          'Der Dateiname lautet: "' + cDestFileName + '"' + crlf +
+                          'Prüfen Sie, ob das Zielverzeichnis vorhanden ist und die Datei angelegt bzw. überschrieben werden kann. Die Datei darf aktuell nicht geöffnet sein.' + crlf +
+                          'Fehler: ' + GetErrorText(), mtError),
+            else
+               Result := true,
+            endif,
+         endif,
+
+      always
+         DestroyObject(oQuery),
+      stopseq,
+
+      if Result then
+         if bOpenExcelFileAfterExport then
+            ShellExecute(cDestFileName),
+         else
+            MessageDlg('Export erfolgreich in Datei "' + cDestFileName + '".', mtInformation),
+         endif,
+      endif,
+
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+

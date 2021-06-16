@@ -1,0 +1,494 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: API-Funktionen für die Historisierung von Daten.
+//               Der Prefix "HIS" steht für "(Daten-)Historisierung".
+//##############################################################################
+//##############################################################################
+
+|
+
+   // Historisierungs-Typen
+   gl_HIS_HistorizationType_MMTabellenID:_N                 := -1, // MM-Tabelle für HISKOPF:TYP
+   gl_HIS_HistorizationType_Stock:_N                        := 10, // Lagerbestand                             (stichtagsbezogen)
+   gl_HIS_HistorizationType_SalesOrderBacklog:_N            := 20, // Verkauf Auftragsbestand                  (stichtagsbezogen)
+   gl_HIS_HistorizationType_SalesOrderBacklog_Current:_N    := 25, // Verkauf Auftragsbestand aktuell          (stichtagsbezogen)
+   gl_HIS_HistorizationType_PurchaseOrderBacklog:_N         := 60, // Einkauf Bestellbestand                   (stichtagsbezogen)
+   gl_HIS_HistorizationType_PurchaseOrderBacklog_Current:_N := 65, // Einkauf Bestellbestand aktuell           (stichtagsbezogen)
+
+   // Historisierungs-Status
+   gl_HIS_HistorizationState_MMTabellenID:_N          := -1, // MM-Tabelle für HISKOPF:STATUS
+   gl_HIS_HistorizationState_Created:_N               := 10, // Kopfsatz angelegt
+   gl_HIS_HistorizationState_Completed:_N             := 50, // Historisierung abgeschlossen
+   gl_HIS_HistorizationState_Erroneous:_N             := 80, // Historisierung mit Fehler abgebrochen
+   gl_HIS_HistorizationState_Deleted:_N               := 90, // Gelöscht
+
+   // Detaildaten-Typen
+   gl_HIS_DetailDataType_Single:_N                    := 10, // Einzelwert, z.B. für Lagerbestand eines Artikels
+   gl_HIS_DetailDataType_DepartmentTotal:_N           := 20, // Abteilungssumme
+   gl_HIS_DetailDataType_LocationTotal:_N             := 30,  // Standortsumme
+
+   // Allgemeine Parameter für die Historisierung
+   gl_HIS_PARAM_LocationCountryArray:_U                   := {},  // Array mit der "Inlands"-Angabe je Standort
+                                                                  // => {{0, '004'}, {...}} bedeutet "Standort 0 liegt in Deutschland"
+
+   // Spezielle Parameter für Verkaufs-Historisierung
+   gl_HIS_PARAM_SalesOrderBackLog_WunschTerminFeldName:_C := '',   // Name des Dab055-Wunschtermin-Feldes, z.B. 'X_WTERMIN' (muss Character, 8 sein)
+   gl_HIS_PARAM_SalesOrderBackLog_AngeboteAbDatum:_U      := Null  // Datum (Date) für die Filterung der Dab055 beim Historisieren von Angeboten ("ab Termin")
+
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten - Vorbelegungen
+//##############################################################################
+//##############################################################################
+
+gl_HIS_PARAM_LocationCountryArray              := {{0, '004'}}, // "Standort 0 liegt in Deutschland"
+
+gl_HIS_PARAM_SalesOrderBackLog_AngeboteAbDatum := BoM(AddMonth(GetAdsServerTime(), -12)), // die letzten 12 Monate
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Allgemein)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Standard-Aliasname anhand der Workarea einer Tabelle ermitteln
+// @Result: string - Standard-Aliasname der Tabelle
+//******************************************************************************
+function _DetermineDefaultAliasName(nWorkarea:N)
+| oTableInfo |
+
+   Result     := '',
+   oTableInfo := GetTableInfo(nWorkarea),
+   if not Empty(oTableInfo) then
+      Result := oTableInfo.TableDef.AliasName,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internals)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion liefert die Inlands-Land-Nummer zu einem Standort
+// @Result: Land-Nummer als Char, 3
+//******************************************************************************
+function _HIS_GetLandNrForStandort(nStandort)
+| nPos |
+   Result := '',
+   nPos   := SeekInDimArray(nStandort, gl_HIS_PARAM_LocationCountryArray, 1),
+   if nPos > 0 then
+      Result := gl_HIS_PARAM_LocationCountryArray[nPos, 2],
+      SetErrorIf(ValType(Result) <> 'C', 'Ungültiger Datentyp <' + ValType(Result) + '> als Länder-Nummer-Angabe für Standort <' + Str(nStandort) + '>. Prüfen Sie die Konfiguration von <gl_HIS_PARAM_LocationCountryArray>'),
+      SetErrorIf(Len(Result) <> 3,       'Ungültige Länge <' + Str(Len(Result)) + '>  der Länder-Nummer-Angabe für Standort <' + Str(nStandort) + '>. Prüfen Sie die Konfiguration von <gl_HIS_PARAM_LocationCountryArray>'),
+   else
+      SetError('Keine Indlands-Land-Nr.-Angabe für Standort <' + Str(nStandort) + '> definiert. Prüfen Sie die Konfiguration von <gl_HIS_PARAM_LocationCountryArray>'),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-439
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgenden Funktionen aufgerufen:
+//  * HIS_HeaderAdd()             [REQ-441]
+//  * HIS_HeaderFinalize()        [REQ-444]
+//  * HIS_HeaderDelete()          [REQ-445]
+//  * HIS_DetailAdd()             [REQ-452]
+//  * HIS_Stock_DetailSetFields() [REQ-XXX]
+//
+//******************************************************************************
+// Interne Funktion zum Validieren des Datenmoduls in HIS_*-Funktionen.
+// @Result: null
+//******************************************************************************
+function _HIS_ValidateDataModule_Internal(oDM:O)
+   SetErrorIf(Empty(oDM), 'Kein Datenmodul verfügbar'),
+end,
+
+//******************************************************************************
+// REQ-440
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgender Funktion aufgerufen:
+//  * HIS_HeaderAdd() [REQ-441]
+//
+//******************************************************************************
+// Interne Funktion zum Validieren des Historisierungstyps.
+// @Result: null
+//******************************************************************************
+function _HIS_ValidateHistorizationType_Internal(nType:N)
+   SetErrorIf(
+      nType <> gl_HIS_HistorizationType_Stock                        and
+      nType <> gl_HIS_HistorizationType_SalesOrderBacklog            and
+      nType <> gl_HIS_HistorizationType_SalesOrderBacklog_Current    and
+      nType <> gl_HIS_HistorizationType_PurchaseOrderBacklog         and
+      nType <> gl_HIS_HistorizationType_PurchaseOrderBacklog_Current,
+      'Ungültiger Historisierungstyp <' + Str(nType) + '>'
+   ),
+end,
+
+//******************************************************************************
+// REQ-442
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgender Funktion aufgerufen:
+//  * HIS_DetailAdd() [REQ-452]
+//
+//******************************************************************************
+// Interne Funktion zum Validieren des Detaildatentyps.
+// @Result: null
+//******************************************************************************
+function _HIS_ValidateDetailDataType_Internal(nType:N)
+   SetErrorIf(
+      nType <> gl_HIS_DetailDataType_Single          and
+      nType <> gl_HIS_DetailDataType_DepartmentTotal and
+      nType <> gl_HIS_DetailDataType_LocationTotal,
+      'Ungültiger Detaildatentyp <' + Str(nType) + '>'
+   ),
+end,
+
+//******************************************************************************
+// REQ-450
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgender Funktion aufgerufen:
+//  * HIS_HeaderFinalize()      [REQ-444]
+//  * HIS_HeaderMarkAsDeleted() [REQ-445]
+//  * HIS_DetailAdd()           [REQ-452]
+//
+//******************************************************************************
+// Tabelleninstanz der Tabelle HISKOPF positionieren
+// @Result: null
+//******************************************************************************
+function _HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF:O, nHeaderID:N)
+   if oHISKOPF:ID <> nHeaderID then
+      SetErrorIf(not oHISKOPF.CbFindKey({nHeaderID}),
+                 'Historisierungs-Kopfdatensatz mit ID <' + Str(nHeaderID) + '> existiert nicht'),
+   endif,
+end,
+
+//***************************************************************************
+// Workarea einer Detailtabelle anhand des Historisierungstyps ermitteln
+// @Result: numeric - Workarea der korrekten Detailtabelle
+//***************************************************************************
+function _HIS_DetermineWorkareaByHistorizationType_Internal(nHistorizationType:N)
+   Result := -1,
+   case nHistorizationType
+      of gl_HIS_HistorizationType_Stock                        :: Result := waHISLAG,
+      of gl_HIS_HistorizationType_SalesOrderBacklog            :: Result := waHISVK,
+      of gl_HIS_HistorizationType_SalesOrderBacklog_Current    :: Result := waHISVKAKT,
+      of gl_HIS_HistorizationType_PurchaseOrderBacklog         :: Result := waHISEK,
+      of gl_HIS_HistorizationType_PurchaseOrderBacklog_Current :: Result := waHISEKAKT,
+      otherwise
+         SetError('Ungültiger Historisierungstyp <' + Str(nHistorizationType) + '>'),
+   endcase,
+end,
+
+//******************************************************************************
+// REQ-451
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgender Funktion aufgerufen:
+//  * HIS_HeaderMarkAsDeleted() [REQ-445]
+//  * HIS_DetailAdd()           [REQ-452]
+//
+//******************************************************************************
+// Tabelleninstanz der richtigen Detailtabelle anhand des Historisierungstyps
+// aus dem Datenmodul holen.
+//
+// @Result: object - Tabelleninstanz der richtigen Detailtabelle (Index: HISKOPF_ID)
+//******************************************************************************
+function _HIS_DataModule_GetDetailTableByHistorizationType_Internal(oDM:O, nHistorizationType:N)
+| nWorkarea |
+
+   nWorkarea        := HIS_DetermineWorkareaByHistorizationType_Internal(nHistorizationType),
+   Result           := DbGetTable(oDM, nWorkarea),
+   Result.IndexName := 'HISKOPF_ID',
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Historisierungs-Detaildaten)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-452
+//******************************************************************************
+// Anlage eines neuen Detaildatensatzes in der entsprechenden Detailtabelle
+//
+// Die Instanz der Detailtabelle befindet sich nach der Rückagabe durch diese
+// Funktion im Insert-Modus.
+//
+// @Result: object - Tabelleninstanz der Detailtabelle
+//******************************************************************************
+function _HIS_DetailAdd(oDM:O, nHeaderID:N, nDetailDataType:N)
+| oHISKOPF, nHistorizationType |
+
+   HIS_ValidateDetailDataType_Internal(nDetailDataType),
+   HIS_ValidateDataModule_Internal(oDM),
+
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'ID',
+
+   HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF, nHeaderID),
+   nHistorizationType := oHISKOPF:TYP,
+   Result := HIS_DataModule_GetDetailTableByHistorizationType_Internal(oDM, nHistorizationType),
+
+   Result.CbAppend(),
+
+   Result:HISKOPF_ID := oHISKOPF:ID,
+   Result:TYP        := nHistorizationType,
+   Result:STATUS     := oHISKOPF:STATUS,
+   Result:STANDORT   := oHISKOPF:STANDORT,
+
+   Result:DATUM      := oHISKOPF:DATUM,
+   Result:MONAT_KAL  := oHISKOPF:MONAT_KAL,
+   Result:JAHR_KAL   := oHISKOPF:JAHR_KAL,
+   Result:KW         := oHISKOPF:KW,
+   Result:JAHR_KW    := oHISKOPF:JAHR_KW,
+   Result:PER_VON    := oHISKOPF:PER_VON,
+   Result:PER_BIS    := oHISKOPF:PER_BIS,
+
+   Result:SUM_TYP    := nDetailDataType,
+end,
+
+//******************************************************************************
+// TODO: Req anlegen, interne Validierungen...
+// @Result: null
+//******************************************************************************
+function _HIS_DetailPost(oDM, oHISLAG)
+   MyPost(oHISLAG),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Status aller Detaildaten einer Historisierung ändern
+//
+// TODO:
+//    Massenhafte Änderung (auch Löschung) von Detaildaten wegen erhöter
+//    Performance auf SQL umstellen!
+//
+// @Result: null
+//******************************************************************************
+function _HIS_DetailSetStatus(oDM:O, nHeaderID:N, nStatus:N)
+| oDetailTable, oHISKOPF, nHistorizationType |
+
+   oHISKOPF := BeOpen(waHISKOPF, 'ID'),
+   startseq
+      HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF, nHeaderID),
+      nHistorizationType := oHISKOPF:TYP,
+   always
+      BeClose(oHISKOPF),
+   stopseq,
+
+   oDetailTable := HIS_DataModule_GetDetailTableByHistorizationType_Internal(oDM, nHistorizationType),
+   oDetailTable.CbSetRangeEx({nHeaderID}),
+   oDetailTable.CbFirst(),
+   while not oDetailTable.CbEof do
+      oDetailTable.CbEdit(),
+      // TODO: Ggf. validieren, ob Status überhaupt gesetzt werden darf
+      oDetailTable:STATUS := nStatus,
+      oDetailTable.CbPost(),
+      oDetailTable.CbNext(),
+   end,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Historisierungs-Kopfdaten)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-441
+//******************************************************************************
+// Historisierungs-Kopfdatensatz anlegen
+//
+//
+//
+// @Result: integer - ID des Historisierungs-Kopfdatensatzes
+//******************************************************************************
+function _HIS_HeaderAdd(oDM:O, nType:N, dDate:D, dPeriodeVon:D, dPeriodeBis:D, cComment:C)
+| oHISKOPF, cKW, nStandort, nAbteilung |
+
+   HIS_ValidateHistorizationType_Internal(nType),
+   HIS_ValidateDataModule_Internal(oDM),
+   SetErrorIf(dDate < SToD('20000101'), 'dDate must be >= "01.01.2000"'), // Restriktion wg. einfacher Umwandlung der KW in das Jahr, siehe unten
+
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'ID',
+
+   Result     := -1,
+   nStandort  := mStandort, // TODO: Ggf. besser den Standort des Datenmoduls?
+   nAbteilung := 0,         // TODO: Wann macht hier die Nutzung der Abteilung Sinn?
+
+   MyAppend(oHISKOPF),
+
+   oHISKOPF:TYP       := nType,
+   oHISKOPF:STATUS    := gl_HIS_HistorizationState_Created,
+   oHISKOPF:STANDORT  := nStandort,
+   oHISKOPF:DATUM     := dDate,
+   oHISKOPF:JAHR_KAL  := Year(dDate),                // Jahr  zu Datum
+   oHISKOPF:MONAT_KAL := Month(dDate),               // Monat zu Datum
+   cKW                := KW(dDate),                  // Liefert z.B. "53.15" für das Datum 01.01.2016
+   oHISKOPF:KW        := Val(Left(cKW, 2)),          // Kalenderwoche numerisch
+   oHISKOPF:JAHR_KW   := Val('20' + Right(cKW, 2)),  // Jahr der Kalenderwoche, Achtung, ggf. abweichend vom Jahr des DATUM
+   oHISKOPF:PER_VON   := dPeriodeVon,
+   oHISKOPF:PER_BIS   := dPeriodeBis,
+   if not Empty(AllTrim(cComment)) then
+      oHISKOPF:KOMMENTAR := cComment,
+   endif,
+
+   // Allgemeine Parameter, deren aktueller Zustand "proforma" mit protokolliert wird
+   oHISKOPF:STDWAE_NR := Lookup(waDabPAR, 'STANDORT', {{nStandort, nAbteilung}}, 'STDWAE_NR', 0),
+   oHISKOPF:LAG_VERFG := Lookup(waDabPAR, 'STANDORT', {{nStandort, nAbteilung}}, 'LAG_VERFG', 0),
+
+
+   // Kopfdatensatz speichern
+   MyPost(oHISKOPF),
+
+   Result := oHISKOPF:ID,
+end,
+
+//******************************************************************************
+//
+// @Result: Integer, Sekunden
+//******************************************************************************
+function _HIS_HeaderCalcDurationSeconds(dStart, dEnde)
+
+   function GetDiffSeconds(dStart, dEnde)
+   | oDateTimeHelper, drDuration, dtStart:DT, dtEnde:DT |
+      oDateTimeHelper := CreateObject('TBeCbDateTimeHelper'),
+      startseq
+         dtStart          := oDateTimeHelper.InitDateTime(precSeconds),
+         dtStart.DateTime := dStart,
+         dtEnde           := oDateTimeHelper.InitDateTime(precSeconds),
+         dtEnde.DateTime  := dEnde,
+         drDuration       := oDateTimeHelper.Subtract(dtEnde, dtStart),         // WriteLn('duration: ', drDuration),
+         Result           := drDuration.Seconds,
+      always
+         DestroyObject(oDateTimeHelper),
+      stopseq,
+   end,
+
+   Result := GetDiffSeconds(dStart, dEnde),
+end,
+
+
+//******************************************************************************
+// REQ-444
+//******************************************************************************
+// Historisierung für einen Historisierungs-Kopfdatensatz abschließen
+// @Result: null
+//******************************************************************************
+function _HIS_HeaderFinalize(oDM:O, nHeaderID:N)
+| oHISKOPF |
+
+   HIS_ValidateDataModule_Internal(oDM),
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'ID',
+
+   // Tabelle auf den richtigen Datensatz positionieren
+   HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF, nHeaderID),
+
+   // Historierung kann nur abgeschlossen werden, wenn sich der Datensatz im
+   // Zustand "erstellt" befindet.
+   SetErrorIf(oHISKOPF:STATUS <> gl_HIS_HistorizationState_Created,
+              'Historisierungsdatensatz <' + Str(oHISKOPF:ID) + '> kann nicht abgeschlossen werden'),
+
+   // Historisierung abschließen
+   oHISKOPF.CbEdit(),
+   oHISKOPF:STATUS     := gl_HIS_HistorizationState_Completed,
+   oHISKOPF:FERTIG_DAT := GetAdsServerTime(),
+   oHISKOPF:DAUER_SEK  := HIS_HeaderCalcDurationSeconds(oHISKOPF:ERSTELLT, oHISKOPF:FERTIG_DAT),
+   oHISKOPF.CbPost(),
+
+   HIS_DetailSetStatus(oDM, nHeaderID, gl_HIS_HistorizationState_Completed),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Historisierungs-Kopfdatensatz als "fehlerhaft" markieren
+// @Result: null
+//******************************************************************************
+function _HIS_HeaderMarkAsErroneous(oDM:O, nHeaderID:N, nErrorCount:N, cErrorMessages:C)
+| oHISKOPF |
+
+   HIS_ValidateDataModule_Internal(oDM),
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'ID',
+   HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF, nHeaderID),
+
+   SetErrorIf(oHISKOPF:STATUS <> gl_HIS_HistorizationState_Created,
+              'Historisierungsdatensatz <' + Str(oHISKOPF:ID) + '> kann nicht als fehlerhaft markiert werden'),
+
+   oHISKOPF.CbEdit(),
+   oHISKOPF:STATUS     := gl_HIS_HistorizationState_Erroneous,
+   oHISKOPF:FERTIG_DAT := GetAdsServerTime(),
+   oHISKOPF:DAUER_SEK  := HIS_HeaderCalcDurationSeconds(oHISKOPF:ERSTELLT, oHISKOPF:FERTIG_DAT),
+   oHISKOPF:FEHLER_ANZ := nErrorCount,
+   oHISKOPF:FEHLER     := cErrorMessages,
+   oHISKOPF.CbPost(),
+
+   HIS_DetailSetStatus(oDM, nHeaderID, gl_HIS_HistorizationState_Erroneous),
+end,
+
+//******************************************************************************
+// REQ-445
+//******************************************************************************
+// Historisierungs-Kopfdatensatz als "gelöscht" markieren
+//
+// Der Kopfdatensatz wird durch diese Funktion nicht gelöscht sondern lediglich
+// als gelöscht markiert.
+// Die Detaildatensätze werden je nach Parameter bDeleteDetailRecords aus der
+// jeweiligen Detailtabelle gelöscht oder ebenfalls nur als "gelöscht" markiert.
+//
+// @Result: null
+//******************************************************************************
+function _HIS_HeaderMarkAsDeleted(oDM:O, nHeaderID:N, bDeleteDetailRecords:L)
+| oHISKOPF, oDetailTable |
+
+   HIS_ValidateDataModule_Internal(oDM),
+   oHISKOPF           := DbGetTable(oDM, waHISKOPF),
+   oHISKOPF.IndexName := 'ID',
+   HIS_HISKOPF_GoToHeaderRecord_Internal(oHISKOPF, nHeaderID),
+   oDetailTable := HIS_DataModule_GetDetailTableByHistorizationType_Internal(oDM, oHISKOPF:TYP),
+
+   // Die Löschung der Historierung darf nur für Datensätze durchgeführt werden,
+   // die noch nicht als gelöscht markiert sind.
+   SetErrorIf(oHISKOPF:STATUS = gl_HIS_HistorizationState_Deleted,
+              'Historisierungsdatensatz <' + Str(oHISKOPF:ID) + '> ist bereits als gelöscht markiert'),
+
+   // Kopfdatensatz als gelöscht markieren
+   oHISKOPF.CbEdit(),
+   oHISKOPF:STATUS     := gl_HIS_HistorizationState_Deleted,
+   oHISKOPF:LOESCH_USR := c_usr,
+   oHISKOPF:LOESCH_DAT := GetAdsServerTime(),
+   oHISKOPF.CbPost(),
+
+   // TODO:
+   //  Massenhafte Änderung (auch Löschung) von Detaildaten wegen erhöter
+   //  Performance auf SQL umstellen!
+   if bDeleteDetailRecords then
+      // Detaildatensätze löschen
+      oDetailTable.CbSetRangeEx({oHISKOPF:ID}),
+      oDetailTable.CbFirst(),
+      while not oDetailTable.CbEof do
+         oDetailTable.CbDelete(),
+      end,
+   else
+      HIS_DetailSetStatus(oDM, nHeaderID, gl_HIS_HistorizationState_Deleted),
+   endif,
+end,

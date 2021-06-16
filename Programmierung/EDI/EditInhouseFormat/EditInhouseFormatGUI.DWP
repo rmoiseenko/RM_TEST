@@ -1,0 +1,310 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   TODO
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_oInhouseFormatDataMemTable:P3,
+
+   m_oDM,
+   m_cPositionSaveId, m_cFormId,
+   m_cBrowserId_InhouseFormatDataMemtable,
+   m_nResult,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_New, A_Save, al_Actions, bar_Main, barmngr_Main,
+   btn_Cancel, btn_Delete, btn_New, btn_OK, dock_Main,
+   ds_InhouseFormatDataMemTable, edt_Key, edt_Value,
+   grd_InhouseFormatDataMemTable, lbl_Key, lbl_Value, pnl_ButtonsOKAndCancel,
+   pnl_Information, pnl_Information_Row1, pnl_Main, pnl_MemTable_Grd
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormId                              := '@EDIIMSGEI',
+m_cPositionSaveId                      := '@EDIIFEDIT',
+m_cBrowserId_InhouseFormatDataMemtable := '@EDIDATBRO',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+|bDoesRecordExist |
+   bDoesRecordExist := not m_oInhouseFormatDataMemtable.CbNoDataAvailable,
+
+   InputControl_SetReadOnlyState(edt_Key,   not bDoesRecordExist),
+   InputControl_SetReadOnlyState(edt_Value, not bDoesRecordExist),
+end,
+
+//******************************************************************************
+// GUI mit der Datenbank verbinden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM := CreateObject('TBeDbGet', 'DM_EDI_EditInhouseFormatGUI', oForm),
+
+   if EditorMode() and empty(m_oInhouseFormatDataMemTable) then
+      m_oInhouseFormatDataMemTable := EDI_InhouseFormat_DataMemtable_Create('EDI_INH_FORM_DATA', m_oDM),
+   endif,
+
+   GU_LinkTableToGUI(m_oInhouseFormatDataMemtable, ds_InhouseFormatDataMemtable, grd_InhouseFormatDataMemTable, m_cBrowserId_InhouseFormatDataMemtable, false),
+   // Events zuweisen
+   AssignEvent(ds_InhouseFormatDataMemtable, 'OnScroll_Update', 'InhouseDormatDataMemTableScroll_Update'),
+   AssignEvent(m_oInhouseFormatDataMemtable, 'BeforePost', 'BeforePost'),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob jeder Schlüssel gültig ist.
+// Sofern die Funktion auf einen ungültigen Schlüssel stößt, wird der
+// entsprechende Datensatz positioniert, damit der Benutzer diesen ändern kann.
+//
+// @result: boolean
+//******************************************************************************
+function ValidateKeys(oInhouseFormatMemTable:O)
+| nCurrentRecordNumber |
+
+   result               := true,
+   nCurrentRecordNumber := oInhouseFormatMemTable.CbRecNo,
+
+   oInhouseFormatMemTable.CbFirst(),
+   startseq
+      while not oInhouseFormatMemTable.CbEoF do
+         if Empty(AllTrim(oInhouseFormatMemTable:KEY)) then
+            result := false,
+            break,
+         endif,
+         oInhouseFormatMemTable.CbNext(),
+      end,
+   always
+      // Nur auf gemerkten Datensatz zurück positionieren, sofern alle
+      // Datensätze gültig sind.
+      if result then
+         oInhouseFormatMemTable.CbGoTo(nCurrentRecordNumber),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//############################################################################## 
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle
+//******************************************************************************
+function InhouseDormatDataMemTableScroll_Update(sender:O)
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender)
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      ModalResult(oForm, mrCancel),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   if ValidateKeys(m_oInhouseFormatDataMemtable) then
+      ModalResult(oForm, mrOK),
+   else
+      MessageDlg('Ein oder mehrere der eingegebenen Schlüssel sind ungültig.', mtError),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      MyFocusControl(oForm, edt_Key),
+      m_oInhouseFormatDataMemtable.CbAppend(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Neuanlage', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   startseq
+      if JN("Wollen Sie diesen Datensatz wirklich löschen?") then
+         m_oInhouseFormatDataMemtable.CbDelete(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Neuanlage', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'Inhouse-Format bearbeiten',
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.ImageIndex     := 307,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                      := FindObject(oForm, "A_Cancel"),
+   A_Delete                      := FindObject(oForm, "A_Delete"),
+   A_New                         := FindObject(oForm, "A_New"),
+   A_Save                        := FindObject(oForm, "A_Save"),
+   al_Actions                    := FindObject(oForm, "al_Actions"),
+   bar_Main                      := FindObject(oForm, "bar_Main"),
+   barmngr_Main                  := FindObject(oForm, "barmngr_Main"),
+   btn_Cancel                    := FindObject(oForm, "btn_Cancel"),
+   btn_Delete                    := FindObject(oForm, "btn_Delete"),
+   btn_New                       := FindObject(oForm, "btn_New"),
+   btn_OK                        := FindObject(oForm, "btn_OK"),
+   dock_Main                     := FindObject(oForm, "dock_Main"),
+   ds_InhouseFormatDataMemTable  := FindObject(oForm, "ds_InhouseFormatDataMemTable"),
+   edt_Key                       := FindObject(oForm, "edt_Key"),
+   edt_Value                     := FindObject(oForm, "edt_Value"),
+   grd_InhouseFormatDataMemTable := FindObject(oForm, "grd_InhouseFormatDataMemTable"),
+   lbl_Key                       := FindObject(oForm, "lbl_Key"),
+   lbl_Value                     := FindObject(oForm, "lbl_Value"),
+   pnl_ButtonsOKAndCancel        := FindObject(oForm, "pnl_ButtonsOKAndCancel"),
+   pnl_Information               := FindObject(oForm, "pnl_Information"),
+   pnl_Information_Row1          := FindObject(oForm, "pnl_Information_Row1"),
+   pnl_Main                      := FindObject(oForm, "pnl_Main"),
+   pnl_MemTable_Grd              := FindObject(oForm, "pnl_MemTable_Grd"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+ 
+  // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowGUI()
+   m_nResult := ShowModal(oForm),
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SetDefaults()
+   edt_Key.DataSource   := ds_InhouseFormatDataMemTable,
+   edt_Key.DataField    := 'KEY',
+   edt_Value.DataSource := ds_InhouseFormatDataMemTable,
+   edt_Value.DataField  := 'VALUE',
+
+   m_oInhouseFormatDataMemtable.CbRefresh(),
+   ActionsEnabled(),
+
+   AssignEvent(edt_Key,   'OnChange', 'InputControls_OnChange'),
+   AssignEvent(edt_Value, 'OnChange', 'InputControls_OnChange'),
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({edt_Key, edt_Value}),   
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+m_nResult

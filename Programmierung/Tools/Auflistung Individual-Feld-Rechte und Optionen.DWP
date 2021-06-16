@@ -1,0 +1,137 @@
+//##############################################################################
+//##############################################################################
+//
+// Dieses Hilfsprogramm listet alle individuell definierten Indices in
+// STANDARD-Tabellen auf.
+//
+//##############################################################################
+//##############################################################################
+
+| i, nWorkarea, oTableInfo,
+  cTableHeadRightsText, cTableFieldRightsText, cTableFieldText, nFldIdx,
+  oFieldInfoList, oFieldInfo,
+  cTableDebugText, bMaskOptUserDefined |
+
+//******************************************************************************
+// Rückt einen gesamten Text-Block ein
+//******************************************************************************
+function IndentBlock(cTextBlock, nIndent)
+| cIndent |
+  Result := '',
+  if not empty(cTextBlock) then
+     cIndent := Replicate(' ', nIndent),
+     Result  := StrTran(cTextBlock, crlf, crlf + cIndent),
+     Result  := cIndent + Result,
+  endif,
+end,
+
+//******************************************************************************
+// Einen Rechte-Codeblock mit entspr. Überschrift zum übergebenen Output-Text hinzufügen
+//******************************************************************************
+function AddToOutputIfNotEmpty(cCaption, cCodeblock, cOutputText:R)
+   if not empty(cCodeblock) then
+      cOutputText := ConcatTrenner(cOutputText, '    ' + cCaption + ':' + crlf + IndentBlock(cCodeblock, 10), crlf),
+   endif,
+end,
+
+
+// Alle Standard-Tabellen durchgehen
+for i := 1 to 699 do
+   cTableDebugText := '',
+   nWorkarea       := i,
+   oTableInfo      := GetTableInfo(nWorkarea),  // Liefert eine Instanz von TBeTableInfo oder nil
+   if not empty(oTableInfo) then
+
+      //************************************************************************
+      // Tabellen-Kopf-Rechte
+      //************************************************************************
+      cTableHeadRightsText := '',
+
+      AddToOutputIfNotEmpty('Kopf Lesen',           oTableInfo.Right_Read,      cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Ändern',          oTableInfo.Right_Edit,      cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Neuanlage',       oTableInfo.Right_Insert,    cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Validierung',     oTableInfo.Right_Validate,  cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Löschen',         oTableInfo.Right_Delete,    cTableHeadRightsText),
+
+      AddToOutputIfNotEmpty('Kopf Update Neu',      oTableInfo.Right_UpdNew,    cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Update Änderung', oTableInfo.Right_UpdUpd,    cTableHeadRightsText),
+      AddToOutputIfNotEmpty('Kopf Update Löschen',  oTableInfo.Right_UpdDel,    cTableHeadRightsText),
+
+      if not empty(cTableHeadRightsText) then
+         cTableHeadRightsText := crlf + PadR('Kopf-Rechte / Updates ', 80, '=') + crlf + crlf + cTableHeadRightsText,
+      endif,
+
+      //************************************************************************
+      // Feld-Rechte & Feld-Optionen
+      //************************************************************************
+      cTableFieldRightsText := '',
+      oFieldInfoList        := oTableInfo.FieldRightList,   // liefert eine Collection der Klasse 'TBeFieldInfoList'
+
+      for nFldIdx := 1 to CollCount(oFieldInfoList) do // alle Felder durchgehen
+
+         cTableFieldText := '',
+         oFieldInfo      := CollItem(oFieldInfoList, nFldIdx), // liefert ein Feld-Info-Objekt der Klasse 'TBeFieldInfo'
+
+         // Infos zu Indi-Feld-Rechten
+         AddToOutputIfNotEmpty('  Leserecht',          oFieldInfo.Right_Read,       cTableFieldText),
+         // Sonderlogik für das Änderungsrecht (wird mit 'False' vorbelegt, wenn der Feldname nicht feststeht)
+         if oFieldInfo.FieldName <> 'FIELD_NOT_FOUND' then
+            AddToOutputIfNotEmpty('  Änderungsrecht',  oFieldInfo.Right_Edit,       cTableFieldText),
+         endif,
+         AddToOutputIfNotEmpty('  Validierung',        oFieldInfo.Right_Validate,   cTableFieldText),
+         AddToOutputIfNotEmpty('  Masken Validierung', oFieldInfo.Right_MaskValid,  cTableFieldText),
+         AddToOutputIfNotEmpty('  Update Neuanlage',   oFieldInfo.Right_New,        cTableFieldText),
+         AddToOutputIfNotEmpty('  Update Speichern',   oFieldInfo.Right_Update,     cTableFieldText),
+
+         // "Masken-Optionen benutzerdefiniert" ? (Die Abfrage von oFieldInfo.MaskOptUserDef liefert immer 'true', deshalb direkt auf die Optionen gehen)
+         bMaskOptUserDefined := ('"M,' $ oFieldInfo.Mask_Options) or
+                                (',M,' $ oFieldInfo.Mask_Options),
+         if bMaskOptUserDefined and (oFieldInfo.FieldName <> 'FIELD_NOT_FOUND') then
+            AddToOutputIfNotEmpty('  Masken Opt. Userdefiniert', 'aktiviert', cTableFieldText),
+         endif,
+
+         // "Änderung beim Speichern n i c h t für alle Standorte übernehmen"
+         // Hinweis: Für Tabelle 10 DabPAR - Allgemeine Parameter gibt es
+         //          häufig sehr viele aktivierte Optionen
+         if oFieldInfo.LocationCopy = 1 and
+            oFieldInfo.LocationType = 0 and // 0 = global, 1 = Standort, 2 = Abteilung (Bei den Typen 1 + 2 ist LocationCopy zwangsweise aktiv)
+            (oFieldInfo.FieldName <> 'FIELD_NOT_FOUND') then
+            AddToOutputIfNotEmpty('  Änd. beim Speich. nicht (!) auf alle Standorte übernehmen', 'aktiviert', cTableFieldText),
+         endif,
+
+         // Infos zum aktuellen Feld vorhanden ?
+         if not empty(cTableFieldText) then
+            cTableFieldRightsText := cTableFieldRightsText + crlf + 
+                                     PadR('  Feld ' + oFieldInfo.FieldName + ' (' + oFieldInfo.DisplayName + ') ', 80, '=') + crlf + cTableFieldText,
+         endif,
+      next,
+
+      if not empty(cTableFieldRightsText) then
+         cTableFieldRightsText := crlf + PadR('Feld-Rechte / Optionen ', 80, '=') + crlf + crlf + cTableFieldRightsText,
+      endif,
+
+      //************************************************************************
+      // Konsolen-Ausgabe
+      //************************************************************************
+
+      if not empty(cTableHeadRightsText) or not empty(cTableFieldRightsText) then
+         cTableDebugText := ConcatTrenner(cTableHeadRightsText, cTableFieldRightsText, crlf + crlf),
+      endif,
+
+      if not empty(cTableDebugText) then
+         WriteLn(Replicate('=', 80)),
+         WriteLn('Info für Workarea ' + Str(oTableInfo.TableWorkArea ) + ' (' + oTableInfo.TableDef.AliasName +  ' / ' + oTableInfo.TableLabel + ')'),
+         WriteLn(Replicate('=', 80)),
+         WriteLn(cTableDebugText),
+         Writeln(),
+      endif,
+   endif,
+
+   if oFieldInfo.FieldName = 'LANDNR' then
+      break,
+   endif,
+
+   // if i = 1 then
+   //   break,
+   // endif,
+next,

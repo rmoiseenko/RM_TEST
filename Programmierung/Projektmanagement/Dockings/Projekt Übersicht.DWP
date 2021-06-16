@@ -1,0 +1,403 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Übersicht über alle im Projekt-Management vorhandenen Projekte
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_oDM, m_cBrowser, m_oPrjOverview, m_nMainResult, m_cPrjFilter,
+  m_cSettingsKey,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ClearFilters, A_Close, A_GotoProject, A_Refresh, BeActionList1,
+   bipnl_InfoCaption, btn_Close, btn_GoTo, btn_Refresh, cmb_FilterAuthority,
+   cmb_FilterState, cmb_FilterType, ds_ProjectOverview, edt_FilterCustomer,
+   grd_ProjOverview, lbl_FilterAuthority, lbl_FilterCustomer, lbl_FilterState,
+   lbl_FilterType, pnl_Buttons, pnl_Filter, pnl_InfoCaption, pnl_MainBack
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cBrowser     := '@PROJUEB',     // Browser
+m_cSettingsKey := '@PUE' + c_usr, // Einstellungen
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Speichern der letzten Einstellungen
+//******************************************************************************
+function SaveSettings()
+| aArr |
+   aArr := {},
+
+   AAdd(aArr, cmb_FilterState.Value),     // Status
+   AAdd(aArr, cmb_FilterType.Value),      // Typ
+   AAdd(aArr, cmb_FilterAuthority.Value), // Hauptverantwortlicher
+
+   // Speichern des Arrays
+   SetBeParam(m_cSettingsKey, ArrToStr(aArr)),
+end,
+
+//******************************************************************************
+// Laden der letzten Einstellungen
+//******************************************************************************
+function LoadSettings()
+| cSettings, aArr |
+   // Laden des Arrays
+   cSettings := GetBeParam(m_cSettingsKey),
+   if not Empty(cSettings) then
+      aArr := StrToArr(cSettings),
+   endif,        
+
+   // Auswahl der ComboBoxen wiederherstellen
+   if ALen(aArr) > 0 then
+      // Status
+      cmb_FilterState.Value := aArr[1],
+      if ALen(aArr) > 1 then
+         // Typ
+         cmb_FilterType.Value := aArr[2],
+         if ALen(aArr) > 2 then
+            // Hauptverantwortlicher
+            cmb_FilterAuthority.Value := aArr[3],
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Bestätigt die Auswahl und schließt das Fenster
+//******************************************************************************
+function CommitChoice(Sender)
+   startseq
+      if not empty(m_oPrjOverview:ID) then
+         ProjMgmtGUI_ShowProjectManagement(Sender, m_oPrjOverview:ID),
+      endif,
+
+      // Fenster (Docking) nur schließen wenn es nicht angedockt ist
+      if not ProjMgmtGUI_IsFormDocked(Sender , oForm) then
+         CloseForm(oForm),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Springen zum Projekt' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Aktualisiert den Enabled-Status der Actions
+//******************************************************************************
+function ActionsEnabled()
+| bIsDocking |
+  bIsDocking              := not empty(m_oOwnerForm),
+
+  A_Close.Enabled         := not bIsDocking,
+  A_Close.Visible         := A_Close.Enabled,
+  A_GotoProject.Enabled   := bIsDocking and
+                             not (EOF(m_oPrjOverview) and BOF(m_oPrjOverview)),
+  A_GotoProject.Visible   := bIsDocking,
+
+  pnl_InfoCaption.Visible := bIsDocking,
+end,
+
+//******************************************************************************
+// Filter auf Basis der User-Einstellungen neu zusammensetzten und Tabelle filtern
+//******************************************************************************
+function RebuildAndRefreshFilter()
+|
+   cFilter, cFilterType, cFilterState, cFilterAuth, cCustomerNo,
+   i, nLastID, nOldCursor, cLastOrderBy
+|
+
+   //***************************************************************************
+   function CheckComboToFilter(oCombo, cField, cType)
+   |i, aValues, aItems |
+      Result  := '',
+      aItems  := oCombo.CheckedItems,
+      aValues := oCombo.ValuesChecked,
+      for i := 1 to ALen(aItems) do
+         iif(not empty(Result), Result += ' OR ', ''),
+         case cType
+            of 'N' :: Result += '(' + cField + ' = ' + CollItem(aValues, aItems[i]) + ')',
+            of 'C' :: Result += '(' + cField + ' = ''' + CollItem(aValues, aItems[i]) + ''')',
+         endcase
+      end,
+      iif(not empty(Result), Result := '(' + Result + ')', ''),
+   end,
+
+   DBDisableControls(m_oPrjOverview),
+   startseq
+      nOldCursor := SetCursor(crHourGlass),
+      startseq
+         // Filter Projekt Status
+         cFilter := CheckComboToFilter(cmb_FilterState, 'STATUS', 'N'),
+
+         // Filter Projekt Typ
+         cFilterType := CheckComboToFilter(cmb_FilterType, 'TYP', 'N'),
+         if not empty(cFilterType) then
+            iif (not empty(cFilter), cFilter += ' AND ' + cFilterType + '',
+                                     cFilter += cFilterType),
+         endif,
+
+         // Filter Projekt Hauptverantwortlicher
+         cFilterAuth := CheckComboToFilter(cmb_FilterAuthority, 'VERANTWORT', 'C'),
+         if not empty(cFilterAuth) then
+            iif (not empty(cFilter), cFilter += ' AND ' + cFilterAuth + '',
+                                     cFilter += cFilterAuth),
+         endif,
+
+         // Filter Projekte nach Kunde
+         cCustomerNo := Trim(edt_FilterCustomer.Text),
+         if not empty(cCustomerNo) then
+            cFilter := ConcatTrenner(cFilter, 'KDNR = ' + cCustomerNo, ' AND '),
+         endif,
+
+         // Filter übernehmen und versuchen letzte Position wiederherzustellen
+         nLastID := m_oPrjOverview:ID,
+
+         cLastOrderBy := m_oPrjOverview.OrderBy,
+         startseq
+            ProjMgmt_GetProjectOverviewWithValues(m_oPrjOverview, False, cFilter),
+         always
+            m_oPrjOverview.OrderBy := cLastOrderBy
+         stopseq,
+
+         if not DBLocate('ID', nLastID, 0, m_oPrjOverview) then
+            DBGoTop(m_oPrjOverview),
+         endif,
+
+         ActionsEnabled(),
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   always
+      DBEnableControls(m_oPrjOverview),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Fenster schließen
+//******************************************************************************
+function FormExCloseQuery( Sender )
+   SaveSettings(),
+end,
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// FormClose
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Doppelklick: zu Projekt springen
+//******************************************************************************
+function grd_ProjOverviewDblClick( Sender )
+   CommitChoice(Sender),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern der Kundennummer zum Filtern der Projekte nach Kunde
+//******************************************************************************
+function edt_FilterCustomerChange( Sender )
+   RebuildAndRefreshFilter(),
+end,
+
+//******************************************************************************
+// Filter Auswahl für "Projekt Verantwortlicher"
+//******************************************************************************
+function cmb_FilterAuthorityClickCheck( Sender )
+   RebuildAndRefreshFilter(),
+end,
+
+//******************************************************************************
+// Filter Auswahl für "Projekt Typ"
+//******************************************************************************
+function cmb_FilterTypeClickCheck( Sender )
+   RebuildAndRefreshFilter(),
+end,
+
+//******************************************************************************
+// Filter Auswahl für "Projekt Status"
+//******************************************************************************
+function cmb_FilterStateClickCheck( Sender )
+   RebuildAndRefreshFilter(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Daten aufbereiten und Filtern
+//******************************************************************************
+function A_RefreshExecute( Sender )
+   RebuildAndRefreshFilter(),
+end,
+
+//******************************************************************************
+// Zu Projekt springen
+//******************************************************************************
+function A_GotoProjectExecute( Sender )
+   CommitChoice(Sender),
+end,
+
+//******************************************************************************
+// Fenster schließen
+//******************************************************************************
+function A_CloseExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Lädt das Form in Abhängig keit des Owners
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm("@PROJUBERS", Application),
+   else
+      oForm             := LoadForm("@PROJUBERS", m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.PositionSaveID := '@PRJUEB',
+   oForm.ImageIndex     := 58,                // Für den Fenster-Navigator und Tabkarten-Symbole
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_ClearFilters      := FindObject(oForm, "A_ClearFilters"),
+      A_Close             := FindObject(oForm, "A_Close"),
+      A_GotoProject       := FindObject(oForm, "A_GotoProject"),
+      A_Refresh           := FindObject(oForm, "A_Refresh"),
+      BeActionList1       := FindObject(oForm, "BeActionList1"),
+      bipnl_InfoCaption   := FindObject(oForm, "bipnl_InfoCaption"),
+      btn_Close           := FindObject(oForm, "btn_Close"),
+      btn_GoTo            := FindObject(oForm, "btn_GoTo"),
+      btn_Refresh         := FindObject(oForm, "btn_Refresh"),
+      cmb_FilterAuthority := FindObject(oForm, "cmb_FilterAuthority"),
+      cmb_FilterState     := FindObject(oForm, "cmb_FilterState"),
+      cmb_FilterType      := FindObject(oForm, "cmb_FilterType"),
+      ds_ProjectOverview  := FindObject(oForm, "ds_ProjectOverview"),
+      edt_FilterCustomer  := FindObject(oForm, "edt_FilterCustomer"),
+      grd_ProjOverview    := FindObject(oForm, "grd_ProjOverview"),
+      lbl_FilterAuthority := FindObject(oForm, "lbl_FilterAuthority"),
+      lbl_FilterCustomer  := FindObject(oForm, "lbl_FilterCustomer"),
+      lbl_FilterState     := FindObject(oForm, "lbl_FilterState"),
+      lbl_FilterType      := FindObject(oForm, "lbl_FilterType"),
+      pnl_Buttons         := FindObject(oForm, "pnl_Buttons"),
+      pnl_Filter          := FindObject(oForm, "pnl_Filter"),
+      pnl_InfoCaption     := FindObject(oForm, "pnl_InfoCaption"),
+      pnl_MainBack        := FindObject(oForm, "pnl_MainBack"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Lädt das Form in Abhängig keit des Owners
+//******************************************************************************
+function InitFilter()
+   cmb_FilterState.BeAttributeID     := -15, // Projekt Status
+   cmb_FilterType.BeAttributeID      := -14, // Projekt Typ
+   cmb_FilterAuthority.BeAttributeID := -11, // Projekt Verantwortlicher
+   cmb_FilterAuthority.DataField     := 'PARAM',
+end,
+
+//******************************************************************************
+// Tabellen erzeugen, öffnen, Grid aktivieren / einstellen
+//******************************************************************************
+function InitTabeles()
+   m_oDM                               := CreateObject('TBeDbGet', 'OverviewDM', oForm, oForm),
+   
+   m_oPrjOverview                      := CreateObject('TMemCalcTable', 'ProjectsOverview', m_oDM),
+   m_oPrjOverview.AliasName            := 'MEM_PRJUEB',
+   ProjMgmt_GetProjectOverviewWithValues(m_oPrjOverview, True, ''),
+   m_oPrjOverview.OrderBy              := 'BEGINN',
+   ds_ProjectOverview.DataSet          := m_oPrjOverview,
+   grd_ProjOverView.CbChangeOrder      := True, // Sortierung per Spalten-Klick
+   grd_ProjOverview.CbPrimarySortField := 'ID', // Feld das immer in der Sortierung berücksichtigt werden soll
+   grd_ProjOverview.DataSource         := m_oPrjOverview,
+   grd_ProjOverview.RegisterDataSet    := m_oPrjOverview,
+   grd_ProjOverview.ID                 := m_cBrowser,
+   grd_ProjOverview.ReadWriteProps     := False,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   oForm.OrigCapt := 'Übersicht Projekte',
+
+   RebuildAndRefreshFilter(),
+
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   InitTabeles(),
+   InitFilter(),
+   LoadSettings(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

@@ -1,0 +1,39 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Funktionen zum Auslösen von Sachmerkmalleisten Codeblock-Events
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Löst das Codeblock-Event "nach Speicherung Sachmerkmalleistenzuordnung" aus
+// @result: null
+//******************************************************************************
+function _SML_Event_AfterSaveAssignment_Trigger(oDM:O, oSMLZUO:O)
+| cEventScriptName, nSMLZUORecordID |
+
+   // Datenmodul muss sich vor dem Event in Transaktion befinden
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Datenmodul muss sich in Transaktion befinden'),
+
+   // Aktuell positionierten SMLZUO-Datensatz merken
+   // -> Wird nach Ausführen des Events validiert
+   nSMLZUORecordID := oSMLZUO:ID,
+
+   cEventScriptName := 'Sachmerkmalleisten\Events\AfterSaveAssignment',
+   if LookUp(waDabPRG, 'BEZ', {{Upper(cEventScriptName)}}, 'not EoF()', false) then
+      Call(cEventScriptName, oDM, oSMLZUO),
+   endif,
+
+   // Validierungen nach der Event-Ausführung:
+   //   * Datenmodul muss immernoch in Transaktion befinden
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Datenmodul darf während der Event-Ausführung nicht bestätigt/abgebrochen werden'),
+   //   * Die SMLZUO-Instanz muss immernoch auf dem gleichen Datensatz stehen
+   SetErrorIf(nSMLZUORecordID <> oSMLZUO:ID, 'SMLZUO-Instanz darf während der Event-Ausführung nicht umpositioniert werden'),
+end,
+

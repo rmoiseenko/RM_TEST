@@ -1,0 +1,1016 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+// Oberfläche zur Administration und Übverwachung der CAD-Schnittstelle
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI,
+   m_oCADPROJ, m_oCADSRC, m_oCADART, m_oCADSTKL,
+   m_oMemtable_ArticleDataIndividual,
+   m_oMemtable_PartsListPositionDataIndividual,
+
+   m_cFormID, m_cPositionSaveID,
+
+   m_nCADART_LastTableState,
+   m_nCADSTKL_LastTableState,
+   m_nCADART_IndividualData_LastTableState,
+   m_nCADSTKL_IndividualData_LastTableState,
+   m_bEditingIndividualData, m_bExplicitPost_CADART, m_bExplicitPost_CADSTKL,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ArticleCancel, A_ArticleSave, A_PartsListPositionCancel,
+   A_PartsListPositionSave, A_ProjectDelete, A_ProjectImport, A_ProjectRead,
+   A_ProjectValidate, A_SourceDelete, al_Actions, bar_Article,
+   bar_PartsListPosition, bar_Projects, bar_Sources, bardock_Article,
+   bardock_PartsListPosition, bardock_Projects, bardock_Sourecs, barmngr_Main,
+   bbtn_ArticleCancel, bbtn_ArticleSave, bbtn_PartsListPositionCancel,
+   bbtn_PartsListPositionSave, bbtn_ProjectDelete, bbtn_ProjectImport,
+   bbtn_ProjectRead, bbtn_ProjectValidate, bbtn_SourceDelete,
+   cmb_Article_ArticleType, ds_ArtilceDataIndividual, ds_CADART, ds_CADPROJ,
+   ds_CADSRC, ds_CADSTKL, ds_PartsListPositionDataIndividual,
+   edt_Article_ArticleNo, edt_Article_Description1, edt_Article_Description2,
+   edt_ArticleDataIndividual_Key, edt_ArticleDataIndividual_Value,
+   edt_CADART_Errors, edt_CADART_Warnings, edt_CADSTKL_Errors,
+   edt_CADSTKL_Warnings, edt_PartsListPosition_ArticleNoAssembly,
+   edt_PartsListPosition_ArticleNoPart, edt_PartsListPosition_PositionNo,
+   edt_PartsListPosition_Quantity, edt_PartsListPositionDataIndividual_Key,
+   edt_PartsListPositionDataIndividual_Value, grd_ArtilceDataIndividual,
+   grd_CADART, grd_CADPROJ, grd_CADSRC, grd_CADSTKL,
+   grd_PartsListPositionDataIndividual, ipnl_Articles, ipnl_PartsListPositions,
+   ipnl_Projects, ipnl_Sources, lbl_Article_ArticleNo, lbl_Article_ArticleType,
+   lbl_Article_Description1, lbl_Article_Description2,
+   lbl_ArticleDataIndividual_Key, lbl_ArticleDataIndividual_Value,
+   lbl_PartsListPosition_ArticleNoAssembly, lbl_PartsListPosition_ArticleNoPart,
+   lbl_PartsListPosition_PositionNo, lbl_PartsListPosition_Quantity,
+   lbl_PartsListPositionDataIndividual_Key,
+   lbl_PartsListPositionDataIndividual_Value, pc_ArticleDetails,
+   pc_PartsListPositionDetails, pnl_Articles, pnl_ArtilceDataIndividual,
+   pnl_CADART_ErrorsAndWarnings, pnl_CADPROJ, pnl_CADSRC,
+   pnl_CADSTKL_ErrorsAndWarnings, pnl_DetailTables, pnl_Main,
+   pnl_PartsListPositionDataIndividual, pnl_PartsListPositions,
+   pnl_SubCategories, ts_ArticleErrors, ts_ArticleWarnings, ts_ArtilceData,
+   ts_ArtilceDataIndividual, ts_PartsListPositionData,
+   ts_PartsListPositionDataIndividual, ts_PartsListPositionErrors,
+   ts_PartsListPositionWarnings
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@CADADMGUI',
+m_cPositionSaveID := '@CADADMPOS',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+|
+   bCADPROJ_IsDataAvailable,
+   bCADSRC_IsInEditMode, bCADSRC_IsDataAvailable,
+   bCADART_IsInEditMode, bCADART_RecordIsImported, bCADART_CanEdit,
+   bCADSTKL_IsInEditMode, bCADSTKL_RecordIsImported, bCADSTKL_CanEdit
+|
+
+   bCADPROJ_IsDataAvailable  := m_oCADPROJ.CbDataAvailable,
+   bCADSRC_IsInEditMode      := EditModes(m_oCADSRC),
+   bCADSRC_IsDataAvailable   := m_oCADSRC.CbDataAvailable,
+   bCADART_IsInEditMode      := EditModes(m_oCADART),
+   bCADSTKL_IsInEditMode     := EditModes(m_oCADSTKL),
+   bCADART_RecordIsImported  := m_oCADART:STATUS_STD = gl_CADIF_Status_Imported,
+   bCADSTKL_RecordIsImported := m_oCADSTKL:STATUS_STD = gl_CADIF_Status_Imported,
+   bCADART_CanEdit  := bCADART_RecordIsImported or m_oCADART.CbNoDataAvailable,
+   bCADSTKL_CanEdit := bCADSTKL_RecordIsImported or m_oCADSTKL.CbNoDataAvailable or bCADART_IsInEditMode,
+
+   // Enabled-Zustand der Actions steuern
+   A_SourceDelete.Enabled    := not bCADSRC_IsInEditMode and bCADSRC_IsDataAvailable and
+                                m_oCADPROJ:STATUS_STD <> gl_CADIF_Status_Imported,
+   A_ProjectRead.Enabled     := true,
+   A_ProjectValidate.Enabled := bCADPROJ_IsDataAvailable and
+                                m_oCADPROJ:STATUS_STD <> gl_CADIF_Status_Imported,
+   A_ProjectImport.Enabled   := bCADPROJ_IsDataAvailable and
+                                (m_oCADPROJ:STATUS_STD = gl_CADIF_Status_Validated or
+                                 m_oCADPROJ:STATUS_STD = gl_CADIF_Status_Warning),
+   A_ProjectDelete.Enabled   := bCADPROJ_IsDataAvailable,
+
+   A_ArticleSave.Enabled             := not bCADART_RecordIsImported and bCADART_IsInEditMode,
+   A_ArticleCancel.Enabled           := not bCADART_RecordIsImported and bCADART_IsInEditMode,
+   A_PartsListPositionSave.Enabled   := not bCADSTKL_RecordIsImported and bCADSTKL_IsInEditMode,
+   A_PartsListPositionCancel.Enabled := not bCADSTKL_RecordIsImported and bCADSTKL_IsInEditMode,
+
+   // ReadOnly-Zustand der Eingabe-Controls steuern
+   InputControl_SetReadOnlyState(edt_Article_ArticleNo,                   bCADART_CanEdit),
+   InputControl_SetReadOnlyState(cmb_Article_ArticleType,                 bCADART_CanEdit),
+   InputControl_SetReadOnlyState(edt_Article_Description1,                bCADART_CanEdit),
+   InputControl_SetReadOnlyState(edt_Article_Description2,                bCADART_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPosition_ArticleNoAssembly, bCADSTKL_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPosition_ArticleNoPart,     bCADSTKL_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPosition_Quantity,          bCADSTKL_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPosition_PositionNo,        bCADSTKL_CanEdit),
+
+   InputControl_SetReadOnlyState(edt_ArticleDataIndividual_Key,             bCADART_CanEdit),
+   InputControl_SetReadOnlyState(edt_ArticleDataIndividual_Value,           bCADART_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPositionDataIndividual_Key,   bCADSTKL_CanEdit),
+   InputControl_SetReadOnlyState(edt_PartsListPositionDataIndividual_Value, bCADSTKL_CanEdit),
+end,
+
+//******************************************************************************
+// Memtable für die Anzeige und Bearbeitung von individuellen Daten eines
+// Artikels oder einer Stücklistenposition erzeugen und öffnen.
+//
+// @result: object - TBeMemTable
+//******************************************************************************
+function IndividualDataMemtable_Create(cAliasName:C, oOwner:O:=nil)
+   result := CreateObject('TBeMemTable', '', oOwner),
+   startseq
+      result.AliasName := cAliasName,
+      // Felder anlegen
+      result.CbAddField('KEY',         ftMemo, 0),
+      result.CbAddField('VALUE',       ftMemo, 0),
+      result.CbAddField('DESCRIPTION', ftMemo, 0),
+
+      // Tabelle öffnen
+      result.CbOpen(),
+   onerror
+      if not empty(oOwner) then
+         DestroyObject(result),
+      endif,
+      raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Memtable für die Anzeige und Bearbeitung von individuellen Daten befüllen.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function IndividualDataMemtable_Fill(oMemtable:O, cData:C)
+| aData, uValueInfo, cKey, uValue, cDescription, i |
+
+   oMemtable.CbDisableControls(),
+   startseq
+      oMemtable.CbEmptyTable(),
+      aData := StrToArr(cData),
+      for i := 1 to ALen(aData) do
+         cKey         := aData[i, 1],
+         uValueInfo   := aData[i, 2],
+         uValue       := CADIF_ReadIndividualFieldValue_Internal(uValueInfo, ''),
+         cDescription := CADIF_ReadIndividualFieldDescription_Internal(uValueInfo, cKey),
+         oMemtable.CbAppend(),
+         oMemtable:KEY         := cKey,
+         oMemtable:VALUE       := ToString(uValue),
+         oMemtable:DESCRIPTION := cDescription,
+         oMemtable.CbPost(),
+      next,
+
+      oMemtable.CbFirst(),
+   always
+      oMemtable.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt aus den in der Memtable enthaltenen Daten einen
+// KVU-Konformen String und gibt diesen zurück.
+//
+// @result: string
+//******************************************************************************
+function IndividualDataMemtable_Stringify(oMemtable:O)
+| aData, uValueInfo |
+
+   aData := {},
+   oMemtable.CbDisableControls(),
+   startseq
+      oMemtable.CbFirst(),
+      while not oMemtable.CbEof do
+         uValueInfo := {},
+         CADIF_WriteIndividualFieldValue_Internal(uValueInfo, oMemtable:VALUE, oMemtable:DESCRIPTION),
+         KVU_Set(aData, oMemtable:KEY, uValueInfo),
+         oMemtable.CbNext(),
+      end,
+   always
+      oMemtable.CbEnableControls(),
+   stopseq,
+
+   result := ArrToStr(aData),
+end,
+
+//******************************************************************************
+// GUI mit der Datenbank verbinden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_CADInterface_Administration',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_CADInterface_Administration_GUI', oForm),
+
+   // Memtables erzeugen
+   m_oMemtable_ArticleDataIndividual           := IndividualDataMemtable_Create('CADART_INDIV_DATA',  m_oDM_GUI),
+   m_oMemtable_PartsListPositionDataIndividual := IndividualDataMemtable_Create('CADSTKL_INDIV_DATA', m_oDM_GUI),
+
+   // GUI-Tabellen erzeugen
+   m_oCADPROJ := DbGetTable(m_oDM_GUI, waCADPROJ),
+   m_oCADSRC  := DbGetTable(m_oDM_GUI, waCADSRC),
+   m_oCADART  := DbGetTable(m_oDM_GUI, waCADART),
+   m_oCADSTKL := DbGetTable(m_oDM_GUI, waCADSTKL),
+
+   m_oCADPROJ.CbIndexName := 'ID',
+   m_oCADSRC.CbIndexName  := 'CADPROJ_ID_SRC_NAME',
+   m_oCADART.CbIndexName  := 'CADSRC_ID_ARTNR',
+   m_oCADSTKL.CbIndexName := 'CADSRC_ID_ARTNR1_ARTNR2_POSNR',
+
+   GU_LinkTableToGUI(m_oCADPROJ, ds_CADPROJ, grd_CADPROJ, '@CADPROJ', false),
+   GU_LinkTableToGUI(m_oCADSRC,  ds_CADSRC,  grd_CADSRC,  '@CADSRC',  false),
+   GU_LinkTableToGUI(m_oCADART,  ds_CADART,  grd_CADART,  '@CADART',  false),
+   GU_LinkTableToGUI(m_oCADSTKL, ds_CADSTKL, grd_CADSTKL, '@CADSTKL', false),
+   GU_LinkTableToGUI(m_oMemtable_ArticleDataIndividual,           ds_ArtilceDataIndividual,           grd_ArtilceDataIndividual,           '@CADINDID',  false),
+   GU_LinkTableToGUI(m_oMemtable_PartsListPositionDataIndividual, ds_PartsListPositionDataIndividual, grd_PartsListPositionDataIndividual, '@CADINDID', false),
+
+   m_nCADART_LastTableState  := m_oCADART.CbState,
+   m_nCADSTKL_LastTableState := m_oCADSTKL.CbState,
+   m_nCADART_IndividualData_LastTableState  := m_oMemtable_ArticleDataIndividual.CbState,
+   m_nCADSTKL_IndividualData_LastTableState := m_oMemtable_PartsListPositionDataIndividual.CbState,
+
+   // Datenbank bezogene Flags initialisieren
+   m_bEditingIndividualData := false,
+   m_bExplicitPost_CADART   := false,
+   m_bExplicitPost_CADSTKL  := false,
+
+   // Events zuweisen
+   AssignEvent(ds_CADPROJ, 'OnScroll_Update', 'ds_CADPROJScroll_Update'),
+   AssignEvent(ds_CADSRC,  'OnScroll_Update', 'ds_CADSRCScroll_Update'),
+   AssignEvent(m_oCADART,  'BeforePost',      'CADART_BeforePost'),
+   AssignEvent(ds_CADART,  'OnScroll_Update', 'ds_CADARTScroll_Update'),
+   AssignEvent(ds_CADART,  'OnStateChange',   'ds_CADARTStateChange'),
+   AssignEvent(m_oCADSTKL, 'BeforePost',      'CADSTKL_BeforePost'),
+   AssignEvent(ds_CADSTKL, 'OnScroll_Update', 'ds_CADSTKLScroll_Update'),
+   AssignEvent(ds_CADSTKL, 'OnStateChange',   'ds_CADSTKLStateChange'),
+   AssignEvent(ds_ArtilceDataIndividual,           'OnStateChange', 'ds_ArticleDataIndividualStateChange'),
+   AssignEvent(ds_PartsListPositionDataIndividual, 'OnStateChange', 'ds_PartsListPositionDataIndividualStateChange'),
+end,
+
+//******************************************************************************
+// Synchronisieren der Tabelle CADSRC
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeCADSRC(nProjectId:N)
+   if m_oCADSRC:CADPROJ_ID <> nProjectId then
+      m_oCADSRC.CbDisableControls(),
+      startseq
+         m_oCADSRC.CbCancelRange(),
+         m_oCADSRC.CbSetRangeEx({nProjectId}),
+      always
+         m_oCADSRC.CbEnableControls(),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Synchronisieren der Tabelle CADART
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeCADART(nSourceId:N)
+   if m_oCADART:CADSRC_ID <> nSourceId then
+      m_oCADART.CbDisableControls(),
+      startseq
+         m_oCADART.CbCancelRange(),
+         m_oCADART.CbSetRangeEx({nSourceId}),
+      always
+         m_oCADART.CbEnableControls(),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Synchronisieren der Tabelle CADART
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeCADSTKL(nSourceId:N, cArticleNo:C)
+| aRangeFrom, aRangeTo |
+
+   m_oCADSTKL.CbDisableControls(),
+   startseq
+      m_oCADSTKL.CbCancelRange(),
+      m_oCADSTKL.CbSetRangeEx({nSourceId, trim(m_oCADSRC:SRC_NAME), cArticleNo}),
+   always
+      m_oCADSTKL.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion löscht alle zu einer CAD-Datenquelle gehörigen Daten.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADSRC_Delete(oDM:O, nCADSRCId:N)
+| oCADSRC, oCADART, oCADSTKL |
+
+   oCADSRC := MyGetTable(oDM, waCADSRC,  ''),
+   oCADSRC.CbIndexName := 'ID',
+
+   oCADART := MyGetTable(oDM, waCADART,  ''),
+   oCADART.CbIndexName := 'CADSRC_ID_ARTNR',
+
+   oCADSTKL := MyGetTable(oDM, waCADSTKL, ''),
+   oCADSTKL.CbIndexName := 'CADSRC_ID_ARTNR1_ARTNR2_POSNR',
+
+   if oCADSRC.CbFindKey({nCADSRCId}) then
+      oCADSRC.CbDelete(),
+   endif,
+
+   oCADART.CbSetRangeEx({nCADSRCId}),
+   startseq
+      oCADART.CbFirst(),
+      while not oCADART.CbEof do
+         oCADART.CbDelete(),
+      end,
+   always
+      oCADART.CbCancelRange(),
+   stopseq,
+
+   oCADSTKL.CbSetRangeEx({nCADSRCId}),
+   startseq
+      oCADSTKL.CbFirst(),
+      while not oCADSTKL.CbEof do
+         oCADSTKL.CbDelete(),
+      end,
+   always
+      oCADSTKL.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion löscht alle zu einem CAD-Projekt gehörigen Daten.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADPROJ_Delete(oDM:O, nCADPROJId:N)
+| oCADPROJ, oCADSRC |
+
+   oCADPROJ := MyGetTable(oDM, waCADPROJ, ''),
+   oCADPROJ.CbIndexName := 'ID',
+
+   oCADSRC := MyGetTable(oDM, waCADSRC, 'CADSRC_CADPROJ_ID_SRC_NAME'),
+   oCADSRC.CbIndexName := 'CADPROJ_ID_SRC_NAME',
+
+   if oCADPROJ.CbFindKey({nCADPROJId}) then
+      oCADPROJ.CbDelete(),
+   endif,
+
+   oCADSRC.CbSetRangeEx({nCADPROJId}),
+   startseq
+      oCADSRC.CbFirst(),
+      while not oCADSRC.CbEof do
+         CADSRC_Delete(oDM, oCADSRC:ID),
+         oCADSRC.CbNext(),
+      end,
+   always
+      oCADSRC.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion aktualisiert alle angezeigten Tabellen.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RefreshAllTables()
+   m_oCADPROJ.CbRefresh(),
+   m_oCADSRC.CbRefresh(),
+   m_oCADART.CbRefresh(),
+   m_oCADSTKL.CbRefresh(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle CADPROJ
+//******************************************************************************
+function ds_CADPROJScroll_Update( Sender )
+   SynchronizeCADSRC(m_oCADPROJ:ID),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle CADSRC
+//******************************************************************************
+function ds_CADSRCScroll_Update( Sender )
+   SynchronizeCADART(m_oCADSRC:ID),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern eines CADART-Datensatzes
+//******************************************************************************
+function CADART_BeforePost( Sender )
+   if m_bExplicitPost_CADART then
+      m_bExplicitPost_CADART := false,
+      if m_bEditingIndividualData then
+         m_bEditingIndividualData := false,
+         if EditModes(m_oMemtable_ArticleDataIndividual) then
+            m_oMemtable_ArticleDataIndividual.CbPost(),
+         endif,
+
+         m_oCADART:EXTRA_INFO := IndividualDataMemtable_Stringify(m_oMemtable_ArticleDataIndividual),
+      endif,
+   else
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle CADART
+//******************************************************************************
+function ds_CADARTScroll_Update( Sender )
+   if not m_bEditingIndividualData then
+      SynchronizeCADSTKL(m_oCADSRC:ID, trim(m_oCADART:ARTNR)),
+      IndividualDataMemtable_Fill(m_oMemtable_ArticleDataIndividual, m_oCADART:EXTRA_INFO),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Wenn sich der Zustand von ds_CADART geändert hat
+//******************************************************************************
+function ds_CADARTStateChange( Sender )
+   if m_nCADART_LastTableState <> m_oCADART.CbState then
+      m_nCADART_LastTableState := m_oCADART.CbState,
+
+      if EditModes(m_oCADART) then
+         m_oCADSRC.CbBeginNoRecordMove(),
+         m_oCADPROJ.CbBeginNoRecordMove(),
+      else
+         m_oCADSRC.CbEndNoRecordMove(),
+         m_oCADPROJ.CbEndNoRecordMove(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern eines CADSTKL-Datensatzes
+//******************************************************************************
+function CADSTKL_BeforePost( Sender )
+   if m_bExplicitPost_CADSTKL then
+      m_bExplicitPost_CADSTKL := false,
+      if m_bEditingIndividualData then
+         m_bEditingIndividualData := false,
+         if EditModes(m_oMemtable_PartsListPositionDataIndividual) then
+            m_oMemtable_PartsListPositionDataIndividual.CbPost(),
+         endif,
+
+         m_oCADSTKL:EXTRA_INFO := IndividualDataMemtable_Stringify(m_oMemtable_PartsListPositionDataIndividual),
+      endif,
+   else
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle CADSTKL
+//******************************************************************************
+function ds_CADSTKLScroll_Update( Sender )
+   if not m_bEditingIndividualData then
+      IndividualDataMemtable_Fill(m_oMemtable_PartsListPositionDataIndividual, m_oCADSTKL:EXTRA_INFO),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Wenn sich der Zustand von ds_CADSTKL geändert hat
+//******************************************************************************
+function ds_CADSTKLStateChange( Sender )
+   if m_nCADSTKL_LastTableState <> m_oCADSTKL.CbState then
+      m_nCADSTKL_LastTableState := m_oCADSTKL.CbState,
+
+      if EditModes(m_oCADSTKL) then
+         m_oCADART.CbBeginNoRecordMove(),
+         m_oCADSRC.CbBeginNoRecordMove(),
+         m_oCADPROJ.CbBeginNoRecordMove(),
+      else
+         m_oCADART.CbEndNoRecordMove(),
+         m_oCADSRC.CbEndNoRecordMove(),
+         m_oCADPROJ.CbEndNoRecordMove(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Bei der Änderung von individuellen CADART-Daten
+//******************************************************************************
+function ds_ArticleDataIndividualStateChange( Sender )
+   if m_nCADART_IndividualData_LastTableState <> m_oMemtable_ArticleDataIndividual.CbState then
+      m_nCADART_IndividualData_LastTableState := m_oMemtable_ArticleDataIndividual.CbState,
+      if EditModes(m_oMemtable_ArticleDataIndividual) then
+         m_bEditingIndividualData := true,
+         m_oCADART.CbEdit(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Bei der Änderung von individuellen CADSTKL-Daten
+//******************************************************************************
+function ds_PartsListPositionDataIndividualStateChange( Sender )
+   if m_nCADSTKL_IndividualData_LastTableState <> m_oMemtable_PartsListPositionDataIndividual.CbState then
+      m_nCADSTKL_IndividualData_LastTableState := m_oMemtable_PartsListPositionDataIndividual.CbState,
+      if EditModes(m_oMemtable_PartsListPositionDataIndividual) then
+         m_bEditingIndividualData := true,
+         m_oCADSTKL.CbEdit(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oCADART) and
+                not EditModes(m_oCADSTKL),
+   if not bCanClose then
+      bCanClose := Jn('Es sind nicht gespeicherte Änderungen vorhanden.' + CRLF +
+                      'Soll das Formular trotzdem geschlossen werden?'   + CRLF +
+                      'HINWEIS: Änderungen gehen dabei ggf. verloren.', false),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array austragen
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Artikel-Datensatz speichern
+//******************************************************************************
+function A_ArticleSaveExecute( Sender )
+   m_bExplicitPost_CADART := true,
+   m_oCADART.CbPost(),
+end,
+
+//******************************************************************************
+// Action: Artikel-Datensatz verwerfen
+//******************************************************************************
+function A_ArticleCancelExecute( Sender )
+   if Jn('Änderungen an Artikel <' + trim(m_oCADART:ARTNR) + '> verwerfen?', false) then
+      m_oCADART.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Stücklistenpositions-Datensatz speichern
+//******************************************************************************
+function A_PartsListPositionSaveExecute( Sender )
+   m_bExplicitPost_CADSTKL := true,
+   m_oCADSTKL.CbPost(),
+end,
+
+//******************************************************************************
+// Action: Stücklistenpositions-Datensatz verwerfen
+//******************************************************************************
+function A_PartsListPositionCancelExecute( Sender )
+   if Jn('Änderungen an Stücklistenposition <' + trim(m_oCADSTKL:ARTNR1) + '/' + trim(m_oCADSTKL:ARTNR2) + '> verwerfen?', false) then
+      m_oCADSTKL.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Einlesen eines CAD-Projekts
+//******************************************************************************
+function A_ProjectReadExecute( Sender )
+| aResult, cDataSourceDirectory, cProjectKey, nProjectId |
+
+   aResult := Call('Stueckliste\CADInterface\Administration\ReadProjectDialog'),
+   if KVU_Get(aResult, 'ReadProjectDialog.confirmed', false) then
+      if empty(AllTrim(gl_CADIF_Config_DefaultProjectReader_ScriptName)) then
+         MessageDlg(
+            'Das Script für das Einlesen neuer CAD-Projekte ist noch nicht konfiguriert!' + CRLF +
+            'Hier für muss im Programm "Global\CADInterface\_CustomInit" die globale Variable ' +
+            '"gl_CADIF_Config_DefaultProjectReader_ScriptName" gesetzt werden.',
+            mtError
+         ),
+      else
+         cDataSourceDirectory := KVU_GetAssert(aResult, 'ReadProjectDialog.dataSourceURI'),
+         cProjectKey          := KVU_GetAssert(aResult, 'ReadProjectDialog.projectKey'),
+         if Lookup(waCADPROJ, 'PROJ_KEY', {{cProjectKey}}, 'eof()', true) then
+            startseq
+               ProgressbarShow(cProjectKey, 'CAD-Projekt einlesen', false),
+               startseq
+                  // Ausgewähltes Verzeichnis einlesen
+                  nProjectId := Call(gl_CADIF_Config_DefaultProjectReader_ScriptName, cDataSourceDirectory, cProjectKey),
+               always
+                  ProgressbarHide(),
+               stopseq,
+
+               // Anzeige-Tabellen auf neu eingelsenes CAD-Projekt positionieren
+               m_oCADPROJ.CbDisableControls(),
+               startseq
+                  m_oCADPROJ.CbFindKey({nProjectId}),
+               always
+                  m_oCADPROJ.CbEnableControls(),
+               stopseq,
+            onerror
+               GU_ShowStdErrorMessage('Fehler beim Einlesen von Verzeichnis <' + cDataSourceDirectory + '>', GetErrorObj()),
+            stopseq,
+         else
+            MessageDlg('Ein CAD-Projekt mit dem Schlüssel <' + cProjectKey + '> existiert bereits!', mtError),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Eingelesenes CAD-Projekt validieren
+//******************************************************************************
+function A_ProjectValidateExecute( Sender )
+   startseq
+      m_oDM.CbTransaction_Begin(),
+      startseq
+         ProgressbarShow(trim(m_oCADPROJ:PROJ_KEY), 'CAD-Projekt validieren', false),
+         startseq
+            CADIF_ValidateStandard(m_oDM, m_oCADPROJ:ID),
+         always
+            ProgressbarHide(),
+         stopseq,
+         m_oDM.CbTransaction_Commit(),
+         RefreshAllTables(),
+      always
+         m_oDM.CbTransaction_TryRollback(),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Validieren des CAD-Projekts', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Eingelesenes CAD-Projekt in die be-Tabellen importieren
+//******************************************************************************
+function A_ProjectImportExecute( Sender )
+| bCanImport, bCanImportWithWarnings |
+
+   bCanImport             := m_oCADPROJ:STATUS_STD = gl_CADIF_Status_Validated,
+   bCanImportWithWarnings := m_oCADPROJ:STATUS_STD = gl_CADIF_Status_Warning,
+
+   if bCanImport or bCanImportWithWarnings then
+      if not bCanImportWithWarnings or
+         Jn('Das CAD-Projekt enthält Warnungen! Soll das Projekt dennoch importiert werden?', false) then
+
+         startseq
+            m_oDM.CbTransaction_Begin(),
+            startseq
+               ProgressbarShow(trim(m_oCADPROJ:PROJ_KEY), 'CAD-Projekt importieren', false),
+               startseq
+                  CADIF_Import(m_oDM, m_oCADPROJ:ID),
+               always
+                  ProgressbarHide(),
+               stopseq,
+               m_oDM.CbTransaction_Commit(),
+               RefreshAllTables(),
+            always
+               m_oDM.CbTransaction_TryRollback(),
+            stopseq,
+         onerror
+            GU_ShowStdErrorMessage('Fehler beim Import des CAD-Projekts', GetErrorObj()),
+         stopseq,
+
+      endif,
+   else
+      MessageDlg('Das CAD-Projekt ist nicht validiert und darf deshalb nicht importiert werden!', mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Action: CAD-Projekt löschen
+//******************************************************************************
+function A_ProjectDeleteExecute( Sender )
+| cProjectKey |
+
+   cProjectKey := trim(m_oCADPROJ:PROJ_KEY),
+   if Jn('Projekt <' + cProjectKey + '> löschen?', false) then
+      startseq
+         ProgressbarShow(cProjectKey, 'CAD-Projekt löschen', false),
+         startseq
+            m_oDM.CbTransaction_Begin(),
+            startseq
+               CADPROJ_Delete(m_oDM, m_oCADPROJ:ID),
+               m_oDM.CbTransaction_Commit(),
+            always
+               m_oDM.CbTransaction_TryRollback(),
+            stopseq,
+            RefreshAllTables(),
+         always
+            ProgressbarHide(),
+         stopseq,
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Löschen des Projekts', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datenquelle löschen
+//******************************************************************************
+function A_SourceDeleteExecute( Sender )
+| cDataSourceName |
+
+   cDataSourceName := trim(m_oCADSRC:SRC_NAME),
+   if Jn('Datenquelle <' + cDataSourceName + '> löschen?', false) then
+      startseq
+         ProgressbarShow(cDataSourceName, 'CAD-Datenquelle löschen', false),
+         startseq
+            m_oDM.CbTransaction_Begin(),
+            startseq
+               CADSRC_Delete(m_oDM, m_oCADSRC:ID),
+               m_oDM.CbTransaction_Commit(),
+            always
+               m_oDM.CbTransaction_TryRollback(),
+            stopseq,
+            RefreshAllTables(),
+         always
+            ProgressbarHide(),
+         stopseq,
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Löschen der Datenquelle', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'CAD-Schnittstelle - Administration',
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ArticleCancel                           := FindObject(oForm, "A_ArticleCancel"),
+   A_ArticleSave                             := FindObject(oForm, "A_ArticleSave"),
+   A_PartsListPositionCancel                 := FindObject(oForm, "A_PartsListPositionCancel"),
+   A_PartsListPositionSave                   := FindObject(oForm, "A_PartsListPositionSave"),
+   A_ProjectDelete                           := FindObject(oForm, "A_ProjectDelete"),
+   A_ProjectImport                           := FindObject(oForm, "A_ProjectImport"),
+   A_ProjectRead                             := FindObject(oForm, "A_ProjectRead"),
+   A_ProjectValidate                         := FindObject(oForm, "A_ProjectValidate"),
+   A_SourceDelete                            := FindObject(oForm, "A_SourceDelete"),
+   al_Actions                                := FindObject(oForm, "al_Actions"),
+   bar_Article                               := FindObject(oForm, "bar_Article"),
+   bar_PartsListPosition                     := FindObject(oForm, "bar_PartsListPosition"),
+   bar_Projects                              := FindObject(oForm, "bar_Projects"),
+   bar_Sources                               := FindObject(oForm, "bar_Sources"),
+   bardock_Article                           := FindObject(oForm, "bardock_Article"),
+   bardock_PartsListPosition                 := FindObject(oForm, "bardock_PartsListPosition"),
+   bardock_Projects                          := FindObject(oForm, "bardock_Projects"),
+   bardock_Sourecs                           := FindObject(oForm, "bardock_Sourecs"),
+   barmngr_Main                              := FindObject(oForm, "barmngr_Main"),
+   bbtn_ArticleCancel                        := FindObject(oForm, "bbtn_ArticleCancel"),
+   bbtn_ArticleSave                          := FindObject(oForm, "bbtn_ArticleSave"),
+   bbtn_PartsListPositionCancel              := FindObject(oForm, "bbtn_PartsListPositionCancel"),
+   bbtn_PartsListPositionSave                := FindObject(oForm, "bbtn_PartsListPositionSave"),
+   bbtn_ProjectDelete                        := FindObject(oForm, "bbtn_ProjectDelete"),
+   bbtn_ProjectImport                        := FindObject(oForm, "bbtn_ProjectImport"),
+   bbtn_ProjectRead                          := FindObject(oForm, "bbtn_ProjectRead"),
+   bbtn_ProjectValidate                      := FindObject(oForm, "bbtn_ProjectValidate"),
+   bbtn_SourceDelete                         := FindObject(oForm, "bbtn_SourceDelete"),
+   cmb_Article_ArticleType                   := FindObject(oForm, "cmb_Article_ArticleType"),
+   ds_ArtilceDataIndividual                  := FindObject(oForm, "ds_ArtilceDataIndividual"),
+   ds_CADART                                 := FindObject(oForm, "ds_CADART"),
+   ds_CADPROJ                                := FindObject(oForm, "ds_CADPROJ"),
+   ds_CADSRC                                 := FindObject(oForm, "ds_CADSRC"),
+   ds_CADSTKL                                := FindObject(oForm, "ds_CADSTKL"),
+   ds_PartsListPositionDataIndividual        := FindObject(oForm, "ds_PartsListPositionDataIndividual"),
+   edt_Article_ArticleNo                     := FindObject(oForm, "edt_Article_ArticleNo"),
+   edt_Article_Description1                  := FindObject(oForm, "edt_Article_Description1"),
+   edt_Article_Description2                  := FindObject(oForm, "edt_Article_Description2"),
+   edt_ArticleDataIndividual_Key             := FindObject(oForm, "edt_ArticleDataIndividual_Key"),
+   edt_ArticleDataIndividual_Value           := FindObject(oForm, "edt_ArticleDataIndividual_Value"),
+   edt_CADART_Errors                         := FindObject(oForm, "edt_CADART_Errors"),
+   edt_CADART_Warnings                       := FindObject(oForm, "edt_CADART_Warnings"),
+   edt_CADSTKL_Errors                        := FindObject(oForm, "edt_CADSTKL_Errors"),
+   edt_CADSTKL_Warnings                      := FindObject(oForm, "edt_CADSTKL_Warnings"),
+   edt_PartsListPosition_ArticleNoAssembly   := FindObject(oForm, "edt_PartsListPosition_ArticleNoAssembly"),
+   edt_PartsListPosition_ArticleNoPart       := FindObject(oForm, "edt_PartsListPosition_ArticleNoPart"),
+   edt_PartsListPosition_PositionNo          := FindObject(oForm, "edt_PartsListPosition_PositionNo"),
+   edt_PartsListPosition_Quantity            := FindObject(oForm, "edt_PartsListPosition_Quantity"),
+   edt_PartsListPositionDataIndividual_Key   := FindObject(oForm, "edt_PartsListPositionDataIndividual_Key"),
+   edt_PartsListPositionDataIndividual_Value := FindObject(oForm, "edt_PartsListPositionDataIndividual_Value"),
+   grd_ArtilceDataIndividual                 := FindObject(oForm, "grd_ArtilceDataIndividual"),
+   grd_CADART                                := FindObject(oForm, "grd_CADART"),
+   grd_CADPROJ                               := FindObject(oForm, "grd_CADPROJ"),
+   grd_CADSRC                                := FindObject(oForm, "grd_CADSRC"),
+   grd_CADSTKL                               := FindObject(oForm, "grd_CADSTKL"),
+   grd_PartsListPositionDataIndividual       := FindObject(oForm, "grd_PartsListPositionDataIndividual"),
+   ipnl_Articles                             := FindObject(oForm, "ipnl_Articles"),
+   ipnl_PartsListPositions                   := FindObject(oForm, "ipnl_PartsListPositions"),
+   ipnl_Projects                             := FindObject(oForm, "ipnl_Projects"),
+   ipnl_Sources                              := FindObject(oForm, "ipnl_Sources"),
+   lbl_Article_ArticleNo                     := FindObject(oForm, "lbl_Article_ArticleNo"),
+   lbl_Article_ArticleType                   := FindObject(oForm, "lbl_Article_ArticleType"),
+   lbl_Article_Description1                  := FindObject(oForm, "lbl_Article_Description1"),
+   lbl_Article_Description2                  := FindObject(oForm, "lbl_Article_Description2"),
+   lbl_ArticleDataIndividual_Key             := FindObject(oForm, "lbl_ArticleDataIndividual_Key"),
+   lbl_ArticleDataIndividual_Value           := FindObject(oForm, "lbl_ArticleDataIndividual_Value"),
+   lbl_PartsListPosition_ArticleNoAssembly   := FindObject(oForm, "lbl_PartsListPosition_ArticleNoAssembly"),
+   lbl_PartsListPosition_ArticleNoPart       := FindObject(oForm, "lbl_PartsListPosition_ArticleNoPart"),
+   lbl_PartsListPosition_PositionNo          := FindObject(oForm, "lbl_PartsListPosition_PositionNo"),
+   lbl_PartsListPosition_Quantity            := FindObject(oForm, "lbl_PartsListPosition_Quantity"),
+   lbl_PartsListPositionDataIndividual_Key   := FindObject(oForm, "lbl_PartsListPositionDataIndividual_Key"),
+   lbl_PartsListPositionDataIndividual_Value := FindObject(oForm, "lbl_PartsListPositionDataIndividual_Value"),
+   pc_ArticleDetails                         := FindObject(oForm, "pc_ArticleDetails"),
+   pc_PartsListPositionDetails               := FindObject(oForm, "pc_PartsListPositionDetails"),
+   pnl_Articles                              := FindObject(oForm, "pnl_Articles"),
+   pnl_ArtilceDataIndividual                 := FindObject(oForm, "pnl_ArtilceDataIndividual"),
+   pnl_CADART_ErrorsAndWarnings              := FindObject(oForm, "pnl_CADART_ErrorsAndWarnings"),
+   pnl_CADPROJ                               := FindObject(oForm, "pnl_CADPROJ"),
+   pnl_CADSRC                                := FindObject(oForm, "pnl_CADSRC"),
+   pnl_CADSTKL_ErrorsAndWarnings             := FindObject(oForm, "pnl_CADSTKL_ErrorsAndWarnings"),
+   pnl_DetailTables                          := FindObject(oForm, "pnl_DetailTables"),
+   pnl_Main                                  := FindObject(oForm, "pnl_Main"),
+   pnl_PartsListPositionDataIndividual       := FindObject(oForm, "pnl_PartsListPositionDataIndividual"),
+   pnl_PartsListPositions                    := FindObject(oForm, "pnl_PartsListPositions"),
+   pnl_SubCategories                         := FindObject(oForm, "pnl_SubCategories"),
+   ts_ArticleErrors                          := FindObject(oForm, "ts_ArticleErrors"),
+   ts_ArticleWarnings                        := FindObject(oForm, "ts_ArticleWarnings"),
+   ts_ArtilceData                            := FindObject(oForm, "ts_ArtilceData"),
+   ts_ArtilceDataIndividual                  := FindObject(oForm, "ts_ArtilceDataIndividual"),
+   ts_PartsListPositionData                  := FindObject(oForm, "ts_PartsListPositionData"),
+   ts_PartsListPositionDataIndividual        := FindObject(oForm, "ts_PartsListPositionDataIndividual"),
+   ts_PartsListPositionErrors                := FindObject(oForm, "ts_PartsListPositionErrors"),
+   ts_PartsListPositionWarnings              := FindObject(oForm, "ts_PartsListPositionWarnings"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SetDefaults()
+   edt_CADART_Errors.DataSource    := ds_CADART,
+   edt_CADART_Errors.DataField     := 'ERROR_STD',
+   edt_CADART_Warnings.DataSource  := ds_CADART,
+   edt_CADART_Warnings.DataField   := 'WARN_STD',
+   edt_CADSTKL_Errors.DataSource   := ds_CADSTKL,
+   edt_CADSTKL_Errors.DataField    := 'ERROR_STD',
+   edt_CADSTKL_Warnings.DataSource := ds_CADSTKL,
+   edt_CADSTKL_Warnings.DataField  := 'WARN_STD',
+
+   // Controls: Artikel-Daten
+   edt_Article_ArticleNo.DataSource    := ds_CADART,
+   edt_Article_ArticleNo.DataField     := 'ARTNR',
+   cmb_Article_ArticleType.DataSource  := ds_CADART,
+   cmb_Article_ArticleType.DataField   := 'ARTTYP',
+   edt_Article_Description1.DataSource := ds_CADART,
+   edt_Article_Description1.DataField  := 'BEZ1',
+   edt_Article_Description2.DataSource := ds_CADART,
+   edt_Article_Description2.DataField  := 'BEZ2',
+   // Controls: Artikel-Daten (individuell)
+   edt_ArticleDataIndividual_Key.DataSource   := ds_ArtilceDataIndividual,
+   edt_ArticleDataIndividual_Key.DataField    := 'KEY',
+   edt_ArticleDataIndividual_Value.DataSource := ds_ArtilceDataIndividual,
+   edt_ArticleDataIndividual_Value.DataField  := 'VALUE',
+
+   // Controls: Stücklistenpositions-Daten
+   edt_PartsListPosition_ArticleNoAssembly.DataSource := ds_CADSTKL,
+   edt_PartsListPosition_ArticleNoAssembly.DataField  := 'ARTNR1',
+   edt_PartsListPosition_ArticleNoPart.DataSource     := ds_CADSTKL,
+   edt_PartsListPosition_ArticleNoPart.DataField      := 'ARTNR2',
+   edt_PartsListPosition_PositionNo.DataSource        := ds_CADSTKL,
+   edt_PartsListPosition_PositionNo.DataField         := 'POSNR',
+   edt_PartsListPosition_Quantity.DataSource          := ds_CADSTKL,
+   edt_PartsListPosition_Quantity.DataField           := 'QUANTITY',
+   // Controls: Stücklistenpositions-Daten (individuell)
+   edt_PartsListPositionDataIndividual_Key.DataSource   := ds_PartsListPositionDataIndividual,
+   edt_PartsListPositionDataIndividual_Key.DataField    := 'KEY',
+   edt_PartsListPositionDataIndividual_Value.DataSource := ds_PartsListPositionDataIndividual,
+   edt_PartsListPositionDataIndividual_Value.DataField  := 'VALUE',
+
+   // Labels: Artikel-Daten
+   lbl_Article_ArticleNo.DataSource           := ds_CADART,
+   lbl_Article_ArticleNo.DataField            := 'ARTNR',
+   lbl_Article_ArticleNo.UseDefaultCaption    := true,
+   lbl_Article_ArticleType.DataSource         := ds_CADART,
+   lbl_Article_ArticleType.DataField          := 'ARTTYP',
+   lbl_Article_ArticleType.UseDefaultCaption  := true,
+   lbl_Article_Description1.DataSource        := ds_CADART,
+   lbl_Article_Description1.DataField         := 'BEZ1',
+   lbl_Article_Description1.UseDefaultCaption := true,
+   lbl_Article_Description2.DataSource        := ds_CADART,
+   lbl_Article_Description2.DataField         := 'BEZ2',
+   lbl_Article_Description2.UseDefaultCaption := true,
+
+   // Labels: Stücklistenpositions-Daten
+   lbl_PartsListPosition_ArticleNoAssembly.DataSource        := ds_CADSTKL,
+   lbl_PartsListPosition_ArticleNoAssembly.DataField         := 'ARTNR1',
+   lbl_PartsListPosition_ArticleNoAssembly.UseDefaultCaption := true,
+   lbl_PartsListPosition_ArticleNoPart.DataSource            := ds_CADSTKL,
+   lbl_PartsListPosition_ArticleNoPart.DataField             := 'ARTNR2',
+   lbl_PartsListPosition_ArticleNoPart.UseDefaultCaption     := true,
+   lbl_PartsListPosition_Quantity.DataSource                 := ds_CADSTKL,
+   lbl_PartsListPosition_Quantity.DataField                  := 'QUANTITY',
+   lbl_PartsListPosition_Quantity.UseDefaultCaption          := true,
+   lbl_PartsListPosition_PositionNo.DataSource               := ds_CADSTKL,
+   lbl_PartsListPosition_PositionNo.DataField                := 'POSNR',
+   lbl_PartsListPosition_PositionNo.UseDefaultCaption        := true,
+
+   InputControl_SetReadOnlyState(edt_CADART_Errors,    true),
+   InputControl_SetReadOnlyState(edt_CADART_Warnings,  true),
+   InputControl_SetReadOnlyState(edt_CADSTKL_Errors,   true),
+   InputControl_SetReadOnlyState(edt_CADSTKL_Warnings, true),
+
+   SynchronizeCADSRC(m_oCADPROJ:ID),
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

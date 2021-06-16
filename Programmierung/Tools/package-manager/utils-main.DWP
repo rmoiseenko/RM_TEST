@@ -1,0 +1,945 @@
+//##############################################################################
+// package-manager Haupt-Funktionen
+//##############################################################################
+
+//#p Tools\package-manager\utils-npm
+//#p Tools\package-manager\utils-raw
+
+//******************************************************************************
+// Handelt es sich um ein NPM-Repo (für die Übergangsphase zwischen "Konjunktur-Paket Raw Repo" zu "NPM Repo"
+//******************************************************************************
+function BPM_IsNPMRepo(cRepoURL)
+| cNPMUrlExtern, cNPMUrlIntern |
+   cNPMUrlExtern := 'https://nexus.dontenwill.de/repository/be_packages_npm_proxy/',
+   cNPMUrlIntern := 'http://10.10.227.188:4873/',
+   Result        := (Left(cRepoURL, Len(cNPMUrlExtern)) = cNPMUrlExtern) or (Left(cRepoURL, Len(cNPMUrlIntern)) = cNPMUrlIntern),
+end,
+
+//******************************************************************************
+function BPM_PackageJsonFileName()
+   Result := 'be_package.json',
+end,   
+
+//******************************************************************************
+function BPM_PackageInstalledJsonProgName()
+   Result := 'be_package.install.json',
+end,
+
+//******************************************************************************
+// Löscht rekusriv alle Ordner, sofern sie leer sind
+//******************************************************************************
+function BPM_RecursiveDeleteEmptyDirectory(cDirectory)
+| i, aDirectories, cDir, cCompleteDir |
+  aDirectories := DirArray(cDirectory, , faDirectory),                        // WriteLn(aDirectories),
+  for i := 1 to aLen(aDirectories) do
+     cDir := aDirectories[i, 1],
+     if cDir <> '.' and cDir <> '..' then
+       cCompleteDir := cDirectory + '\' + cDir,                               // WriteLn(cCompleteDir),
+       BPM_RecursiveDeleteEmptyDirectory(cCompleteDir),
+     endif,
+  next,
+  RemoveDir(cDirectory), // <- löscht nur, sofern der Ordner leer ist...
+end,
+
+//******************************************************************************
+// Löscht ein Verzeichnis inklusive Inhalt (hierfür gibt es keine fertige CB-Funktion)
+//******************************************************************************
+function BPM_RemoveDirWithContent(cDirectory)
+| cBaseDownloadPath, aFiles, i |
+
+  // Zur Sicherheit... das hier nicht gelöscht wird außerhalb des Download-Pfades
+  cBaseDownloadPath := GetTempPath() + 'beMPI\',
+  if Left(cDirectory, Len(cBaseDownloadPath)) <> cBaseDownloadPath then
+     SetError('deleting folder content is only allowed inside the <base download directory>'),
+  endif,
+
+  // Dateien löschen
+  aFiles := PathSeek({'*.*'}, cDirectory),  // WriteLn(aFiles),
+  for i := 1 to aLen(aFiles) do
+     DeleteFile(aFiles[i]),
+  next,
+
+  // (jetzt leere) Ordner löschen
+  BPM_RecursiveDeleteEmptyDirectory(cDirectory),
+end,
+
+//******************************************************************************
+// Kopiert eine Datei in das angegebene Verzeichnis
+//******************************************************************************
+function BPM_CopyFile(cFileFrom, cFileTo)
+| cData, oCurrentFile |
+
+   // Daten der Quell-Datei auslesen
+   oCurrentFile := FOpen(cFileFrom, FO_READ),
+   startseq
+      FRead(oCurrentFile, cData, oCurrentFile.Size),
+   always
+      FClose(oCurrentFile),
+   stopseq,
+
+   // Falls die Ziel-Datei schon vorhanden ist ggf. löschen
+   if File(cFileTo) then
+      DeleteFile(cFileTo),
+   endif,
+
+   // Daten in die Ziel-Datei schreiben
+   oCurrentFile := FOpen(cFileTo, FO_CREATE),
+   startseq
+      FWrite(oCurrentFile, cData),
+   always
+      FClose(oCurrentFile),
+   stopseq,
+end,
+
+//******************************************************************************
+// Prüft, ob das "Import Export Tool" unter dem neuen Pfad verfügbar ist
+//******************************************************************************
+function BPM_CheckPackageImportExportToolAvailableAtNewLocation()
+| cProgName |
+  cProgName := 'Tools\package-import-export\GUI',
+  Result    := LookUp(waDabPRG, 'BEZ', {{Upper(cProgName)}}, 'not Eof()', false),
+end,
+
+//******************************************************************************
+// Prüft, ob das Package Import Tool in einer Version vorliegt, die den Einsatz
+// per Übergabe-Parameter erlaubt
+// Rückgabe: String, Fehlermeldung als String, leerer String wenn OK
+//******************************************************************************
+function BPM_CheckImportToolCanBeUsedWithCommandLine()
+| cProgName, cSearchTerm, cContent |
+
+  // Wenn das Tool schon am "neuen" Ort liegt kann man davon ausgehen, dass es auch
+  // so aktuell ist, dass es per "Übergabe-Parameter" genutzt werden kann.
+  if BPM_CheckPackageImportExportToolAvailableAtNewLocation() then
+     Result := ''
+  else
+     cProgName := 'Tools\Package Import Export',
+     cContent  := LookUp(waDabPRG, 'BEZ', {{Upper(cProgName)}}, 'PROGRAMM', ''),
+
+     if empty(cContent) then
+        Result := 'Programm "' + cProgName +  '" nicht vorhanden.',
+     else
+        cSearchTerm := 'packageImportExport.packageFilePath',
+        if cSearchTerm $ cContent then
+           Result := '',
+        else
+           Result := 'Das Programm "' + cProgName +  '" ist nicht aktuell. Die installierte Version kann nicht automatisiert genutzt werden. ' + crlf +
+                     'Vor der Nutzung des Package Managers muss das Programm aktualisert werden.',
+        endif,
+     endif,
+  endif,
+end,
+
+//******************************************************************************
+// Prüft, ob die Mindest-Be-Version verfügbar ist
+//******************************************************************************
+function BPM_CheckMinBeVersionWarning()
+| cMinBeVersion |
+
+  cMinBeVersion := '6.5.65.234',
+
+  if CompareBeVersion(mBeVersion, cMinBeVersion) then
+     Result := '',
+  else
+     Result := 'Für den stabilen Abruf der Paket-Daten aus dem Repository wird mindestens be Version ' + cMinBeVersion + ' benötigt.',
+  endif,
+end,
+
+//******************************************************************************
+// Prüft, ob die SSL DLLS verfügbar sind
+// Rückgabe: String, Fehlermeldung als String, leerer String wenn OK
+//******************************************************************************
+function BPM_CheckSslDllsAvailable()
+| cExePath, cDLL1, cDLL2, cDLL3 |
+  cExePath := ExtractFilePath(CbApplication.ExeName),
+
+  cDLL1 := 'ssleay32.dll',
+  cDLL2 := 'msvcr120.dll',
+  cDLL3 := 'libeay32.dll',
+
+  if     File(cExePath + cDLL1)
+     and File(cExePath + cDLL2)
+     and File(cExePath + cDLL3) then
+     Result := '',
+  else
+     Result := 'Mindestens eine der SSL Bibliotheken (' + cDLL1 + ', ' + cDLL2 + ', ' + cDLL3 + ') ist nicht im Verzeichnis "' + cExePath + '" vorhanden. Bitte bereit stellen. ' + crlf +
+               'Die Kommunikation mit dem Paket-Repository erfordert "https://..."',
+  endif,
+end,
+
+
+
+
+//******************************************************************************
+// Berechnet für ein Customizing-Objekt den Object-Hash
+//   (für Integritäts-Vergleiche)
+//******************************************************************************
+function BPM_CalcObjectHash(cContent)
+  // 3 = Base64 URL Encoded
+  // 8 = SHA512
+
+
+  // TODO: Strip Leerzeichen am Ende?
+
+  Result := Lower(CalcHashString(cContent, 3, 8)),
+end,
+
+
+//##############################################################################
+// Paket-Meta-Daten lesen / schreiben, Pakete downloaden etc. => Kern-Funktionen
+//##############################################################################
+
+//******************************************************************************
+// Ersetzt diejeningen Zeichen, mit denen TBeasCbServiceOutputParam ncht umgehen kann
+// @Result: null
+//******************************************************************************
+function BPM_ReplaceInvalidCharacters(cContent:C, bIsJSON:L)
+   | oRegExp |
+   Result := cContent,
+
+   oRegExp := CreateObject("TBeCBRegExpr"),
+   startseq
+      oRegExp.SearchText := Result,
+      if bIsJSON then
+         oRegExp.SearchExpression := '(".*)(@)(.*":)',
+      else
+         oRegExp.SearchExpression := '(".*)(@)(.*")'
+      endif,
+      if oRegExp.ExecSearch then
+         Result := Strtran(Result, oRegExp.Matches[1], oRegExp.Matches[2] + '_REPLACE_AT_' + oRegExp.Matches[4]),
+         oRegExp.SearchText := Result,
+         while oRegExp.ExecSearch do
+            Result := Strtran(Result, oRegExp.Matches[1], oRegExp.Matches[2] + '_REPLACE_AT_' + oRegExp.Matches[4]),
+            oRegExp.SearchText := Result,
+         end,
+      endif,
+      oRegExp.SearchText := Result,
+
+      if bIsJSON then
+         oRegExp.SearchExpression := '(".*)(\/)(.*":)',
+      else
+         oRegExp.SearchExpression := '(".*)(\/)(.*")',
+      endif,
+      if oRegExp.ExecSearch then
+         Result := Strtran(Result, oRegExp.Matches[1], oRegExp.Matches[2] + '_REPLACE_SLASH_' + oRegExp.Matches[4]),
+         oRegExp.SearchText := Result,
+         while oRegExp.ExecSearch do
+            Result := Strtran(Result, oRegExp.Matches[1], oRegExp.Matches[2] + '_REPLACE_SLASH_' + oRegExp.Matches[4]),
+            oRegExp.SearchText := Result,
+         end,
+      endif,
+   always
+      DestroyObject(oRegExp),
+   stopseq,
+end,
+
+//******************************************************************************
+// Ersetzt Platzhalter wieder mit den richtigen Zeichen
+// @Result: null
+//******************************************************************************
+function BPM_ReplacePlaceholderForInvalidCharacters(cPackageName)
+   Result := cPackageName,
+   Result := STrTran(Result, '_REPLACE_AT_', '@'),
+   Result := STrTran(Result, '_REPLACE_SLASH_', '/'),
+end,
+
+//******************************************************************************
+// Erzeugt den JSON Content für 'be_package.install.json'
+// Result: JSON-String
+//******************************************************************************
+function BPM_InstallDataToJson(aInstalledPackageData)
+| oJSON, oInstallDetails, aDependencies, aDepElem, oDependenciesJsonObj |
+  oJSON := CreateObject('TBeasCbServiceOutputParam'),
+  startseq
+    // Diese Funktion muss nur ausgeführt weil TBeasCbServiceOutputParam zum Bespiel nicht mit @ richtig im Key umgehen kann
+    // Sobald auf TbeCbAnything umgestellt wird ist dies nicht mehr notwendig
+    aInstalledPackageData := StrToArr(BPM_ReplaceInvalidCharacters(ArrToStr(aInstalledPackageData), false)),
+    
+    oJSON.InitCbParam(),
+    oJSON.AddParam('format',          '0.1'),
+    oJSON.AddParam('name',            KVU_GetAssert(aInstalledPackageData, 'NAME')),
+    oJSON.AddParam('version',         KVU_GetAssert(aInstalledPackageData, 'VERSION')),
+    oJSON.AddParam('be_base_folder',  KVU_GetAssert(aInstalledPackageData, 'BE_BASE_FOLDER')),
+    oJSON.AddParam('bcp_file_name',   KVU_GetAssert(aInstalledPackageData, 'BCP_FILE_NAME')),
+
+    oJSON.AddParam('be_min_version',  KVU_GetAssert(aInstalledPackageData, 'BE_MIN_VERSION')),
+    oJSON.AddParam('be_min_build_id', KVU_GetAssert(aInstalledPackageData, 'BE_MIN_BUILD_ID')),
+
+    aDependencies := KVU_GetAssert(aInstalledPackageData, 'DEPENDENCIES'),
+    if ALen(aDependencies) > 0 then
+       oDependenciesJsonObj := oJSON.AddComplexParam('dependencies'), // TBeasCustomServiceParamItem
+       foreach aDepElem in aDependencies do
+          oDependenciesJsonObj.AddElement(aDepElem[1], aDepElem[2]),
+       next,
+    endif,
+
+    oInstallDetails := oJSON.AddComplexParam('install_details'), // TBeasCustomServiceParamItem
+    oInstallDetails.AddElement('datetime',   GetAdsServerTime()),
+    oInstallDetails.AddElement('user_no',    val(c_usr)),
+    oInstallDetails.AddElement('be_version', mBeVersion),
+    oInstallDetails.AddElement('be_build',   mBeBuildId),
+    oInstallDetails.AddElement('be_path',    mBeDefault),
+
+    Result := oJSON.CbToJSONStringIndent(),
+
+    // BPM_ReplacePlaceholderForInvalidCharacters wird ausgeführt damit wieder die richtige Zeichen im String stehen,
+    // da TBeasCbServiceOutputParam zum Bespiel nicht mit @ richtig im Key umgehen kann
+    // Sobald auf TbeCbAnything umgestellt wird ist dies nicht mehr notwendig
+    Result := BPM_ReplacePlaceholderForInvalidCharacters(Result),
+  always
+    DestroyObject(oJSON),
+  stopseq,
+end,
+
+//******************************************************************************
+// Schreibt einen neuen Stand von 'be_package.install.json' für ein Package
+//******************************************************************************
+function BPM_WritePackageInstallData(aInstalledPackageData)
+| oDM, oDabPrg, cFullProgName, nProgNo, nNewVersionNo, cBeBaseFolder, cJSONContent |    
+
+  cJSONContent     := BPM_InstallDataToJson(aInstalledPackageData),
+  cBeBaseFolder    := KVU_GetAssert(aInstalledPackageData, 'BE_BASE_FOLDER'),
+
+  SetErrorIf(empty(cBeBaseFolder),          'no <base install folder> given'),
+  SetErrorIf(Right(cBeBaseFolder, 1) = '\', '<base install folder> must not end with a folder-backslash'),
+
+  cFullProgName := cBeBaseFolder + '\' + BPM_PackageInstalledJsonProgName(),
+
+
+  oDM := CreateObject('TBeDbGet', 'PBM_PRG_DM'),
+  startseq
+     oDM.CbTransaction_Begin(),
+     startseq
+        oDabPrg := DbGetTable(oDM, waDabPRG),
+
+
+        //**********************************************************************
+        // Suchen ob es das Programm bereits gibt...
+        //**********************************************************************
+        oDabPrg.IndexName := 'BEZVERSION', // = 'Upper(BEZ);VERSION'
+        DbScope({Upper(cFullProgName)}, {Upper(cFullProgName)}, oDabPrg),       // DBFilter('Upper(BEZ) = "' + PadR(Upper(cFullProgName), 128) + '"', oDabPrg),
+
+
+        // Das Programm wurde gefunden => Letzter Datensatz ist die höchste Version
+        if not (BoF(oDabPrg) and EoF(oDabPrg)) then
+
+           oDabPrg.CbLast(),
+
+           nProgNo         := oDabPrg:PROGNR,                                   // Programmnummer übernehmen
+           nNewVersionNo   := oDabPrg:VERSION + 1,                              // Versionsnummer + 1 übernehmen
+
+           // Bereits bestehende "ative" Programme auf "nicht aktiv" setzen (können maximal 2 sein - ein "freigegebenes", ein "zukünftiges")
+           while not BoF(oDabPrg) do
+
+              // Ist der aktuelle Satz eine "zukünftige Version?" (Kann wegen der Sortierung des Index nur der letzte Satz sein)
+              if not oDabPrg:AKTIV and not oDabPrg:READONLY then
+                 oDabPrg.CbEdit(),
+                 oDabPrg:READONLY := True,
+                 oDabPrg.CbPost(),
+              endif,
+
+              // Wenn der aktuelle Satz AKTIV ist kann aufgrund der Sortierung
+              // keine zukünftige oder aktive Version mehr kommen => Ändern
+              // und Schleife abbrechen
+              if oDabPrg:AKTIV then
+                 oDabPrg.CbEdit(),
+                 oDabPrg:AKTIV := False,
+                 oDabPrg.CbPost(),
+                 break,
+              endif,
+
+              oDabPrg.CbPrior(),
+           end,
+
+           DbScope(, oDabPrg),
+        else
+           // Programmnummer für neues Programm ermitteln
+           DbScope(, oDabPrg),
+           // Index auf PROGNR dadurch steht das Programm mit der aktuell höchsten Nummer ganz unten
+           oDabPrg.IndexName := 'PROGNR',
+           oDabPrg.CbLast(),
+           nProgNo         := oDabPrg:PROGNR + 1,                               // TODO: Das ist noch optimierungswürdig für ein Mehrbenutzer-Szenario...
+           nNewVersionNo   := 1,
+           DbScope(, oDabPrg),
+        endif,
+
+        //**********************************************************************
+        // Neues Programm anlegen
+        //**********************************************************************
+        oDabPrg.CbAppend(),
+        oDabPrg:PROGNR     := nProgNo,
+        oDabPrg:VERSION    := nNewVersionNo,
+        oDabPrg:OPTIONS    := '',
+        oDabPrg:ERST_VON   := Val(c_usr),
+        oDabPrg:AEND_VON   := Val(c_usr),
+        oDabPrg:ERST_DAT   := Trunc(GetAdsServerTime()),
+        oDabPrg:ERST_TIME  := Frac(GetAdsServerTime()),
+        oDabPrg:AEND_DAT   := Trunc(GetAdsServerTime()),
+        oDabPrg:AEND_Time  := Frac(GetAdsServerTime()),
+        oDabPrg:BEZ        := cFullProgName,
+        oDabPrg:PROGRAMM   := cJSONContent,
+        oDabPrg:MASK_ID    := '',
+        oDabPrg:AKTIV      := True,      // Aktiv
+        oDabPrg:READONLY   := True,      // Nicht veränderbar
+        oDabPrg:USER_BEARB := '',        // Programm-Ändern-Rechte => altes Feld, wird nicht mehr genutzt
+        oDabPrg:USER_START := '',        // Programm-Ausführen-Rechte => niemand
+        oDabPrg.CbPost(),
+
+
+        oDM.CbTransaction_Commit(),
+     always
+        oDM.CbTransaction_TryRollback(),
+     stopseq,
+  always
+     DestroyObject(oDM),
+  stopseq,
+end,
+
+
+//******************************************************************************
+// Ruft den Package-Installer für das Package-File `cPathToPackageFile` auf
+// und gibt dessen Result zurück
+//******************************************************************************
+function BPM_InstallPackage(aDownloadData, aDownloadedPackageData)
+| cPackageFolderPath, cBcpFile, cName, cVersion, cPathToPackageFile, aParams, aInstallResult, bSuccessful, cLog, cBeBaseFolder, cPackageImportExportToolProgName |
+
+  cPackageFolderPath    := KVU_GetAssert(aDownloadData,          'EXTRACTED_PACKAGE_FOLDER_PATH'),
+
+  cName            := KVU_GetAssert(aDownloadedPackageData, 'NAME'),
+  cVersion         := KVU_GetAssert(aDownloadedPackageData, 'VERSION'),
+  cBeBaseFolder    := KVU_GetAssert(aDownloadedPackageData, 'BE_BASE_FOLDER'),
+  cBcpFile         := KVU_GetAssert(aDownloadedPackageData, 'BCP_FILE_NAME'),
+
+  SetErrorIf(empty(cPackageFolderPath),          'empty <PackageFolderPath>'),
+  SetErrorIf(empty(cBcpFile),                    'empty BCP_FILE_NAME'),
+  SetErrorIf(empty(cBeBaseFolder),               'empty BE_BASE_FOLDER'),
+
+  if not Right(cPackageFolderPath, 1) = '\' then
+     cPackageFolderPath += '\',
+  endif,
+  cPathToPackageFile   := cPackageFolderPath + cBcpFile,                  WriteLn(cPathToPackageFile),
+
+  aParams := {},
+  KVU_Set(aParams, 'packageImportExport.operation',       'import'),
+  KVU_SET(aParams, 'packageImportExport.packageFilePath', cPathToPackageFile),
+
+  cLog := Replicate('-', 80) + crlf +
+          'installing package' + crlf +
+          '  name:    ' + cName    + crlf +
+          '  version: ' + cVersion + crlf +
+          '  from:    ' + cBcpFile + crlf +
+          '  folder:  ' + cPackageFolderPath,
+  WriteLn(cLog),
+  WriteLn('with params' + crlf + DebugArr(aParams)),
+
+  // "Altes" oder "Neues" Package Tool für die Installation nutzen?
+  if BPM_CheckPackageImportExportToolAvailableAtNewLocation() then
+    cPackageImportExportToolProgName := 'Tools\package-import-export\GUI',
+  else
+    cPackageImportExportToolProgName := 'Tools\Package Import Export',
+  endif,
+
+  aInstallResult := Call(cPackageImportExportToolProgName, nil , '', '', aParams), // WriteLn(aInstallResult),
+  bSuccessful    := aInstallResult, // aktuell liefert das Tool nur true/false als Result
+
+  cLog += crlf +
+          crlf +
+          '  ... using "' + cPackageImportExportToolProgName + '"' +
+          crlf +
+          crlf +
+          iif(bSuccessful, 'SUCCESSFUL', 'FAILED') + crlf +
+          Replicate('-', 80),
+
+  WriteLn(cLog),
+
+  if bSuccessful then
+     BPM_WritePackageInstallData(aDownloadedPackageData)
+  endif,
+
+  Result  := {},
+  KVU_Set(Result, 'SUCCESS', bSuccessful),
+  KVU_Set(Result, 'LOG',     cLog),
+end,
+
+//******************************************************************************
+// Liest ein "be_package.json" / "be_package.install.json" Content ein und gibt
+// die Werte als KVU-Array zurück.
+//******************************************************************************
+function BPM_ReadPackageJsonContent(cJsonContent)
+| oJSON, oParam, cFormatVersion, cName, cVersion, cBeBaseFolder, cBcpFile, oInstallDetails, dInstallDateTime, oDependencies, aDependencies, cMinBeVersion, cMinBeBuildId, i, aDependencyPackageName |
+
+   // Diese Funktion muss nur ausgeführt weil TBeasCbServiceOutputParam zum Bespiel nicht mit @ richtig im Key umgehen kann
+   // Sobald auf TbeCbAnything umgestellt wird ist dies nicht mehr notwendig
+   cJsonContent := BPM_ReplaceInvalidCharacters(cJsonContent, true),
+
+  oJSON := CreateObject('TBeasCbServiceOutputParam'),
+  startseq
+    oJSON.InitCbParamFromJSON(cJsonContent),
+    oParam          := oJSON.Param('anonymous'),         
+
+    // 'format' can be used to further develop the file format
+    cFormatVersion  := oParam.ElementValueDef('format', '0.1'),    SetErrorIf(ValType(cFormatVersion) <> 'C', "wrong type for 'format'"),
+                                                                   SetErrorIf(cFormatVersion <> '0.1',        "unknown file format version '" + cFormatVersion + "'"),
+
+    cName            := oParam.ElementValue('name'),               SetErrorIf(ValType(cName) <> 'C',          "wrong type for 'name'"),
+    cVersion         := oParam.ElementValue('version'),            SetErrorIf(ValType(cVersion) <> 'C',       "wrong type for 'version'"),
+    cBeBaseFolder    := oParam.ElementValue('be_base_folder'),     SetErrorIf(ValType(cBeBaseFolder) <> 'C',  "wrong type for 'be_base_folder'"),
+    cBcpFile         := oParam.ElementValue('bcp_file_name'),      SetErrorIf(ValType(cBcpFile) <> 'C',       "wrong type for 'bcp_file_name'"),
+
+    aDependencies := {},
+    if oParam.ElementExists('dependencies') then
+       oDependencies := oParam.Element('dependencies'),
+       for i := 0 to oDependencies.ElementCount - 1 do
+          aDependencyPackageName := oDependencies.ElementName(i),
+
+          // BPM_ReplacePlaceholderForInvalidCharacters wird ausgeführt damit wieder die richtige Zeichen im Array stehen,
+          // da TBeasCbServiceOutputParam zum Bespiel nicht mit @ richtig im Key umgehen kann
+          // Sobald auf TbeCbAnything umgestellt wird ist dies nicht mehr notwendig
+          AAdd(aDependencies, {BPM_ReplacePlaceholderForInvalidCharacters(aDependencyPackageName), oDependencies.ElementValue(aDependencyPackageName)}),
+       next,
+    endif,
+
+    cMinBeVersion := oParam.ElementValueDef('be_min_version',  ''), // optionale Angabe
+    cMinBeBuildId := oParam.ElementValueDef('be_min_build_id', ''), // optionale Angabe
+
+    dInstallDateTime := 0,
+    // Das Element 'install_details' existiert nur in den "be_package.install.json" Versionen, nicht im Original-Paket das heruntergeladen wurde
+    if oParam.ElementExists('install_details') then
+       oInstallDetails  := oParam.Element('install_details'),
+       dInstallDateTime := oInstallDetails.ElementValue('datetime'),
+    endif,
+
+  always
+    DestroyObject(oJSON),
+  stopseq,
+
+  Result := {},
+  KVU_Set(Result, 'NAME',             cName),
+  KVU_Set(Result, 'VERSION',          cVersion),
+  KVU_Set(Result, 'BE_BASE_FOLDER',   cBeBaseFolder),
+  KVU_Set(Result, 'BCP_FILE_NAME',    cBcpFile),
+  KVU_Set(Result, 'DEPENDENCIES',     aDependencies),
+  KVU_Set(Result, 'BE_MIN_VERSION',   cMinBeVersion),
+  KVU_Set(Result, 'BE_MIN_BUILD_ID',  cMinBeBuildId),
+
+  KVU_Set(Result, 'INSTALL.DATETIME', dInstallDateTime),
+end,
+
+//******************************************************************************
+// Paket-Definition lesen
+// ----------------------
+// Liest ein "be_package.json" File ein und gibt die Werte als KVU-Array zurück
+// => Diese Art von Datei liegt immer nur im Dateisystem
+//******************************************************************************
+function BPM_ReadPackageDefinitionData(aPackageInFileSystemData)
+| oFile, cPackageFolderPath, cFilePath, cContent |
+
+  cPackageFolderPath    := KVU_GetAssert(aPackageInFileSystemData, 'EXTRACTED_PACKAGE_FOLDER_PATH'),
+
+  SetErrorIf(empty(cPackageFolderPath),          'empty path'),
+
+  cContent  := '',
+  if not Right(cPackageFolderPath, 1) = '\' then
+     cPackageFolderPath += '\',
+  endif,
+  cFilePath := cPackageFolderPath + BPM_PackageJsonFileName(),
+
+  oFile := FOpen(cFilePath, fo_Read),
+  startseq
+     FRead(oFile, cContent, oFile.Size),
+  always
+     FClose(oFile),
+  stopseq,
+
+  Result := BPM_ReadPackageJsonContent(cContent),
+end,
+
+//******************************************************************************
+// Paket-Installations-Zustand lesen
+// ---------------------------------
+// Liest ein "be_package.install.json" File ein und gibt die Werte als
+// KVU-Array zurück
+// => Diese Art von "Datei" liegt immer nur in der DabPRG
+//******************************************************************************
+function BPM_ReadPackageInstallData(cPackageInstallFileOrBaseInstallFolder)
+| cJsonContent, cProgName, aInstallMetaData, cFileExt |
+
+  // Wenn ein Pfad mit Datei-Endung angegeben wurde, dann direkt diesen Pfad als Installations-Metadaten-File interpretieren
+  // -> Base-Folder wie ".telemetry" dürfen nicht als "file-extension" betrachtet werden
+  cFileExt := ExtractFileExt(cPackageInstallFileOrBaseInstallFolder),
+  if cFileExt <> '' and cFileExt <> cPackageInstallFileOrBaseInstallFolder then
+     cProgName                              := cPackageInstallFileOrBaseInstallFolder,
+  else
+     cPackageInstallFileOrBaseInstallFolder += iif(Right(cPackageInstallFileOrBaseInstallFolder, 1) = '\', '', '\'),
+     cProgName                              := cPackageInstallFileOrBaseInstallFolder + BPM_PackageInstalledJsonProgName(),
+  endif,
+
+  cJsonContent := LookUp(waDabPRG, 'BEZ', {{Upper(cProgName)}}, 'PROGRAMM', ''),       WriteLn(cProgName),
+
+  Result  := {},
+  if not empty(cJsonContent) then
+    Result := BPM_ReadPackageJsonContent(cJsonContent),
+  endif,
+end,
+
+//******************************************************************************
+// Funktion erstellt die MemTable-Struktur für die Tabelle "Installierte Pakete"
+// @Result: TBeMemTable Instanz
+//******************************************************************************
+function BPM_CreateInstalledPackagesMemTable(cComponentName, oOwner, oParent)
+   Result := CreateObject('TBeMemTable', cComponentName, oOwner, oParent),
+
+   Result.AddField('be_base_folder',    ftString,  256),
+   Result.AddField('package_name',      ftString,  256),
+   Result.AddField('installed_version', ftString,   50),
+   Result.AddField('install_datetime',  ftDateTime,  0),
+   Result.AddField('update_available',  ftString,    1),
+   Result.AddField('latest_version',    ftString,   50),
+   Result.AddField('error',             ftMemo,      0),
+   Result.Active        := true,
+
+   Result.CbAddIndex('package_name', 'package_name', ixPrimary),
+   Result.CbIndexName := 'package_name',
+end,
+
+function BPM_WriteInstalledPackageDataToMemTable(oInstalledPackagesMem, cPackageName)
+| aInstalledPackageData |
+
+   cPackageName           := RTrim(cPackageName),
+   aInstalledPackageData  := BPM_ReadPackageInstallData(cPackageName),              WriteLn(cPackageName, aInstalledPackageData),
+
+   oInstalledPackagesMem:be_base_folder    := KVU_GetAssert(aInstalledPackageData, 'BE_BASE_FOLDER'),
+   oInstalledPackagesMem:package_name      := KVU_GetAssert(aInstalledPackageData, 'NAME'),
+   oInstalledPackagesMem:installed_version := KVU_GetAssert(aInstalledPackageData, 'VERSION'),
+   oInstalledPackagesMem:install_datetime  := KVU_GetAssert(aInstalledPackageData, 'INSTALL.DATETIME'),
+   oInstalledPackagesMem:update_available  := '',
+   oInstalledPackagesMem:latest_version    := '',
+end,
+
+//******************************************************************************
+// Informationen über installierte Pakete aus der Datenbank auslesen und in die
+//   übergeben Memtable speichern
+//******************************************************************************
+function BPM_LoadInstalledPackagesToMemtable(oInstalledPackagesMem)
+| oQuery, oRec, cPackageInstallFileName |
+
+   oInstalledPackagesMem.CbEmptyTable(),
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT PROGNR, VERSION, BEZ, PROGRAMM' + crlf +
+                       '  FROM ' + DbSqlTableName(waDabPRG) + crlf +
+                       "  WHERE AKTIV = true AND BEZ LIKE '%be_package.install.json'",
+      oQuery.Active := true,
+
+      foreach oRec in oQuery do
+         oInstalledPackagesMem.CbAppend(),
+         cPackageInstallFileName := RTrim(oQuery:BEZ),
+         BPM_WriteInstalledPackageDataToMemTable(oInstalledPackagesMem, cPackageInstallFileName),
+         oInstalledPackagesMem.CbPost(),
+      next,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+end,
+
+
+//******************************************************************************
+// Funktion vergleicht zwei SemVer-Versions-String
+// @Result: -1 => cVerson1 < cVersion2
+//           0 => cVerson1 = cVersion2
+//          +1 => cVerson1 > cVersion2
+//******************************************************************************
+function BPU_CompareSemVer(cVersion1, cVersion2)
+|
+  nMajor1, nMinor1, nPatch1, cPreRelease1,
+  nMajor2, nMinor2, nPatch2, cPreRelease2,
+  aVersion1, aVersion2,
+  nMaxPreReleaseFieldCount, i,
+  cPreRelease1Field, cPreRelease2Field, nMaxPreReleaseFieldLength
+|
+
+   function IsNumber(cString)
+     Result := Len(cString) = Len(CharOnly('0123456789', cString)),
+   end,
+
+   function DestructureVersion(cVersion)
+   | oRegEx |
+     Result := {},
+     oRegEx := CreateObject('TBeCBRegExpr'),
+     startseq
+        oRegEx.SearchText := cVersion,
+        oRegEx.SearchExpression := '^([0-9]+)\.([0-9]+)\.([0-9]+)(-[a-zA-Z0-9-]{1}[a-zA-Z0-9-\.]*)*',
+
+        if oRegEx.ExecSearch then
+           KVU_Set(Result, 'MAJOR', Val(oRegEx.Matches[2])),
+           KVU_Set(Result, 'MINOR', Val(oRegEx.Matches[3])),
+           KVU_Set(Result, 'PATCH', Val(oRegEx.Matches[4])),
+
+           if ALen(oRegEx.Matches) > 4 then
+              KVU_Set(Result, 'PRERELEASE', Right(oRegEx.Matches[5], Len(oRegEx.Matches[5]) - 1)),
+           else
+              KVU_Set(Result, 'PRERELEASE', ''),
+           endif,
+        endif,
+     always
+        DestroyObject(oRegEx),
+     stopseq,
+   end,
+
+   aVersion1    := DestructureVersion(cVersion1),
+   nMajor1      := KVU_Get(aVersion1, 'MAJOR', ''),
+   nMinor1      := KVU_Get(aVersion1, 'MINOR', ''),
+   nPatch1      := KVU_Get(aVersion1, 'PATCH', ''),
+   cPreRelease1 := KVU_Get(aVersion1, 'PRERELEASE', ''),
+
+   aVersion2    := DestructureVersion(cVersion2),
+   nMajor2      := KVU_Get(aVersion2, 'MAJOR', ''),
+   nMinor2      := KVU_Get(aVersion2, 'MINOR', ''),
+   nPatch2      := KVU_Get(aVersion2, 'PATCH', ''),
+   cPreRelease2 := KVU_Get(aVersion2, 'PRERELEASE', ''),
+
+   Result := -2,
+   if nMajor1 < nMajor2 then Result := -1, endif,
+   if nMajor1 > nMajor2 then Result := 1, endif,
+
+   if nMajor1 = nMajor2 then
+      if nMinor1 < nMinor2 then Result := -1, endif,
+      if nMinor1 > nMinor2 then Result := 1, endif,
+
+      if nMinor1 = nMinor2 then
+         if nPatch1 < nPatch2 then Result := -1, endif,
+         if nPatch1 > nPatch2 then Result := 1, endif,
+
+         if nPatch1 = nPatch2 then
+            // Versionen ohne PreRelease sind immer groesser
+            if (cPreRelease1 <> '') and (cPreRelease2 == '') then Result := -1, endif,
+            if (cPreRelease1 == '') and (cPreRelease2 <> '') then Result := 1, endif,
+            if cPreRelease1 == cPreRelease2 then Result := 0, endif,
+
+            // beide Versionen haben ein PreRelease, welche nicht gleich sind
+            if Result == -2 then
+               nMaxPreReleaseFieldCount := Max(TokenCount(cPreRelease1, '.'), TokenCount(cPreRelease2, '.')),
+
+               // Der PreRelease wird nach "." aufgeteilt und jeder einzelne Bestandteil wird verglichen.
+               // Sobald die Bestandteile ungleich sind, wird verglichen welcher der beiden Teile
+               // groesser ist
+               for i := 1 to nMaxPreReleaseFieldCount do
+                  cPreRelease1Field := Token(cPreRelease1, '.', i),
+                  cPreRelease2Field := Token(cPreRelease2, '.', i),
+
+                  if cPreRelease1Field <> cPreRelease2Field then
+                     // Wenn ein PreRelease mehr Teile hat, als das andere ist diese Version immer groesser
+                     if cPreRelease1Field <> '' and cPreRelease2Field == '' then Result :=  1, Break, endif,
+                     if cPreRelease1Field == '' and cPreRelease2Field <> '' then Result := -1, Break, endif,
+
+                     // Nummern sind immer kleiner als Strings
+                     if IsNumber(cPreRelease1Field) and not IsNumber(cPreRelease2Field) then Result := -1, Break, endif,
+                     if not IsNumber(cPreRelease1Field) and IsNumber(cPreRelease2Field) then Result := 1, Break, endif,
+
+                     // Nummernvergleich
+                     if IsNumber(cPreRelease1Field) and IsNumber(cPreRelease2Field) then
+                        if Val(cPreRelease1Field) < Val(cPreRelease2Field) then Result := -1, Break, endif,
+                        if Val(cPreRelease1Field) > Val(cPreRelease2Field) then Result :=  1, Break, endif,
+                     else  // Stringvergleich
+                        nMaxPreReleaseFieldLength := Max(Len(cPreRelease1Field), Len(cPreRelease2Field)),
+                        if PadR(cPreRelease1Field, nMaxPreReleaseFieldLength) < PadR(cPreRelease2Field, nMaxPreReleaseFieldLength) then Result := -1, Break, endif,
+                        if PadR(cPreRelease1Field, nMaxPreReleaseFieldLength) > PadR(cPreRelease2Field, nMaxPreReleaseFieldLength) then Result :=  1, Break, endif,
+                     endif,
+                  endif,
+               next,
+            endif,
+         endif,
+      endif,
+   endif,
+end,
+
+/*
+// WriteLn Soll / Ist
+WriteLn( 0, BPU_CompareSemVer('1.0.0', '1.0.0')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0', '1.1.0')),
+WriteLn( 1, BPU_CompareSemVer('1.0.10','1.0.1')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0', '1.0.3')),
+WriteLn( 1, BPU_CompareSemVer('1.0.0', '0.9.0')),
+WriteLn( 0, BPU_CompareSemVer('1.0.0+build', '1.0.0')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0-----', '1.0.0')),
+WriteLn( 1, BPU_CompareSemVer('1.0.0-gamma.alpha.1', '1.0.0-gamma.alpha')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0-gamma.alpha.1', '1.0.0-zamma.alpha')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0-gamma.alpha.1', '1.0.0-gamma.zlpha')),
+WriteLn( 1, BPU_CompareSemVer('1.0.0', '1.0.0-gamma.alpha')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0-gamma.a10', '1.0.0-gamma.a2')),
+WriteLn( 0, BPU_CompareSemVer('1.0.0-gamma.a10', '1.0.0-gamma.a10')),
+WriteLn(-1, BPU_CompareSemVer('1.0.0-gamma10', '1.0.0-gamma2')),
+WriteLn( 1, BPU_CompareSemVer('1.0.0-gamma.10', '1.0.0-gamma.2')),
+*/
+
+
+//******************************************************************************
+// Vergleicht die Versions-Felder
+//******************************************************************************
+function BPM_CompareDownloadedVsInstalledVersion(cDownloadedVersion, cInstalledVersion)
+| bCanInstall, cUserMessage, nSemVerCompareResult |
+  bCanInstall := false,
+
+  if empty(cInstalledVersion) then
+     cUserMessage := 'Paket ist aktuell nicht installiert. ' + crlf + crlf +
+                     'Jetzt Version ' + cDownloadedVersion + ' installieren?',
+     bCanInstall  := true,
+  else
+     nSemVerCompareResult := BPU_CompareSemVer(cDownloadedVersion, cInstalledVersion),
+
+     if nSemVerCompareResult = 0 then
+       cUserMessage := 'Paket ist aktuell. '    + crlf + crlf +
+                       'Installierte Version: ' + cInstalledVersion,
+     else
+       if nSemVerCompareResult = -1 then
+         cUserMessage := 'Installierte Version (' + cInstalledVersion + ') ist aktueller als heruntergeladene Version (' + cDownloadedVersion + '). ',
+       else
+         cUserMessage := 'Neue Version (' + cDownloadedVersion + ') kann installiert werden. ' + crlf + crlf +
+                         'Jetzt installieren?',
+         bCanInstall := true,
+       endif,
+     endif,
+  endif,
+
+  Result := {},
+  KVU_Set(Result, 'CAN_INSTALL',  bCanInstall),
+  KVU_Set(Result, 'USER_MESSAGE', cUserMessage),
+  KVU_Set(Result, 'UP_TO_DATE',   cInstalledVersion == cDownloadedVersion),
+end,
+
+//******************************************************************************
+// Die Funktion prüft, ob die Installations-Voraussetzungen für ein Paket erfüllt sind
+// Rückgabe: ja/nein
+//******************************************************************************
+function BPM_CheckPackageDependencyVersionFullfilled(cNeededVersionWithTag, cInstalledVersion)
+| cOperator, cNeededVersionWithoutTag, nSemVerCompareResult |
+
+   SetErrorIf(empty(cInstalledVersion), 'cInstalledVersion must not be empty'),
+
+   cNeededVersionWithTag    := AllTrim(cNeededVersionWithTag),
+   cNeededVersionWithoutTag := '',
+   cInstalledVersion        := AllTrim(cInstalledVersion),
+                                                                                WriteLN('2'),
+   cOperator := '',
+
+   if Left(cNeededVersionWithTag, 2) == '>=' then
+      cOperator                := '>=',
+      cNeededVersionWithoutTag := RTRim(SubStr(cNeededVersionWithTag, 3, Len(cNeededVersionWithTag))),
+   else
+      if Left(cNeededVersionWithTag, 1) $ '0123456789' then
+         cNeededVersionWithoutTag := cNeededVersionWithTag,
+      else
+         SetError('unhandled version dependency tag found: "' + cNeededVersionWithTag + '"'),
+      endif,
+   endif,
+                                                                                WriteLN('3', cNeededVersionWithoutTag, cInstalledVersion),
+   case cOperator
+      of '>=' :: nSemVerCompareResult := BPU_CompareSemVer(cNeededVersionWithoutTag, cInstalledVersion),
+                 Result               := iif(nSemVerCompareResult = 0,
+                                             true,  // identical versions
+                                             iif(nSemVerCompareResult = 1,
+                                                 false,  // needed version is newer than installed version
+                                                 true)), // installed version is newer than needed version
+
+      of ''   :: Result := cNeededVersionWithoutTag == cInstalledVersion,
+   endcase,
+
+end,
+
+//******************************************************************************
+// Die Funktion prüft, ob die Installations-Voraussetzungen für ein Paket erfüllt sind
+//******************************************************************************
+function BPM_CheckPackageInstallPreConditions(aDownloadedPackageData)
+| aDependencies, aDependency, cNeededPackageName, cNeededVersionWithTag, cInstalledVersion, oLocalInstalledPackagesMem, bAllConditionsFullfilled,
+  aProblems, cMinBeVersion, cMinBeBuildId |
+
+   bAllConditionsFullfilled := true,
+   aProblems                := {},
+
+   // Prüfe Paket-Abhängigkeiten
+   aDependencies := KVU_GetAssert(aDownloadedPackageData, 'DEPENDENCIES'  ),
+   if ALen(aDependencies) > 0 then
+
+      // Aktuelle Information über installierte Pakete ermitteln
+      oLocalInstalledPackagesMem := BPM_CreateInstalledPackagesMemTable('INSTALL_PACKAGE_DEP_CHECK', nil, nil),
+      startseq
+
+         // Paket-Infos aus Datenbank laden
+         BPM_LoadInstalledPackagesToMemtable(oLocalInstalledPackagesMem),
+
+
+         // Alle definierten Abhängigkeiten prüfen
+         foreach aDependency in aDependencies do
+
+            cNeededPackageName    := aDependency[1],
+            cNeededVersionWithTag := aDependency[2],
+            cInstalledVersion     := '',
+            if oLocalInstalledPackagesMem.CbLocate('package_name', {cNeededPackageName}, 0) then
+               cInstalledVersion  := RTrim(oLocalInstalledPackagesMem:installed_version),
+            endif,
+
+
+
+            if empty(cInstalledVersion) then
+               bAllConditionsFullfilled := false,
+               AAdd(aProblems, "Erfordert '" + cNeededPackageName + "' in Version '" + cNeededVersionWithTag + "'. Das Paket ist aktuell nicht installiert." ),
+            else
+               if not BPM_CheckPackageDependencyVersionFullfilled(cNeededVersionWithTag, cInstalledVersion) then
+                  bAllConditionsFullfilled := false,
+
+                  AAdd(aProblems, "Erfordert '" + cNeededPackageName + "' in Version '" + cNeededVersionWithTag + "'. Die Installierte Version '" + cInstalledVersion + "' ist zu alt." ),
+               endif,
+            endif,
+
+         next,
+
+      always
+         DestroyObject(oLocalInstalledPackagesMem),
+      stopseq,
+
+   endif,
+
+   // Prüfe Versions-Abhängigkeiten
+   cMinBeVersion := KVU_GetAssert(aDownloadedPackageData, 'BE_MIN_VERSION'),
+   cMinBeBuildId := KVU_GetAssert(aDownloadedPackageData, 'BE_MIN_BUILD_ID'),
+
+   // Entweder ist nur die mindest be-Version definiert oder minbest be-Version UND mindest BUILD ID
+   // eine BUILD-ID alleine macht wenig Sinn...
+   if not empty(cMinBeVersion) then
+
+      // Vergleich der be-Version muss über die Vergleichs-Funktion erfolgen, da hier ein String-Vergleich nicht immer klappt
+      if not CompareBeVersion(mBeVersion, cMinBeVersion) then
+         bAllConditionsFullfilled := false,
+      else
+         // Vergleich der Build-ID per String funktioniert zuverlässig, das Format ist immer '000.012.345'
+         if not empty(cMinBeBuildId) and (cMinBeBuildId > mbeBuildId) then
+            bAllConditionsFullfilled := false,
+         endif,
+      endif,
+
+      if not bAllConditionsFullfilled then
+         AAdd(aProblems, "Erfordert mindestens be Version '" + cMinBeVersion + "'" + iif(empty(cMinBeBuildId), '', ", build id '" + cMinBeBuildId + "'.") ),
+      endif,
+
+   endif,
+
+   Result := {},
+   KVU_Set(Result, 'ALL_CONDITIONS_FULLFILLED', bAllConditionsFullfilled),
+   KVU_Set(Result, 'PROBLEMS',                  aProblems),
+end,
+
+//******************************************************************************
+// Ein Paket herunterladen und entzippen (unterstützt altes und neues Repo Format)
+//******************************************************************************
+function BPM_DownloadAndUnZipPackage(aRepositoryData, cPackageName)
+| cRepositoryUrl |
+  cRepositoryUrl := KVU_GetAssert(aRepositoryData, 'REPOSITORY_URL'),
+
+  if BPM_IsNPMRepo(cRepositoryUrl) then
+     Result := BPM_DownloadAndUnZipPackage_From_NPM_Repo(aRepositoryData, cPackageName),
+  else
+     Result := BPM_DownloadAndUnZipPackage_From_RAW_Repo(aRepositoryData, cPackageName),
+  endif,
+end,

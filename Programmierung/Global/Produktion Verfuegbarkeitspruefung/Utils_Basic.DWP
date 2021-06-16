@@ -1,0 +1,296 @@
+|
+   gl_VPU_IndiOnlineHelp_SQLWhere:_U:= 'MEMO_ID = -1',  // Aufruf-Filter für die Individuelle Online-Hilfe
+
+   // Zeilentypen in der GUI-Memtable für den Struktur-Baum
+   gl_VPU_GUI_ZeilenTyp_Bedarf:_N:=10,      // 10 = Bedarfs-Position  (Quelle ist meist eine Stücklisten-Position)
+   gl_VPU_GUI_ZeilenTyp_Zugangskopf:_N:=20  // 20 = Zugangs-Kopf-Satz (repräsentiert einen Zugang (Dab035, Dab215, Dab320), der dem Bedarf zugeordnet wurde)
+
+|
+
+//##############################################################################
+//##############################################################################
+// Debug-Hilfs-Funktionen
+//##############################################################################
+//##############################################################################
+
+//***************************************************************************
+// Funktion misst die Zeit seit dem letzten Aufruf der Funktion und schreibt
+//   diese gemeinsam mit einem Bezeichner in ein Array weg für die spätere
+//   Debug-Ausgabe.
+// @Result: null
+//***************************************************************************
+function _VPU_Debug_Timer_Init(nTime:R)
+   nTime := GetExTimer(),
+end,
+
+//***************************************************************************
+// Funktion misst die Zeit seit dem letzten Aufruf der Funktion und schreibt
+//   diese gemeinsam mit einem Bezeichner in ein Array weg für die spätere
+//   Debug-Ausgabe.
+// @Result: null
+//***************************************************************************
+function _VPU_Debug_Timer_Lap(nTime:R, aTimeArray:R, cText)
+| aTimeElem, nLap |
+   nTime           := GetExTimer() - nTime,
+   aTimeElem       := {nTime * 1000, cText},
+   nLap            := ALen(aTimeArray) + 1,
+   ReDim(aTimeArray, nLap),
+
+   aTimeArray[nLap]:= aTimeElem,
+   nTime           := GetExTimer(),
+end,
+
+//***************************************************************************
+// Funktion formatiert das übergebene aTimeArray für die Ausgabe in einem Log
+// @Result: Text
+//***************************************************************************
+function _VPU_Debug_Timer_PrintValues(aTimeArray)
+| i, cLine |
+   Result := '',
+   for i := 1 to ALen(aTimeArray) do
+      cLine  := aTimeArray[i, 2] + crlf +
+                Replicate(' ', 60) + PadL(FormatStd(aTimeArray[i, 1], 2) + ' mSec', 20),
+      Result := ConcatTrenner(Result, cLine, crlf),
+   end,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erzeugt aus dem Termin @cTermin (Format wie für DateStr())
+//   eine Termin-Index. Wenn kein Termin angegeben ist, ist die Rückgabe leer.
+//   => Ohne diese Sonderbehandlung entsteht sonst ein String
+//      der Form <"        T">.
+// @Result: Termin-Index-String
+//******************************************************************************
+function _VPU_DateStr(cTermin)
+   Result := DateStr(cTermin),
+   if Result == '        T' then
+      Result := '',
+   endif,
+end,
+
+//******************************************************************************
+// Wandelt ein Datum in die Darstellung für die Speicherung in Char, 8-Feldern um
+// mit Sonderbehandlung für "leeren" Datumswert.
+//   => Ohne diese Sonderbehandlung entsteht sonst ein String
+//      der Form <"  .  .  ">.
+// @Result: Datum als String
+//******************************************************************************
+function _VPU_DToC(dDate)
+   Result := DToc(dDate),
+   if Result == '  .  .  ' then
+      Result := '',
+   endif,
+end,   
+
+//******************************************************************************
+// Berechnet einen eindeutigen Sortierschlüssel für eine Zeile in der
+// Struktur-Darstellung
+//  => berechnet nur den Schlüsselteil für die eigene Baum-Ebene
+// @Result: null
+//******************************************************************************
+function _VPU_StrukturMem_CalcSortKeyForCurRec(oMemItems)
+| nBPos_LfdNr, nZugangLaufnummer |
+   case oMemItems:TYP      // TODO: in der quell-Tabelle sollte ein zähler schon drin sein...
+      of gl_VPU_GUI_ZeilenTyp_Bedarf ::
+               nBPos_LfdNr       := Val(SubStr(oMemItems:B_POS_LFD, 9, 3)),
+               nZugangLaufnummer := 0,
+      of gl_VPU_GUI_ZeilenTyp_Zugangskopf ::
+               nBPos_LfdNr       := Val(SubStr(oMemItems:ZUGANG_FUER_B_POS_LFD, 9, 3)),
+               nZugangLaufnummer := oMemItems:ZUGANGS_LAUFNUMMER,
+   endcase,
+   // Ziele der Sortierung:
+   //   - Alle Infos zu einer B_POS_LFD am Stück
+   //   - erst die Bedarfszeile (Typ 10), dann die zugeordnetetn Zugänge (Typ 20)
+   //     - die Zugänge (können mehrere sein) immer in der Reihenfolge des Einzelterminrasters
+   Result        := PadR(oMemItems:ARTNR_BG, mBeArtNoLen, 'X') + '|' +
+                    StrZero(nBPos_LfdNr, 4)                    + '|' +
+                    StrZero(oMemItems:TYP, 2)                  + '|' +
+                    StrZero(nZugangLaufnummer, 3)              + '|',
+end,
+
+//******************************************************************************
+// Funktion analysiert die Stückliste eines FA's. Für jede Material-Position
+// @Result:
+//    Array {
+//            Anzahl der hinzugefügten Stücklisten-Datensätze (TYP = 10),
+//            Hat der FA (noch) Positionen mit Rückstandsmengen? (ja/nein)
+//          }
+//******************************************************************************
+function _VPU_StrukturMem_CalcVerfuegForProdAuf(oDM, oMemTable, cBestPosNr, aZeilenTypen, nEbene, cParentSortKey)
+| oCalc035, oCalc010, oCalc240_Head, oCalc240_Pos, nBedarfsMenge, cBedarfsTermin,
+  nVerfuegbareMengeZuTermin, nBedarfsZeilenTyp,
+  oEinzelTermRastMem, aVerfuegRes, aZuordungRes, aDemAbgangZugeordnZugaenge,
+  cSpaetesterZugangsTerminD240Bedarf, z, cCurDab240SortKey, cArtnrBaugruppe, nAddedRecordsCount,
+  cBedarfDurchLagerGedeckt_Status, bRueckstaendeVorhanden, nZugangsEinzelTermRastRecNo |
+
+   nAddedRecordsCount              := 0,
+   bRueckstaendeVorhanden          := false,
+   cBedarfDurchLagerGedeckt_Status := 'N',
+
+   D035_NormalizeBestPosNr(cBestPosNr), // stellt sicher, dass die übergebene BESTPOSNR im "korrekten Format" ist, sonst Exception
+
+   oCalc035                        := DbGetTable(oDM, waDab035, 'CALC035_VERFUEG'), // braucht eig. Alias, da sonst Überschneidung mit den ETRU()-Funktionen
+   oCalc035.IndexName              := 'DAB036', // LIEFNR;BESTPOSNR;TERM_INDEX
+   MySeek({-1, cBestPosNr}, oCalc035),
+   cArtnrBaugruppe                 := oCalc035:ARTNR,
+
+   oCalc010                        := DbGetTable(oDM, waDab010, 'CALC010_VERFUEG'), // braucht eig. Alias, da sonst Überschneidung mit den ETRU()-Funktionen
+   oCalc010.IndexName              := 'DAB011',
+
+   oCalc240_Head                   := DBGetTable(oDM, waDab240, 'CALC240_HEAD'),         // braucht eig. Alias, da sonst Überschneidung mit den ETRU()-Funktionen
+   oCalc240_Pos                    := DBGetTable(oDM, waDab240, 'CALC240_POS'),          //  ''
+
+   // Bedarfs-Termin (mit Rückwärtsterminierung, für alle StüLi-Positionen identisch)
+   cBedarfsTermin := DPU_CalcPlanungsStartTermin(cArtnrBaugruppe, oCalc035:TERMIN),
+
+   D240_FindHead(oCalc240_Head, cBestPosNr),
+   D240_SetScopeOnOrder(oCalc240_Pos, cBestPosNr, false),
+   while not Eof(oCalc240_Pos) do
+
+      if not empty(oCalc240_Pos:ARTNR_E) then
+         MySeek({oCalc240_Pos:ARTNR_E}, oCalc010),
+
+         // nur lagergeführte Teile sind relevant (somit auch niemals 'A', 'E' etc.)
+         if oCalc010:LAGER_KZ $ 'JX' then
+
+            nBedarfsMenge     := D240_BedarfsMenge(oCalc240_Pos, oCalc240_Head),     // Bedarfs-Menge der aktuellen Dab240-Position berechnen
+            nBedarfsZeilenTyp := ETRU_Get_ProduktionsAbgangsZeilenTyp(oCalc240_Pos),
+
+            // Einzel-Terminraster aufbauen
+            oEinzelTermRastMem := VPU_ETR_GetEinzelTermRastMem(oDM, oCalc240_Pos:ARTNR_E),
+            startseq
+               // "Verfügbare Menge" zum Bedarfs-Termin ermitteln (eigener Bedarf wird dabei ignoriert):
+               aVerfuegRes  := VPU_ETR_Calc_VerfuegbarInfosFuerBedarf( oDM, oCalc240_Pos:ARTNR_E, oEinzelTermRastMem,
+                                                                       aZeilenTypen,              // zu berücksichtigende Zeilen-Typen, leer = alle
+                                                                       nBedarfsZeilenTyp,         // Zeilen-Typ des Bedarfs
+                                                                       oCalc240_Pos:ID            // ID des Bedarfs
+                                                                      ),
+               nVerfuegbareMengeZuTermin := aVerfuegRes[1],
+
+               // Ermitteln, welche(r) Zugang(r) den Bedarf (Abgang) decken:
+               aZuordungRes := VPU_ETR_Calc_ZuordnungAbgaengeZugaenge(oDM, oCalc240_Pos:ARTNR_E, oEinzelTermRastMem, aZeilenTypen, nBedarfsZeilenTyp, oCalc240_Pos:ID),
+
+               if nBedarfsMenge > 0 then
+                  cSpaetesterZugangsTerminD240Bedarf := aZuordungRes[5],
+                  aDemAbgangZugeordnZugaenge         := aZuordungRes[4],
+                  cBedarfDurchLagerGedeckt_Status    := aZuordungRes[6],
+               else
+                  cSpaetesterZugangsTerminD240Bedarf := '',
+                  aDemAbgangZugeordnZugaenge         := {},
+                  cBedarfDurchLagerGedeckt_Status    := '', // bei einem Bedarf <= 0 nicht auf 'J' setzen, damit die Filterung auf "... <> 'J'" nicht 0-Bedarfe ausblendet
+               endif,
+
+               //***************************************************************
+               // 1. Dab240 Bedarf eintragen
+               //***************************************************************
+               MyAppend(oMemTable),
+               nAddedRecordsCount                += 1,
+               if nBedarfsMenge <> 0 then
+                  bRueckstaendeVorhanden         := true,
+               endif,
+               oMemTable:EBENE                   := nEbene,
+               oMemTable:TYP                     := 10, // Stücklisten-Position
+               oMemTable:ZEILEN_TYP              := nBedarfsZeilenTyp,
+               oMemTable:DATENSATZ_ID_ETR        := 0,
+
+               oMemTable:ARTNR_BG                := cArtnrBaugruppe,
+               oMemTable:ARTNR                   := oCalc240_Pos:ARTNR_E,
+               oMemTable:ARTTYP                  := oCalc240_Pos:ARTTYP,
+               oMemTable:BEZ1                    := oCalc010:BEZ1,        // TODO: Spezifische Bezeichnung aus Dab055:BEZ1 + 2 bei -2-Verknüpfung holen!
+               oMemTable:BEZ2                    := oCalc010:BEZ2,        //         ''
+               oMemTable:ARTGRUPPE               := oCalc010:ARTGRUPPE,
+               oMemTable:LAGER_KZ                := oCalc010:LAGER_KZ,
+               oMemTable:WBZ                     := oCalc010:WBZ,
+
+               oMemTable:B_POS_LFD               := oCalc240_Pos:B_POS_LFD,
+               oMemTable:POSNR                   := oCalc240_Pos:POSNR,
+
+               oMemTable:PROD_ABT                := D240_ProdDepart(oCalc240_Pos, oCalc035),
+               oMemTable:R_S                     := oCalc240_Pos:R_S,
+
+               oMemTable:BEDARF_MENGE            := nBedarfsMenge,
+               oMemTable:BEDARF_TERMIN           := cBedarfsTermin,
+               oMemTable:BEDARF_TERMIN_INDEX     := ETRU_DateStr(oMemTable:BEDARF_TERMIN),
+
+               oMemTable:DAB240_ID               := oCalc240_Pos:ID,
+               oMemTable:DAB210_ID               := oCalc240_Pos:DAB210_ID,
+
+               oMemTable:CALC_BESTAND_AKTUELL    := Lager('', oCalc010),
+               oMemTable:CALC_BESTAND_BEI_BEDARF := nVerfuegbareMengeZuTermin,
+
+               oMemTable:CALC_BEDARF_GEDECKT_DURCH_LAGER := cBedarfDurchLagerGedeckt_Status,
+
+               oMemTable:ZUGANGS_TERMIN_INDEX    := cSpaetesterZugangsTerminD240Bedarf,
+               oMemTable:ZUGANGS_TERMIN          := TermIndexToStr(oMemTable:ZUGANGS_TERMIN_INDEX),
+
+               oMemTable:ZUGANGS_INFO            := '',
+               oMemTable:ZUGANGS_LAUFNUMMER      := 0,
+               oMemTable:SORT_KEY                := cParentSortKey + VPU_StrukturMem_CalcSortKeyForCurRec(oMemTable),
+               oMemTable:IS_EXPANDED             := false,
+               MyPost(oMemTable),
+
+               //***************************************************************
+               // 2. Bedarfsdeckende Zugänge eintragen
+               //    => nur dann, wenn der Bedarf nicht komplett durch Lagerbestand gedeckt wird
+               //***************************************************************
+               if cBedarfDurchLagerGedeckt_Status <> 'J' then
+                  for z := 1 to ALen(aDemAbgangZugeordnZugaenge) do
+                     // Zugang in Einzelterminraster positionieren
+                     nZugangsEinzelTermRastRecNo := aDemAbgangZugeordnZugaenge[z],
+                     SetErrorIf(not DbGoTo(nZugangsEinzelTermRastRecNo, oEinzelTermRastMem), 'Zugeordneter Zugang mit RecNo ' + Str(nZugangsEinzelTermRastRecNo) + ' nicht in MemTable gefunden'),
+
+                     MyAppend(oMemTable),
+                     oMemTable:EBENE                   := nEbene + 1,
+                     oMemTable:TYP                     := 20, // Zugangs-Kopf-Satz
+                     oMemTable:ZEILEN_TYP              := oEinzelTermRastMem:ZEILEN_TYP,
+                     oMemTable:DATENSATZ_ID_ETR        := oEinzelTermRastMem:DATENSATZ_ID,
+                     oMemTable:ZUGANGS_TERMIN          := oEinzelTermRastMem:TERMIN,
+                     oMemTable:ZUGANGS_TERMIN_INDEX    := ETRU_DateStr(oMemTable:ZUGANGS_TERMIN),
+                     oMemTable:ZUGANGS_INFO            := ETRU_GUI_DisplayInfoTextForTyp(oEinzelTermRastMem),
+                     oMemTable:ZUGANGS_LAUFNUMMER      := z, // braucht man für die Sortierung, sofern es mehrere zugeordnete Zugänge gibt
+
+                     oMemTable:ARTNR_BG                := cArtnrBaugruppe,
+                     oMemTable:ARTNR                   := oCalc240_Pos:ARTNR_E,
+                     oMemTable:ARTTYP                  := oCalc240_Pos:ARTTYP,
+                     oMemTable:BEZ1                    := oCalc010:BEZ1,        // TODO: Spezifische Bezeichnung aus Dab055:BEZ1 + 2 bei -2-Verknüpfung holen!
+                     oMemTable:BEZ2                    := oCalc010:BEZ2,        //         ''
+                     oMemTable:ARTGRUPPE               := oCalc010:ARTGRUPPE,
+                     oMemTable:LAGER_KZ                := oCalc010:LAGER_KZ,
+                     oMemTable:WBZ                     := oCalc010:WBZ,
+
+                     oMemTable:ZUGANG_FUER_B_POS_LFD   := oCalc240_Pos:B_POS_LFD,
+                     oMemTable:ZUGANG_BESTPOSNR        := oEinzelTermRastMem:BESTPOSNR,
+                     oMemTable:POSNR                   := '',
+
+                     oMemTable:PROD_ABT                := oEinzelTermRastMem:PROD_ABT,
+                     oMemTable:R_S                     := '',
+
+                     oMemTable:BEDARF_MENGE            := nBedarfsMenge,
+                     oMemTable:BEDARF_TERMIN           := cBedarfsTermin, // Auch hier den Bedarfs-Termin, damit man innerhalb der Zugangs-Zeile vergleichen kann, ob der Zugang rechtzeitig kommt.
+                     oMemTable:BEDARF_TERMIN_INDEX     := ETRU_DateStr(oMemTable:BEDARF_TERMIN),
+
+                     oMemTable:CALC_BEDARF_GEDECKT_DURCH_LAGER := 'N',
+
+                     oMemTable:SORT_KEY                := cParentSortKey + VPU_StrukturMem_CalcSortKeyForCurRec(oMemTable),
+                     oMemTable:IS_EXPANDED             := false,
+                     MyPost(oMemTable),
+                  next,
+               endif,
+
+            always
+               DestroyObject(oEinzelTermRastMem),
+            stopseq,
+         endif,
+      endif,
+
+      DbSkip(1, oCalc240_Pos),
+   end,
+
+   Result := { nAddedRecordsCount, bRueckstaendeVorhanden },
+end,      

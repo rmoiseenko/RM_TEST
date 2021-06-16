@@ -1,0 +1,61 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält Globals, welche hauptsächlich in der
+//   Partner-Konfiguration verwendet werden.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ermittelt den Index-Namen anhand der übergebenen
+// Partner-Workarea.
+//
+// @result: string - Index-Name
+//******************************************************************************
+function _EDI_Partner_GetPrimaryIndexNameByWorkarea(nWorkarea:N)
+   case nWorkarea
+      of waDab000 :: result := 1,  // 'DAB001',
+      of waDab100 :: result := 1,  // 'DAB101',
+      otherwise
+         SetError('Invalid partner workarea: ' + str(nWorkarea)),
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den ID-Index-Namen anhand der übergebenen
+// Partner-Workarea.
+//
+// @result: string - Index-Name
+//******************************************************************************
+function _EDI_Partner_GetIdIndexNameByWorkarea(nWorkarea:N)
+   case nWorkarea
+      of waDab000 :: result := 5,  // 'DAB00A',
+      of waDab100 :: result := 5,  // 'DAB105',
+      otherwise
+         SetError('Invalid partner workarea: ' + str(nWorkarea)),
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt dan Schlüssel-Feldnamen anhand der übergebenen
+// Partner-Workarea.
+//
+// @result: string - Feld-Name
+//******************************************************************************
+function _EDI_Partner_GetKeyFieldNameByWorkarea(nWorkarea:N)
+   case nWorkarea
+      of waDab000 :: result := 'KDNR',
+      of waDab100 :: result := 'LINR',
+      otherwise
+         SetError('Invalid partner workarea: ' + str(nWorkarea)),
+   endcase,
+end,
+

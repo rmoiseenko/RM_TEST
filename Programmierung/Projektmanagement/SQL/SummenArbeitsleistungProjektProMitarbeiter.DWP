@@ -1,0 +1,35 @@
+SELECT
+   DABPVL.RESTYP,
+   DABPVL.RES_ID,
+   DABPVL.MENGE_PLAN_SUM, // Plan-Summe (h)
+   DAB020.MENGE_IST_SUM,  // Ist-Summe  (h)
+   DABPVL.EK_WRTPLAN_SUM, // Wert Plan-Summe
+   DAB020.EK_WRTIST_SUM   // Wert Ist-Summe
+FROM ( // Plan-Werte aus DabPVL
+      SELECT
+         Sum(MENGE_PLAN) as MENGE_PLAN_SUM,
+         Sum(EK_WRTPLAN) as EK_WRTPLAN_SUM,
+         RESTYP,
+         RES_ID
+      FROM "DABPVL.ADT"
+      WHERE
+         PRJ_ID    = @PROJID@ AND
+         LEIST_ART = 10 AND       // Leistungsart = Ressource (Ressource oder Artikel)
+         RESTYP    = 'M'          // Leistung durch (Typ der Leistungsressource) = Mitarbeiter
+      GROUP BY RESTYP, RES_ID
+      ) DABPVL
+JOIN
+      ( // Ist-Werte aus Dab020
+      SELECT
+         Sum(MENGE) as MENGE_IST_SUM,
+         Sum(PREIS) as EK_WRTIST_SUM,
+         PRJ_ID,
+         PERSNR
+      FROM "DAB020.ADT"
+      WHERE
+         BUART = 'L' AND
+         PRJ_ID = @PROJID@
+         @USEDATEFILT@ AND (@DATEFILTER@) // Datums Zusatzfilter
+      GROUP BY PRJ_ID, PERSNR
+      ) DAB020
+   ON DAB020.PERSNR = DABPVL.RES_ID

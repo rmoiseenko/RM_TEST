@@ -1,0 +1,18 @@
+object ITEM_ZERO: TBeCustomMenuItem
+  Caption = 'Dokumente'
+  Counter = 1
+  CodeBlock = 
+    '| oOwnerForm, cDataSourceName |'#13#10#13#10'oOwnerForm      := GetOwnerFo' +
+    'rm(Self),'#13#10'cDataSourceName := '#39'DS_MAINTABLE'#39','#13#10#13#10'// Je nach Mast' +
+    'er-Fenster muss ggf. das relevante Master-DataSource angepasst'#13#10 +
+    '// werden'#13#10'if not empty(oOwnerForm) then'#13#10'   case Upper(ClassNam' +
+    'e(oOwnerForm))'#13#10'      // Dokumente <je Auftrag> anzeigen, '#39'DS_MA' +
+    'INTABLE'#39' w'#228're <je Kunde>'#13#10'      of Upper('#39'TFormMainProcessOrders' +
+    #39')  :: cDataSourceName := '#39'DS_DAB050'#39','#13#10'   endcase,'#13#10'endif,'#13#10#13#10'G' +
+    'FU_ShowDockingFromMaskIndiMenu_DS('#39'DOCUMENTS'#39', Self, '#39'Dokumenten' +
+    'management\Docking\GUI'#39', cDataSourceName)'
+  Key = '1008'
+  IndiImages = 'ImageListMain'
+  IndiImageIndex = 426
+  IndiImageIndex24 = -1
+end

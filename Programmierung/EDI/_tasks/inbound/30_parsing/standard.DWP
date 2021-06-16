@@ -1,0 +1,112 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm parst alle eingehenden Nachrichten im Prozessschritt
+//   "identifiziert", welche mit "automatisch verarbeiten" gekennzeichnet sind.
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Table_GetRecordCount(oTable:O)
+   result := 0,
+   oTable.CbFirst(),
+   while not oTable.CbEof do
+      result++,
+      oTable.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion parst alle eingehenden Nachrichten im Prozessschritt
+// "identifiziert", welche mit "automatisch verarbeiten" gekennzeichnet sind.
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function ParseInboundMessages(oDM:O, oErrorCallback:O, oProgressCallback:O)
+|
+   oEDIMSG, nRecordCount,
+   cParsingScriptName,
+   aProcessResult, nSuccessfulMessages, nErroneousMessages
+|
+
+   nSuccessfulMessages := 0,
+   nErroneousMessages  := 0,
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, 'EDIMSG_TASK'),
+   oEDIMSG.CbIndexName := 'ID',
+   oEDIMSG.CbFilter :=
+      'DIRECTION = ' + str(gl_EDI_ProcessDirection_Inbound)              + ' AND ' +
+      'PROC_STEP = ' + str(gl_EDI_ProcessStep_EDIMSG_Inbound_Identified) + ' AND ' +
+      'PROCESS',
+   oEDIMSG.CbFiltered := true,
+   startseq
+      nRecordCount := Table_GetRecordCount(oEDIMSG),
+
+      oEDIMSG.CbFirst(),
+      while not oEDIMSG.CbEof do
+         cParsingScriptName := lookup(waEDIPROF, 'ID', {{oEDIMSG:EDIPROF_ID}}, 'SCRIPT_PAR', ''),
+         SetErrorIf(empty(cParsingScriptName), 'No parsing script provided in profile: ' + str(oEDIMSG:EDIPROF_ID)),
+
+         startseq
+            aProcessResult := Call(cParsingScriptName, m_oDM, oEDIMSG:ID),
+
+            if EDI_ProcessResult_IsSuccess(aProcessResult) then
+               nSuccessfulMessages++,
+            else
+               nErroneousMessages++,
+            endif,
+         onerror
+            EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+         stopseq,
+
+         oEDIMSG.CbNext(),
+      end,
+   always
+      oEDIMSG.CbFiltered := false,
+   stopseq,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSuccessfulMessages + nErroneousMessages),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSuccessfulMessages),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nErroneousMessages),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := ParseInboundMessages(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aTaskResult
+

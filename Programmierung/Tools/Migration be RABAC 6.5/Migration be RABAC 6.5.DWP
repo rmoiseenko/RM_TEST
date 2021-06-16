@@ -1,0 +1,122 @@
+|
+  cLogFileName, cLogFileDir, oPermissionController,
+  bReset, bPreprocess, bCleanup,
+  bMigrate, bMigrateUsers, bMigrateMasks, bMigratePermissions,
+  bCleanupPermissions, bMigratePlainPasswords, bClearPlainPasswords
+|
+
+//******************************************************************************
+// ACHTUNG beim Aktivieren des CLEANUP (über bCleanup:=True) werden die Tabellen
+// DabPWD und DabMSK verändert.
+// Daher immer vorher eine funktionsfähige Datensicherung anfertigen!
+//******************************************************************************
+bReset                 := True,
+bPreprocess            := True,
+bCleanup               := True,
+bMigrate               := True,
+bMigrateUsers          := True,
+bMigrateMasks          := True,
+bMigratePermissions    := True,
+bCleanupPermissions    := True,
+bMigratePlainPasswords := False,
+bClearPlainPasswords   := False,
+
+//******************************************************************************
+// Log-Funktion
+//******************************************************************************
+function Log(cMessage)
+   ProcessMsg(),
+   WriteLn(cMessage),
+   RABAC_Log(cLogFileName, cMessage),
+   ProcessMsg(),
+end,
+
+cLogFileDir           := 'C:\be_debug',
+cLogFileName          := cLogFileDir + '\rabac_migration.log',
+oPermissionController := CreateObject('TBeCbPermissionController'),
+startseq
+   // Sicherstellen, dass das Verzeichnis für die Log-Dateien existeiert
+   ForceDirectories(cLogFileDir),
+   // Version des Migrations-Programms in die Log-Datei schreiben
+   Log(Replicate('#', 80)),
+   Log('# Migration, Version: 0.6 (2014-11-12_13:53)'),
+   Log(Replicate('#', 80)),
+   oPermissionController.CbLogFileName := cLogFileName,
+
+   // --------------------------------------------------------------------------
+   if bMigratePlainPasswords then
+      Log('Converting plain passwords ...'),
+      oPermissionController.CbMigration.CbMigratePlainPasswords(),
+   endif,
+   // --------------------------------------------------------------------------
+   if bClearPlainPasswords then
+      Log('Clear all plain passwords ...'),
+      oPermissionController.CbMigration.CbClearPlainPasswords(),
+   endif,
+   // --------------------------------------------------------------------------
+   if bReset then
+      Log('Resetting RABAC Data ...'),
+      oPermissionController.CbMigration.CbReset(), // Alle RABAC-Daten löschen
+      oPermissionController.CbMigration.CbInit(),  // Standard-Daten für RABAC
+                                                   // anlegen
+   endif,
+   // --------------------------------------------------------------------------
+   if bPreprocess then
+      if oPermissionController.CbMigration.CbPreprocessDabFRM() then
+         Log('Preprocess DabFRM: OK'),
+      else
+         Log('Preprocess DabFRM: FAILED'),
+         bMigrate := False,
+         if bCleanup then
+            Log('--> Cleanup DabFRM'),
+            oPermissionController.CbMigration.CbCleanupDabFRM(),
+         endif,
+      endif,
+      if oPermissionController.CbMigration.CbPreprocessDabMSK() then
+         Log('Preprocess DabMSK: OK'),
+      else
+         Log('Preprocess DabMSK: FAILED'),
+         bMigrate := False,
+         if bCleanup then
+            Log('--> Cleanup DabMSK'),
+            oPermissionController.CbMigration.CbCleanupDabMSK(),
+         endif,
+      endif,
+      if oPermissionController.CbMigration.CbPreprocessDabPWD() then
+         Log('Preprocess DabPWD: OK'),
+      else
+         Log('Preprocess DabPWD: FAILED'),
+         bMigrate := False,
+         if bCleanup then
+            Log('--> Cleanup DabPWD'),
+            oPermissionController.CbMigration.CbCleanupDabPWD(),
+         endif,
+      endif,
+   endif,
+   // --------------------------------------------------------------------------
+   if bMigrate then
+      Log('Running Migration ...'),
+      if bMigrateUsers then
+         Log('Migration: Users'),
+         oPermissionController.CbMigration.CbMigrateUsers(),
+      endif,
+      if bMigrateMasks then
+         Log('Migration: Masks'),
+         oPermissionController.CbMigration.CbMigrateMasks(),
+      endif,
+      if bMigratePermissions then
+         Log('Migration: Permissions'),
+         oPermissionController.CbMigration.CbMigratePermissions(),
+      endif,
+      Log('Migration: DONE'),
+      if bCleanupPermissions then
+         Log('Running CbCleanupPermissions'),
+         oPermissionController.CbCleanupPermissions(),
+         Log('CbCleanupPermissions: DONE'),
+      endif,
+   else
+      Log('Skipping Migration ...'),
+   endif,
+always
+   DestroyObject(oPermissionController),
+stopseq,

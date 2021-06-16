@@ -1,0 +1,161 @@
+//******************************************************************************
+// Dokumentenmanagement
+// Globals zur Behandlung der Tabelle DMSBPS
+// Diese Tabelle ist 2:1 verküpft mit DMSVER, d.h. zu einem Datensatz
+// der DABVER kann es 1 oder 2 Datensätze der DMSBPS geben, nämlich
+// die Daten und evtl. ein Thumbnail
+// Deshalb wird die Tabelle DMSBSP jeweils mit einen speziellen Alias geöffnet:
+//    'DMSBSP_DATA'  für den Datensatz, in dem die Datei selbst gespeichert wird
+//    'DMSBSP_THUMB' für den Datensatz, in dem der Thumbnail gespeichert wird
+//******************************************************************************
+
+//******************************************************************************
+// REQ 858: erzeugt einen DMSBSP - Datensätze, Data immer, Thumbnail falls bErzeugeThumbnail
+// benutzt für einen neuen Datensatz mit Datei
+// benutzt für einen neue Datei in einem bestehenden Datensatz
+// benutzt für einen Scan
+// @Result: Array von 2 GUIDs
+//******************************************************************************
+function _DMSU_BSP_Append(oDM, cFullFilePath, bErzeugeThumbnail, cScanData)
+   |
+   oDmsBspData, oDmsBspThumb,            // Tabelleninstanzen von DMSBSP
+   oDmsBspDataRead, oDmsBspThumbRead,    // Tabelleninstanzen von DMSBSP zum Lesen
+   c_dGuid, c_tGuid,                     // GUIDs zur Verknüpfung mit DMSVER
+   oDataFieldObj, oThumbnailFieldObj     // Objekte
+   |
+   // Prüfung auf aktive Transaktion
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Versuch, Datensätze in DMSBSP einzufügen ist gescheitert, Datenmodul nicht in Transaktion'),
+   // Zunächst wird ein Datensatz für die Datei selbst erzeugt (Thumbnail später)
+   oDmsBspData :=  DbGettable(oDM, waDmsBsp, 'DMSBSP_DATA'),   // DMSBSP öffnen mit Data-Alias
+   MyAppend(oDmsBspData),
+   c_dGuid              := CreateClassID(),                                 // GUID für DATA vergeben
+   oDmsBspData:GUID_STR := c_dGuid,
+   oDataFieldObj        := DbField('DATA', oDmsBspData),
+   if not empty(cFullFilePath) then
+      SetErrorIf(not LoadFile(oDataFieldObj, cFullFilePath), 'Fehler beim Laden der Datei'),
+   else
+      if not empty(cScanData) then
+         oDmsBspData:DATA := cScanData,
+      else
+         SetError('DMSU_BSP_Append - keine Daten zum Speichern vorhanden'),
+      endif,
+   endif,
+                                                                                                           // TODO DMSBSP:SUCHE
+   MyPost(oDmsBspData),
+
+   // Jetzt wird ggf noch ein Datensatz für das Thumbnail erzeugt
+   if bErzeugeThumbnail then
+      oDmsBspThumb :=  DbGettable(oDM, waDmsBsp, 'DMSBSP_THUMB'),  // DMSBSP öffnen mit Thumbnail-Alias
+      MyAppend(oDmsBspThumb),
+      c_tGuid               := CreateClassID(),                                 // GUID für DATA vergeben
+      oDmsBspThumb:GUID_STR := c_tGuid,
+      oThumbnailFieldObj := DbField('DATA', oDmsBspThumb),
+      startseq
+         ResizePicture(oDataFieldObj, gl_DMSU_nThumbnailSize, oThumbnailFieldObj),
+      onerror
+         SetError('Fehler beim Erstellen der Bild-Miniatur:' + crlf + GetErrorText()),
+      stopseq,
+      MyPost(oDmsBspThumb),
+   else
+      c_tGuid := '',                                              // kein Thumbnail - kein GUID_STR
+   endif,
+   Result := {c_dGuid, c_tGuid},
+
+end,
+
+//******************************************************************************
+// REQ 860: löscht einen DMSBSP - Datensatz
+// @Result: keine Rückgabe
+//******************************************************************************
+function _DMSU_BSP_Delete(oDM, cGUID, bIsThumbnail)
+   | oDmsBsp |
+   // Prüfung auf aktive Transaktion
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Versuch, Datensatz aus DMSBSP zu löschen ist gescheitert, Datenmodul nicht in Transaktion'),
+   oDmsBsp := DbGetTable(oDM, waDmsBsp, iif(bIsThumbnail, 'DMSBSP_THUMB', 'DMSBSP_DATA')),
+   oDmsBsp.IndexName := 'GUID_STR',
+   MySeek({cGUID}, oDmsBsp),
+   MyDelete(oDmsBsp),
+end,
+
+//******************************************************************************
+// REQ 859: Update eines DMSBSP - Datensatzes
+// Obacht: Muß nach DMSU_BSP_Delete in der Datei stehen
+// @Result: Array von 2 GUIDs
+//******************************************************************************
+function _DMSU_BSP_Update(oDM, cDataGUID, cFullFilePath, cThumbGUID, bErzeugeThumbnail)
+   |
+   oDmsBspData, oDmsBspThumb,            // Tabelleninstanzen von DMSBSP
+   oDataFieldObj, oThumbnailFieldObj,     // Objekte
+   bThumbnailExist
+   |
+
+   // Prüfung auf aktive Transaktion
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Versuch, Datensatz aus DMSBSP zu editieren ist gescheitert, Datenmodul nicht in Transaktion'),
+   oDmsBspData := DbGetTable(oDM, waDmsBsp, 'DMSBSP_DATA'),
+   oDmsBspData.IndexName := 'GUID_STR',
+   MySeek({cDataGUID}, oDmsBspData),
+   MyEdit(oDmsBspData),
+
+   oDataFieldObj  := DbField('DATA', oDmsBspData),
+   SetErrorIf(not LoadFile(oDataFieldObj, cFullFilePath), 'Fehler beim Laden der Datei'),
+                                                                                                          // TODO: DMSBSP:SUCHE
+   MyPost(oDmsBspData),
+   oDmsBspThumb :=  DbGettable(oDM, waDmsBsp, 'DMSBSP_THUMB'),  // DMSBSP öffnen mit Thumbnail-Alias
+   oDmsBspThumb.IndexName := 'GUID_STR',
+   bThumbnailExist := DbSeek({cThumbGUID}, oDmsBspThumb),
+   // Wenn wir einen Thumbnail brauchen:
+   if bErzeugeThumbnail then
+      if bThumbnailExist then
+         MyEdit(oDmsBspThumb),
+      else
+         MyAppend(oDmsBspThumb),
+         cThumbGUID := CreateClassID(),
+         oDmsBspThumb:GUID_STR := cThumbGuid,
+      endif,
+      startseq
+         oThumbnailFieldObj    := DbField('DATA', oDmsBspThumb),
+         oDataFieldObj         := DbField('DATA', oDmsBspData),
+         ResizePicture(oDataFieldObj, gl_DMSU_nThumbnailSize, oThumbnailFieldObj),
+      onerror
+         SetError('Fehler beim Erstellen der Bild-Miniatur:' + crlf + GetErrorText()),
+      stopseq,
+      MyPost(oDmsBspThumb),
+   endif,
+
+   // Wenn es vorher einen Thumbnail gab, den wir jetzt nicht mehr brauchen
+   if not bErzeugeThumbnail and bThumbnailExist then
+      DMSU_BSP_Delete(oDM, cThumbGUID, true),
+   endif,
+
+    // Rückgabe wie bei Append, cDataGuid bleibt immer unverändert
+    result := {cDataGUID, cThumbGUID},
+end,
+
+//******************************************************************************
+// REQ 861: ermittelt den Inhalt eines Thumbnails anhand der GUID
+// @Result: Blob
+//******************************************************************************
+function _DMSU_BSP_GetThumb(oDM, cThumbGUID)
+| oDmsBspThumb |
+   oDmsBspThumb :=  DbGettable(oDM, waDmsBsp, 'DMSBSP_THUMB'),  // DMSBSP öffnen mit Thumbnail-Alias
+   oDmsBspThumb.IndexName := 'GUID_STR',
+   MySeek({cThumbGUID}, oDmsBspThumb),
+   Result := oDmsBspThumb:DATA,
+end,
+
+//******************************************************************************
+// REQ 862: ermittelt den Inhalt einer Datei anhand der GUID
+// und speichert diese unter neuem Pfad
+// @Result: keine Rückgabe
+//******************************************************************************
+function _DMSU_BSP_SaveAs(oDM, cDataGUID, cSaveAsFullFilePath)
+   | oDmsBspData, oDataFieldObj |
+   oDmsBspData :=  DbGettable(oDM, waDmsBsp, 'DMSBSP_DATA'),  // DMSBSP öffnen mit DATA-Alias
+   oDmsBspData.IndexName := 'GUID_STR',
+   MySeek({cDataGUID}, oDmsBspData),
+
+   // Datei Speichern
+   oDataFieldObj := DbField('DATA', oDmsBspData),
+   SetErrorIf(not SaveFile(oDataFieldObj, cSaveAsFullFilePath), 'Fehler beim Speichern der Datei aus der Datenbank in das Verzeichnis "' + cSaveAsFullFilePath + '"'),
+end,
+

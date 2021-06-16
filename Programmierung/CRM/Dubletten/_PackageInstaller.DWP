@@ -1,0 +1,117 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Installations-Script für das Standard-Package "Historisierung"
+//##############################################################################
+//##############################################################################
+
+|
+   // Workarea
+   nWorkarea_DUBLMATCH,
+   nWorkarea_DUBLEHOST,
+
+   // Tabellendefinition
+   oTableDef_DUBLMATCH,
+   oTableDef_DUBLEHOST,
+
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+
+   i,
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_DUBLEHOST := 719,
+nWorkarea_DUBLMATCH := 720,
+
+//##############################################################################
+//##############################################################################
+// Tabellendefinitionen
+//##############################################################################
+//##############################################################################
+
+oTableDef_DUBLEHOST := PCKGU_TableDefinition_Create('DUBLEHOST', nWorkarea_DUBLEHOST, 'Liste anonymer E-Mail Hosts', '', True, False),
+oTableDef_DUBLMATCH := PCKGU_TableDefinition_Create('DUBLMATCH', nWorkarea_DUBLMATCH, 'Dubletten Suchbegriffe',      '', True, False, 1024),
+
+//##############################################################################
+//##############################################################################
+// Felddefinitionen
+//##############################################################################
+//##############################################################################
+
+// DUBLEHOST
+PCKGU_TableDefinition_AddField(oTableDef_DUBLEHOST, 'HOST',   50, 0, ftString,         'E-Mail Host',                           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_DUBLEHOST, 'DOMAIN', 10, 0, ftString,         'E-Mail Domain',                         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+// DUBLMATCH
+PCKGU_TableDefinition_AddField(oTableDef_DUBLMATCH, 'KDNR',         0, 0, ftInteger,        'Kunden-Nr.',                            '', 2, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_DUBLMATCH, 'KDNR_REORG',   0, 0, ftInteger,        'Kunden-Nr. vor Reorg.',                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_DUBLMATCH, 'FELDTYP',      0, 0, ftInteger,        'Feldtyp Nummer',                        '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_DUBLMATCH, 'MATCHCODE',  255, 0, ftString,         'Suchbegriff',                           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+//##############################################################################
+//##############################################################################
+// Indexdefinitionen
+//##############################################################################
+//##############################################################################
+
+// DUBLEHOST
+PCKGU_TableDefinition_AddIndex(oTableDef_DUBLEHOST, 'HOST',   {'HOST', 'DOMAIN'}, '', '', False, True, False, 512),
+
+// DUBLMATCH
+PCKGU_TableDefinition_AddIndex(oTableDef_DUBLMATCH, 'KDNR',   {'KDNR',      'FELDTYP'}, '', '', False, True, False, 1024),
+PCKGU_TableDefinition_AddIndex(oTableDef_DUBLMATCH, 'MATCH',  {'FELDTYP', 'MATCHCODE'}, '', '', False, True, False, 1024),
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', True),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       True)
+      },
+      {mrOK, mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+            //          müssen die folgenden beiden Zeilen einkommentiert werden:
+            //PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_DUBLEHOST, 'DUBLEHOST', cUsername, cPassword),
+
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DUBLEHOST, cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DUBLMATCH, cUsername, cPassword), 
+
+            oDM.CbTransaction_Commit(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,

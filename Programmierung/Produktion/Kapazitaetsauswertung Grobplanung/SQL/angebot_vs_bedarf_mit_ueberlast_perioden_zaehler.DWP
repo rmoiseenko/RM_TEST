@@ -1,0 +1,111 @@
+//******************************************************************************
+// 1. Angebot je Quali, Ressource und Periode ermitteln
+//******************************************************************************
+TRY DROP TABLE #kapa_angebot_per_periode; CATCH ALL END TRY;
+
+SELECT
+     INNER_RESULT.*,
+     Round(Convert(INNER_RESULT.KAPA_MIN, SQL_FLOAT) / 60, 2) AS KAPA_STUNDEN_ANGEBOT
+   into #kapa_angebot_per_periode
+   FROM
+      (
+
+      SELECT
+            PGKANG.RESTYP,
+            @GROUP_BY_QUALI@ PGKANG.QUALI,
+            @GROUP_BY_RES@   PGKANG.RES_ID,
+            PGKANG.JAHR,
+            PGKANG.KW,
+            SUM(PGKANG.KAPA_MIN) KAPA_MIN
+
+         FROM "PGKANG.ADT" PGKANG
+         WHERE
+                PGKANG.STANDORT = @STANDORT@
+            AND PGKANG.DATUM    >= @DATUM_VON@
+            AND PGKANG.DATUM    <= @DATUM_BIS@
+            AND PGKANG.KAPA_MIN <> 0
+            AND PGKANG.KAPA_MIN is not null
+            AND PGKANG.RESTYP IN (@RESTYP_LIST@)
+            @GROUP_BY_QUALI@ AND PGKANG.QUALI > 0
+
+         GROUP BY
+            PGKANG.RESTYP
+            @GROUP_BY_QUALI@, PGKANG.QUALI
+            @GROUP_BY_RES@  , PGKANG.RES_ID
+            , PGKANG.JAHR
+            , PGKANG.KW
+
+      ) AS INNER_RESULT;
+
+// SELECT * FROM "PGKANG.ADT" PGKANG
+// SELECT * FROM "PGKBDP.ADT" PGKBDP
+
+//******************************************************************************
+// 2. Bedarf je Quali, Ressource und Periode ermitteln
+//    => je nach Modus auf Basis von Plan- oder Ist-Werten
+//******************************************************************************
+@KAPA_DEMAND_SQL_SCRIPT@
+
+// SELECT * FROM #kapa_angebot_per_periode
+// SELECT * FROM #kapa_bedarf_per_periode
+
+//******************************************************************************
+// 3. Angebot und Bedarf je Periode zusammenjoinen
+//    => nach Qualifikation oder Ressource gruppieren
+//******************************************************************************
+TRY DROP TABLE #kapa_per_periode; CATCH ALL END TRY;
+
+SELECT
+      IfNull(angebot.RESTYP, bedarf.RESTYP) AS RESTYP,
+      @GROUP_BY_QUALI@ IfNull(angebot.QUALI,  bedarf.QUALI)  AS QUALI,
+      @GROUP_BY_RES@   IfNull(angebot.RES_ID, bedarf.RES_ID) AS RES_ID,
+      IfNull(angebot.JAHR,   bedarf.JAHR) AS JAHR,
+      IfNull(angebot.KW,     bedarf.KW) AS KW,
+
+
+      angebot.KAPA_STUNDEN_ANGEBOT,
+      bedarf.KAPA_STUNDEN_BEDARF,
+      angebot.KAPA_STUNDEN_ANGEBOT - bedarf.KAPA_STUNDEN_BEDARF AS KAPA_STUNDEN_REST,
+      iif( bedarf.KAPA_STUNDEN_BEDARF > 0 and angebot.KAPA_STUNDEN_ANGEBOT is null,
+           1,
+           iif(angebot.KAPA_STUNDEN_ANGEBOT - bedarf.KAPA_STUNDEN_BEDARF < 0,
+               1,
+               0)) AS KAPA_STUNDEN_UEBERLAST
+   into #kapa_per_periode
+   FROM #kapa_angebot_per_periode angebot
+   FULL OUTER JOIN #kapa_bedarf_per_periode bedarf
+      ON (    bedarf.RESTYP = angebot.RESTYP
+          @GROUP_BY_QUALI@ and bedarf.QUALI  = angebot.QUALI
+          @GROUP_BY_RES@   and bedarf.RES_ID = angebot.RES_ID
+          and bedarf.JAHR   = angebot.JAHR
+          and bedarf.KW     = angebot.KW);
+
+//******************************************************************************
+// 4. Gruppieren nach Qualifikation / Ressource (kein Periodenbezug mehr)
+//******************************************************************************
+TRY DROP TABLE #kapa_per_quali_res; CATCH ALL END TRY;
+
+SELECT
+      RESTYP
+
+      @GROUP_BY_QUALI@, QUALI
+      @GROUP_BY_QUALI@, 0 AS RES_ID
+
+      @GROUP_BY_RES@  , 0 AS QUALI
+      @GROUP_BY_RES@  , RES_ID
+
+      , SUM(KAPA_STUNDEN_ANGEBOT)   AS KAPA_STUNDEN_ANGEBOT
+      , SUM(KAPA_STUNDEN_BEDARF)    AS KAPA_STUNDEN_BEDARF
+      , SUM(KAPA_STUNDEN_UEBERLAST) AS UEBERLASTETE_PERIODEN
+   INTO #kapa_per_quali_res
+   FROM #kapa_per_periode
+   WHERE
+      @GROUP_BY_QUALI@ QUALI  > 0
+      @GROUP_BY_RES@   RES_ID > 0
+   GROUP BY
+      RESTYP
+      @GROUP_BY_QUALI@ , QUALI
+      @GROUP_BY_RES@   , RES_ID
+      ;
+
+// SELECT * FROM #kapa_per_quali_res

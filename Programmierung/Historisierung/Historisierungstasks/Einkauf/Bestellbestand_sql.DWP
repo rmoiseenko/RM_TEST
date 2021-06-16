@@ -1,0 +1,162 @@
+DECLARE @termin_wochen_abstand_startdatum Date;
+DECLARE @auswertung_fuer_standort         Integer;
+DECLARE @inland_landnr                    Char(3);
+DECLARE @DABPAR_INTERCOMPANY              CURSOR;
+
+
+@termin_wochen_abstand_startdatum = @PARAM_DATUM_START_WOCHEN_ABSTAND@; // Das Startdatum für die Berechnung von Termin-Abständen sollte immer der
+                                                                        // Montag in der Historisierungswoche sein, damit alle Termine in der
+                                                                        // Folge-Woche als "1 Woche" Differenz gelten usw.
+                                                                        // z.B. '2016-06-13'
+@auswertung_fuer_standort         = @PARAM_STANDORT@;          // z.B. 0
+@inland_landnr                    = @PARAM_INLAND_LANDNR@;     // z.B. '004' für Deutschland
+
+//******************************************************************************
+// temp. Tabelle löschen, sofern noch vorhanden
+//******************************************************************************
+TRY DROP TABLE #HISEK_TEMP; CATCH ALL END;
+
+//******************************************************************************
+// Quell-Daten in temporäre Tabelle laden
+//******************************************************************************
+SELECT
+      DAB035.STANDORT           AS STANDORT,
+      DAB035.ABTEILUNG          AS ABTEILUNG,
+
+      false                     AS STO_IS_IC, // Ist "Intercompany-Bestellung"? => Ware wird von anderem Standort beschafft
+      -1                        AS IC_ABSSTO, // Intercompany: Standort-Nummer des Absender-Standorts
+      CAST(Null AS SQL_INTEGER) AS IC_ABSFFN, // Intercompany: Firmen-Nr. des Absender-Standorts
+
+      DAB035.ARTNR          AS ARTNR,
+      DAB010.ARTTYP         AS ARTTYP,
+      DAB010.ARTGRUPPE      AS ARTGRUPPE,
+      DAB035.SACHKONTO      AS SACHKONTO,
+      DAB035.KOSTENST       AS KOSTENST,
+      DAB035.LIEFNR         AS LIEFNR,
+      DAB100.LANDNR         AS LANDNR,
+      -1                    AS LAND_REG,
+      empty(DAB035.LIEF_AB) AS BESTAETIGT,
+      DAB035.PRJ_ID         AS PRJ_ID,
+      DAB035.WAEKZ          AS WAEKZ,
+      DAB035.DATUM          AS DATUMB,    // Datum der Bestellung
+
+      DAB035.SOLLTERMIN     AS TERMINS,   // Solltermin Char(8)
+      CAST(null AS SQL_DATE)AS TERMINSD,  // Solltermin Date               // TODO: Umwandlung in Date-Format ist per SQL leider nicht so einfach... Wird dann in der CB-Nachbearbeitung gemacht
+
+      DAB035.TERMIN         AS TERMIN,    // Liefer-Termin Char(8)
+      CAST( iif(DAB035.TERM_INDEX <> '' AND DAB035.TERMIN <> 'KW.99.99',
+                 CREATETIMESTAMP(CAST(SubString(DAB035.TERM_INDEX, 1, 4) AS SQL_INTEGER),
+                                 CAST(SubString(DAB035.TERM_INDEX, 5, 2) AS SQL_INTEGER),
+                                 CAST(SubString(DAB035.TERM_INDEX, 7, 2) AS SQL_INTEGER),
+                                 0, 0, 0, 0),
+                 null) AS SQL_DATE)
+                              AS TERMIND,   // Liefer-Termin, Date
+
+      CAST(0 AS SQL_INTEGER)  AS TERMINAW,  // "Abstand in Wochen" des Liefer-Termins zum Historisierungs-Datum
+
+      // Rahmen / Abruf-Infos
+      iif(DAB035.TERMIN = 'KW.99.99', true, false) AS ABRUF_AUF, // Position ist Abruf-Rahmenposition?
+      DAB035.BANUMMER                              AS ABRUF_POS, // Position ist Abruf-position?
+
+      // Vorgangs-Nummer
+      DAB035.BESTPOSNR AS BESTPOSNR, // Achtung: nur i.V.m. BANUMMER eindeutig
+      DAB035.ID        AS DAB035_ID,
+
+      // Inputfelder für die Berechnung der Kennzahlen (Mengen & Werte)
+      //    Der Einkaufswert in Eigenwährung (ohne Zollbetrag / %) wird später über die Cb-Funktion EkpEWert() ermittelt. Diese Funktion
+      //    bekommt als Input alle Kosten / Konditions-Felder der Dab035
+
+      // Mengen-Umrechnungs-Infos
+      DAB035.ME_UMR    AS ME_UMR,
+      CAST(DAB010.ME_RUNDEN AS SQL_INTEGER) AS ME_RUNDEN,   // Cast. wg. DBF-NUMERIC
+
+      // Mengen
+      DAB035.MENGE          AS BR_MENGE,   // Rückstands-Menge in Lager-Einheit
+      DAB035.MENGE_EK       AS BR_MENG_EK, // Rückstands-Menge in Einkaufseinheit
+
+      CAST(0 AS SQL_DOUBLE) AS WE_MENGE,   // Menge im Wareneingang in Lager-Einheit
+      DAB035.MENGE_WE       AS WE_MENG_EK, // Menge im Wareneingang in Einkaufseinheit
+
+      // Preise, Konditionen
+      DAB035.SOEK      AS SOEK,
+      DAB035.PE        AS PE,
+      DAB035.RABATT1   AS RABATT1,
+      DAB035.RABATT2   AS RABATT2,
+      DAB035.RABATT3   AS RABATT3,
+      DAB035.Z_MODE1   AS Z_MODE1,
+      DAB035.Z_KOST1   AS Z_KOST1,
+      DAB035.Z_MODE2   AS Z_MODE2,
+      DAB035.Z_KOST2   AS Z_KOST2,
+      DAB035.Z_MODE3   AS Z_MODE3,
+      DAB035.Z_KOST3   AS Z_KOST3,
+      DAB035.FW_KURS   AS FW_KURS,
+      DAB035.ME_UMR_PE AS ME_UMR_PE
+
+   INTO #HISEK_TEMP
+   FROM "DAB035.ADT" DAB035
+
+   INNER JOIN @DAB010_TABLENAME@ DAB010          ON (DAB010.ARTNR   = DAB035.ARTNR AND DAB010.STANDORT = DAB035.STANDORT)
+   INNER JOIN @DAB100_TABLENAME@ DAB100          ON (DAB100.LINR    = DAB035.LIEFNR)
+
+   WHERE
+           DAB035.STANDORT = @auswertung_fuer_standort
+       AND DAB035.LIEFNR <> -1
+
+;
+
+//******************************************************************************
+// Termin-Abstände berechnen (Abstand zwischen Historisierung und Liefertermin in ganzen Wochen)
+//******************************************************************************
+UPDATE #HISEK_TEMP
+   SET TERMINAW = TIMESTAMPDIFF( SQL_TSI_WEEK, @termin_wochen_abstand_startdatum, TERMIND )
+   WHERE TERMIND is not null
+   ;
+
+// Rahmen-Positionen sind 9999 Wochen in der Zukunft
+UPDATE #HISEK_TEMP
+   SET TERMINAW = 9999
+   WHERE ABRUF_AUF = true
+   ;
+
+//******************************************************************************
+// Alle Positionen markieren, die eine Intercompany-Bestellung darstellen
+//******************************************************************************
+OPEN @DABPAR_INTERCOMPANY AS SELECT DISTINCT STANDORT, STO_LIEFNR, STO_FIRMA FROM "DABPAR.ADT" DABPAR;
+
+WHILE FETCH @DABPAR_INTERCOMPANY DO
+   UPDATE #HISEK_TEMP
+       SET
+          STO_IS_IC  = true,
+          IC_ABSSTO = @DABPAR_INTERCOMPANY.STANDORT,
+          IC_ABSFFN  = @DABPAR_INTERCOMPANY.STO_FIRMA
+       WHERE LIEFNR = @DABPAR_INTERCOMPANY.STO_LIEFNR;
+END WHILE;
+
+CLOSE @DABPAR_INTERCOMPANY;
+
+//******************************************************************************
+// Zuordnung "Empfänger-Land" zu "Empfänger-Region"
+//******************************************************************************
+UPDATE #HISEK_TEMP SET LAND_REG = 0  WHERE LAND_REG <> 0;                                                                        // LAND_REG am Anfang überall auf 0 setzen
+UPDATE #HISEK_TEMP SET LAND_REG = 90 WHERE LAND_REG = 0 AND STO_IS_IC = true;                                                    // 90 = Intercompany
+UPDATE #HISEK_TEMP SET LAND_REG = 10 WHERE LAND_REG = 0 AND (LANDNR = @inland_landnr OR LANDNR = '' OR LANDNR is null);          // 10 = Inland
+UPDATE #HISEK_TEMP SET LAND_REG = 20 WHERE LAND_REG = 0 AND LANDNR IN (SELECT LANDNR
+                                                                          FROM @DIA020_TABLENAME@
+                                                                          WHERE     EG_KZ = 'J'
+                                                                                AND (EG_AB  is null OR EG_AB  <= @PARAM_HISTORISIERUNGS_DATUM@)
+                                                                                AND (EG_BIS is null OR EG_BIS >= @PARAM_HISTORISIERUNGS_DATUM@)
+                                                                                                                              ); // 20 = EU
+UPDATE #HISEK_TEMP SET LAND_REG = 30 WHERE LAND_REG = 0;                                                                         // 30 = Drittland
+
+//******************************************************************************
+// Berechnung der "Menge im Wareneingang in Lagereinheit"
+//******************************************************************************
+UPDATE #HISEK_TEMP
+   SET WE_MENGE = Round(WE_MENG_EK * ME_UMR, ME_RUNDEN)
+   WHERE WE_MENG_EK <> 0;
+
+//******************************************************************************
+// Selekt der temp. Tabelle inkl. Umbenennungen, als Ausgangsbasis für die
+//    Übertragung in die HISEK
+//******************************************************************************
+SELECT * FROM #HISEK_TEMP

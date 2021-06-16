@@ -1,0 +1,482 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Hilfsfunktionen für Sachmerkmalsleisten
+//##############################################################################
+//##############################################################################
+
+|
+   // Allgemeine Sachmerkmalleisten Konstanten
+   gl_SML_MaxVIndex:_N := 9999,
+
+   // Konstanten für die SLMemo Indices
+//   gl_SML_SLMemoXXX:_N         := 1,  // Unbekannt
+//   gl_SML_SLMemoXXX:_N         := 2,  // Unbekannt
+   gl_SML_SLMemoRowType:_N     := 3,  // Zeilentyp
+   gl_SML_SLMemoDataType:_N    := 4,  // Merkmals Datentyp
+   gl_SML_SLMemoLabel:_N       := 5,  // Bezeichnung
+   gl_SML_SLMemoValue:_N       := 6,  // Wert / Vorbelegung
+   gl_SML_SLMemoFormat:_N      := 7,  // Format / Picture-Mask
+   gl_SML_SLMemoCalcBlock:_N   := 8,  // Prüf-Codeblock / Berechnung
+   gl_SML_SLMemoFieldSize:_N   := 9,  // Feldgröße
+   gl_SML_SLMemoVIndex:_N      := 10, // V-Index
+   gl_SML_SLMemoAttribTable:_N := 11, // MMT-ID
+   gl_SML_SLMemoPrint:_N       := 12, // Merkmal drucken
+
+   // Konstante für Anzahl an Elementen in einem SL_MEMO-Datensatz
+   gl_SML_SLMemoRecordItemCount:_N := 12,
+
+   // Konstanten für Merkmals-Zeilentypen
+   gl_SML_RowTypeSeparator:_N   := 0,
+   gl_SML_RowTypeCalculation:_N := 1,
+   gl_SML_RowTypeInput:_N       := 2,
+
+   // Konstanten für Merkmals-Datentypen
+   gl_SML_DataTypeText:_N        := 0, // Text
+   gl_SML_DataTypeNumeric:_N     := 1, // Numerischer Wert
+   gl_SML_DataTypeMemo:_N        := 2, // Langtext
+   gl_SML_DataTypeArticle:_N     := 3, // Artikelnummer
+   gl_SML_DataTypeBoolean:_N     := 4, // Boolean-Wert
+   gl_SML_DataTypeDate:_N        := 5, // Datums-Wert
+   gl_SML_DataTypeAttribTable:_N := 6, // MMT-Merkmal
+
+   // Erlaubte Workareas
+   gl_SML_AllowedWorkareas:_U
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+// Array mit allen erlaubten Workareas inklusive des jeweiligen ID-Index und des
+// Schlüssel-Felds.
+// Format: {
+//    {<Workarea>, <ID-Index-Name>, <Schlüssel-Feld>}
+//    {...},
+//    ...
+// }
+//
+// HINWEIS:
+//  Für FiBu-Tabellen (z.B. Dab000 und Dab100) muss statt dem Index-Namen die
+//  Index-Nummer verwendet werden! Weil die Index-Namen bei einer
+//  FiBu-Installation anders heißen.
+gl_SML_AllowedWorkareas := {
+   {waDab000, 5,        'KDNR'},
+   {waDab010, 'DAB01G', 'ARTNR'},
+   {waDab100, 5,        'LINR'},
+   {waDab062, 'DAB06P', 'VTNR'}
+},
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Gibt die maximale Länge des Feldes WERT_STR zurück
+// @Result: integer
+//******************************************************************************
+function _SML_StringValueFieldMaxLength()
+   Result := 256,
+end,
+
+//******************************************************************************
+// Name des Ziel-Feldes in der SMLWRT anhand des Markmaltyps ermitteln
+//
+// Merkmalstypen:
+//    * Text                    (0)
+//    * Zahl                    (1)
+//    * Langtext                (2)
+//    * Artikelnummer           (3)
+//    * Logical                 (4)
+//    * Datum                   (5)
+//    * Merkmal                 (6)
+// @Result: string, Feldname
+//******************************************************************************
+function _SML_AttributeTargetFieldName(nAttributeType)
+   case nAttributeType
+      of gl_SML_DataTypeText        :: Result := 'STR',
+      of gl_SML_DataTypeNumeric     :: Result := 'NUM',
+      of gl_SML_DataTypeMemo        :: Result := 'MEMO',
+      of gl_SML_DataTypeArticle     :: Result := 'ARTNR',
+      of gl_SML_DataTypeBoolean     :: Result := 'BOOL',
+      of gl_SML_DataTypeDate        :: Result := 'DATUM',
+      of gl_SML_DataTypeAttribTable :: Result := 'STR',   // Merkmale werden auch ins Feld WERT_STR geschrieben
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Typ: ' + Str(nAttributeType)),
+   endcase,
+   // Prefix anfügen
+   Result := 'WERT_' + Result,
+end,
+
+//******************************************************************************
+// Alte Merkmalssätze aus der SmlZEL löschen
+// @Result: null
+//******************************************************************************
+function _SML_DeleteAllUsageTable(oDM:O, nSML_ID:N)
+| oSmlZEL |
+   // Eine aktive Transaktion ist verpflichtend!
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Datenmodul muss sich in einer Transaktion befinden!'),
+
+   oSmlZEL           := DbGetTable(oDM, waSMLZEL, 'SMLZEL'),
+   oSmlZEL.IndexName := 'SML_ID',
+
+   if DbSeek({nSML_ID}, oSmlZEL) then
+      // Ggf. alle alten Datensätze löschen
+      while oSmlZEL:SML_ID = nSML_ID do
+         if not DbDelete(oSmlZEL) then
+            SetError('Alte Datensätze der Sachmerkmalleiste konnten nicht gelöscht werden!'),
+         endif,
+      end,
+   endif,
+end,
+
+//******************************************************************************
+// Merkmalssätze einer Sachmerkmalleiste in die SmlZEL schreiben
+// @Result: null
+//******************************************************************************
+function _SML_StoreUsageTable(oDM:O, nSML_ID:N, cSLMemo:C)
+| oSmlZEL, aSLMemo, nLen, i |
+
+   // Eine aktive Transaktion ist verpflichtend!
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Datenmodul muss sich in einer Transaktion befinden!'),
+
+   // Falls vorhanden die alten Merkmalssätze zurerst löschen
+   SML_DeleteAllUsageTable(oDM, nSML_ID),
+
+   aSLMemo           := StrToArr(cSLMemo),
+   nLen              := ALen(aSLMemo),
+   oSmlZEL           := DbGetTable(oDM, waSMLZEL, 'SMLZEL'),
+   oSmlZEL.IndexName := 'SML_ID_V_INDEX',
+
+   for i := 1 to nLen do
+      DbAppend(oSmlZEL),
+      oSmlZEL:SML_ID    := nSML_ID,
+      oSmlZEL:V_INDEX   := aSLMemo[i, gl_SML_SLMemoVIndex],
+      oSmlZEL:BEZ       := aSLMemo[i, gl_SML_SLMemoLabel],
+      oSmlZEL:DRUCKEN   := aSLMemo[i, gl_SML_SLMemoPrint],
+      oSmlZEL:MERKM_TYP := aSLMemo[i, gl_SML_SLMemoRowType],
+      oSmlZEL:DATEN_TYP := aSLMemo[i, gl_SML_SLMemoDataType],
+      oSmlZEL:MMT       := aSLMemo[i, gl_SML_SLMemoAttribTable],
+      oSmlZEL:VORGABE   := aSLMemo[i, gl_SML_SLMemoValue],
+      oSmlZEL:FORMAT    := aSLMemo[i, gl_SML_SLMemoFormat],
+      oSmlZEL:CODEBLOCK := aSLMemo[i, gl_SML_SLMemoCalcBlock],
+      oSmlZEL:GROESSE   := aSLMemo[i, gl_SML_SLMemoFieldSize],
+      DbPost(oSmlZEL),
+   next,
+end,
+
+//******************************************************************************
+// Codeblock-Typ anhand des Sachmerkmals-Datentyps ermitteln
+// @Result: string
+//******************************************************************************
+function _SML_DataTypeToCbDataType(nSMLDataType)
+   case nSMLDataType
+      of gl_SML_DataTypeText        :: Result := 'C', // Text
+      of gl_SML_DataTypeNumeric     :: Result := 'N', // Numerischer Wert
+      of gl_SML_DataTypeMemo        :: Result := 'C', // Langtext
+      of gl_SML_DataTypeArticle     :: Result := 'C', // Artikelnummer
+      of gl_SML_DataTypeBoolean     :: Result := 'L', // Boolean-Wert
+      of gl_SML_DataTypeDate        :: Result := 'D', // Datums-Wert
+      of gl_SML_DataTypeAttribTable :: Result := 'C', // MMT-Merkmal
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp: ' + Str(nSMLDataType)),
+   endcase,
+end,
+
+//******************************************************************************
+// Control-Wert anhand des Datentyps ermitteln.
+// @Result: any
+//******************************************************************************
+function _SML_GUI_GetControlValueByDataType(oControl, nSMLDataType)
+   case nSMLDataType
+      of gl_SML_DataTypeText        :: Result := oControl.Text,    // Text
+      of gl_SML_DataTypeNumeric     :: Result := oControl.Text,    // Numerischer Wert
+      of gl_SML_DataTypeMemo        :: Result := oControl.Text,    // Langtext
+      of gl_SML_DataTypeArticle     :: Result := oControl.Text,    // Artikelnummer
+      of gl_SML_DataTypeBoolean     :: Result := oControl.Checked, // Boolean-Wert
+      of gl_SML_DataTypeDate        :: Result := oControl.Date,    // Datums-Wert
+      of gl_SML_DataTypeAttribTable :: Result := oControl.Value,   // MMT-Merkmal
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp: ' + Str(nSMLDataType)),
+   endcase,
+end,
+
+//******************************************************************************
+// Control-Wert anhand des Control-Typs ermitteln.
+// @Result: any
+//******************************************************************************
+function _SML_GUI_GetControlValue(oControl)
+   case ClassName(oControl)
+      of 'TBeEdit'           :: Result := oControl.Text,
+      of 'TBeSearchEdit'     :: Result := oControl.Text,
+      of 'TBeEditArtNo'      :: Result := oControl.Text,
+      of 'TCheckBox'         :: Result := oControl.Checked,
+      of 'TBeDateTimePicker' :: Result := oControl.Date,
+      of 'TBeAttribCombo'    :: Result := oControl.Value,
+      otherwise
+         SetError('Ungültiger Control-Typ: ' + ClassName(oControl)),
+   endcase,
+end,
+
+//******************************************************************************
+// Control-Wert anhand des Datentyps setzen.
+// @Result: null
+//******************************************************************************
+function _SML_GUI_SetControlValueByDataType(oControl, nSMLDataType, cValue:C)
+   case nSMLDataType
+      of gl_SML_DataTypeText        :: Result := oControl.Text    := cValue,                             // Text
+      of gl_SML_DataTypeNumeric     :: Result := oControl.Text    := cValue,                             // Numerischer Wert
+      of gl_SML_DataTypeMemo        :: Result := oControl.Text    := cValue,                             // Langtext
+      of gl_SML_DataTypeArticle     :: Result := oControl.Text    := cValue,                             // Artikelnummer
+      of gl_SML_DataTypeBoolean     :: Result := oControl.Checked := iif(cValue == 'True', True, False), // Boolean-Wert
+      of gl_SML_DataTypeDate        :: Result := oControl.Date    := CToD(cValue),                       // Datums-Wert
+      of gl_SML_DataTypeAttribTable :: Result := oControl.Value   := cValue,                             // MMT-Merkmal
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp: ' + Str(nSMLDataType)),
+   endcase,
+end,
+
+//******************************************************************************
+// Control-Wert anhand des Datentyps setzen.
+// @Result: null
+//******************************************************************************
+function _SML_GUI_ClearControlDisplayValue(oControl, nSMLDataType)
+   case nSMLDataType
+      of gl_SML_DataTypeText        :: oControl.Text    := '',
+      of gl_SML_DataTypeNumeric     :: oControl.Text    := '',
+      of gl_SML_DataTypeMemo        :: oControl.Text    := '',
+      of gl_SML_DataTypeArticle     :: oControl.Text    := '',
+      of gl_SML_DataTypeBoolean     :: oControl.Caption := '',
+                                       oControl.Checked := False,
+      of gl_SML_DataTypeDate        :: oControl.Date    := 0,
+      of gl_SML_DataTypeAttribTable :: oControl.Text    := '',
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp: ' + Str(nSMLDataType)),
+   endcase,
+end,
+
+//******************************************************************************
+// Control-Klasse anhand des Datentyps ermitteln
+// @Result: string
+//******************************************************************************
+function _SML_GUI_GetControlClassByDataType(nSMLDataType)
+| cDefaultEditControl |
+   cDefaultEditControl := 'TBeSearchEdit',
+   case nSMLDataType
+      of gl_SML_DataTypeText        :: Result := cDefaultEditControl, // Text
+      of gl_SML_DataTypeNumeric     :: Result := cDefaultEditControl, // Numerischer Wert
+      of gl_SML_DataTypeMemo        :: Result := cDefaultEditControl, // Langtext
+      of gl_SML_DataTypeArticle     :: Result := 'TBeEditArtNo',      // Artikelnummer
+      of gl_SML_DataTypeBoolean     :: Result := 'TCheckBox',         // Boolean-Wert
+      of gl_SML_DataTypeDate        :: Result := 'TBeDateTimePicker', // Datums-Wert
+      of gl_SML_DataTypeAttribTable :: Result := 'TBeAttribCombo',    // MMT-Merkmal
+      otherwise
+         SetError('Ungültiger Sachmerkmals-Datentyp: ' + Str(nSMLDataType)),
+   endcase,
+end,
+
+//******************************************************************************
+// Tabellenbezeichnung und Alias für nWorkarea ermitteln
+// @Result: string
+//******************************************************************************
+function _SML_GetWorkareaLabel(nWorkarea)
+| oInfo |
+   Result := '',
+   if nWorkarea > 0 then
+      oInfo  := GetTableInfo(nWorkarea),
+      Result := iif(oInfo <> nil,
+                    oInfo.TableLabel + ' (' + oInfo.TableDef.AliasName + ')',
+                    '???'),
+   endif,
+end,
+
+//******************************************************************************
+// Datensatzschlüssel eines Stammdatensatzes ermitteln
+// @Result: Stammdatensatz-Schlüssel (z.B. Artikelnummer, Kundennummer, etc.)
+//******************************************************************************
+function _SML_GetMasterRecordKey(nWorkarea, nID)
+| uIndex, cFieldName, bFoundWA, i |
+   Result     := '',
+   uIndex     := '',
+   cFieldName := '',
+   bFoundWA   := False,
+
+   for i := 1 to ALen(gl_SML_AllowedWorkareas) do
+      if nWorkarea = gl_SML_AllowedWorkareas[i, 1] then
+         uIndex     := gl_SML_AllowedWorkareas[i, 2],
+         cFieldName := gl_SML_AllowedWorkareas[i, 3],
+         Result     := Lookup(nWorkarea, uIndex, {{nID}}, 'Trim(' + cFieldName + ')', ''),
+         bFoundWA   := True,
+         break,
+      endif,
+   next,
+   SetErrorIf(not bFoundWA, 'Unsupported workarea: ' + Str(nWorkarea)),
+end,
+
+//******************************************************************************
+// Ermittelt eine Liste aller Workareas, die für die Sachmerkmalleisten-
+// Verwendung erlaubt sind.
+// @Result: array, Workarea-Liste
+//******************************************************************************
+function _SML_GetAllowedUsageWorkareas()
+| i |
+
+   Result := {},
+   for i := 1 to ALen(gl_SML_AllowedWorkareas) do
+      AAdd(Result, gl_SML_AllowedWorkareas[i, 1]),
+   next,
+end,
+
+//******************************************************************************
+// REQ-396
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_GetSMLIDByKey_DM() [REQ-397]
+//    * SML_GetSMLIDByKey()    [REQ-391]
+//
+//******************************************************************************
+// Sachmerkmalleisten-ID anhand der Sachmerkmalleisten-Nummer ermitteln.
+// @Result: integer, ID der Sachmerkmalleiste
+//******************************************************************************
+function _SML_GetSMLIDByKey_Internal(oSMLSTM:O, cSMLKey:C)
+   SetErrorIf(Empty(cSMLKey),                   'Sachmerkmalleisten-Nummer darf nicht leer sein!'),
+   SetErrorIf(not oSMLSTM.CbFindKey({cSMLKey}), 'Es existiert keine Sachmerkmalleiste mit der Nummer <' + cSMLKey + '>!'),
+   Result := oSMLSTM:ID,
+end,
+
+//******************************************************************************
+// REQ-397
+//******************************************************************************
+// Sachmerkmalleisten-ID anhand der Sachmerkmalleisten-Nummer ermitteln.
+// Als Basis für die Ermittlung der Sachmerkmalleisten-ID wird das übergebene
+//  Datenmodul verwendet.
+// Diese Funktion dient zur Verwendung innerhalb einer Transaktion.
+//
+// @Result: integer, ID der Sachmerkmalleiste
+//******************************************************************************
+function _SML_GetSMLIDByKey_DM(oDM:O, cSMLKey:C)
+| oSMLSTM |
+
+   oSMLSTM           := DbGetTable(oDM, waSMLSTM, 'SML_SMLSTM'),
+   oSMLSTM.IndexName := 'NUMMER',
+   Result            := SML_GetSMLIDByKey_Internal(oSMLSTM, cSMLKey),
+end,
+
+//******************************************************************************
+// REQ-391
+//******************************************************************************
+// Sachmerkmalleisten-ID anhand der Sachmerkmalleisten-Nummer ermitteln.
+// @Result: integer, ID der Sachmerkmalleiste
+//******************************************************************************
+function _SML_GetSMLIDByKey(cSMLKey:C)
+| oSMLSTM |
+
+   oSMLSTM := BeOpen(waSMLSTM, 'NUMMER'),
+   startseq
+      Result := SML_GetSMLIDByKey_Internal(oSMLSTM, cSMLKey),
+   always
+      BeClose(oSMLSTM),
+   stopseq,
+end,
+
+//******************************************************************************
+// Exception per Sachmerkmalleisten-API Fehlercode auslösen
+//
+// Parameter:
+//  * nErrorCode: Gibt den Fehlercode an. Mögliche Fehlercodes:
+//     -> 0: Kein Fehler, es wird keine Exception ausgelöst
+//     -> 1: 'Leerer Merkmal-Schlüssel nicht erlaubt'
+//     -> 2: 'Merkmal-Schlüssel <...> kann keinem Merkmal zugeordnet werden'
+//     -> 3: 'V-Array ist nicht gültig, 1. Parameter SMLV_VVal() muss immer v sein. Z.B.: SMLV_VVal(v, ...)'
+//     -> 4: 'Keine Sachmerkmalleistenzuordnungen vorhanden für Workarea <...> und ID <...>'
+//     -> 5: 'Wert für Merkmal <...> ist nicht eindeutig in allen Zuordnungen: ...'
+//     -> alle anderen Fehlercodes: 'Unbekannter Fehler'
+//
+//     Beispiel:
+//        // Fehler "Leerer Merkmal-Schlüssel nicht erlaubt"
+//        SML_RaiseException(1),
+//
+//  * uErrorContext: Fehler-Context
+//     Kann entweder ein einzelner Wert sein, oder ein Array mit mehreren
+//     Werten.
+//     Komplexe Fehlerinformationen werden als Array übergeben.
+//     Beispiel 1:
+//        // Fehler: Merkmal-Schlüssel kann keinem Merkmal zugeordnet werden
+//        //    Code:              2
+//        //    Merkmal-Schlüssel: 'DURCHMESSER'
+//        SML_RaiseException(2, 'DURCHMESSER'),
+//     Beispiel 2:
+//        // Fehler: Wert für Merkmal ist nicht eindeutig in allen Zuordnungen
+//        //    Code:              5
+//        //    Merkmal-Schlüssel: 'DURCHMESSER'
+//        //    Merkmalswert:      130
+//        //    Abweichender Wert: 150
+//        SML_RaiseException(5, {'DURCHMESSER', 130, 150}),
+//
+// @Result: null
+//******************************************************************************
+//function _SML_RaiseException(nErrorCode:N, uErrorContext)
+//   //***************************************************************************
+//   // Exception "Unbekannter Fehler" auslösen
+//   // @Result: null
+//   //***************************************************************************
+//   function RaiseUnknownError()
+//      Result := SetError('SML_RaiseException(): Unbekannter Fehler'),
+//   end,
+//
+//   //***************************************************************************
+//   // Fehlermeldung per Fehlercode ermitteln
+//   // @Result: string, Fehlermeldung
+//   //***************************************************************************
+//   function GetErrorMessageByCode(nErrorCode:N, aErrorContext)
+//      //************************************************************************
+//      // Gibt das Element am entsprechenden Index in einem Array zurück.
+//      // Dabei wird geprüft, ob es sich bei aArray überhaupt um ein Array
+//      // handelt. Ist das nicht der Fall, dann wird bei nIndex = 1 der Wert
+//      // selbst (aArray) zurückgegeben.
+//      // @Result: string, Array Element als String
+//      //************************************************************************
+//      function SafeGetArrayElementAsString(aArray, nIndex:N)
+//         Result := '',
+//         if ValType(aArray) == 'A' then
+//            if (nIndex >= 1) and (nIndex <= ALen(aArray)) then
+//               Result := ToString(aArray[nIndex]),
+//            endif,
+//         else
+//            if (nIndex = 1) and (not Empty(aArray) or (ValType(aArray) == 'N')) then
+//               Result := ToString(aArray),
+//            endif,
+//         endif,
+//      end,
+//
+//      // Fehlercode 0 bedeutet: Kein Fehler -> Funktion verlassen!
+//      if nErrorCode = 0 then
+//         Exit,
+//      endif,
+//
+//      case nErrorCode
+//         of 1 :: Result := 'Leerer Merkmal-Schlüssel nicht erlaubt',
+//         of 2 :: Result := 'Merkmal-Schlüssel <%1%> kann keinem Merkmal zugeordnet werden',
+//                 Result := StrTran(Result, '%1%', SafeGetArrayElementAsString(aErrorContext, 1)),
+//         of 3 :: Result := 'V-Array ist nicht gültig, 1. Parameter SMLV_VVal() muss immer v sein. Z.B.: SMLV_VVal(v, ...)',
+//         of 4 :: Result := 'Keine Sachmerkmalleistenzuordnungen vorhanden für Workarea <%1%> und ID <%2%>',
+//                 Result := StrTran(Result, '%1%', SafeGetArrayElementAsString(aErrorContext, 1)),
+//                 Result := StrTran(Result, '%2%', SafeGetArrayElementAsString(aErrorContext, 2)),
+//         of 5 :: Result := 'Wert für Merkmal <%1%> ist nicht eindeutig in allen Zuordnungen:' + CRLF +
+//                           ' - %2%' + CRLF + ' - %3%',
+//                 Result := StrTran(Result, '%1%', SafeGetArrayElementAsString(aErrorContext, 1)),
+//                 Result := StrTran(Result, '%2%', SafeGetArrayElementAsString(aErrorContext, 2)),
+//                 Result := StrTran(Result, '%3%', SafeGetArrayElementAsString(aErrorContext, 3)),
+//         otherwise
+//            Result := 'Unbekannter Fehler',
+//      endcase,
+//   end,
+//
+//   SetError(GetErrorMessageByCode(nErrorCode, uErrorContext), nErrorCode),
+//end,
+

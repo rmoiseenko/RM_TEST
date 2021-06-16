@@ -1,0 +1,18 @@
+|
+   m_cRepoPath, m_cGitPortablePath, m_cGitUser, m_cGitToken, m_cGitUrl,
+   m_cSystemMatchcode, m_cInstanceMatchcode, m_cInstanceType
+|
+
+m_cGitPortablePath   := 'C:\be_git\PortableGit\bin',
+m_cRepoPath          := 'C:\be_git\RM_TEST',
+m_cGitUser           := 'moiseenko',
+m_cGitToken          := 'e519015836de951db5160198daec0a2699d19b9c',
+m_cGitUrl            := 'https://github.com/rmoiseenko/RM_TEST.git',
+m_cSystemMatchcode   := 'TEST', // Kundenmatchcode
+m_cInstanceMatchcode := '', // Name der Instanz
+m_cInstanceType      := 'PRODUCTION', // Type: PRODUCTION | DEVELOPMENT | TRAINING
+
+
+
+call('.admin-tools\customize-export\task_export_and_git_push', m_cRepoPath, m_cGitPortablePath, m_cGitUrl, m_cGitUser, m_cGitToken,
+   m_cSystemMatchcode, m_cInstanceMatchcode, m_cInstanceType)

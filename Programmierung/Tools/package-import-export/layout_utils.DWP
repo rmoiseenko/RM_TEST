@@ -1,0 +1,139 @@
+//##############################################################################
+//##############################################################################
+// Funktionen für Layouts (DabR10)
+//    - Diese Sammlung ist aktuell im Paket 'package-import-export'
+//      angesiedelt, wird aber (mindestens) auch genutzt von
+//        'layout-codebloecke-suchen-ersetzen'
+//        'layout-manager' (hier gibt es weitere Utils!)
+//
+// TODO: Diese Funktionen sollten in ein allgemeines Paket wandern - z.B. das 'basic-package' - nicht aber
+//       als globale Funktionen registriert werden (bloat).
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Nächste freie "REPORT_ID" für das Backup / Archiv ermitteln - dabei eine laufende Nummer hochzählen.
+//
+//   Format: <Präfix> + <ursprüngliche REPORT_ID> + <Unterstrich> + <laufende Nummer>
+//
+//   Präfixe sind:
+//      'BACKUP_' für Backups (beim import von layouts per package-import-export)
+//      'ARCHIV_' für Archivierte Layouts (Funktion im layout-manager)
+//
+//******************************************************************************
+function LayoutManagerUtils_GetBackUpOrArchive_REPORT_ID(oDM, cREPORT_ID, nREPORT_NR, cBACKUP_PreFix)
+| oDabR10, oDabR10_OutsideTransaction, cLastReportID, nLfdNr, cBackup_REPORT_ID, cLfdTrenner, cFilter |
+
+  SetErrorIf(cBACKUP_PreFix <> 'BACKUP_' and cBACKUP_PreFix <> 'ARCHIV_', 'invalid prefix. valid prefixes are "BACKUP_" & "ARCHIV_"'),
+
+  cLfdTrenner       := '_',
+  cBackup_REPORT_ID := cBACKUP_PreFix + cREPORT_ID + cLfdTrenner,
+
+  oDabR10           := DbGetTable(oDM, waDabR10, 'DABR10_BACKUP_LOOKUP'),
+  oDabR10.IndexName := 'DABR11',
+  cFilter           := 'REPORT_ID = "' + cBackup_REPORT_ID + '" AND REPORT_NR = ' + Str(nREPORT_NR),         WriteLn(cFilter),
+  DbFilter(cFilter, oDabR10),
+  startseq
+     oDabR10.CbLast(),
+     // noch kein Backup-Datensatz vorhanden?
+     if NoDs(oDabR10) then
+        nLfdNr := 1,
+     else
+        cLastReportID  := AllTrim(oDabR10:REPORT_ID),
+        nLfdNr         := Val( Token(cLastReportID, '_', TokenCount(cLastReportID, '_')) ), // Letztes Token nach dem Unterstrich extrahieren
+        SetErrorIf(nLfdNr = 0, 'backup lfd must be > 0 - internal error'),
+        nLfdNr ++,
+     endif,
+  always
+    DbFilter('', oDabR10),
+  stopseq,
+
+  // Neue Nummer zusammen setzen
+  cBackup_REPORT_ID := cBackup_REPORT_ID + Str(nLfdNr),
+  SetErrorIf(Len(cBackup_REPORT_ID) > 40, 'new backup REPORT_ID too long: "' + cBackup_REPORT_ID + '"'),
+
+  WriteLn(cBackup_REPORT_ID),
+
+  // Zur Sicherheit nochmal prüfen, ob die neue REPORT_ID wirklich frei ist (Logik-Fehler ausschließen)
+  if DbSeek({cBackup_REPORT_ID, nREPORT_NR}, oDabR10) then
+     SetError('record already exists for calculated new REPORT_ID: "' + cBackup_REPORT_ID + '" + REPORT_NR: ' + Str(nREPORT_NR)),
+  endif,
+
+  // Und außerhalb der Transaktion...
+  oDabR10_OutsideTransaction := BeOpen(waDabR10, 'DABR11'),  // Index: REPORT_ID;REPORT_NR  (hierfür eine Cache-Table nutzen => außerhalb der Transaktion)
+  startseq
+    if DbSeek({cBackup_REPORT_ID, nREPORT_NR}, oDabR10_OutsideTransaction) then
+      SetError('record already exists for calculated new REPORT_ID: "' + cBackup_REPORT_ID + '" + REPORT_NR: ' + Str(nREPORT_NR)),
+    endif,
+  always
+    BeClose(oDabR10_OutsideTransaction),
+  stopseq,
+
+  Result := {cBackup_REPORT_ID, nLfdNr},
+end,
+
+//******************************************************************************
+// Erzeugt ein Backup ("BACKUP_") für ein bestehendes Layout
+//
+// @Result: KVU-Array
+//******************************************************************************
+function PIEU_CreateBackupForLayout(oDM, cREPORT_ID, nREPORT_NR)
+| oDabR10,
+  cCopy_REPORT_ID, cCopy_REPORT_NR, cCopy_REPORT_TYP, cCopy_BEZ, cCopy_BEMERKUNG, cCopy_REPORT,
+  cCopy_ERST_DAT, cCopy_ERST_VON, cCopy_AEND_VON, cCopy_AEND_DAT, cCopy_STANDARD,
+  aRes, nBackupLfdNr, cBackup_REPORT_ID |
+
+  SetErrorIf(empty(oDM),                     'data module must not be empty'),
+  SetErrorIf(not oDM.CbTransaction_Active(), 'data module must be in ACTIVE transaction'),
+
+  SetErrorIf(ValType(cREPORT_ID) <> 'C',     'invalid valtype for cReportID'),
+  SetErrorIf(Len(cREPORT_ID) > 40,           'cReportID too long'),
+  SetErrorIf(ValType(nREPORT_NR) <> 'N',     'invalid valtype for nReportNr'),
+
+  oDabR10           := DbGetTable(oDM, waDabR10),
+  oDabR10.IndexName := 'DABR11',        // Index: REPORT_ID;REPORT_NR
+
+  // Layout muss vorhanden sein, wenn ein Backup erstellt werden soll
+  MySeek({cREPORT_ID, nREPORT_NR}, oDabR10),
+
+  // Werte des bestehenden Layouts merken
+  cCopy_REPORT_ID      := AllTrim(oDabR10:REPORT_ID),
+  cCopy_REPORT_NR      := oDabR10:REPORT_NR,
+  cCopy_REPORT_TYP     := oDabR10:REPORT_TYP,
+  cCopy_BEZ            := Alltrim(oDabR10:BEZ),
+  cCopy_BEMERKUNG      := Alltrim(oDabR10:BEMERKUNG),
+  cCopy_REPORT         := oDabR10:REPORT,
+  cCopy_ERST_DAT       := oDabR10:ERST_DAT,
+  cCopy_ERST_VON       := oDabR10:ERST_VON,
+  cCopy_AEND_VON       := oDabR10:AEND_VON,
+  cCopy_AEND_DAT       := oDabR10:AEND_DAT,
+  cCopy_STANDARD       := oDabR10:STANDARD,
+
+  aRes              := LayoutManagerUtils_GetBackUpOrArchive_REPORT_ID(oDM, cREPORT_ID, nREPORT_NR, 'BACKUP_'),
+  cBackup_REPORT_ID := aRes[1],
+  nBackupLfdNr      := aRes[2],
+
+  // Backup anlegen
+  DBAppend(oDabR10),
+  oDabR10:REPORT_ID  := cBackup_REPORT_ID,
+  oDabR10:REPORT_NR  := cCopy_REPORT_NR,
+  oDabR10:REPORT_TYP := cCopy_REPORT_TYP,
+  oDabR10:BEZ        := cCopy_BEZ + ' [BACKUP ' + Str(nBackupLfdNr) + ']',
+  oDabR10:BEMERKUNG  := cCopy_BEMERKUNG + crlf +
+                        '-----------------------------' + crlf +
+                        'Dieses Layout ist ein automatisches Backup von REPORT_ID "' + cCopy_REPORT_ID + '", REPORT_NR ' + Str(nREPORT_NR) + crlf +
+                        'angelegt am/um: ' + FormatDateTime('YYYY-MM-DD HH-MM-SS', GetAdsServerTime()) + crlf +
+                        'durch User: '  + BeUserName(c_usr),
+  oDabR10:REPORT     := cCopy_REPORT,
+  oDabR10:ERST_DAT   := cCopy_ERST_DAT,
+  oDabR10:ERST_VON   := cCopy_ERST_VON,
+  oDabR10:AEND_VON   := cCopy_AEND_VON,
+  oDabR10:AEND_DAT   := cCopy_AEND_DAT,
+  oDabR10:STANDARD   := cCopy_STANDARD,
+  DBPost(oDabR10),
+
+  Result := {},
+  KVU_Set(Result, 'REPORT_ID',    cBackup_REPORT_ID),
+  KVU_Set(Result, 'BACKUP_LFDNR', nBackupLfdNr),
+end,

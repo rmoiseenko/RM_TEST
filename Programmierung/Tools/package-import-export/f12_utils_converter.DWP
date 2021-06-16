@@ -1,0 +1,16 @@
+
+// Dieses Programm kapselt die ab 7.2 neuen Funktionen für die Umwandlung von F12
+// Forms nach/von JSON. -> per Call() aufrufen, in 6.5 gäbe es sonst einen Compile-Fehler wg. fehlender Funktionen.
+
+| cMode:P1, uInput:P2,
+  m_uResult |
+
+m_uResult := '',
+
+case cMode
+   of 'BIN_ARR_TO_JSON' :: m_uResult := FormAsExportText(uInput), // Internes F12-Formular (als Array) Format als JSON
+   of 'JSON_TO_BIN_ARR' :: m_uResult := FormToImportText(uInput), // F12-Formular als JSON zurück ins interne Format (als Array)
+   otherwise SetError('unknown mode "' + cMode + '"'),
+endcase,
+
+m_uResult

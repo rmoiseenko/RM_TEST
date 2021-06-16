@@ -1,0 +1,1269 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+   // Parameter
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+   m_aSettings:P5,
+
+   // Tabellen
+   m_oPostingsTable,
+
+   // Browser
+   m_cProjectBrowser, m_cTaskBrowser, m_cPostingsBrowser,
+
+   // Konstanten
+   m_cDaysToShow, m_cDefaultSaveId, m_cFormSaveID,
+
+   // Sonstige Variablen
+   m_dStartDate:D, m_lPostingsChanged:L:=False, m_lAllowChangePersonnel:L:=True,
+   m_lRefreshing:L:=False, m_aChangedPostings, m_nDay, m_nOldVal, m_nNewVal,
+   m_cLastSelectedColumn:U:=nil,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_AddPosting, A_Cancel, A_NextWeek, A_PriorWeek, A_Refresh,
+   A_SavePostings, bnt_PriorWeek, btn_AddPosting, btn_Cancel, btn_NextWeek,
+   btn_Refresh, btn_SavePostings, cmb_FilterState, cmb_Personnel,
+   cmb_ViewPostingUnit, ds_DabPRJ, ds_DabPRV, ds_MemPostings,
+   edt_PostingComment, edt_SearchProject, edt_SearchTask, edt_ViewWeek,
+   grd_Postings, grd_Projects, grd_Tasks, grp_Settings, lbl_DateFrom,
+   lbl_FilterState, lbl_Personnel, lbl_PostingComment, lbl_ViewPostingUnit,
+   MainActionList, oDabPRJ, oDabPRV, pnl_AddPosting, pnl_BackMain, pnl_Bottom,
+   pnl_CommentBack, pnl_InfoCaption, pnl_Main, pnl_NewPosting, pnl_Projects,
+   pnl_ProjectSearch, pnl_ProjectsMain, pnl_Search, pnl_StateFilter, pnl_Tasks,
+   pnl_Top, pnl_ViewSettings, spl_Settings, timer_SelectedCellChange
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+// Browser
+m_cProjectBrowser  := '@PRJZEIPRJ',
+m_cTaskBrowser     := '@PRJZEITSK',
+m_cPostingsBrowser := '@PRJZEIBU',
+
+m_cDefaultSaveId   := 'PRJZEITBUCH',
+m_cFormSaveID      := '@PROJZB',
+
+m_cDaysToShow      := 7,
+
+// Konstanten für den Zugriff auf das Array für Änderungen
+m_nDay    := 1, // Name der Spalte
+m_nOldVal := 2, // Alter Wert
+m_nNewVal := 3, // Neuer Wert
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermittelt die aktuelle Spalte im Browser
+// @Result: null
+//******************************************************************************
+function GetActualColumn()
+| oColumns |
+   startseq
+      Result   := nil,
+      oColumns := grd_Postings.Columns, // Alle Spalten des Browsers laden
+      if grd_Postings.SelectedIndex >= 0 then // Prüfen ob der index >= 0 ist
+         Result := CollItem(oColumns, grd_Postings.SelectedIndex + 1), // Auslesen der passenden Spalte
+      endif,
+   onerror
+      SetError('Fehler beim Ermitteln der aktuellen Spalte im Browser' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Setzt das RichEdit für die Kommentareingabe/-anzeige auf das passende Feld
+// der Memtable für die Buchungen
+// @Result: null
+//******************************************************************************
+function RefreshCommentEdit(oColumn)
+| cNewRichEditField, cFieldName, cDataFieldName |
+   cDataFieldName := '',
+   if oColumn <> nil and not empty(oColumn) then
+      cFieldName := oColumn.FieldName,
+      if m_oPostingsTable:ZEILEN_TYP = 'B' and                                  // Buchungszeile?
+         Left(cFieldName, 8) = 'TAG_NEW_' and                                   // Spalte ist eine der TAG-Spalten?
+         ( AsNumber(cFieldName, m_oPostingsTable) <>
+           AsNumber('TAG_OLD_' + Right(cFieldName, 1), m_oPostingsTable) ) then // Änderung vorhanden?
+         cNewRichEditField := 'TAG_COM_' + Right(oColumn.FieldName, 1),
+         cDataFieldName := cNewRichEditField,
+      endif,
+   endif,
+   edt_PostingComment.DataField := cDataFieldName,            // Berechnetes Feld setzen
+   edt_PostingComment.ReadOnly  := empty(cDataFieldName),     // RichEdit beschreibbar
+   edt_PostingComment.Enabled   := not empty(cDataFieldName), // machen
+end,
+
+//******************************************************************************
+// Prüft ob ein String eine gültige KW-Eingabe ist (KW.43.21)
+//******************************************************************************
+function IsValidateWeekStr( cWeekStr )
+| cInput |
+   cInput := TermIndexToStr(DateStr(cWeekStr)),
+   Result := (Len(cInput) > 0) and (Upper(Left(cInput, 2)) = 'KW'),
+end,
+
+//******************************************************************************
+// Wandelt einen KW-String (KW.43.21) in das Datum des Montags dieser KW um
+//******************************************************************************
+function WeekToMondayOfWeekDate( cWeekStr )
+  if IsValidateWeekStr(cWeekStr) then
+     Result := FrKw(Kw(WToD(cWeekStr))) - 4, // -4 für Fr->Mo
+  else
+     Result := 0,
+  endif,
+end,
+
+//******************************************************************************
+// Blendet das RichEdit ein und aus je nach aktuell markierter Zelle im Browser
+// @Result: null
+//******************************************************************************
+function CommentEditVisible(oMemTable)
+| oField, oColumns, oColumn, cFieldName, cLineType |
+   startseq
+      startseq
+         Result     := False,
+         oColumn    := GetActualColumn(),
+         cFieldName := oColumn.FieldName,
+         cLineType  := oMemtable:ZEILEN_TYP,
+         oField     := grd_Postings.SelectedField,   
+
+         // Readonly Spalten der 'B' Zeilen
+         if not (oField.ReadOnly and cLineType = 'B') then   
+            // Nur sichtbar wenn die Spalten der 'B' Zeilen durch den Benutzer geändert wurden
+            if cLineType = 'B' then
+               if Left(cFieldName, 8) = 'TAG_NEW_' and
+                  AsNumber(cFieldName, oMemtable) <> AsNumber('TAG_OLD_' + Right(cFieldName, 1), oMemtable) then
+                  Result := True,
+               endif,
+            endif,
+         endif,
+      always
+         timer_SelectedCellChange.Enabled := True,
+      stopseq,
+   onerror
+      SetError('Fehler beim Ermitteln des Visible-Status für die Kommentareingabe' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Aktualisiert den Enabled-Status der Actions
+//******************************************************************************
+function ActionsEnabled()
+| bProjectsAvailable, bTasksAvailable, bEnabled, bAddEnabled, cFieldName |
+
+   //prs('FUNCTION: ActionsEnabled()', 'START'),
+
+   bProjectsAvailable := not (eof(oDabPRJ) and bof(oDabPRJ)),
+   bTasksAvailable    := not (eof(oDabPRV) and bof(oDabPRV)),
+   bAddEnabled        := not (eof(m_oPostingsTable) and bof(m_oPostingsTable)) and
+                         (oDabPRV.Active and (oDabPRV:TYP <> bcPRV_Type_GroupTask) and
+                                             (oDabPRV:TYP <> bcPRV_Type_Milestone)),           // Meilensteine & Sammelvorgänge können keine Buchungen haben
+   bEnabled           := cmb_Personnel.Value <> '' and
+                         IsValidateWeekStr(edt_ViewWeek.Text) and
+                         cmb_ViewPostingUnit.Value <> '',
+
+   A_AddPosting.Enabled        := bProjectsAvailable and bTasksAvailable and bEnabled and bAddEnabled,
+   A_SavePostings.Enabled      := m_lPostingsChanged,
+   A_Refresh.Enabled           := not m_lPostingsChanged and bEnabled,
+   A_Cancel.Enabled            := m_lPostingsChanged,
+
+   A_NextWeek.Enabled          := not m_lPostingsChanged and bEnabled,
+   A_PriorWeek.Enabled         := not m_lPostingsChanged and bEnabled,
+
+   cmb_Personnel.Enabled       := m_lAllowChangePersonnel and (not m_lPostingsChanged) and (CollCount(cmb_Personnel.Items) > 0),
+   edt_ViewWeek.Enabled        := not m_lPostingsChanged,
+   cmb_ViewPostingUnit.Enabled := not m_lPostingsChanged,
+
+   edt_PostingComment.Enabled  := not empty(edt_PostingComment.DataField),
+   lbl_PostingComment.Enabled  := not empty(edt_PostingComment.DataField),
+   //prs('FUNCTION: ActionsEnabled()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Detail-Filter für DabPRV (Vorgänge)
+//******************************************************************************
+function DabPRVFilter()
+| cOrgSearchText, cOptiSearchText |
+   startseq
+      cOrgSearchText  := edt_SearchTask.Text,
+      cOptiSearchText := PrepareTextforFTSSearch(waDabPRV,
+                                                 'SUCHE',
+                                                 cOrgSearchText,
+                                                 'SUCHE_FTS',
+                                                 True,
+                                                 True,
+                                                 'AND',
+                                                 True),
+      Result := 'PRJ_ID = ' + Str(oDabPRJ:ID),
+      if not empty(AllTrim(cOptiSearchText)) then
+         Result := Result + ' AND ' + cOptiSearchText,
+      endif,
+   onerror
+      SetError('Fehler beim Setzen des Suchfilters' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Memtabel mit allen Buchungen die zu den aktuellen Einstellungen passen
+// aktualisieren
+//******************************************************************************
+function RefreshPostings()
+| nOldCursor |
+
+   if m_lRefreshing then
+      exit,
+   endif,
+
+   prs('FUNCTION: RefreshPostings()', 'START'),
+
+   A_Refresh.Enabled := False,                                                  // Wird durch automatisch durch "ActionsEnabled()" wieder aktiviert
+   ReDim(m_aChangedPostings, 0),
+   m_lPostingsChanged := False,
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      DBDisableControls(m_oPostingsTable),
+      startseq
+         m_lRefreshing := True,
+         startseq
+            m_dStartDate := WeekToMondayOfWeekDate(edt_ViewWeek.Text),
+            ProjMgmt_ProjectPostingMemtable(m_oPostingsTable, False, iif(empty(cmb_Personnel.Value), -1, cmb_Personnel.Value),
+                                            m_dStartDate, m_cDaysToShow, cmb_ViewPostingUnit.Value),
+            DBLocate('ZEILEN_TYP', 'B', 0, m_oPostingsTable),
+            grd_Postings.CbRefreshDynamicCaption(),                             // Dynamische Spalten-Überschriften aktualisieren
+            ActionsEnabled(),
+         always
+            m_lRefreshing := False,
+         stopseq,
+      always,
+         DbEnableControls(m_oPostingsTable),
+      stopseq,
+   always,
+      SetCursor(nOldCursor),
+   stopseq,
+
+   prs('FUNCTION: RefreshPostings()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Neue Buchungs-Zeile anlegen
+//******************************************************************************
+function AddPostingLine()
+
+   prs('FUNCTION: AddPostingLine()', 'START'),
+
+   //***************************************************************************
+   // Neue Buchungs-Zeile anlegen
+   //***************************************************************************
+   function InsertNewPosting(oMemtable, nPrjID, nVorgID)
+      m_lRefreshing := True,
+      startseq,
+         MyAppend(oMemTable),
+         oMemTable:ZEILEN_TYP      := 'B',
+         oMemTable:SORT_KEY        := '50',
+         oMemTable:EINGABE_EINHEIT := cmb_ViewPostingUnit.Value,
+         oMemTable:PRJ_ID          := nPrjID,
+         oMemTable:VORG_ID         := nVorgID,
+         oMemTable:VORGLS_ID       := 0,
+         oMemTable:START_DATE      := m_dStartDate,
+         MyPost(oMemTable),
+      always
+         ReDim(m_aChangedPostings, 0),
+         m_lRefreshing      := False,
+      stopseq,
+   end,
+
+   DBDisableControls(m_oPostingsTable),
+   startseq
+      if not DBLocate('PRJ_ID;VORG_ID', {oDabPRV:PRJ_ID, oDabPRV:ID}, 0, m_oPostingsTable) then
+         InsertNewPosting(m_oPostingsTable, oDabPRV:PRJ_ID, oDabPRV:ID),
+         // Spalte des ersten Tags selektieren (gib es die Spalte nich dann passiert nichts)
+         grd_Postings.SelectedField := DbField('TAG_NEW_1', m_oPostingsTable),
+      endif,
+      MyFocusControl(oForm, grd_Postings),
+   always
+      DBEnableControls(m_oPostingsTable),
+   stopseq,
+   MyEdit(m_oPostingsTable),
+
+   prs('FUNCTION: AddPostingLine()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Buchungen speichern
+//******************************************************************************
+function SavePostings()
+| oDM, cFieldName, nOldVal, nNewVal, cComment, i, nDiff, nOldCursor, oImportTable |
+
+   prs('FUNCTION: SavePostings', 'START'),
+
+   A_SavePostings.Enabled := False,                                             // Wird durch automatisch durch "ActionsEnabled()" wieder aktiviert
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      startseq
+         DBDisableControls(m_oPostingsTable),
+         startseq
+            oDM          := CreateObject('TBeDbGet', 'MainBuchDM', oForm, oForm), // Haupt-Datenmodul erstellen
+            oImportTable := CreateObject('TMemCalcTable', 'ImportMem', oForm, oForm),
+            startseq
+               // Memtable erzeugen
+               ProjMgmt_InitProjectEffortPostingImportTable(oImportTable),
+               DeleteAllData(oImportTable),
+
+               // Erfasste Projekt-Zeiten im Memtable übertragen
+               DbGoTop(m_oPostingsTable),
+               while not eof(m_oPostingsTable) do
+                  if m_oPostingsTable:ZEILEN_TYP = 'B' then
+                     for i := 1 to m_cDaysToShow do
+                        cFieldName := 'TAG_OLD_' + Str(i),
+                        nOldVal    := AsNumber(cFieldName, m_oPostingsTable),
+                        cFieldName := 'TAG_NEW_' + Str(i),
+                        nNewVal    := AsNumber(cFieldName, m_oPostingsTable),
+                        cFieldName := 'TAG_COM_' + Str(i),
+                        cComment   := AsString(cFieldName, m_oPostingsTable),
+
+                        // Buchungen nur für Sätze durchführen deren Wert sich auch geändert hat
+                        if (nNewVal - nOldVal) <> 0 then
+                           // Buchung durchführen
+                           nDiff := nNewVal - nOldVal,
+                           nDiff := iif(m_oPostingsTable:EINGABE_EINHEIT = 'h', nDiff * 60, nDiff), // Stunden-Werte wieder in Minuten umrechnen
+                           nDiff := Round(nDiff, cPMResMinutePrec),
+
+                           MyAppend(oImportTable),
+                           oImportTable:PRJ_ID  := m_oPostingsTable:PRJ_ID,
+                           oImportTable:VORG_ID := m_oPostingsTable:VORG_ID,
+                           oImportTable:RES_ID  := Val(cmb_Personnel.Value),
+                           oImportTable:RESTYP  := 'M',
+                           oImportTable:MINUTES := nDiff,
+                           oImportTable:DATE    := CToD(ProjMgmtGUI_CalcPostingDateFieldTitle(m_dStartDate ,cFieldName)),
+                           oImportTable:MEMO    := cComment,
+                           MyPost(oImportTable),
+                        endif,
+                     next,
+                  endif,
+                  dbskip(1, m_oPostingsTable),
+               end,
+
+               // Memtable validieren
+               ProjMgmt_ValidateProjectEffortPostingImportTable(oDM, oImportTable, 0, 0),
+
+               startseq
+                  DbStartTrans(oDM.AdsConnection),
+                  startseq
+                     // Buchungen durchführen
+                     ProjMgmt_ImportProjectEffortPostingImportTable(oDM, oImportTable, 0, 0),
+                     DbCommit(oDM.AdsConnection),
+                     ReDim(m_aChangedPostings, 0),
+                     m_lPostingsChanged := False,
+                  always
+                     if DbInTrans(oDM.AdsConnection) then
+                        DbRollback(oDM.AdsConnection),
+                     endif,
+                  stopseq,
+               onerror
+                  // Fehler wegen fehlender Neuanlage-Berechtigung in schöne
+                  // Meldung wandeln
+                  if ClassName(GetErrorObj()) = 'EBeCustomDBBoInsertException' then
+                     MessageDlg(GetLangText(1505), mtError),
+                  else
+                     // Andere Fehler wieder auslösen
+                     SetError(GetErrorText()),
+                  endif,
+               stopseq,
+            always
+               DestroyObject(oImportTable),
+               DestroyObject(oDM),
+            stopseq,
+         always
+            DBEnableControls(m_oPostingsTable),
+         stopseq,
+      onerror,
+         SetError('Fehler beim Durchführen der Leistungs-Buchungen' + crlf + GetErrorText()),
+      stopseq,
+   always,
+      SetCursor(nOldCursor),
+   stopseq,
+
+   prs('FUNCTION: SavePostings', 'ENDE'),
+end,
+
+//******************************************************************************
+// Filtert die Projekttabelle mit Hilfe des FTS-Index auf das SUCHE-Feld
+//******************************************************************************
+function SearchProject()
+| cOrgSearchText, cFilter, cStateFilter, oErrObj |
+
+   //***************************************************************************
+   function CheckComboToFilter(oCombo, cField)
+   |i, aValues, aItems |
+      Result  := '',
+      aItems  := oCombo.CheckedItems,
+      aValues := oCombo.ValuesChecked,
+      for i := 1 to ALen(aItems) do
+         iif(not empty(Result), Result += ' OR ', ''),
+         Result += '(' + cField + ' = ' + CollItem(aValues, aItems[i]) + ')',
+      end,
+
+      // Es wurden alle Einträge abgewählt, aber es stehen nicht alle Stati zur
+      // Auswahl (Einschränkung von außen) dann auch nur für diese Stati anzeigen
+      if empty(Result) and ALen(m_aSettings) > 1 and Len(m_aSettings[2]) >= 3 then
+         aValues := oCombo.ValuesChecked,
+         for i := 1 to CollCount(oCombo.Items) do
+            iif(not empty(Result), Result += ' OR ', ''),
+            Result += '(' + cField + ' = ' + CollItem(aValues, i) + ')',
+         end,
+      endif,
+
+      iif(not empty(Result), Result := '(' + Result + ')', ''),
+   end,
+
+   startseq
+      cFilter        := '',
+      cOrgSearchText := edt_SearchProject.Text,
+      cFilter        := PrepareTextforFTSSearch(waDabPRJ,
+                                                'SUCHE',
+                                                cOrgSearchText,
+                                                'SUCHE_FTS',
+                                                True,
+                                                True,
+                                                'AND',
+                                                True),
+      // Projekt Status-Filter
+      cStateFilter := CheckComboToFilter(cmb_FilterState, 'STATUS'),
+
+      // FTS_Filter & Status-Filter zusammensetzen
+      if not empty(cStateFilter) then
+         iif (not empty(cFilter), cFilter += ' AND ' + cStateFilter + '',
+                                  cFilter := cStateFilter),
+      endif,
+
+      // Filter aufheben - setzen - aktivieren
+      startseq
+         oDABPRJ.Filtered := False,
+         oDABPRJ.Filter   := cFilter,
+         oDABPRJ.Filtered := True,
+      onerror
+         oErrObj := GetErrorObj(),
+         // Ads-Filter Exception abfangen und verschlucken
+         if ClassName(oErrObj) = 'EADSDatabaseError' and
+            At('oDabPRJ: Error 7103', GetErrorText()) >= 0 then
+            Prs('SearchProject()', 'Error: ' + GetErrorText()),
+            exit,
+         else
+            SetError(GetErrorText()),
+         endif,
+      stopseq,
+   onerror
+      SetError('Fehler beim Setzen des Suchfilters' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Filtert die Vorgängetabelle mit Hilfe des FTS-Index auf das SUCHE-Feld
+//******************************************************************************
+function SearchTask()
+| oErrObj |
+   Result := False,
+   startseq
+      // Filter aufheben - setzen - aktivieren
+      oDABPRV.Filtered := False,
+      oDABPRV.Filter   := DabPRVFilter(),
+      oDABPRV.Filtered := True,
+      Result           := True,
+   onerror
+      oErrObj := GetErrorObj(),
+      // Ads-Filter Exception abfangen und verschlucken
+      if ClassName(oErrObj) = 'EADSDatabaseError' and
+         At('oDabPRV: Error 7103', GetErrorText()) >= 0 then
+         Prs('SearchProject()', 'Error: ' + GetErrorText()),
+         exit,
+      else
+         SetError(GetErrorText()),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnen der benötigten SQL-Querys und erste Ausführung der Statements mit
+// absichlich leerer Rückgabe um die Feldstruktur zu erhalten
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+
+   prs('FUNCTION: OpenDataBase()', 'START'),
+
+   oDabPRV.WorkArea          := waDabPRV,
+   oDabPRV.AliasName         := 'DABPRV_GRID',
+   oDabPRV.Active            := True,
+   oDabPRV.IndexName         := 'PRJ_ID',
+   oDabPRV.CheckReadAccess   := raFilter,
+   ds_DabPRV.DataSet         := oDabPRV,
+   grd_Tasks.DataSource      := ds_DabPRV,
+   grd_Tasks.RegisterDataSet := ds_DabPRV,
+   grd_Tasks.ID              := m_cTaskBrowser,
+   grd_Tasks.ReadWriteProps  := False,
+
+   oDabPRJ.WorkArea             := waDabPRJ,
+   oDABPRJ.Active               := True,
+   oDabPRJ.IndexName            := 'ID',
+   oDabPRJ.CheckReadAccess      := raFilter,
+   ds_DabPRJ.DataSet            := oDabPRJ,
+   grd_Projects.DataSource      := ds_DabPRJ,
+   grd_Projects.RegisterDataSet := ds_DabPRJ,
+   grd_Projects.ID              := m_cProjectBrowser,
+   grd_Projects.ReadWriteProps  := False,
+   DbGoTop(oDabPRJ),
+
+   // Tabelle für Projektübergreifendes Vorgangsleistungs-Tracking öffnen
+   m_oPostingsTable             := CreateObject('TMemCalcTable', 'ProjectProjectPostings', oForm, oForm),
+   m_oPostingsTable.AliasName   := 'MEM_PZEIBU',
+
+   // Einmalige Struktur holen
+   ProjMgmt_ProjectPostingMemtable(m_oPostingsTable, True, -1, 0, m_cDaysToShow, cmb_ViewPostingUnit.Value),
+   AssignEvent(m_oPostingsTable, 'BeforePost', 'DoBeforePostingsMemPost'),
+   AssignEvent(m_oPostingsTable, 'AfterPost', 'DoAfterPostingsMemPost'),
+   AssignEvent(m_oPostingsTable, 'BeforeEdit', 'DoBeforePostingsMemEdit'),
+   ds_MemPostings.DataSet       := m_oPostingsTable,
+   grd_Postings.DataSource      := ds_MemPostings,
+   grd_Postings.RegisterDataSet := m_oPostingsTable,
+   grd_Postings.ID              := m_cPostingsBrowser,
+   grd_Postings.ReadWriteProps  := False,
+
+   prs('FUNCTION: OpenDataBase()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Als Ersatz für die dyn. MM-Tabelle 102008,
+//******************************************************************************
+function GetPersonelTable(cPersonelFilter)
+|oDab262, oField |
+
+   Result := CreateObject('TMemCalcTable'),
+
+   oField := CollAdd( Result.FieldsDefinition ),
+   oField.Name     := 'WORKAREA',
+   oField.DataType := 3,
+   oField := CollAdd( Result.FieldsDefinition ),
+   oField.Name     := 'ID',
+   oField.DataType := 3,
+   oField := CollAdd( Result.FieldsDefinition ),
+   oField.Name     := 'BEZ',
+   oField.DataType := 1,
+   oField.Size     := 50,
+
+   Result.Active   := True,
+   Result.OrderBy  := 'WORKAREA;ID',
+
+   oDab262 := BeOpen(waDab262, 'DAB263'),
+   startseq
+      oDab262.Filtered := False,
+      oDab262.Filter   := "(EMPTY(DATUM_AUS) OR DATUM_AUS >" + DbFilterDatumString(Date()) + ")" +
+                          iif(not empty(cPersonelFilter), ' AND ', '') + cPersonelFilter,
+      oDab262.Filtered := True,
+      DBGoTop(oDab262),
+      while not Eof(oDab262) do
+         DBappend(Result),
+         Result:WORKAREA := waDab262,
+         Result:ID       := oDAB262:PERSNR,
+         Result:BEZ      := oDAB262:NAME,
+         DBPost(Result),
+         DBSkip(1,oDab262),
+      end,
+   always
+      BeClose(oDab262),
+   stopseq,
+
+   Result
+end,
+
+//******************************************************************************
+// Setzt die Grundeinstellungen für die Controls des Formulars
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| cLoadedParams, aParams, i, aArray, aProjectStates, cPersonel, oPersonelTable |
+
+   m_aChangedPostings    := Dim(0),
+
+   bnt_PriorWeek.Caption := '', // Wegen Action-Caption
+   btn_NextWeek.Caption  := '', // Wegen Action-Caption
+
+   // Datum (aktuelle KW)
+   edt_ViewWeek.Picture.PictureMask := 'K{W}.#[#].#[#]', // "KW.12.12" Eingabe
+   // Eingabeeinheit -> Default auf "Stunden"
+   cmb_ViewPostingUnit.Value        := 'h',
+
+   // Einstellungen für KW
+   if ALen(m_aSettings) > 2 and At('KW.', m_aSettings[3]) > 0 then
+      edt_ViewWeek.Text := m_aSettings[3],
+   else
+      edt_ViewWeek.Text := 'KW.' + KW(Date()),
+   endif,
+
+   // Einstellungen für Projekt-Stati
+   // Mögliche Werte man. aus MM-Tabelle übernehmen
+   cmb_FilterState.Items         := {},
+   cmb_FilterState.ValuesChecked := {},
+   aProjectStates                := AttribValues(-15),
+   foreach aArray in aProjectStates do
+      // Anzeige per Parameter vorgegeben? dann nur diese Einträge hinzufügen
+      if ALen(m_aSettings) > 1 and Len(m_aSettings[2]) >= 3 then
+         if Str(aArray[3]) $ m_aSettings[2] then
+            CollAdd(cmb_FilterState.Items, AttribDispVal(-15, aArray[3])),
+            CollAdd(cmb_FilterState.ValuesChecked, Str(aArray[3])),
+         endif,
+      else
+         // Ansonsten alle Einträge der MM-Tabelle übernehmen
+         CollAdd(cmb_FilterState.Items, AttribDispVal(-15, aArray[3])),
+         CollAdd(cmb_FilterState.ValuesChecked, Str(aArray[3])),
+      endif,
+   next,
+
+   // Im default Fall immer alle "aktiven" Stati auswählen
+   if ALen(m_aSettings) > 1 and Len(m_aSettings[2]) >= 3 then
+      cmb_FilterState.CBCheckAllItems,
+   else
+      cmb_FilterState.CheckedItems := {'1','2','3','4'},
+   endif,
+
+   cLoadedParams := GetBeParam(m_cDefaultSaveId),
+   aParams       := iif(empty(cLoadedParams), {}, StrToArr(cLoadedParams)),
+
+   // Panel-Höhe laden
+   if Len(aParams) > 0 and not empty(aParams[1]) then
+      pnl_Top.Height := aParams[1],
+   endif,
+   // Panel-Breite laden
+   if Len(aParams) > 1 and not empty(aParams[2]) then
+      pnl_ProjectsMain.Width := aParams[2],
+   endif,
+
+   // Einstellungen für User-Combo
+   startseq
+      // Memtable mit verfügbaren Usern befüllen
+      if ALen(m_aSettings) > 0 and Len(m_aSettings[1]) > 0 then
+         // Einschränkung für User-Combo per Parameter vorgegeben
+         for i:=1 to TokenCount(m_aSettings[1], '/') do
+            if not empty(cPersonel) then
+               cPersonel := cPersonel + ' OR ',
+            endif,
+            if not empty(Token(m_aSettings[1], '/', i)) then
+               cPersonel := cPersonel + 'PERSNR = ' + Token(m_aSettings[1], '/', i),
+            endif,
+         end,
+         oPersonelTable := GetPersonelTable(cPersonel),
+      else
+         oPersonelTable := GetPersonelTable(''),
+      endif,
+
+      // User-Combo mit befüllen
+      cmb_Personnel.Items := {},
+      dbgotop(oPersonelTable),
+      while not eof(oPersonelTable) do
+         CollAdd(cmb_Personnel.Items, Str(oPersonelTable:ID) + ' - ' +oPersonelTable:BEZ + chr(9) + Str(oPersonelTable:ID)),
+         dbskip(oPersonelTable),
+      end,
+      // Einstellungen für User-Combo laden (Achtung Param "Lücke" ist beabsichtigt!)
+      if empty(cPersonel) then
+         if Len(aParams) > 3 and not empty(aParams[4]) then
+            cmb_Personnel.Value := aParams[4],
+         else
+            cmb_Personnel.Value := mBeUserPersNr,
+         endif,
+      else
+         cmb_Personnel.ItemIndex := 0,
+      endif,
+   always
+      DestroyObject(oPersonelTable),
+   stopseq,
+
+   // Letzte "Einheit" laden
+   if Len(aParams) > 4 and not empty(aParams[5]) then
+      cmb_ViewPostingUnit.Value := aParams[5],
+   endif,
+   // Splitter Status laden
+   if Len(aParams) > 5 and not empty(aParams[6]) then
+      pnl_Top.BeSplitterState := aParams[6],
+   endif,
+   if Len(aParams) > 6 and not empty(aParams[7]) then
+      pnl_Top.BeSizeBeforeSplitterClose := aParams[7],
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Aktualisieren des Kommentarfeldes wird hier für den skip in vertikaler
+// Richtung im Grid benötigt, da im Timerevent nur auf Spaltenwechsel reagiert
+// werden kann.
+//******************************************************************************
+function ds_MemPostingsScroll_Update( Sender )
+   startseq
+      RefreshCommentEdit(GetActualColumn()),
+      ActionsEnabled(),
+   onerror
+      SetError('Fehler im Event Scroll_Update' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Prüfen ob sich die ausgewählte Zelle geändert hat und aktualisiert ggf.
+// das Kommentarfeld. Kann derzeit nicht über das Event OnCellClick gelöst
+// werden, da dieses Event teilweise nicht kommt.
+//******************************************************************************
+function timer_SelectedCellChangeTimer( Sender )
+| oColumns, oColumn |
+   startseq
+      oColumn := GetActualColumn(),
+      if m_cLastSelectedColumn <> oColumn then
+         RefreshCommentEdit(oColumn),
+         m_cLastSelectedColumn := oColumn,
+         ActionsEnabled(),
+      endif,
+   onerror
+      SetError('Fehler beim Aktualisieren des Kommentars' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Beim Verlieren des Focus im Grid wird der Timer wieder deaktiviert, da hier
+// die überprüfungen unnötig sind
+//******************************************************************************
+function grd_PostingsExit( Sender )
+   timer_SelectedCellChange.Enabled := False,
+end,
+
+//******************************************************************************
+// Beim Klick auf das Grid wird der Timer aktiviert der überprüft ob sich die
+// ausgewählte Zelle verändert hat -> Wird benötigt um die Kommentare zu
+// aktualisieren
+//******************************************************************************
+function grd_PostingsEnter( Sender )
+   timer_SelectedCellChange.Enabled := True,
+end,
+
+//******************************************************************************
+// Event: Änderung Projekt Status-Filter
+//******************************************************************************
+function cmb_FilterStateClickCheck( Sender )
+  SearchProject(),
+end,
+
+//******************************************************************************
+// Event: Umpositionierung der DabPRV
+//******************************************************************************
+function oDabPRVAfterScroll( Sender )
+   //prs('EVENT:    ds_DabPRV AfterScroll', 'START'),
+   ActionsEnabled(),
+   //prs('EVENT:    ds_DabPRV AfterScroll', 'ENDE  | ID = ' + Str(oDabPRV:ID)),
+end,
+
+//******************************************************************************
+// Event: Umpositionierung der DabPRJ -> DabPRV Detail-Tabelle auf Projekt einschränken
+//******************************************************************************
+function oDabPRJAfterScroll( Sender )
+| nOldCursor |
+   //prs('EVENT:    ds_DabPRJ AfterScroll', 'START'),
+   startseq
+      DBDisableControls(oDabPRV),
+      startseq
+         nOldCursor := SetCursor(crHourglass),
+         startseq,
+            if SearchTask() then
+               DBGoTop(oDabPRV),
+            endif,
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      always
+         DBEnableControls(oDabPRV),
+         ActionsEnabled(),
+      stopseq,
+   onerror
+      SetError('Fehler beim Aktualisieren der Verknüpfungen' + crlf + GetErrorText(), mtError),
+   stopseq,
+   //prs('EVENT:    ds_DabPRJ AfterScroll', 'ENDE  | Filter: PRJ_ID = ' + Str(oDabPRJ:ID)),
+end,
+
+//******************************************************************************
+// Event: nachdem die Memtale gepostet wurde
+//*****************************************************************************
+function DoAfterPostingsMemPost()
+| aElement, nRecNo, i |
+
+   //***************************************************************************
+   // Summenzeile aktualisieren
+   //***************************************************************************
+   function UpdateSum(oMemtable, cType, aChangedPostings)
+   | cFieldName, oField, nOldValue, i |
+      DBLocate('ZEILEN_TYP', cType, 0, m_oPostingsTable),
+      MyEdit(oMemtable),
+      for i:=1 to Alen(aChangedPostings) do
+         cFieldName := aChangedPostings[i, m_nDay],
+         oField     := DBField(cFieldName, oMemTable),
+         nOldValue  := AsNumber(cFieldName, oMemTable),
+         DBReplace(oField, Round(nOldValue + (aChangedPostings[i, m_nNewVal] - aChangedPostings[i, m_nOldVal]), cPMResMinutePrec)),
+      next,
+      MyPost(oMemTable),
+   end,
+
+   if m_lRefreshing then
+      exit,
+   endif,
+
+   // Alle Elemente deren Werte sich nicht geändert haben löschen
+   for i:=Alen(m_aChangedPostings) downto 1 do
+     aElement := m_aChangedPostings[i],
+     if aElement[m_nOldVal] = aElement[m_nNewVal] then
+        ADelete(m_aChangedPostings, i),
+     endif,
+   next,
+
+   prs('EVENT:    DoAfterPostingsMemPost', ArrToStr(m_aChangedPostings)),
+
+   startseq
+      nRecNo := DBRecNo(m_oPostingsTable),
+      m_lRefreshing := True,
+      startseq
+         // P und D Zeilen anhand der festgestellten Änderungen aktualisieren
+         if Alen(m_aChangedPostings) > 0 then
+            UpdateSum(m_oPostingsTable, 'P', m_aChangedPostings),
+            UpdateSum(m_oPostingsTable, 'D', m_aChangedPostings),
+         endif,
+      always
+         m_lRefreshing := False,
+      stopseq,
+   always
+      DbGoTo(nRecNo, m_oPostingsTable),
+   stopseq,
+
+   m_lPostingsChanged := m_lPostingsChanged or (Alen(m_aChangedPostings) > 0),
+   ReDim(m_aChangedPostings, 0),
+
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern der Memtable
+//******************************************************************************
+function DoBeforePostingsMemPost()
+| nOldVal, cFieldName, i, nNewVal |
+
+  if m_lRefreshing then
+     exit,
+  endif,
+
+  // Alle neuen (u.U. geändeten) Werte übernehmen
+  if ALen(m_aChangedPostings) > 0 then
+     for i:=1 to m_cDaysToShow do
+        cFieldName := 'TAG_NEW_' + Str(i),
+        nNewVal := AsNumber(cFieldName, m_oPostingsTable),
+
+        // Eingabe der Einzelnen Spalten validieren und ggf. abbrechen
+        if ( m_oPostingsTable:EINGABE_EINHEIT = 'h' and
+             Frac(Round(nNewVal * 60 / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 ) or
+           ( m_oPostingsTable:EINGABE_EINHEIT <> 'h' and
+             Frac(Round(nNewVal / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 ) then
+
+           grd_Postings.SelectedField := DbField(cFieldName, m_oPostingsTable),
+           SetError('Eingabe nur in ' + FormatFloat('##', gl_ProjectValidPostingsStep) +  '-Minuten-Schritten erlaubt'),
+        endif,
+
+        m_aChangedPostings[i, 3] := nNewVal,
+     next,
+  endif,
+
+  prs('EVENT:    DoBeforePostingsMemPost', ArrToStr(m_aChangedPostings)),
+end,
+
+//******************************************************************************
+// Event: Bevor die Memtable editiert wird
+//******************************************************************************
+function DoBeforePostingsMemEdit()
+| i, cFieldName, nOldVal |
+  if m_lRefreshing then
+     exit,
+  endif,
+
+  // Änderungen sind nur an "B"uchungs-Zeilen möglich
+  if m_oPostingsTable:ZEILEN_TYP <> 'B' then
+     Abort(True),
+  endif,
+
+  // Aktuellen Zustand der änderbaren Werte merken
+  for i := 1 to m_cDaysToShow do
+     cFieldName := 'TAG_NEW_' + Str(i),
+     nOldVal := AsNumber(cFieldName, m_oPostingsTable),
+     AAdd(m_aChangedPostings, {cFieldName, nOldVal, 0}),
+  next,
+
+  prs('EVENT:    DoBeforePostingsMemEdit', ArrToStr(m_aChangedPostings)),
+end,
+
+//******************************************************************************
+// Event: Wenn Pfeiltasten gedrückt werden soll sich dies auf den Browser auswirken.
+//******************************************************************************
+function edt_SearchProjectKeyDown( Sender, aKey )
+   case aKey
+      of 38 :: DBSkip(-1, oDABPRJ),
+      of 40 :: DBSkip(1, oDABPRJ),
+   endcase
+end,
+
+//******************************************************************************
+// Event: Wenn Pfeiltasten gedrückt werden soll sich dies auf den Browser auswirken.
+//******************************************************************************
+function edt_SearchTaskKeyDown( Sender, aKey )
+   case aKey
+      of 38 :: DBSkip(-1, oDABPRV),
+      of 40 :: DBSkip(1, oDABPRV),
+   endcase
+end,
+
+//******************************************************************************
+// Event: ENTER im Grid -> neue Buchungs-Zeile einfügen
+//******************************************************************************
+function grd_TasksKeyDown( Sender, aKey )
+   case aKey
+      of 13 :: if A_AddPosting.Enabled then
+                  AddPostingLine()
+               endif,
+   endcase
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Grid -> neue Buchungs-Zeile einfügen
+//******************************************************************************
+function grd_TasksDblClick( Sender )
+   if A_AddPosting.Enabled then
+      AddPostingLine()
+   endif,
+end,
+
+//******************************************************************************
+// Event: Combo-Change
+//******************************************************************************
+function cmb_ViewPostingUnitChange( Sender )
+   RefreshPostings()
+end,
+
+//******************************************************************************
+// Event: Edit-Change
+//******************************************************************************
+function edt_ViewWeekChange( Sender )
+   RefreshPostings()
+end,
+
+//******************************************************************************
+// Event: Combo-Change
+//******************************************************************************
+function cmb_PersonnelChange( Sender )
+   RefreshPostings()
+end,
+
+//******************************************************************************
+// Event: Eingabe validieren
+//******************************************************************************
+function cmb_ViewPostingUnitValidateValue( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Eingabe validieren
+//******************************************************************************
+function edt_ViewWeekValidateValue( Sender, bValueIsValid )
+   bValueIsValid := IsValidateWeekStr(edt_ViewWeek.Text),
+
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Eingabe validieren
+//******************************************************************************
+function cmb_PersonnelValidateValue( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vorgang-Suche
+//******************************************************************************
+function edt_SearchTaskSearchExecute( Sender )
+  SearchTask(),
+end,
+
+//******************************************************************************
+// Event: Projekt-Suche
+//******************************************************************************
+function edt_SearchProjectSearchExecute( Sender )
+  SearchProject(),
+end,
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExDestroy( Sender )
+   if not empty(m_oOwnerForm) then
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen des Fensters prüfen ob noch Tabellen im Editmode sind
+//******************************************************************************
+function FormExCloseQuery( Sender, bAllowClose )
+| aArr |
+   startseq
+      // Tabelle ist noch aktiv im Edit-Modus -> Nachfragen
+      if not empty(m_oPostingsTable) and
+         EditModes(m_oPostingsTable) then
+         if JN('Es befindet Daten im Bearbeitungsmodus.' + crlf +
+               'Änderungen verwerfen?') then
+            DbCancel(m_oPostingsTable),
+         else
+            bAllowClose := False,
+         endif,
+      endif,
+
+      // Es sind DS (Buchungen) vorhaden die noch nicht gebucht wurden -> Nachfragen
+      if bAllowClose and m_lPostingsChanged then
+         if not JN('Es wurden noch nicht alle Zeiten gebucht.' + crlf +
+                   'Änderungen verwerfen?') then
+            bAllowClose := False,
+         endif
+      endif,
+
+      // Speichern der Einstellungen
+      startseq
+         if bAllowClose then
+            aArr := {},
+            AAdd(aArr, pnl_Top.Height),
+            AAdd(aArr, pnl_ProjectsMain.Width),
+            AAdd(aArr, edt_ViewWeek.Text),
+            AAdd(aArr, cmb_Personnel.Value),
+            AAdd(aArr, cmb_ViewPostingUnit.Value),
+            AAdd(aArr, pnl_Top.BeSplitterState),
+            AAdd(aArr, pnl_Top.BeSizeBeforeSplitterClose),
+            SetBeParam(m_cDefaultSaveId, ArrToStr(aArr)), // Parameterarray speichern
+         endif,
+      onerror
+         SetError('Fehler beim Speichern der Einstellungen' + crlf + GetErrorText()),
+      stopseq,
+   onerror
+      SetError('Fehler in FormExCloseQuery' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars dieses freigeben
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: zur nächsten KW wechseln
+//******************************************************************************
+function A_NextWeekExecute( Sender )
+| dDate |
+  dDate := WeekToMondayOfWeekDate(edt_ViewWeek.Text),
+  dDate := dDate + 7,
+  edt_ViewWeek.Text := 'KW.' + KW(dDate),
+end,
+
+//******************************************************************************
+// Action: zur vorherigen KW wechseln
+//******************************************************************************
+function A_PriorWeekExecute( Sender )
+| dDate |
+  dDate := WeekToMondayOfWeekDate(edt_ViewWeek.Text),
+  dDate := dDate - 1,
+  edt_ViewWeek.Text := 'KW.' + KW(dDate),
+end,
+
+//******************************************************************************
+// Action: Vorhandene Buchungs-Sätze verbuchen
+//******************************************************************************
+function A_SavePostingsExecute( Sender )
+   SavePostings(),
+   RefreshPostings(),
+end,
+
+//******************************************************************************
+// Action: Aktualisieren
+//******************************************************************************
+function A_RefreshExecute( Sender )
+   RefreshPostings(),
+end,
+
+//******************************************************************************
+// Action: Abbrechen / Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   A_RefreshExecute(Sender),
+end,
+
+//******************************************************************************
+// Action: Neue Buchungszeile hinzufügen
+//******************************************************************************
+function A_AddPostingExecute( Sender )
+   AddPostingLine(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm("@PRJZEIBUC", Application),
+   else
+      oForm             := LoadForm("@PRJZEIBUC", m_oOwnerForm),
+      oForm.BorderStyle    := bsSizeToolWin,
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Projektzeit-Erfassung',
+   oForm.PositionSaveID := m_cFormSaveID,
+   oForm.ImageIndex     := 406, // Kalender
+
+   if LoadedModule <> belmCallProg then
+      AssignEvent(oForm, 'OnDestroy', 'FormExDestroy'),
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_AddPosting             := FindObject(oForm, "A_AddPosting"),
+      A_Cancel                 := FindObject(oForm, "A_Cancel"),
+      A_NextWeek               := FindObject(oForm, "A_NextWeek"),
+      A_PriorWeek              := FindObject(oForm, "A_PriorWeek"),
+      A_Refresh                := FindObject(oForm, "A_Refresh"),
+      A_SavePostings           := FindObject(oForm, "A_SavePostings"),
+      bnt_PriorWeek            := FindObject(oForm, "bnt_PriorWeek"),
+      btn_AddPosting           := FindObject(oForm, "btn_AddPosting"),
+      btn_Cancel               := FindObject(oForm, "btn_Cancel"),
+      btn_NextWeek             := FindObject(oForm, "btn_NextWeek"),
+      btn_Refresh              := FindObject(oForm, "btn_Refresh"),
+      btn_SavePostings         := FindObject(oForm, "btn_SavePostings"),
+      cmb_FilterState          := FindObject(oForm, "cmb_FilterState"),
+      cmb_Personnel            := FindObject(oForm, "cmb_Personnel"),
+      cmb_ViewPostingUnit      := FindObject(oForm, "cmb_ViewPostingUnit"),
+      ds_DabPRJ                := FindObject(oForm, "ds_DabPRJ"),
+      ds_DabPRV                := FindObject(oForm, "ds_DabPRV"),
+      ds_MemPostings           := FindObject(oForm, "ds_MemPostings"),
+      edt_PostingComment       := FindObject(oForm, "edt_PostingComment"),
+      edt_SearchProject        := FindObject(oForm, "edt_SearchProject"),
+      edt_SearchTask           := FindObject(oForm, "edt_SearchTask"),
+      edt_ViewWeek             := FindObject(oForm, "edt_ViewWeek"),
+      grd_Postings             := FindObject(oForm, "grd_Postings"),
+      grd_Projects             := FindObject(oForm, "grd_Projects"),
+      grd_Tasks                := FindObject(oForm, "grd_Tasks"),
+      grp_Settings             := FindObject(oForm, "grp_Settings"),
+      lbl_DateFrom             := FindObject(oForm, "lbl_DateFrom"),
+      lbl_FilterState          := FindObject(oForm, "lbl_FilterState"),
+      lbl_Personnel            := FindObject(oForm, "lbl_Personnel"),
+      lbl_PostingComment       := FindObject(oForm, "lbl_PostingComment"),
+      lbl_ViewPostingUnit      := FindObject(oForm, "lbl_ViewPostingUnit"),
+      MainActionList           := FindObject(oForm, "MainActionList"),
+      oDabPRJ                  := FindObject(oForm, "oDabPRJ"),
+      oDabPRV                  := FindObject(oForm, "oDabPRV"),
+      pnl_AddPosting           := FindObject(oForm, "pnl_AddPosting"),
+      pnl_BackMain             := FindObject(oForm, "pnl_BackMain"),
+      pnl_Bottom               := FindObject(oForm, "pnl_Bottom"),
+      pnl_CommentBack          := FindObject(oForm, "pnl_CommentBack"),
+      pnl_InfoCaption          := FindObject(oForm, "pnl_InfoCaption"),
+      pnl_Main                 := FindObject(oForm, "pnl_Main"),
+      pnl_NewPosting           := FindObject(oForm, "pnl_NewPosting"),
+      pnl_Projects             := FindObject(oForm, "pnl_Projects"),
+      pnl_ProjectSearch        := FindObject(oForm, "pnl_ProjectSearch"),
+      pnl_ProjectsMain         := FindObject(oForm, "pnl_ProjectsMain"),
+      pnl_Search               := FindObject(oForm, "pnl_Search"),
+      pnl_StateFilter          := FindObject(oForm, "pnl_StateFilter"),
+      pnl_Tasks                := FindObject(oForm, "pnl_Tasks"),
+      pnl_Top                  := FindObject(oForm, "pnl_Top"),
+      pnl_ViewSettings         := FindObject(oForm, "pnl_ViewSettings"),
+      spl_Settings             := FindObject(oForm, "spl_Settings"),
+      timer_SelectedCellChange := FindObject(oForm, "timer_SelectedCellChange"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.ActiveControl := cmb_Personnel,
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   m_lRefreshing := True,
+   startseq,
+      InitForm(),
+      LoadGUI(),
+      SetDefaults(),
+      SearchProject(),
+      OpenDataBase(),
+   always,
+      m_lRefreshing := False,
+   stopseq,
+   RefreshPostings(),
+   ActionsEnabled(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

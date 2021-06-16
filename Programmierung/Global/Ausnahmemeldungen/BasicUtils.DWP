@@ -1,0 +1,581 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Disposition Ausnahmemeldungen"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'DAMU' steht für 'D'isposition 'A'usnahme'm'eldungen 'U'tils
+//
+//##############################################################################
+//******************************************************************************
+// Funktion erzeugt eine MemTable für die Aufnahme von Ausnahme-Meldungen
+// @Result: Memtable
+//******************************************************************************
+function _DAMU_CreateAusnahmeMemTable(oOwner)
+   Result           := CreateObject('TMemCalcTable', 'MEM_AUSNAHMEN', oOwner),
+   Result.AliasName := 'MEM_AUSNAHMEN',
+
+   MyAddMemField(Result, 'STANDORT',              'ftInteger',   0,           0),
+   MyAddMemField(Result, 'DAB010_ID',             'ftInteger',   0,           0),
+   MyAddMemField(Result, 'ARTNR',                 'ftString',    mBeArtNoLen, 0),
+   MyAddMemField(Result, 'ARTTYP',                'ftString',    1,           0),
+   MyAddMemField(Result, 'AUSN_TYP',              'ftInteger',   0,           0),
+   MyAddMemField(Result, 'PROD_ABT',              'ftString',    3,           0),
+   MyAddMemField(Result, 'PRIORI',                'ftInteger',   0,           0),
+   MyAddMemField(Result, 'TERMIN',                'ftString',    8,           0), // Detail-Info zu Ausnahme: Termin-Index
+   MyAddMemField(Result, 'TERM_INDEX',            'ftString',    9,           0),
+   MyAddMemField(Result, 'DS_WA',                 'ftInteger',   0,           0), // Bezug zu Bewegung: Workarea
+   MyAddMemField(Result, 'DS_ID',                 'ftInteger',   0,           0), // Bezug zu Bewegung: DatensatzID
+   MyAddMemField(Result, 'INFOS',                 'ftMemo',      0,           0), // Zusatzinfos Ausnahme-Situation
+   MyAddMemField(Result, 'EIND_SCHL',             'ftString',  255,           0), // Eindeutigkeits-Schlüssel
+   DAMU_AddIndividualfelderToAusnahmeMemTable(Result),
+
+   Result.Active    := true,
+end,
+
+//******************************************************************************
+// Berechnet den "Eindeutigkeits-Schlüssel" einer Ausnahme-Situation:
+// -> Interner, künstlicher Schlüssel zur eindeutigen Erkennung von zwei identischen Ausnahmen.
+//    Je nach 'AUSN_TYP' muss eine Logik existieren, die auf Basis des Inhalts
+//    von Feld 'INFOS' einen Schlüssel zur eindeutigen Wiedererkennung einer
+//    Ausnahme berechnet.
+//
+// @Result: string (Länge = 255 Zeichen)
+//******************************************************************************
+function _DAMU_CalcEindeutigkeitsSchluessel(oAusnahmenTabelle)
+| cPraefix, cSuffix |
+
+   // 1. Standort, Artikel-Nr. und AUSN_TYP sind immer Bestandteil des Schlüssels
+   cPraefix := StrZero(oAusnahmenTabelle:STANDORT, 3)     + '|' +
+               StrZero(oAusnahmenTabelle:DAB010_ID, 12)   + '|' + // Die DAB010_ID ist im Sortierschlüssel und nicht die ARTNR, da MemTable und ADT alphanumerisch unterschiedlich sortieren => würde Probleme beim Merge machen...
+               StrZero(oAusnahmenTabelle:AUSN_TYP, 5)     + '|',
+
+   // TODO: DS_WA und DS_ID immer zentral aufnehmen?
+   //       -> könnte das ggf. nicht immer gewünscht sein? Eher immer sinnvoll...
+
+   // 2. Danach wird der Schlüssel individuell je Ausnahme-Typ weiter definiert
+   cSuffix := '',
+   case oAusnahmenTabelle:AUSN_TYP
+      of gl_DAMU_KonkreterAbgangInDerVergangenheit :: cSuffix := '',
+   endcase,
+
+   Result := PadR(cPraefix + cSuffix, 255),
+end,
+
+//******************************************************************************
+// Berechnet die Priorität einer Ausnahme
+//   -> Die Prio dient zur Sortierung der Ausnahmemeldung nach "Grad der Wichtigkeit".
+//      Die Reihenfolge ist typischerweise je Unternehmen unterschiedlich.
+//      TODO: das hier muss also "customizing-fähig" sein, Reihenfolge beispielhaft vergeben...
+//
+//   -> Hohe Priorität     = 1
+//   -> Niedrige Priorität = 99.999
+//
+// @Result: Prio, numerisch
+//******************************************************************************
+function _DAMU_CalcPrioForAusnahme(oAusnahmenTabelle)
+   Result := 999, // Default-Prio: sehr niedrig...
+   case oAusnahmenTabelle:AUSN_TYP
+      of gl_DAMU_MengenUnterdeckung                     :: Result :=  30,  // 10
+      of gl_DAMU_MengenUeberdeckung                     :: Result :=  5, // 20
+
+      of gl_DAMU_KonkreterAbgangInDerVergangenheit      :: Result :=  100, // 50
+      of gl_DAMU_KonkreterZugangInDerVergangenheit      :: Result :=  10,  // 60
+
+      of gl_DAMU_AuftragsbestaetigungUeberfaellig       :: Result :=  25,  // 80
+      otherwise                                         :: Result :=  DAMU_CalcPrioForAusnahmeIndividuell(oAusnahmenTabelle:AUSN_TYP)
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion prüft, ob der übergebene "PROD_ABT"-Filter leer oder 3-stellig ist
+//   Die Prod.Abt muss, wenn gegeben, 3-stellig sein.
+//     Warum: Siehe Begründung in Funktions-Doku zu
+//            "DAMU_Aktualisiere_Bestehende_Mit_Neuen_Ausnahmen()"
+// @Result: null
+//******************************************************************************
+function _DAMU_CheckProdAbtFilterLen(cOnlyProdAbtFilterString)
+   if not empty(cOnlyProdAbtFilterString) then
+      SetErrorIf(Len(cOnlyProdAbtFilterString) <> 3, 'Der Prod.Abteilungs-Filter muss 3-stellig sein, sofern angegeben.'),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion fügt einen neuen Datensatz in die Ausnahmen-Tabelle
+//   -> hinterlässt diesen im Einfüge-Modus
+// @Result: null
+//******************************************************************************
+function _DAMU_Ausnahmemeldung_Add(oAusnahmenTabelle, oDab010, nAusnahmeTyp)
+   MyAppend(oAusnahmenTabelle),
+   oAusnahmenTabelle:STANDORT   := mStandort,
+   oAusnahmenTabelle:DAB010_ID  := oDab010:ID,
+   oAusnahmenTabelle:ARTNR      := oDab010:ARTNR,
+   oAusnahmenTabelle:ARTTYP     := oDab010:ARTTYP,
+
+   oAusnahmenTabelle:AUSN_TYP   := nAusnahmeTyp,
+
+   oAusnahmenTabelle:PROD_ABT   := oDab010:PROD_ABT,
+
+end,
+
+//******************************************************************************
+// Speichert einen Datensatz in der Ausnahmen-Tabelle
+// @Result: null
+//******************************************************************************
+function _DAMU_Ausnahmemeldung_Post(oAusnahmenTabelle)
+   oAusnahmenTabelle:TERM_INDEX := iif(empty(oAusnahmenTabelle:TERMIN), '', DateStr(oAusnahmenTabelle:TERMIN)),
+   oAusnahmenTabelle:EIND_SCHL  := DAMU_CalcEindeutigkeitsSchluessel(oAusnahmenTabelle),
+   oAusnahmenTabelle:PRIORI     := DAMU_CalcPrioForAusnahme(oAusnahmenTabelle),
+   MyPost(oAusnahmenTabelle),
+end,
+
+//******************************************************************************
+// Funktion liefert ein SQL-Statement, welches ein DISTINCT-SELECT von
+//   Artikelnummern liefert, die Grobplanungs-Bewegungen haben.
+//
+// Parameter:
+//    bMitZugaengen  : Artikel mit GP-Zugängen selektieren
+//    bMitAbgaengen  : Artikel mit GP-Abgängen selektieren
+//    cOnlyArtnr     : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt   : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//    cArtTypFilter  : Artikel-Typ-Filter im Stil "('B', 'M', 'U', 'T', 'H', 'V')"  oder Leer = Alle Artikeltypen
+//    nTextIndent    : Text-Einrückung
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_GetDistinctGrobplanungsArtikelSQL(bMitZugaengen, bMitAbgaengen, cOnlyArtnr, cOnlyProdAbt, cArtTypFilter, nTextIndent)
+| cSQLZugaenge, cSQLAbgaenge, bArtTypFilter, bProdArtFilter, bNeedArticleJoin |
+
+   cOnlyArtnr := PadR(cOnlyArtnr, mBeArtNoLen),
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   bNeedArticleJoin :=    not empty(cOnlyArtnr)
+                       or not empty(cOnlyProdAbt)
+                       or not empty(cArtTypFilter),
+   cSQLZugaenge     := '',
+   cSQLAbgaenge     := '',
+
+   if bMitZugaengen then
+      cSQLZugaenge +=
+         // Alle Gobplanungs-Zugänge
+         'SELECT DISTINCT DAB280.ARTNR1 AS ARTNR'                                                + crlf +
+         '   FROM ' + DbSqlTableName(waDab280) + ' DAB280'                                       + crlf,
+         if bNeedArticleJoin then
+            cSQLZugaenge +=
+         '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                                + crlf +
+         '      ON (DAB010.ARTNR = DAB280.ARTNR1 AND DAB010.STANDORT = DAB280.STANDORT)'         + crlf,
+         endif,
+      cSQLZugaenge +=
+         '   WHERE     DAB280.STANDORT = ' + Str(mStandort)                                      + crlf +
+         '         AND DAB280.ARTNR1 is not null'                                                + crlf,
+         if not empty(cArtTypFilter) then
+            cSQLZugaenge +=
+         '         AND DAB010.ARTTYP IN ' + cArtTypFilter                                        + crlf,
+         endif,
+         if not empty(cOnlyArtnr) then
+            cSQLZugaenge +=
+         '         AND DAB010.ARTNR    = ''' + cOnlyArtnr + ''''                                 + crlf,
+         endif,
+         if not empty(cOnlyProdAbt) then
+            cSQLZugaenge +=
+         '         AND DAB010.PROD_ABT = ''' + cOnlyProdAbt + ''''                               + crlf,
+         endif,
+   endif,
+
+   if bMitAbgaengen then
+      cSQLAbgaenge +=
+         // Alle Gobplanungs-Zugänge
+         'SELECT DISTINCT DAB280.ARTNR2 AS ARTNR'                                                + crlf +
+         '   FROM ' + DbSqlTableName(waDab280) + ' DAB280'                                       + crlf,
+         if bNeedArticleJoin then
+            cSQLAbgaenge +=
+         '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                                + crlf +
+         '      ON (DAB010.ARTNR = DAB280.ARTNR2 AND DAB010.STANDORT = DAB280.STANDORT)'         + crlf,
+         endif,
+      cSQLAbgaenge +=
+         '   WHERE     DAB280.STANDORT = ' + Str(mStandort)                                      + crlf +
+         '         AND DAB280.ARTNR2 is not null'                                                + crlf,
+         if not empty(cArtTypFilter) then
+            cSQLAbgaenge +=
+         '         AND DAB010.ARTTYP IN ' + cArtTypFilter                                        + crlf,
+         endif,
+         if not empty(cOnlyArtnr) then
+            cSQLAbgaenge +=
+         '         AND DAB010.ARTNR    = ''' + cOnlyArtnr + ''''                                 + crlf,
+         endif,
+         if not empty(cOnlyProdAbt) then
+            cSQLAbgaenge +=
+         '         AND DAB010.PROD_ABT = ''' + cOnlyProdAbt + ''''                               + crlf,
+         endif,
+   endif,
+
+   Result := ConcatTrenner(cSQLZugaenge, cSQLAbgaenge, crlf + '   UNION   ' + crlf + crlf),
+   if nTextIndent > 0 then
+      Result := Replicate(' ', nTextIndent) +
+                StrTran(Result, crlf, crlf + Replicate(' ', nTextIndent)),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion ermittelt die Anzahl von Datensätzen, die das Query 'cSQL' liefert.
+//
+// @Result: Integer
+//******************************************************************************
+function _DAMU_GetCountBySelectSQL(oDM, cSQL)
+| cSQLCount, oQueryCount, cSqlWithoutOrderBy |
+
+  Result    := -1,
+
+  // Ein "Inner-SQL" darf kein "ORDER BY" haben, deshalb dieses extrahieren, sofern
+  //   im SQL der enstpr. "Trenner" vorgesehen ist
+  cSqlWithoutOrderBy := Token(cSQL, '@@ORDER_BY@@', 1),
+
+  cSQLCount :=
+      'SELECT COUNT(*) AS ANZAHL FROM ( ' + crlf + crlf +
+         cSqlWithoutOrderBy               + crlf + crlf +
+      ' ) AS SQL_RESULT ',
+
+  oQueryCount := CreateObject('TBeAdsQuery', , oDM),
+  startseq
+     oQueryCount.SQL    := cSQLCount,
+     oQueryCount.Active := true,
+     Result            := oQueryCount:ANZAHL,
+  always
+     DestroyObject(oQueryCount),
+  stopseq,
+end,
+
+//******************************************************************************
+// Funktion überträgt eine neue Ausnahmemeldung von der Memtable in die Datenbank.
+//   -> ohne Insert / Post, das muss vom Aufrufer der Funktion gemacht werden
+// @Result: null
+//******************************************************************************
+function _DAMU_DB_UebertrageNeueAusnahme(oMemAusnahmen, oKdnDAM)
+   oKdnDAM:STANDORT     := oMemAusnahmen:STANDORT,
+   oKdnDAM:DAB010_ID    := oMemAusnahmen:DAB010_ID,
+   oKdnDAM:ARTNR        := oMemAusnahmen:ARTNR,
+   oKdnDAM:ARTTYP       := oMemAusnahmen:ARTTYP,
+   oKdnDAM:AUSN_TYP     := oMemAusnahmen:AUSN_TYP,
+   oKdnDAM:PROD_ABT     := oMemAusnahmen:PROD_ABT,
+   oKdnDAM:PRIORI       := oMemAusnahmen:PRIORI,
+   oKdnDAM:TERMIN       := oMemAusnahmen:TERMIN,
+   oKdnDAM:TERM_INDEX   := oMemAusnahmen:TERM_INDEX,
+   oKdnDAM:DS_WA        := oMemAusnahmen:DS_WA,
+   oKdnDAM:DS_ID        := oMemAusnahmen:DS_ID,
+   oKdnDAM:INFOS        := oMemAusnahmen:INFOS,
+   oKdnDAM:EIND_SCHL    := oMemAusnahmen:EIND_SCHL,
+   DAMU_DB_UebertrageIndividualfelderNeueAusnahme(oMemAusnahmen, oKdnDAM),
+
+   oKdnDAM:LTZT_AUFTR   := GetAdsServerTime(),
+end,
+
+//******************************************************************************
+// Funktion aktualisiert eine als "identisch wiederholt aufgetretene Ausnahme"
+//   in der Datenbank.
+//   -> ohne Insert / Post, das muss vom Aufrufer der Funktion gemacht werden
+// @Result: null
+//******************************************************************************
+function _DAMU_DB_AktualisiereVorhandeneAusnahme(oMemAusnahmen, oKdnDAM)
+   // Alle Felder aktualisieren, die redundant sind - diese könnten sich ggf. geändert haben
+   oKdnDAM:ARTTYP       := oMemAusnahmen:ARTTYP,
+   oKdnDAM:PROD_ABT     := oMemAusnahmen:PROD_ABT,
+   oKdnDAM:PRIORI       := oMemAusnahmen:PRIORI,   // Könnte sich ggf. auf Grund einer Prioritäts-Reihenfolge-Änderung (Customizing) geändert haben
+   oKdnDAM:LTZT_AUFTR   := GetAdsServerTime(),
+   DAMU_DB_AktualisiereIndividualfelderVorhandeneAusnahme(oMemAusnahmen, oKdnDAM)
+end,
+
+//******************************************************************************
+// Funktion löscht eine Ausnahme aus der Datenbank.
+// @Result: null
+//******************************************************************************
+function _DAMU_DB_LoescheVorhandeneAusnahme(oKdnDAM)
+   MyDelete(oKdnDAM),
+end,
+
+//******************************************************************************
+// Funktion gleicht neue Ausnahmemeldungen mit den bestehenden ab
+// -> Je nach "Abgleichs-Situation" wird (individuell) in der KdnDAM eine Ausnahme
+//    erzeugt, aktualisiert oder gelöscht.
+// @Result: null
+//******************************************************************************
+function _DAMU_Aktualisiere_Bestehende_Mit_Neuen_Ausnahmen(oDM, oMemNeueAusnahmen, cOnlyArtnr, cOnlyProdAbt)
+| oKdnDAM, bBothListsEnd, cLastProcessedKey, cCurKey, cAbgleichsSituation, bDebug,
+  aCounterArray, cFilter |
+
+   //***************************************************************************
+   // Debug-Funktion: Ausgabe aller Datensätze in der übergebenen Ausnahmen-Tabelle
+   //    (MemTable oder KdnDAM übergeben!)
+   // -> für den Vergleich mit einem File-Differ
+   //***************************************************************************
+   function Debug_PrintKeys(cCaption, oAusnahmentable)
+   | cKeysText, nCount |
+      cKeysText := '',
+      nCount    := 0,
+
+      DbGoTop(oAusnahmentable),
+      while not eof(oAusnahmentable) do
+         cKeysText += oAusnahmentable:EIND_SCHL + ' / ' + oAusnahmentable:ARTNR + ' / ' + oAusnahmentable:PROD_ABT + crlf,
+         DbSkip(1, oAusnahmentable),
+         nCount++,
+      end,
+
+      WriteLN(cCaption + ' ' + replicate('#', 80)),
+      WriteLN('Anzahl Datensätze: ' + Str(nCount)),
+      WriteLn(cKeysText),
+   end,
+
+   //***************************************************************************
+   // @Result: string
+   //***************************************************************************
+   function BuildFilter()
+      Result := '',
+      if not empty(cOnlyArtnr) then
+         Result := ConcatTrenner( Result,
+                                  '( ARTNR    == "' + cOnlyArtnr + '" )',
+                                  ' AND '),
+      endif,
+      if not empty(cOnlyProdAbt) then
+         Result := ConcatTrenner( Result,
+                                  '( PROD_ABT == "' + cOnlyProdAbt + '" )',
+                                  ' AND '),
+      endif,
+   end,
+
+   bDebug        := false,
+   cOnlyArtnr    := PadR(cOnlyArtnr, mBeArtNoLen),
+
+   // Die Prod.Abt muss 3-stellig sein.
+   //    Warum: Die MemTable-Filterung macht keinen linksseitigen Vergleich so
+   //    wie AOF-Filter das tun - damit dennoch beides gleich filtert
+   //    (sehr wichtig!), lassen wir nur 3-stellig zu und filtern immer mit '=='.
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   aCounterArray := {0, 0, 0},
+
+   oKdnDAM := DbGetTable(oDM, waKDNDAM),
+   BeginSuspend(oKdnDAM),
+   startseq
+
+      //************************************************************************
+      // Info: Die Richtung des Abgleichs erfolgt
+      //      von oMemNeueAusnahmen (neu) nach oKdnDAM (bestehend)
+      //      von     "links"             nach      "rechts"
+      //************************************************************************
+
+      // MemTable und Tabelle identisch (!) sortieren
+      oKdnDAM.IndexName         := 'EIND_SCHL',
+      oMemNeueAusnahmen.OrderBy := 'EIND_SCHL',
+
+      // MemTable und Tabelle identisch (!) filtern
+      // -> Wichtig, denn "links" und "rechts" sollen nach dem Abgleich identisch
+      //    sein, dann muss auch die gleiche Grundmenge betrachtet werden...
+      cFilter := BuildFilter(),
+      if empty(cFilter) then
+         DbFilter('', oKdnDAM),
+         oMemNeueAusnahmen.Filter   := '',
+         oMemNeueAusnahmen.Filtered := false,
+      else
+         DbFilter(cFilter, oKdnDAM),
+         oMemNeueAusnahmen.Filtered := false, // wichtig! Sonst wirkt ein geänderter Filter nicht....
+         oMemNeueAusnahmen.Filter   := cFilter,
+         oMemNeueAusnahmen.Filtered := true,
+      endif,
+
+      if bDebug then
+         Debug_PrintKeys('oMemNeueAusnahmen', oMemNeueAusnahmen),
+         Debug_PrintKeys('oKdnDAM',           oKdnDAM),
+         exit, // !!!!!!!!!!!!!
+      endif,
+
+      DbGoTop(oMemNeueAusnahmen),
+      DbGoTop(oKdnDAM),
+
+      bBothListsEnd     := EoF(oMemNeueAusnahmen) and EoF(oKdnDAM),
+      cLastProcessedKey := '',
+      while not bBothListsEnd do
+
+         // Grundidee des Abgleichs:
+         //    Beide Listen (links und rechts) sind identisch sortiert und identisch gefiltert (siehe oben).
+         //    Auf Basis dieser Annahme wird bei jeder Iteration geprüft, welcher
+         //    Datensatz (links oder rechts oder beide identisch) der nächste
+         //    in der Reihenfolge (bezogen auf die "sortierte Vereinigungsmenge") ist.
+         //
+         //    Dann wird für diesen Datensatz die "Abgleichs-Situation" errechnet
+         //      'A' - Neue Ausnahme aufgetreten, welche es noch nicht gab
+         //      'B' - Bereits vorhandene Ausnahme ist erneut aufgetreten
+         //      'C' - Vorhandene Ausnahme ist nicht neu aufgetreten
+         //
+         //    Je nach "Abgleichs-Situation" wird dann (individuell) gehandelt (erzeugt, aktualisiert, gelöscht).
+
+         cAbgleichsSituation := '',
+
+         //*********************************************************************
+         // 1. "Abgleichs-Situation" ermitteln
+         //*********************************************************************
+
+         // Durch Einfügen eines Datensatzes könnte ein bereits verarbeiteter Key
+         //   (nochmals) im Fokus sein -> in diesem Fall weiter skippen
+         if     oMemNeueAusnahmen:EIND_SCHL <= cLastProcessedKey
+            and not empty(cLastProcessedKey)
+            and not EoF(oMemNeueAusnahmen) then                                 // WriteLn(-2),
+            DbSkip(1, oMemNeueAusnahmen),
+         else
+            if    oKdnDAM:EIND_SCHL <= cLastProcessedKey
+               and not empty(cLastProcessedKey)
+               and not EoF(oKdnDAM) then                                        // WriteLn(-1),
+               DbSkip(1, oKdnDAM),
+            else
+
+               // Hier muss jetzt ein neuer (also der nächste links oder rechts
+               // vorhandene) Schlüssel im Fokus sein
+
+               if EoF(oMemNeueAusnahmen) then // -> links ist leer -> rechts hat Inhalt
+                  cAbgleichsSituation := 'C',
+               else
+                  if EoF(oKdnDAM) then // -> rechts ist leer -> links hat Inhalt
+                     cAbgleichsSituation := 'A',
+                  else
+                     // -> Beide Seiten haben Inhalt -> links == rechts
+                     if oMemNeueAusnahmen:EIND_SCHL == oKdnDAM:EIND_SCHL then
+                        cAbgleichsSituation := 'B',
+                     else
+                        // -> links kleiner rechts
+                        if oMemNeueAusnahmen:EIND_SCHL < oKdnDAM:EIND_SCHL then
+                           cAbgleichsSituation := 'A',
+                        else
+                           if oMemNeueAusnahmen:EIND_SCHL > oKdnDAM:EIND_SCHL then // -> rechts kleiner links
+                              cAbgleichsSituation := 'C',
+                           else
+                              SetError('Dieser Fall ist eigentlich unmöglich, richtig?'),
+                           endif,
+                        endif,
+                     endif,
+                  endif,
+               endif,
+
+            endif,
+         endif,
+
+         //*********************************************************************
+         // 2. Die "Abgleichs-Situation" steht jetzt fest - entspr. handeln!
+         //     -> Hinzufügen, Aktualisieren oder Löschen der Ausnahme
+         //*********************************************************************
+         case cAbgleichsSituation
+
+            // Neue Ausnahme aufgetreten, welche es noch nicht gab *************
+            of 'A' ::
+
+               cLastProcessedKey := oMemNeueAusnahmen:EIND_SCHL,
+               aCounterArray[1]  += 1,
+
+               MyAppend(oKdnDAM),
+               DAMU_DB_UebertrageNeueAusnahme(oMemNeueAusnahmen, oKdnDAM),
+               MyPost(oKdnDAM),   // TODO: spezielle Post()-Methode nutzen?
+
+               DbSkip(1, oMemNeueAusnahmen),
+               DbSkip(1, oKdnDAM),
+
+            // Bereits vorhandene Ausnahme ist erneut aufgetreten **************
+            of 'B' ::
+
+               cLastProcessedKey := oMemNeueAusnahmen:EIND_SCHL,
+               aCounterArray[2]  += 1,
+
+               MyEdit(oKdnDAM),
+               DAMU_DB_AktualisiereVorhandeneAusnahme(oMemNeueAusnahmen, oKdnDAM),
+               MyPost(oKdnDAM),   // TODO: spezielle Post()-Methode nutzen?
+
+               DbSkip(1, oMemNeueAusnahmen),
+               DbSkip(1, oKdnDAM),
+
+            // Vorhandene Ausnahme ist nicht neu aufgetreten *******************  // TODO: vorerst wird hier immer gelöscht - das könnte man ggf. auch nicht wollen - je nach Anwendungsfall
+            of 'C' ::
+
+               cLastProcessedKey := oKdnDAM:EIND_SCHL,
+               aCounterArray[3]  += 1,
+               DAMU_DB_LoescheVorhandeneAusnahme(oKdnDAM),
+               // Hier kein DbSkip()! (Sofern der Satzzeiger auf den vorherigen
+               // Record springt wird dieser oben als "schon verarbeitet" erkannt.)
+         endcase,
+
+         bBothListsEnd := EoF(oMemNeueAusnahmen) and EoF(oKdnDAM),
+      end,
+
+      WriteLn('Statistik der Änderungen: ' + Str(aCounterArray[1]) + ' hinzugefügt, ' + Str(aCounterArray[2]) + ' aktualisiert, ' + Str(aCounterArray[3]) + ' gelöscht.'),
+   always
+      EndSuspend(oKDNDAM),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion ersetzt in KDNDAM alle ProdAbt = 'ZZZ' durch die ProdAbt. des
+// Artikel, die vor Eintragung von 'ZZZ' gegolten hat.
+//   -> Die "zuvor gesetzte Prod.Abteilung" wird über die Analyse des
+//      Stammdatenprotokoll des Artikels ermittelt, sofern möglich.
+//   -> Hintergrund der Funktion:
+//      Durch setzen des Feldes DAB010:PROD_ABT auf 'ZZZ' wird die
+//      Standard-Produktionssperre aktiv. Entstehen dennoch Ausnnahmemeldungen
+//      für den Artikel (z.B. aufgrund bereits vor dem Setzen der Sperre
+//      vorhander Bewegungen), ist die Filterung der Ausnnahmemeldung nach
+//      "zuständigem Disponenten" nicht mehr sinnvoll möglich.
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_SetPriorProdAbt_For_ZZZ_KdnDAMRecords(oDM)
+   | oDABPTK, oKDNDAM, oMem, bProtocolEntryFound, nPos, cArtNoIndexKey,
+     nModifiedRecordsCount, aFelderArray,
+     nProdAbtEntryPos, aProdAbtChangeArray, cProdAbtValueOld, cProdAbtValueNew |
+
+   oDABPTK           := DBGetTable(oDM, waDABPTK),
+   oDABPTK.IndexName := 'DATEI_INDEX',   // = "DATEI;INDEX;ERSTELLT;PTK_ID"
+   oKDNDAM           := DBGetTable(oDM, waKDNDAM),
+   oKDNDAM.IndexName := "PROD_ABT",
+   DbScope({'ZZZ'}, {'ZZZ'}, oKDNDAM),
+   DbGoTop(oKDNDAM),
+
+   oMem                  := CopyToMemTable(oKDNDAM, false),
+   oKDNDAM.CbCancelRange(),                                                     // TK 21.01.19 Migration7.1
+   oKDNDAM.IndexName     := "ID",
+   nModifiedRecordsCount := 0,
+
+   while not EoF(oMem) do
+      cArtNoIndexKey := '"' + RTrim(oMem:ARTNR) + '"',
+      DbScope({waDab010, cArtNoIndexKey}, {waDab010, cArtNoIndexKey}, oDABPTK),
+      DbGoBottom(oDABPTK),
+      bProtocolEntryFound := false,
+      while not BoF(oDABPTK) and not bProtocolEntryFound do
+         nPos :=  At('PROD_ABT', oDABPTK:FELDER),
+         if nPos > 0 then                                           WriteLn(oDABPTK:FELDER),
+            aFelderArray        := StrToArr(oDABPTK:FELDER),
+            nProdAbtEntryPos    := SeekInDimArray('PROD_ABT', aFelderArray, 1),
+            if nProdAbtEntryPos > 0 then
+               aProdAbtChangeArray := aFelderArray[nProdAbtEntryPos],
+
+               if ALen(aProdAbtChangeArray) >= 3 then
+                  cProdAbtValueOld := aProdAbtChangeArray[2],
+                  cProdAbtValueNew := aProdAbtChangeArray[3],
+               endif,
+
+               if not empty(cProdAbtValueOld) and cProdAbtValueOld <> 'ZZZ' then
+                  MySeek({oMem:ID}, oKDNDAM),
+                  DbEdit(oKDNDAM),
+                  oKDNDAM:PROD_ABT := cProdAbtValueOld,
+                  DbPost(oKDNDAM),
+                  bProtocolEntryFound := true,
+                  nModifiedRecordsCount++,
+               endif,
+            endif,
+         endif,
+         dbskip(-1, oDABPTK),
+      end,
+      if not bProtocolEntryFound then
+         Writeln('Artikel "' + RTrim(oMem:ARTNR) + '" hatte laut Protokoll nie eine richtige PROD_ABT', oMem:ARTNR, oMem:ID),
+      endif,
+      DbSkip(1, oMem),
+   end,
+
+   oDABPTK.CbCancelRange(),                                                     // TK 21.01.19 Migration7.1
+
+   writeln('Bei ' + Str(nModifiedRecordsCount) + ' KdnDAM-Datensätzen wurde die urspr. Prod.Abt hinterlegt.'),
+end,

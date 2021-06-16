@@ -1,0 +1,311 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die Groupware
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'GWU' steht für 'Group Ware Utils'
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_GWU_UserDateTextMod_Id:_N:=1,
+   gl_GWU_TextbausteinZeichenRueckwaerts65:_N:=1,
+   gl_GWU_TextbausteinZeichenRueckwaerts71:_N:=3
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// "Datum und User" - RTF-Part erstellen - User-Namen als Parameter angeben
+// @Result: RTF-Text (String)
+//******************************************************************************
+function _GWU_GetDatumUserAsRTF_UserName(cUsername)
+   Result := GetTextMod(gl_GWU_UserDateTextMod_Id),
+   if empty(Result) then
+      SetError('Textbaustein als Basis für "Datum&User"-Stempel nicht gefunden.'),
+   endif,
+   Result := StrTran(Result, '@DATUM@', FormatDateTime("DD.MM.YY", date())),
+   Result := StrTran(Result, '@HOUR@',  SubStr(FormatDateTime('HH:MM:SS', Now()), 1, 8)),
+   Result := StrTran(Result, '@USER@',  RTrim(cUsername)) + ":",
+end,
+
+//******************************************************************************
+// "Datum und User" - RTF-Part erstellen - User-Nummer als Parameter angeben
+//                                            (als string oder numeric)
+// @Result: RTF-Text (String)
+//******************************************************************************
+function _GWU_GetDatumUserAsRTF_UserNo(uUser)
+   Result  := GWU_GetDatumUserAsRTF_UserName(BeUserShortName(uUser))
+end,
+
+//******************************************************************************
+// "Datum und User" - RTF-Part erstellen - aktuellen User "c_usr" nutzen
+// @Result: RTF-Text (String)
+//******************************************************************************
+function _GWU_GetDatumUserAsRTF()
+   Result  := GWU_GetDatumUserAsRTF_UserName(BeUserShortName(c_usr))
+end,
+
+//******************************************************************************
+// "Datum und User" in ein RTF-Memo-Feld einfügen und den Cursor
+// hinter der Einfüge-Stelle positionieren
+// - cInsertField   : Feldname des Memo-Feldes
+// - oTable         : Tabellen-Instanz
+// - oButtonControl : Button, der die Aktion ausführt -> von hier aus wird ParentForm etc. gesucht
+// @Result: null
+//******************************************************************************
+function _GWU_InsertDatumUserIntoRTF(cInsertField, oTable, oButtonControl)
+|
+   nCursorPos, nCursorTagPos, nLinesCount, cCursorTag, cNewText, cText, cPlainText,
+   oInsertField, oOwner, oRichMemo
+|
+
+   cCursorTag := '@CURSOR@',
+
+   oInsertField := DbField(cInsertField, oTable),
+   if empty(oInsertField) then
+      SetError('Einfügen von "Datum&User": Feld "' + cInsertField + '" nicht gefunden.'),
+   endif,
+
+   cText         := GWU_GetDatumUserAsRTF(),
+   cPlainText    := RTFToText(cText),
+   nCursorTagPos := At(cCursorTag, cPlainText),
+   // Prüfen, ob der Textbaustein ein Cursor-Tag enthält und ggf.
+   // Cursor-Position setzen, damit der Cursor im Rich-View richtig positioniert
+   // wird.
+   if nCursorTagPos > 0 then
+      // Anzahl der Zeilen bis zum Cursor-Tag ermitteln ...
+      nLinesCount := TokenCount(SubStr(cPlainText, 1, nCursorTagPos), CRLF),
+      // Anschließend die tatsächliche Position des Cursors im Rich-View
+      // folgendermaßen ermitteln:
+      // Von der Position des Cursor-Tags die Anzahl der Zeilen abziehen, weil
+      // es sich hierbei um CRLF's handelt, welche durch die At()-Funktion als
+      // zwei Zeichen interpretiert werden, im Rich-View jedoch nur als eine
+      // Position behandelt wird.
+      nCursorPos := nCursorTagPos - nLinesCount,
+      cText      := StrTran(cText, cCursorTag, ''),
+   else
+      nCursorPos := Len(RtfToText(cText)) - iif(IsBeDBVersion7(),gl_GWU_TextbausteinZeichenRueckwaerts71,gl_GWU_TextbausteinZeichenRueckwaerts65),
+   endif,
+   cNewText := ConcatRtf(cText, AsString(cInsertField, oTable)),
+
+   // Datensatz editieren, falls notwendig
+   if not EditModes(oTable) then
+      if not DbEdit(oTable) then
+         SetError('Einfügen von "Datum&User": Datensatz-Edit nicht möglich.'),
+      endif,
+   endif,
+
+   // Text einfügen
+   if EditModes(oTable) then
+      DbReplace(oInsertField, cNewText),
+      // Cursor im Memo-Feld positionieren
+      oOwner               := GetParentForm(oButtonControl),
+      oRichMemo            := FindFieldComponent(GetOwner(oButtonControl), oInsertField, 'TComponent'),
+      MyFocusControl(oOwner, oRichMemo),
+      oRichMemo.SelStart   := nCursorPos,
+      oRichMemo.SelLength  := 0,
+   endif,
+
+end,
+
+//******************************************************************************
+// Einen User-Nr-Liste (wie z.B. "nächste Aktion") für z.B. die Anzeige im
+// Browser performant in Namen umwandeln
+// @Result: string
+//******************************************************************************
+function _GWU_UserListToNames(cUserList, bMitVorname, bShortName)
+| i, cToken, cUser, cName, cVorname |
+  startseq,
+     Result := '',
+     if not empty(cUserList) then
+        for i := 1 to TokenCount(cUserList, '/') do
+           cToken := StrToken(cUserList, '/', i),
+           if not empty(cToken) then
+              if bShortName then
+                 cUser  := BeUserShortName(Val(cToken)),
+              else
+                 cUser  := BeUserName(Val(cToken)),
+                 // ggfs. den Vornamen entfernen
+                 if not bMitVorname then
+                    cUser := StrToken(cUser, ',', 1),
+                 endif,
+              endif,
+              if not empty(cUser) and cUser <> '---' then
+                 Result += iif(empty(Result), '', '; ') + cUser,
+              endif,
+           endif,
+        next,
+     endif,
+  onerror
+    SetError("Fehler in Funktion _GWU_UserListToNames " + crlf + GetErrorText()),
+  stopseq,
+end,
+
+//******************************************************************************
+// Die Groupware (Browser-Tab) aufrufen, eine "Such-Ansicht" positionieren und
+// anschließend einen Volltext-Suchbegriff "eintragen"
+//
+//   Hinweis: Damit dieses Vorgehen sinnvolle Ergebnisse liefert, sollte
+//            die genutzte "Such-Ansicht" so definiert sein, dass darin immer
+//            alle Memos zu sehen sind (ähnliche der Default-Ansicht
+//            "zuletzt geändert"). D.h. per Ansichts-Codeblock werden alle
+//            Einschränkungs-Möglichkeiten ausgeblendet.
+//
+// @Result: null
+//******************************************************************************
+function _GWU_ShowSearchView(cViewID, cFullTextSearchText)
+   | cShowBeWindKey, oGroupwareForm,
+   oFrameMemoPager, oFrameCustomPagerTabSheet, oFullTextSearchEdit, oMemoPage,
+   oMemoBrowser |
+
+   // Groupware aufrufen und Memo-Ansicht öffnen
+   // <Workarea:DAB065>;<MemoID>;<ViewID>;<MaskOnly:L>;<NewPage:L>;<ForceOpen:L>
+   cShowBeWindKey := Str(waDab065) + ';-1;' + cViewID + ';false;false;false',
+   oGroupwareForm := ShowBeWindow(bwGroupware, cShowBeWindKey),
+
+   if not Empty(oGroupwareForm) then
+     // Im GW-Fenster die Memo-Ansicht finden und darauf wiederum das Such-Eingabe-Control setzen
+     oFrameMemoPager := FindObjByClass(oGroupwareForm , 'TBeFrameMemoPager'),
+     iif(empty(oFrameMemoPager), exit, ),                                                            WriteLn('Pager: ' + ClassName(oFrameMemoPager)),
+
+     oFrameCustomPagerTabSheet := FindObjByClass(oFrameMemoPager , 'TBeFrameCustomPagerTabSheet'),
+     iif(empty(oFrameCustomPagerTabSheet), exit, ),                                                  WriteLn('PagerTabSheet: ' + ClassName(oFrameCustomPagerTabSheet)),
+
+     oMemoPage := FindObjByClass(oFrameCustomPagerTabSheet, 'TBeFrameMemoPage'),
+     iif(empty(oMemoPage), exit, ),                                                                  WriteLn('MemoPage: ' + ClassName(oMemoPage)),
+
+     oMemoBrowser := FindObjByClass(oMemoPage, 'TBeFrameMemoBrowser'),
+     iif(empty(oMemoBrowser), exit, ),                                                               WriteLn('MemoBrowser: ' + ClassName(oMemoBrowser)),
+
+     oFullTextSearchEdit := FindObject(oMemoBrowser, 'edt_FtsSearchText'),
+     iif(empty(oFullTextSearchEdit), exit, ),                                                        WriteLn('Search-Edit: ' + ClassName(oFullTextSearchEdit)),
+
+     // Suchtext des Such-Edit-Control setzen, die Suche wird anschließend
+     // (mit Verzögerung) automatisch ausgelöst
+     oFullTextSearchEdit.Text := cFullTextSearchText,
+   endif,
+end,
+
+//******************************************************************************
+// Die Groupware (Browser-Tab) aufrufen, um eine dynamische Ansicht anzueigen.
+// Vorgehen:
+//   - Eine "Such-Ansicht" wird geöffnet
+//   - Darin wird ein Memo positioniert, welches in der dynamischen Ansicht
+//     enthalten sein muss
+//   - Anschließend ist die dynamische Ansicht in der GUI verfügbar und es wird
+//     "nur noch" auf diese gewechselt
+//
+//   Hinweis: Damit dieses Vorgehen sinnvolle Ergebnisse liefert, sollte
+//            die genutzte "Such-Ansicht" so definiert sein, dass darin immer
+//            alle Memos zu sehen sind (ähnliche der Default-Ansicht
+//            "zuletzt geändert"). D.h. per Ansichts-Codeblock werden alle
+//            Einschränkungs-Möglichkeiten ausgeblendet.
+//
+// @Result: null
+//******************************************************************************
+function _GWU_ShowDynamicView(cSearchViewID, cDynamicViewID, nMemoID)
+| cShowBeWindKey |
+  SetErrorIf(empty(cSearchViewID),  'Die Such-Ansichts-ID muss definiert sein.'),
+  SetErrorIf(empty(cDynamicViewID), 'Die Ansichts-ID der dynm. Ansicht muss definiert sein.'),
+  SetErrorIf(empty(nMemoID),        'Die Memo-ID muss definiert sein.'),
+
+
+  // Groupware aufrufen und die "Such-Ansicht" mit dem übergebenen Memo öffnen
+                    // <Workarea:DAB065>;<MemoID>;<ViewID>;<MaskOnly:L>;<NewPage:L>;<ForceOpen:L>
+  cShowBeWindKey := Str(waDab065) + ';' + Str(nMemoID) + ';' + cSearchViewID + ';false;false;false',
+  ShowBeWindow(bwGroupware, cShowBeWindKey),
+
+  // Die dynamische Ansicht ist jetzt in der GUI verfügbar => zu dieser "wechseln"
+  cShowBeWindKey := Str(waDab065) + ';' + Str(nMemoID) + ';' + cDynamicViewID + ';false;false;false',
+  ShowBeWindow(bwGroupware, cShowBeWindKey),
+end,
+
+//******************************************************************************
+// Funktion ermittelt, ob das übergebene Masken-Control auf einem
+// Memo-Single-Tab liegt oder auf einem Browser-Tab
+// => Gedacht für den Einsatz in Masken-Controls der Memo-Maske, übergeben
+//    wird 'SELF'
+// @Result: Logisch, ja/nein
+//******************************************************************************
+function _GWU_IsMemoSingleTab(oMaskControl)
+| oParent, oFrameMemoBrowser, bIsSingleTab |
+
+  Result := true,
+
+  // 1. In der Parent-Struktur nach oben gehen und die 'TBeFrameMemoPage' suchen
+  oParent := GetParent(oMaskControl),
+  while not empty(oParent) and not ClassOf(oParent, 'TBeFrameMemoPage') do
+     oParent := GetParent(oParent),
+  end,
+
+  // 2. Wenn es einen Browser-Frame gibt, dann ist es kein Single-Tab
+  if not empty(oParent) and ClassOf(oParent, 'TBeFrameMemoPage') then
+     oFrameMemoBrowser := FindObjByClass(oParent, 'TBeFrameMemoBrowser'),
+     if not empty(oFrameMemoBrowser) then
+        Result := false,
+     endif,
+  endif,
+end,
+
+//******************************************************************************
+// Diese Funktion Ermittelt die E-Mail-Adressen aller Benutzer die der
+// übergebenen Benutzerrolle zugeordnet sind.
+//
+// @result: string - E-Mail-Adressen aller E-Mail-Empfänger mit Semikolon
+//                   getrennt.
+//    Beispiel: max.mustermann@firma.com;sepp.maier@firma.com;...
+//******************************************************************************
+function _GWU_DetermineMailingListRecipients(cMailingListRoleKey:C)
+| oDabUSR |
+
+   //***************************************************************************
+   // Eingestellte E-Mail-Verteiler Rolle validieren.
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ValidateMailingListRoleKey(cMailingListRoleKey:C)
+   | oDabRRO |
+
+      oDabRRO := BeOpen(waDabRRO, 'ROLLENSCHL'),
+      startseq
+         SetErrorIf(
+            empty(cMailingListRoleKey),
+            'No mailing list role key is defined'
+         ),
+         SetErrorIf(
+            not oDabRRO.CbFindKey({cMailingListRoleKey}),
+            'Role with role key <' + cMailingListRoleKey + '> does not exist'
+         ),
+         SetErrorIf(
+            not oDabRRO:AKTIV,
+            'Role with role key <' + cMailingListRoleKey + '> is not active'
+         ),
+      always
+         BeClose(oDabRRO),
+      stopseq,
+   end,
+
+   result := '',
+   ValidateMailingListRoleKey(cMailingListRoleKey),
+   oDabUSR := BeOpen(waDabUSR, 'ID', true),
+   startseq
+      while not oDabUSR.CbEof do
+         if CbUserHasRole(cMailingListRoleKey, oDabUSR:USER_NR) and
+            not empty(oDabUSR:EMAIL) then
+            result := ConcatTrenner(result, oDabUSR:EMAIL, ';'),
+         endif,
+         oDabUSR.CbNext(),
+      end,
+   always
+      BeClose(oDabUSR),
+   stopseq,
+end,
+
+
+

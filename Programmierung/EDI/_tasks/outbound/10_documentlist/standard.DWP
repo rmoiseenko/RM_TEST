@@ -1,0 +1,96 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm erstellt für alle Outbound-Profile Beleglisten für
+//   ausgehende Belege.
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ruft neue Nachrichten von allen aktiven
+// Inbound-Transportkanälen ab.
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function CreateDocumentsListsForOutboundProfiles(oDM:O, oErrorCallback:O, oProgressCallback:O)
+| oEDIPROF, aProcessResult, nSucceededCount, nFailedCount |
+
+   nSucceededCount := 0,
+   nFailedCount    := 0,
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, 'EDIPROF_TASK'),
+   oEDIPROF.CbIndexName := 'DIRECTION',
+
+   oEDIPROF.CbFIlter := 'DIRECTION = ' + str(gl_EDI_ProcessDirection_Outbound) + ' AND ACTIVE',
+   oEDIPROF.Filtered := true,
+   oEDIPROF.CbFirst(),
+   while not oEDIPROF.CbEof do
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+            if not Empty(oEDIPROF:SCRIPT_DCL) then
+               aProcessResult := Call(oEDIPROF:SCRIPT_DCL, oDM, oEDIPROF:ID),
+            else
+               SetError('No selected script for creation of document lists.'),
+            endif,
+            oDM.CbTransaction_Commit(),
+         always
+            if oDM.CbTransaction_TryRollback() then
+               DbResetDM(oDM),
+            endif,
+         stopseq,
+         if EDI_ProcessResult_IsSuccess(aProcessResult) then
+            nSucceededCount++,
+         else
+            nFailedCount++,
+            EDI_Process_UpdateError(oErrorCallback, 'Profile-ID ' + str(oEDIPROF:ID) + ': ' + EDI_ProcessResult_GetErrorMessage(aProcessResult)),
+         endif,
+      onerror
+         EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+      stopseq,
+
+      oEDIPROF.CbNext(),
+   end,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSucceededCount + nFailedCount),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSucceededCount),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nFailedCount),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := CreateDocumentsListsForOutboundProfiles(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aTaskResult
+

@@ -1,0 +1,97 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Funktionen zum abspeichern von SL_MEMO-Datenstrukturen
+//               in entsprechenden Detailtabellen.
+//               Bei den Detailtabellen handelt es sich um folgende Tabellen:
+//                * SMLWRT (Sachmerkmalswerte)
+//                * SMLZEL (Sachmerkmalleisten-Zeilen)
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Alte Merkmalssätze aus der SMLWRT löschen
+// @Result: null
+//******************************************************************************
+function _SML_DeleteAttributesTable(oDM:O, nAssignId:N)
+| oSMLWRT |
+   // Eine aktive Transaktion ist verpflichtend!
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Datenmodul muss sich in einer Transaktion befinden!'),
+
+   oSMLWRT           := DbGetTable(oDM, waSMLWRT, 'SMLWRT'),
+   oSMLWRT.IndexName := 'ZUORD_ID',
+
+   if DbSeek({nAssignId}, oSMLWRT) then
+      // Ggf. alle alten Datensätze löschen
+      while oSMLWRT:ZUORD_ID = nAssignId do
+         if not DbDelete(oSMLWRT) then
+            SetError('Alte Datensätze des Sachmerkmals konnten nicht gelöscht werden!'),
+         endif,
+      end,
+   endif,
+end,
+
+//******************************************************************************
+// Merkmalssätze in die SMLWRT schreiben
+//
+// @Result: null
+//******************************************************************************
+function _SML_StoreAttributesTable(oDM:O, nAssignId:N, cSLMemo:C, nUsageWA:N, nUsageId:N, cArticleNo:C, nSMLId:N)
+| oSMLWRT, oField, aAttribs, i, uValue, nDataType |
+   // Eine aktive Transaktion ist verpflichtend!
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'Datenmodul muss sich in einer Transaktion befinden!'),
+
+   // Falls vorhanden die alten Merkmalssätze zurerst löschen
+   SML_DeleteAttributesTable(oDM, nAssignId),
+
+   oSMLWRT := DbGetTable(oDM, waSMLWRT, 'SMLWRT'),
+   if nUsageWA = waDab010 then
+      oSMLWRT.IndexName := 'ARTNR_SML_ID_V_INDEX',
+   else
+      oSMLWRT.IndexName := 'VERWEND_WA_VERWEND_ID_SML_ID_V_INDEX',
+   endif,
+
+   // Neue Merkmalssätze schreiben
+   aAttribs := StrToArr(cSLMemo),
+   for i := 1 to ALen(aAttribs) do
+      DbAppend(oSMLWRT),
+      oSMLWRT:ZUORD_ID   := nAssignId,
+      oSMLWRT:VERWEND_WA := nUsageWA,
+      oSMLWRT:VERWEND_ID := nUsageId,
+      oSMLWRT:ARTNR      := cArticleNo,
+      oSMLWRT:SML_ID     := nSMLId,
+      oSMLWRT:ZEILEN_NUM := i,
+      oSMLWRT:V_INDEX    := aAttribs[i, gl_SML_SLMemoVIndex],
+      // TODO: Überlegen ob es überhaupt Sinn macht Berechnungszeilen und
+      //       Trennzielen mit in die Tablle zu schreiben.
+      oSMLWRT:ZEILEN_TYP := aAttribs[i, gl_SML_SLMemoRowType],
+      nDataType          := aAttribs[i, gl_SML_SLMemoDataType],
+      oSMLWRT:MERKM_TYP  := nDataType,
+
+      // Wert in Codeblock-Datentyp konvertieren
+      uValue := SML_SLMEMO_ConvertToExternalFormat_Internal(aAttribs[i, gl_SML_SLMemoValue],
+                                                            nDataType),
+      // Abhängig vom Datentyp des Merkmals den Wert in das richtige Feld schreiben
+      oField := DbField(SML_AttributeTargetFieldName(nDataType), oSMLWRT),
+
+      // Für Merkmale vom Typ Text muss die Länge der Eingabe validiert werden,
+      //  weil die maximale Länge für das Feld SMLWRT:WERT_STR 256 ist.
+      if (nDataType = gl_SML_DataTypeText) and
+         (Len(uValue) > SML_StringValueFieldMaxLength()) then
+         SetError('Zeichenkette für Merkmal <' +
+                  aAttribs[i, gl_SML_SLMemoLabel] + '> darf maximal ' +
+                  Str(SML_StringValueFieldMaxLength()) + ' Zeichen haben!'),
+      endif,
+
+      // Wert in das entsprechende Feld schreiben
+      DbReplace(oField, uValue),
+
+      DbPost(oSMLWRT),
+   next,
+end,
+

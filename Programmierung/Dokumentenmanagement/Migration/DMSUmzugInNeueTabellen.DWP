@@ -1,0 +1,134 @@
+//******************************************************************************
+// Beschreibung:   Uzug der Datensätze von KDNDOK nach
+//                 DMSVER und DMSBPS
+//   ->  keine Rückgabe
+//******************************************************************************
+
+| m_oDM, m_oKDNDOK, m_oDMSVER, m_oDMSBSP, oRec, m_oFile, m_cFileName |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+//  erzeugt aus einem Datensatz KDNDOK
+//  einen Datensatz  DMSVER
+//  und ein oder 2 Datensätze DMSBPS (2, wenn Thumnail gefüllt ist)
+// @Result: null                                                                       TODO: wenn es dermaleinst das SUCHE Feld geben wird, muß man Zeilen  48, 64 und 70 den Kommentar wieder entfernen
+//******************************************************************************
+function UmzugEinDatensatz()
+   | c_dGuid, c_tGuid |
+
+   if Lookup(waDMSVER, 'WORKAREA',{{m_oKDNDOK:WORKAREA, m_oKDNDOK:DS_ID, m_oKDNDOK:DOC_NR, m_oKDNDOK:VERS_NR}}, 'ID', -1) = -1 then   // nur, was noch nicht übertragen wurde
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         c_dGuid := CreateClassID(),
+         c_tGuid := CreateClassID(),
+         if empty(c_dGuid) or empty(c_tGuid) then
+            seterror('GUID ist leer'),
+         endif,
+         MyAppend(m_oDMSVER),
+         m_oDMSVER:PLATZ      := m_oKDNDOK:PLATZ,
+         m_oDMSVER:ERSTELLT   := m_oKDNDOK:ERSTELLT,
+         m_oDMSVER:WORKAREA   := m_oKDNDOK:WORKAREA,
+         m_oDMSVER:DS_ID      := m_oKDNDOK:DS_ID,
+         m_oDMSVER:DOC_NR     := m_oKDNDOK:DOC_NR,
+         m_oDMSVER:VERS_NR    := m_oKDNDOK:VERS_NR,
+         m_oDMSVER:VERS_BEZ   := m_oKDNDOK:VERS_BEZ,
+         m_oDMSVER:ART        := m_oKDNDOK:ART,
+         m_oDMSVER:NAME       := m_oKDNDOK:NAME,
+         if not empty(m_oKDNDOK:NAME) and ExtractFileExt(m_oKDNDOK:NAME) == m_oKDNDOK:FILE_TYPE then
+            m_oDMSVER:FILE_NAME       := m_oKDNDOK:NAME,
+         endif,
+         m_oDMSVER:STATUS     := m_oKDNDOK:STATUS,
+         m_oDMSVER:STATUS_FGB := m_oKDNDOK:STATUS_FGB,
+         m_oDMSVER:VERWENDUNG := m_oKDNDOK:VERWENDUNG,
+         m_oDMSVER:FILE_TYPE  := m_oKDNDOK:FILE_TYPE,
+         m_oDMSVER:FILE_SIZE  := m_oKDNDOK:FILE_SIZE,
+         m_oDMSVER:FILE_AEND  := m_oKDNDOK:FILE_AEND,
+         m_oDMSVER:MEMO       := m_oKDNDOK:MEMO,
+         m_oDMSVER:SUCHE      := m_oKDNDOK:SUCHE,
+         if m_oKDNDOK:STATUS = gl_DMSU_DokumentenStatus_aktuelleVersion then
+            m_oDMSVER:AKT_TS  := m_oKDNDOK:GEAENDERT,
+            m_oDMSVER:AKT_USR := m_oKDNDOK:GEAEND_USR,
+         endif,
+         if m_oKDNDOK:ART = gl_DMSU_DokumentenArt_File then
+            m_oDMSVER:D_GUID_STR := c_dGuid,
+            if not empty(m_oKDNDOK:THUMBNAIL) then
+               m_oDMSVER:T_GUID_STR := c_tGuid,
+            endif,
+         else
+            m_oDMSVER:LINKS      := m_oKDNDOK:DATA,
+         endif,
+         MyPost(m_oDMSVER),
+         // Hier greift DMSU_BSP_Append(oDM, cFullFilePath, bErzeugeThumbnail)  nicht, weil
+         // nicht cFullFilePath vorhanden ist, sondern der Blob
+         if m_oKDNDOK:ART = gl_DMSU_DokumentenArt_File then
+            MyAppend(m_oDMSBSP),
+            m_oDMSBSP:GUID_STR   := c_dGuid,
+            m_oDMSBSP:DATA       := m_oKDNDOK:DATA,
+            m_oDMSBSP:PLATZ      := m_oKDNDOK:PLATZ,
+            m_oDMSBSP:ERSTELLT   := m_oKDNDOK:ERSTELLT,
+            MyPost(m_oDMSBSP),
+            if not empty(m_oKDNDOK:THUMBNAIL) then
+               MyAppend(m_oDMSBSP),
+               m_oDMSBSP:GUID_STR   := c_tGuid,
+               m_oDMSBSP:DATA       := m_oKDNDOK:THUMBNAIL,
+               m_oDMSBSP:PLATZ      := m_oKDNDOK:PLATZ,
+               m_oDMSBSP:ERSTELLT   := m_oKDNDOK:ERSTELLT,
+              MyPost(m_oDMSBSP),
+            endif,
+         endif,
+         DbCommit(m_oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection),
+            DbCancelAll(m_oDM),
+         endif,
+      stopseq,
+   else
+      FSeek(m_oFile, 0, FS_END),
+      fwriteln(m_oFile, 'doppelt:' + ' DMSVER-ID: ' + Str(m_oDMSVER:ID) + ' KDNDOK-ID: ' + Str(m_oKDNDOK:ID) + ' workarea: ' +Str(m_oKDNDOK:WORKAREA) + ' DS_ID: ' + Str(m_oKDNDOK:DS_ID) + ' DOC_NR: ' + Str(m_oKDNDOK:DOC_NR) + ' VERS_NR: ' + Str(m_oKDNDOK:VERS_NR)),
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_cFilename := 'c:\Temp\DMSMigrationProtokoll.txt',
+m_oFile:=fopen(m_cFileName, fo_create),
+
+startseq
+   m_oDM := CreateObject('TBeDbGet', 'DMSUmzug'),
+   m_oDMSVER := MyGetTable(m_oDM, waDMSVER,),
+   m_oDMSBSP := MyGetTable(m_oDM, waDMSBSP,),
+   m_oKDNDOK := MyGetTable(m_oDM, waKDNDOK,),
+   m_oKDNDOK.IndexName := 'ID',
+   // Wenn man nicht alles auf einmal machen will, kann mn hier nach ID scopen
+   DbScope({0}, {1000000000}, m_oKDNDOK),
+//   Browse(, m_oKDNDOK),
+   startseq
+      ProgressBarShow("Reorg", "KDNDOK Umzug", false),
+      DbGotop(m_oKDNDOK),
+      while not eof(m_oKDNDOK) do
+         UmzugEinDatensatz(),
+//         sleep(100),       // zum Testen, damit man was in der Progressbar sieht
+         Progressbarupdate(0 , alltrim(m_oKDNDOK:NAME), true),
+         dbSkip(1, m_oKDNDOK),
+      next,
+      progressbarhide(),
+   always
+      fclose(m_oFile),
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+stopseq,

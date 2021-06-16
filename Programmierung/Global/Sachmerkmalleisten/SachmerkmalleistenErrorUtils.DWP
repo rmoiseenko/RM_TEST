@@ -1,0 +1,155 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Hilfsfunktionen zum Behandeln von Sachmerkmalleisten-Fehlern
+//
+//  Basis Error-Code:            1000
+//  Bereich der SML Error-Codes: 1001 - 1100
+//
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Unformatierte Fehlermeldung via Fehler-Code ermitteln
+// @Result: string - unformatierte Fehlermeldung
+//******************************************************************************
+function _SML_ERR_GetMessageByCode_Internal(nRelativeErrorCode:N)
+| nMessagesCount |
+
+   nMessagesCount := ALen(gl_SML_ERR_ErrorMessages),
+   SetErrorIf((nRelativeErrorCode < 1) or (nRelativeErrorCode > nMessagesCount),
+              'Keine Fehlermeldung für Error-Code <' + Str(nRelativeErrorCode) + '> vorhanden!'),
+
+   Result := gl_SML_ERR_ErrorMessages[nRelativeErrorCode],
+end,
+
+//******************************************************************************
+// Formatieren einer Fehlermeldung
+// @Result: string - formatierte Fehlermeldung
+//******************************************************************************
+function _SML_ERR_FormatMessage(cMessage:C, aParams:A)
+| nParams, nParamPos, nTokenCount, i |
+
+   Result  := cMessage,
+   nParams := ALen(aParams),
+   if nParams > 0 then
+      Result      := '',
+      nTokenCount := TokenCount(cMessage, gl_SML_ERR_ParamIdentifier),
+      for i := 1 to nTokenCount do
+         Result += Token(cMessage, gl_SML_ERR_ParamIdentifier, i),
+         // TODO:
+         // Wenn mehr Parameter vorhanden sind als für die Meldung vorgesehen,
+         //  dann wird am Ende der Fehlermeldung möglicherweise der überflüssige
+         //  Parameter von aParams ausgegeben.
+         // Ist nicht kritisch, aber u.U. unschön.
+         Result += iif(i <= nParams, ToString(aParams[i]), ''),
+      next,
+   endif,
+end,
+
+//******************************************************************************
+// Fehlermeldung anhand eines Error-Codes ermitteln
+// @Result: string - Fehler-Meldung
+//******************************************************************************
+function _SML_ERR_Message(nRelativeErrorCode:N, aParams:A)
+   Result := '',
+   if nRelativeErrorCode > 0 then
+      Result := SML_ERR_FormatMessage(
+         SML_ERR_GetMessageByCode_Internal(nRelativeErrorCode), aParams
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Fehlermeldung anhand eines Error-Codes ermitteln und als Fehlermeldung
+// anzeigen
+//
+// @Result: null
+//******************************************************************************
+function _SML_ERR_ShowMessage(nRelativeErrorCode:N, aParams:A)
+   MessageDlg(SML_ERR_Message(nRelativeErrorCode, aParams), mtError),
+end,
+
+//******************************************************************************
+// Erstellen eines ErrorResult-Objekts
+//
+// HINWEIS ZUM ERROR-RESULT OBJEKT:
+//  Das ErrorResult-Objekt besteht aus einem Error-Code und einer beliebigen
+//   Anzahl an Fehler-Informationen.
+//  Das ErrorResult wird als Array gespeichert und transportiert.
+//
+// FORMAT DES ERROR-RESULT OBJEKTS:
+//  {<Error-Code: Numeric>, <Error-Infos: Array>}
+//
+// @Result: array - ErrorResult-Objekt
+//******************************************************************************
+function _SML_ERR_ErrorResult(nErrorCode:N, aInfo:U:=nil)
+   Result := {nErrorCode, iif(Empty(aInfo), {}, aInfo)},
+end,
+
+//******************************************************************************
+// Leeres ErrorResult initialisieren
+// @Result: array - ErrorResult-Objekt
+//******************************************************************************
+function _SML_ERR_ErrorResultInit()
+   Result := SML_ERR_ErrorResult(0, {}),
+end,
+
+//******************************************************************************
+// Error-Code aus einem ErrorResult-Objekt holen
+// @Result: numeric - Error-Code
+//******************************************************************************
+function _SML_ERR_ErrorResultCode(aErrorResult:A)
+   SetErrorIf(ALen(aErrorResult) < 1, 'Invalid ErrorResult object'),
+   Result := aErrorResult[1],
+end,
+
+//******************************************************************************
+// Error-Infos aus einem ErrorResult-Objekt holen
+// @Result: array - Error-Infos
+//******************************************************************************
+function _SML_ERR_ErrorResultInfo(aErrorResult:A)
+   SetErrorIf(ALen(aErrorResult) < 2, 'Invalid ErrorResult object'),
+   Result := aErrorResult[2],
+end,
+
+//******************************************************************************
+// Prüfen ob durch das ErrorResult-Objekt ein Fehler signalisiert wird
+// @Result: boolean
+//******************************************************************************
+function _SML_ERR_IsError(aErrorResult:A)
+   Result := SML_ERR_ErrorResultCode(aErrorResult) > 0,
+end,
+
+//******************************************************************************
+// Exception per ErrorResult-Objekt auslösen
+// @Result: null
+//******************************************************************************
+function _SML_ERR_RaiseError(aErrorResult:A)
+| nErrorCode, nRelativeErrorCode, aErrorInfo |
+
+   nRelativeErrorCode := SML_ERR_ErrorResultCode(aErrorResult),
+   // nRelativeErrorCode = 0 bedeutet "Kein Fehler"
+   if nRelativeErrorCode > 0 then
+      nErrorCode := nRelativeErrorCode + gl_SML_ERR_BaseErrorCode,
+      aErrorInfo := SML_ERR_ErrorResultInfo(aErrorResult),
+      SetError(SML_ERR_Message(nRelativeErrorCode, aErrorInfo), nErrorCode),
+   endif,
+end,
+
+//******************************************************************************
+// Exception per ErrorResult-Objekt auslösen, wenn eine bestimmte Bedingung
+// zutrifft
+// @Result: null
+//******************************************************************************
+function _SML_ERR_RaiseErrorIf(bCondition:L, aErrorResult:A)
+   if bCondition then
+      SML_ERR_RaiseError(aErrorResult),
+   endif,
+end,
+

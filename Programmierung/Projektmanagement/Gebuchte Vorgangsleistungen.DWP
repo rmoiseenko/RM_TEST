@@ -1,0 +1,142 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dialog zum Anzeigen aller Buchungen zu einer Projekt-Vorgangs-
+//               Leistung.
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1, nTaskEffortID:P2:=350, oDM, oDAB020,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, bipnl_Headline, ds_DAB020, grd_PostingsGrid
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Buchungen aktualisieren
+//******************************************************************************
+function A_RefreshExecute( Sender )
+  DBRefresh(oDAB020),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Prüft ob die übergebene ID Gültig ist
+// @Result: boolean - Gültigkeit der ID
+//******************************************************************************
+function CheckTaskEffortID()
+   Result := True,
+   nTaskEffortID := Lookup(waDABPVL, 'ID', {{nTaskEffortID}}, 'ID', -1),
+   if nTaskEffortID = -1 then
+      Result := False,
+      MessageDlg('Fehlerhafte Vorgangsleistungs-ID übergeben', mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Öffnet die Datenbankanbindungen und Filtert die Buchungen auf die übergebene
+// Vorgangsleistungs-ID
+// @Result: null
+//******************************************************************************
+function OpenAndFilterDataBase()
+   oDAB020                          := DBGetTable(oDM, waDAB020, 'DAB020_GRID'),
+   oDAB020.IndexName                := 'VORGLS_ID',
+
+   ds_DAB020.DataSet                := oDAB020,
+   grd_PostingsGrid.RegisterDataSet := oDAB020,
+   grd_PostingsGrid.DataSource      := ds_DAB020,
+   grd_PostingsGrid.ReadWriteProps  := False,
+   // Filtern der Buchungs-Tabelle
+   startseq
+      DBFilter('VORGLS_ID = ' + Str(nTaskEffortID), oDAB020),
+   onerror
+      SetError('Fehler beim Filtern der Vorgangsleistungs-Buchungen' +
+               crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Setzt die Caption im Infopanel
+// @Result: null
+//******************************************************************************
+function SetCaption()
+| cTaskEffortDesc, cTaskEffortPos |
+   bipnl_Headline.Caption := 'Buchungen für Vorgangsleistung',
+
+   cTaskEffortDesc := Lookup(waDABPVL, 'ID', {{nTaskEffortID}}, 'BEZ', ''),
+   if not empty(cTaskEffortDesc) then
+      cTaskEffortDesc := ': "' + cTaskEffortDesc + '"',
+   endif,
+
+   cTaskEffortPos := Lookup(waDABPVL, 'ID', {{nTaskEffortID}}, 'POSNR', ''),
+   if not empty(cTaskEffortPos) then
+      if not empty(cTaskEffortDesc) then
+         cTaskEffortPos := ' / Position: ' + cTaskEffortPos,
+      else
+         cTaskEffortPos := ' / Position: ' + cTaskEffortPos,
+      endif,
+   endif,
+
+   bipnl_Headline.Caption += cTaskEffortDesc + cTaskEffortPos,
+end,
+
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      oForm            := LoadForm( "@TASKPOSTI", Application ),
+      bipnl_Headline   := FindObject( oForm, "bipnl_Headline" ),
+      ds_DAB020        := FindObject( oForm, "ds_DAB020" ),
+      grd_PostingsGrid := FindObject( oForm, "grd_PostingsGrid" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   grd_PostingsGrid.ID := '@PRJPLBCP', // Achtung wird auch in "Vorgangsleistung buchen" verwendet
+   if CheckTaskEffortID() then
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         OpenAndFilterDataBase(),
+         SetCaption(),
+         ShowModal(oForm),
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,
+

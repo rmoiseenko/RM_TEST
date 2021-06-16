@@ -1,0 +1,356 @@
+DECLARE @TEMP CURSOR;
+DECLARE @CUR_DABPVL_ID   Integer;
+DECLARE @CUR_DABAVG_ID   Integer;
+DECLARE @LAST_MENGE_PLAN Double;
+DECLARE @MENGE_PLAN_DIFF Double;
+DECLARE @LAST_EKP        Double;
+DECLARE @EKP_DIFF        Double;
+DECLARE @LAST_PE         Integer;
+DECLARE @PE_DIFF         Integer;
+
+DECLARE @PLAN_IST CURSOR;
+DECLARE @LAST_MPL_VL     Double;
+DECLARE @LAST_EKPWERT_VL Double;
+DECLARE @LAST_ISTMEN_KUM Double;
+DECLARE @LAST_ISTWRT_KUM Double;
+DECLARE @CUR_ROWID       String;
+
+TRY DROP TABLE #DABPVL_VERLAUF; CATCH ALL END TRY;
+SELECT
+   DABPVL.PRJ_ID, DABPRJ.BEZ AS PROJ_BEZ, DABPVL.VORG_ID, DABPRV.BEZ AS VORG_BEZ,
+   DABPVL.ID as DABPVL_ID, DABPVL.POSNR, DABPVL.LEIST_ART, DABPVL.RESTYP,
+   DABPVL.RES_ID, DABPVL.MENGE_PLAN as MENGE_PLAN_AKTUELL, DABPVL.EKP as EKP_AKTUELL,
+   DABAVG.ID as DABAVG_ID, DABAVG.PLATZ as DABAVG_PLATZ,
+   DABAVG.ERSTELLT as DABAVG_ERSTELLT, DABAVG.FELDNAME, DABAVG.MODUS,
+   iif(FELDNAME = 'MENGE_PLAN', WERT_DOUBL, null) AS MENGE_PLAN_VERLAUF,
+   Convert(0, SQL_DOUBLE)                         AS MENGE_PLAN_DIFF,
+   iif(FELDNAME = 'EKP',        WERT_DOUBL, null) AS EKP_VERLAUF,
+   Convert(0, SQL_DOUBLE)                         AS EKP_DIFF,
+   iif(FELDNAME = 'PE',         WERT_INT, null)   AS PE_VERLAUF,
+   Convert(0, SQL_INTEGER)                        AS PE_DIFF
+INTO #DABPVL_VERLAUF
+FROM
+   "DABPVL.ADT" DABPVL
+   LEFT JOIN "DABPRV.ADT" DABPRV on (DABPRV.ID    = DABPVL.VORG_ID)
+   LEFT JOIN "DABPRJ.ADT" DABPRJ on (DABPRJ.ID    = DABPVL.PRJ_ID)
+   LEFT JOIN "DABAVG.ADT" DABAVG on (DABAVG.DS_WA = 262 AND DABAVG.DS_ID = DABPVL.ID)
+WHERE
+   DABPVL.PRJ_ID  = @@PRJ_ID@@  AND
+@@VORGFILT@@ DABPVL.VORG_ID IN (@@VORG_IDS@@) AND // ggf. Einschränkung auf Vorgänge
+   ( DABAVG.ID is null or DABAVG.FELDNAME in ('MENGE_PLAN', 'EKP', 'PE'))
+ORDER BY
+   DABPVL.ID, DABAVG.ERSTELLT, DABAVG.ID;
+
+// Zur Kontrolle (Browser #1)
+//   SELECT * FROM #DABPVL_VERLAUF;
+
+// **************************************************
+// Mittels der nun folgenden Verarbeitung werden die Werte "Verlauf"
+// und "Diff" der relevanten Felder berechnet. Der Verlauf wird "vorwärts" im Zeitverlauf in
+// alle nachfolgenden Zeilen übertragen, sofern nicht ein neuer Wert für das
+// jeweilge Feld vorhanden ist.
+// => zum besseren Verständnis die temp. Tabelle mit einfachem Beispiel vor und nach
+//    dem Script betrachten)
+// **************************************************
+
+TRY DROP INDEX #DABPVL_VERLAUF.PVLID_ERSTELLT; CATCH ALL END TRY;
+CREATE INDEX PVLID_ERSTELLT ON #DABPVL_VERLAUF (DABPVL_ID, DABAVG_ERSTELLT, DABAVG_ID); // AVG-ID zusätzlich in den Index aufnehmen, damit die Sortier-Folge definiert immer gleich ist
+OPEN @TEMP AS SELECT * FROM #DABPVL_VERLAUF ORDER BY DABPVL_ID, DABAVG_ERSTELLT, DABAVG_ID;
+
+@CUR_DABPVL_ID   = -1;
+@CUR_DABAVG_ID   = -1;
+@LAST_MENGE_PLAN = null;
+@MENGE_PLAN_DIFF = 0;
+@LAST_EKP        = null;
+@EKP_DIFF        = 0;
+@LAST_PE         = null;
+@PE_DIFF         = 0;
+
+WHILE FETCH @TEMP DO
+
+   // auf nächstem DABPVL-Satz angekommen ? Dann befinden wir uns auf dem ersten DS in diesem Block!
+   IF @TEMP.DABPVL_ID <> @CUR_DABPVL_ID THEN
+      @CUR_DABPVL_ID   = @TEMP.DABPVL_ID;
+      @LAST_MENGE_PLAN = null; // @TEMP.MENGE_PLAN_VERLAUF;
+      @LAST_EKP        = null; // @TEMP.EKP_VERLAUF;
+      @LAST_PE         = null;
+   END IF;
+
+          // Werte für das Update des aktuellen Datensatzes zusammenstellen
+   IF @TEMP.MENGE_PLAN_VERLAUF is not null THEN
+      @MENGE_PLAN_DIFF = @TEMP.MENGE_PLAN_VERLAUF - IfNull(@LAST_MENGE_PLAN, 0);
+      @LAST_MENGE_PLAN = @TEMP.MENGE_PLAN_VERLAUF;
+   ELSE
+      @MENGE_PLAN_DIFF = 0;
+   END IF;
+
+   IF @TEMP.EKP_VERLAUF is not null THEN
+      @EKP_DIFF = @TEMP.EKP_VERLAUF - IfNull(@LAST_EKP, 0);
+      @LAST_EKP = @TEMP.EKP_VERLAUF;
+   ELSE
+      @EKP_DIFF = 0;
+   END IF;
+
+   IF @TEMP.PE_VERLAUF is not null THEN
+      @PE_DIFF = @TEMP.PE_VERLAUF - IfNull(@LAST_PE, 0);
+      @LAST_PE = @TEMP.PE_VERLAUF;
+   ELSE
+      @PE_DIFF = 0;
+   END IF;
+
+   // Updates durchführen
+   @CUR_DABAVG_ID   = @TEMP.DABAVG_ID;
+   UPDATE #DABPVL_VERLAUF SET MENGE_PLAN_VERLAUF = @LAST_MENGE_PLAN WHERE DABAVG_ID = @CUR_DABAVG_ID AND MENGE_PLAN_VERLAUF is null;
+   IF @MENGE_PLAN_DIFF <> 0 THEN
+      UPDATE #DABPVL_VERLAUF SET MENGE_PLAN_DIFF = @MENGE_PLAN_DIFF WHERE DABAVG_ID = @CUR_DABAVG_ID;
+   END IF;
+
+   UPDATE #DABPVL_VERLAUF SET EKP_VERLAUF        = @LAST_EKP        WHERE DABAVG_ID = @CUR_DABAVG_ID AND EKP_VERLAUF is null;
+   IF @EKP_DIFF <> 0 THEN
+      UPDATE #DABPVL_VERLAUF SET EKP_DIFF        = @EKP_DIFF        WHERE DABAVG_ID = @CUR_DABAVG_ID;
+   END IF;
+
+   UPDATE #DABPVL_VERLAUF SET PE_VERLAUF         = @LAST_PE         WHERE DABAVG_ID = @CUR_DABAVG_ID AND PE_VERLAUF is null;
+   IF @PE_DIFF <> 0 THEN
+      UPDATE #DABPVL_VERLAUF SET PE_DIFF         = @PE_DIFF         WHERE DABAVG_ID = @CUR_DABAVG_ID;
+   END IF;
+
+END WHILE;
+
+CLOSE @TEMP;
+
+// Zur Kontrolle (Browser #1)
+//   SELECT * FROM #DABPVL_VERLAUF;
+
+// **************************************************
+// Betrachtet man die temp. Tabelle jetzt, so fällt in den Verlaufs-Spalten auf, dass zu Beginn eines
+// DabPVL-ID-Blocks z.B. das EKP_VERLAUF-Feld nicht gefüllt ist. Klar, entweder wird
+// zuerst MENGE oder EKP protokolliert.
+// => Diese fehlenden Daten ergänzen wir aus dem jeweils chronologisch ersten verfügbaren Wert zu
+//    diesem Feld
+// **************************************************
+
+// 1) Ergänzung EKP_VERLAUF
+UPDATE #DABPVL_VERLAUF
+  SET EKP_VERLAUF = ( SELECT TOP 1 TEMP_INNER.EKP_VERLAUF
+                        FROM #DABPVL_VERLAUF TEMP_INNER
+                        WHERE TEMP_INNER.DABPVL_ID   = TEMP_OUTER.DABPVL_ID AND
+                              TEMP_INNER.EKP_VERLAUF is not null
+                        ORDER BY TEMP_INNER.DABPVL_ID, TEMP_INNER.DABAVG_ERSTELLT, TEMP_INNER.DABAVG_ID  )
+  FROM #DABPVL_VERLAUF TEMP_OUTER
+  WHERE TEMP_OUTER.EKP_VERLAUF is null;
+
+// 2) Ergänzung MENGE_PLAN_VERLAUF
+UPDATE #DABPVL_VERLAUF
+  SET MENGE_PLAN_VERLAUF = ( SELECT TOP 1 TEMP_INNER.MENGE_PLAN_VERLAUF
+                               FROM #DABPVL_VERLAUF TEMP_INNER
+                               WHERE TEMP_INNER.DABPVL_ID          = TEMP_OUTER.DABPVL_ID AND
+                                     TEMP_INNER.MENGE_PLAN_VERLAUF is not null
+                               ORDER BY TEMP_INNER.DABPVL_ID, TEMP_INNER.DABAVG_ERSTELLT, TEMP_INNER.DABAVG_ID  )
+  FROM #DABPVL_VERLAUF TEMP_OUTER
+  WHERE TEMP_OUTER.MENGE_PLAN_VERLAUF is null;
+
+// 3) Ergänzung PE_VERLAUF
+UPDATE #DABPVL_VERLAUF
+  SET PE_VERLAUF  = ( SELECT TOP 1 TEMP_INNER.PE_VERLAUF
+                        FROM #DABPVL_VERLAUF TEMP_INNER
+                        WHERE TEMP_INNER.DABPVL_ID   = TEMP_OUTER.DABPVL_ID AND
+                              TEMP_INNER.PE_VERLAUF is not null
+                        ORDER BY TEMP_INNER.DABPVL_ID, TEMP_INNER.DABAVG_ERSTELLT, TEMP_INNER.DABAVG_ID  )
+  FROM #DABPVL_VERLAUF TEMP_OUTER
+  WHERE TEMP_OUTER.PE_VERLAUF is null;
+
+// Zur Kontrolle (Browser #1)
+//   SELECT * FROM #DABPVL_VERLAUF;
+
+// Jetzt fügen wir ein neues Feld für den berechneten Plan-EKP zu jedem Änderungszeitpunkt ein
+ALTER TABLE #DABPVL_VERLAUF ADD COLUMN EK_WRTPLAN_VERLAUF double;
+
+// EKP-Plan-Werte berechnen
+UPDATE #DABPVL_VERLAUF SET EK_WRTPLAN_VERLAUF = Round( MENGE_PLAN_VERLAUF * EKP_VERLAUF / iif(PE_VERLAUF = 0, 1, PE_VERLAUF), 4);
+
+// Zur Kontrolle (Browser #1)
+//   SELECT * FROM #DABPVL_VERLAUF;
+
+// **********************************************************************
+// Aus den Planwerten selektiv je nach "Verdichtung" den letzten Satz
+// einer Gruppe selektieren
+// => Ziel: Zustand am Ende des Tages x / Monats x / Jahres x / etc. selektieren
+//          Warum Ende einer Gruppe:
+//             - Wir vergleichen die Ist-Werte nachher mit den kumulierten
+//               Buchungen im gesamten Zeitraum der Gruppe!
+//             - Würde man den Anfang nutzen, hätte man außerdem in der letzten
+//               chronologischen Grupppe nicht den aktuellen IST-Zustand mit drin
+// Achtung: Hierbei wird weiterhin nach Vorgangsleistungen unterschieden
+// **********************************************************************
+// => vorerst alle möglichen Verdichtungsstufen in einzelne Felder extrahieren
+//    => Jahr, Quartal, Monat, Kalenderwoche, Tag
+ALTER TABLE #DABPVL_VERLAUF
+  ADD VS_YEAR Short
+  ADD VS_QUARTER Short
+  ADD VS_MONTH Short
+  ADD VS_WEEK Short
+  ADD VS_DAY Short;
+
+// "Verdichtungs"-Spalten füllen
+UPDATE #DABPVL_VERLAUF
+  SET
+    VS_YEAR     = Year(DABAVG_ERSTELLT),
+    VS_QUARTER  = Quarter(DABAVG_ERSTELLT),
+    VS_MONTH    = Month(DABAVG_ERSTELLT),
+    VS_WEEK     = IsoWeek(DABAVG_ERSTELLT),
+    VS_DAY      = DayOfMonth(DABAVG_ERSTELLT);
+
+// "Verdichtung" => letzten Satz je Verdichtungsgruppe selektieren
+// => das stellt die Verwendung von Max() sicher
+TRY DROP TABLE #VEDICHT_TEMP; CATCH ALL END TRY;
+SELECT
+    // VS_YEAR, VS_MONTH, VS_DAY, VS_HOUR,
+    DABPVL_ID, Max(DABAVG_ERSTELLT) as DABAVG_ERSTELLT, Max(DABAVG_ID) as DABAVG_ID
+
+  INTO #VEDICHT_TEMP
+  FROM #DABPVL_VERLAUF TEMP
+  GROUP BY
+     DABPVL_ID,
+//     VS_YEAR                            // nach Jahr
+//     VS_YEAR, VS_QUARTER                // nach Quartal
+//     VS_YEAR, VS_MONTH                  // nach Monat
+//     VS_YEAR, VS_WEEK                   // nach Woche
+     VS_YEAR, VS_MONTH, VS_DAY          // nach Tag
+     ;
+
+// Zur Kontrolle
+//   SELECT * FROM #DABPVL_VERLAUF; (Browser #1)
+//   SELECT * FROM #VEDICHT_TEMP;
+
+// Aus dem Gesamtverlauf auf Basis der "Verdichtung" die relevanten Sätze selektieren
+TRY DROP TABLE #DABPVL_VERLAUF_GROUP; CATCH ALL END TRY;
+SELECT DABPVL_VERLAUF.*
+  INTO #DABPVL_VERLAUF_GROUP
+  FROM #VEDICHT_TEMP VEDICHT_TEMP
+  INNER JOIN #DABPVL_VERLAUF DABPVL_VERLAUF ON ( DABPVL_VERLAUF.DABPVL_ID       = VEDICHT_TEMP.DABPVL_ID AND
+                                                 DABPVL_VERLAUF.DABAVG_ERSTELLT = VEDICHT_TEMP.DABAVG_ERSTELLT AND
+                                                 DABPVL_VERLAUF.DABAVG_ID       = VEDICHT_TEMP.DABAVG_ID )
+  ORDER BY VEDICHT_TEMP.DABPVL_ID, VEDICHT_TEMP.DABAVG_ERSTELLT, VEDICHT_TEMP.DABAVG_ID;
+
+// Zur Kontrolle (ggf. Browser #1)
+//   SELECT * FROM #DABPVL_VERLAUF_GROUP;
+
+// **********************************************************************
+// IST-Buchungen dazu holen
+//   (auch hier immer nach Vorgangsleistungen unterscheiden)
+// **********************************************************************
+TRY DROP TABLE #BUCHUNGEN; CATCH ALL END TRY;
+SELECT
+    DAB020.PRJ_ID, DAB020.VORG_ID, DAB020.VORGLS_ID AS DABPVL_ID, DAB020.PLATZ, DAB020.ERSTELLT, DAB020.DATUM AS BUCHUNGSDATUM,
+    DAB020.MENGE,   Convert(0, SQL_DOUBLE) AS MENGE_KUM,
+    DAB020.EK_WERT, Convert(0, SQL_DOUBLE) AS EK_WERT_KUM,
+    Year(DATUM)       AS VS_YEAR,
+    Quarter(DATUM)    AS VS_QUARTER,
+    Month(DATUM)      AS VS_MONTH,
+    IsoWeek(DATUM)    AS VS_WEEK,
+    DayOfMonth(DATUM) AS VS_DAY
+  INTO #BUCHUNGEN
+  FROM "DAB020.ADT" DAB020
+  WHERE DAB020.PRJ_ID = @@PRJ_ID@@
+@@VORGFILT@@        AND (DAB020.VORG_ID IN (@@VORG_IDS@@))  // ggf. auf einzelnen Vorgang einschränken
+  ORDER BY VORGLS_ID, DATUM, ERSTELLT; // entspricht dem Index-Ausdruck von Index 'VORGLS_ID' !
+
+// Zur Kontrolle
+//   SELECT * FROM #BUCHUNGEN;
+
+// IST-Buchungsdaten verdichten
+TRY DROP TABLE #BUCHUNGEN_GROUPED; CATCH ALL END TRY;
+SELECT
+    PRJ_ID, VORG_ID, DABPVL_ID,
+    Sum(MENGE)   AS MENGE, Convert(0, SQL_DOUBLE) AS MENGE_KUM,
+    Sum(EK_WERT) AS EK_WERT, Convert(0, SQL_DOUBLE) AS EK_WERT_KUM,
+    VS_YEAR, VS_MONTH, VS_DAY // nach Tag
+  INTO #BUCHUNGEN_GROUPED
+  FROM #BUCHUNGEN BUCHUNGEN
+  GROUP BY
+    PRJ_ID, VORG_ID, DABPVL_ID,
+//     VS_YEAR                            // nach Jahr
+//     VS_YEAR, VS_QUARTER                // nach Quartal
+//     VS_YEAR, VS_MONTH                  // nach Monat
+//     VS_YEAR, VS_WEEK                   // nach Woche
+     VS_YEAR, VS_MONTH, VS_DAY          // nach Tag
+     ;
+
+// Zur Kontrolle
+//   SELECT * FROM #DABPVL_VERLAUF_GROUP PLAN_GP;  (ggf. Browser #1)
+//   SELECT * FROM #BUCHUNGEN_GROUPED    IST_GP;   (kein Browser)
+
+// Plan-Werte und Ist-Werte joinen
+// => Achtung: "FULL OUTER JOIN" nutzen, damit PLAN- bzw. IST-Änderungen auf
+//             dann erscheinen, wenn es jeweils keine IST- bzw. PLAN-Ändeungen
+//             zum gleichen Verdichtungs-Zeitpunkt gibt)
+TRY DROP TABLE #PLAN_IST_NACH_LEISTUNG; CATCH ALL END TRY;
+SELECT
+    IfNull(PLAN_GP.PRJ_ID, IST_GP.PRJ_ID)       AS PRJ_ID,
+    IfNull(PLAN_GP.VORG_ID, IST_GP.VORG_ID)     AS VORG_ID,
+    IfNull(PLAN_GP.DABPVL_ID, IST_GP.DABPVL_ID) AS DABPVL_ID,
+
+    IfNull(PLAN_GP.VS_YEAR,  IST_GP.VS_YEAR)  AS VS_YEAR,
+    IfNull(PLAN_GP.VS_MONTH, IST_GP.VS_MONTH) AS VS_MONTH,
+    IfNull(PLAN_GP.VS_DAY,   IST_GP.VS_DAY)   AS VS_DAY,
+
+    PLAN_GP.MENGE_PLAN_VERLAUF, PLAN_GP.EK_WRTPLAN_VERLAUF,
+    IST_GP.MENGE AS IST_MENGE, IST_GP.MENGE_KUM AS IST_MENGE_KUM, IST_GP.EK_WERT as IST_EK_WERT, IST_GP.EK_WERT_KUM AS IST_EK_WERT_KUM
+
+  INTO #PLAN_IST_NACH_LEISTUNG
+  FROM #DABPVL_VERLAUF_GROUP PLAN_GP
+  FULL OUTER JOIN #BUCHUNGEN_GROUPED IST_GP
+        ON ( IST_GP.DABPVL_ID = PLAN_GP.DABPVL_ID AND
+             IST_GP.VS_YEAR  = PLAN_GP.VS_YEAR  AND    // der Join-Ausdruck ist von der Verdichtung abhängig!
+             IST_GP.VS_MONTH = PLAN_GP.VS_MONTH AND
+             IST_GP.VS_DAY   = PLAN_GP.VS_DAY
+             )
+  ORDER BY
+     PRJ_ID, VORG_ID, DABPVL_ID,
+     VS_YEAR, VS_MONTH, VS_DAY;
+
+// Zur Kontrolle
+//   SELECT * FROM #PLAN_IST_NACH_LEISTUNG; (Browser #2)
+
+// ***************************************************
+// Verlaufs-Felder fortführen bzw. "auffüllen"_und kumulierte IST-Felder berechnen
+// ***************************************************
+
+OPEN @PLAN_IST AS SELECT PLAN_IST.*, ROWID FROM #PLAN_IST_NACH_LEISTUNG PLAN_IST; // Sortierung ist durch Order By beim Enstehen der TempTabelle oben sichergestellt
+
+@CUR_DABPVL_ID   = -1;
+WHILE FETCH @PLAN_IST DO
+
+   // auf nächstem DABPVL-Satz angekommen ? Dann befinden wir uns auf dem ersten DS in diesem Block!
+   IF @PLAN_IST.DABPVL_ID <> @CUR_DABPVL_ID THEN
+      @CUR_DABPVL_ID   = @PLAN_IST.DABPVL_ID;
+      @LAST_MPL_VL     = null;
+      @LAST_EKPWERT_VL = null;
+
+      @LAST_ISTMEN_KUM = 0; // "Ist-Menge kumuliert" zurück setzen
+      @LAST_ISTWRT_KUM = 0; // "Ist-Wert kumuliert"  zurück setzen
+   END IF;
+
+   @LAST_MPL_VL     = IfNull(@PLAN_IST.MENGE_PLAN_VERLAUF, @LAST_MPL_VL);
+   @LAST_EKPWERT_VL = IfNull(@PLAN_IST.EK_WRTPLAN_VERLAUF, @LAST_EKPWERT_VL);
+   @LAST_ISTMEN_KUM = @LAST_ISTMEN_KUM + IfNull(@PLAN_IST.IST_MENGE, 0);
+   @LAST_ISTWRT_KUM = @LAST_ISTWRT_KUM + IfNull(@PLAN_IST.IST_EK_WERT, 0);
+
+   @CUR_ROWID = @PLAN_IST.ROWID;
+   UPDATE #PLAN_IST_NACH_LEISTUNG SET MENGE_PLAN_VERLAUF = @LAST_MPL_VL     WHERE ROWID = @CUR_ROWID AND MENGE_PLAN_VERLAUF is null;
+   UPDATE #PLAN_IST_NACH_LEISTUNG SET EK_WRTPLAN_VERLAUF = @LAST_EKPWERT_VL WHERE ROWID = @CUR_ROWID AND EK_WRTPLAN_VERLAUF is null;
+   UPDATE #PLAN_IST_NACH_LEISTUNG SET IST_MENGE_KUM      = @LAST_ISTMEN_KUM WHERE ROWID = @CUR_ROWID;
+   UPDATE #PLAN_IST_NACH_LEISTUNG SET IST_EK_WERT_KUM    = @LAST_ISTWRT_KUM WHERE ROWID = @CUR_ROWID;
+
+END WHILE;
+
+CLOSE @PLAN_IST;
+// Ende der Kumulierung in PLAN_IST-Tabelle
+// ***************************************************
+
+// Dieses Zwischenergebnis kann genutzt werden für eine detaillierte PLAN - IST
+// Änderungsverfolgung je Vorgangsleistung
+//   Zur Kontrolle
+//     SELECT * FROM #PLAN_IST_NACH_LEISTUNG; (Browser #2)
+

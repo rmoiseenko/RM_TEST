@@ -1,0 +1,1027 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Allgemeine Funktionen für die Codeblock CAD-Schnittstelle.
+//
+// Das Präfix CADIF steht für "CAD-InterFace"
+// (CAD steht allgemein für "computer-aided design")
+//##############################################################################
+//##############################################################################
+
+// Forward-Deklarationen für Allgemeine Internal Funktionen
+function _CADIF_ValidateDataSourceType_Internal(nSourceType:N) ... end,
+function _CADIF_ValidateDataOperationMode_Internal(nDataOperationMode:N) ... end,
+function _CADIF_ValidateTableIsReadWriteFieldCompatible_Internal(oTable:O) ... end,
+function _CADIF_ValidateProjectExists_Internal(oDM:O, nProjectId:N) ... end,
+function _CADIF_GetAndValidateProjectIdBySourceId_Internal(oDM:O, nCADSRCId:N) ... end,
+function _CADIF_WriteIndividualFieldValue_Internal(uValueInfo:R, uValue:U, cFieldDescription:C:='') ... end,
+function _CADIF_ReadIndividualFieldValue_Internal(uValueInfo:A, uDefaultValue:U:=nil) ... end,
+function _CADIF_ReadIndividualFieldDescription_Internal(uValueInfo:A, uDefaultValue:U:=nil) ... end,
+// Forward-Deklarationen für Import-Funktionen
+function _CADIF_ImportRecordIndividual_Trigger_Internal(oDM:O, oSourceTable:O, oDestinationTable:O) ... end,
+// Forward-Deklarationen für Internal Status- und Validierungs-Funktionen
+function _CADIF_CalculateNewStatus_Internal(nCurrentStatus:N, nNewStatus:N) ... end,
+function _CADIF_SetStatus_Internal(oDM:O, oTable:O, nStatus:N, bIsStandard:L) ... end,
+function _CADIF_SetStatusAndMessage_Internal(oDM:O, oTable:O, nStatus:N, cMessage:C, bIsStandard:L) ... end,
+function _CADIF_SetErrorStatusIf_Internal(oDM:O, oTable:O, bCondition:L, cErrorMessage:C, bIsStandard:L) ... end,
+function _CADIF_SetWarnStatusIf_Internal(oDM:O, oTable:O, bCondition:L, cWarnMessage:C, bIsStandard:L) ... end,
+function _CADIF_ValidateStandard_CADART_Internal(oDM:O, nSourceId:N) ... end,
+function _CADIF_ValidateStandard_CADSTKL_Internal(oDM:O, nProjectId:N, nSourceId:N) ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion legt ein neues Einlese-Projekt als Datensatz in der CADPROJ an
+// oder gibt die ID des zu "cProjectKey" passenden Einlese-Projekts zurück.
+//
+// @result: integer - Rückgabe ist die Datensatz-ID in der CADPROJ.
+//******************************************************************************
+function _CADIF_CheckAndAddProject(oDM:O, cProjectKey:C)
+| oCADPROJ |
+
+   oCADPROJ := DbGetTable(oDM, waCADPROJ),
+   oCADPROJ.CbIndexName := 'PROJ_KEY',
+
+   if not oCADPROJ.CbFindKey({cProjectKey}) then
+      oCADPROJ.CbAppend(),
+      oCADPROJ:PROJ_KEY := cProjectKey,
+      oCADPROJ.CbPost(),
+   endif,
+
+   result := oCADPROJ:ID,
+end,
+
+//******************************************************************************
+// Diese Funktion legt eine neue Datenquelle als Datensatz in der CADSRC an.
+// Beispiel für Datenquellen:
+//  * Datei
+//  * Datei-Link
+//  * Hyperlink
+//
+// @result: integer - Die ID des neu angelegten Datensatzes
+//******************************************************************************
+function _CADIF_AddDataSource(oDM:O,
+                              nCADPROJId:N,
+                              cSourceName:C,
+                              nSourceType:N,
+                              cSourceFilePathOrURI:C,
+                              cSourceDataType:C)
+| oCADSRC |
+
+   // Quellen-Datentyp validieren
+   CADIF_ValidateDataSourceType_Internal(nSourceType),
+
+   oCADSRC := DbGetTable(oDM, waCADSRC),
+   oCADSRC.CbIndexName := 'ID',
+   oCADSRC.CbAppend(),
+   oCADSRC:CADPROJ_ID := nCADPROJId,
+   oCADSRC:SRC_NAME   := cSourceName,
+   oCADSRC:SRC_TYPE   := nSourceType,
+   oCADSRC:SRC_URI    := cSourceFilePathOrURI,
+   oCADSRC:DATA_TYPE  := cSourceDataType,
+   oCADSRC:STATUS_STD := gl_CADIF_Status_Default,
+   oCADSRC:STATUS_IND := gl_CADIF_Status_Default,
+   oCADSRC.CbPost(),
+
+   result := oCADSRC:ID,
+end,
+
+//******************************************************************************
+// Diese Funktion legt einen zu importierenden Artikel als neuen Datensatz in
+// der Tabelle CADART an, sofern dieser noch nicht existiert.
+// Existiert der anzulegende Datensatz bereits (Prüfung anhand der Kombination
+//  aus CADSRC_ID und ARTNR), so wird der Datensatz lediglich aktualisiert.
+// Bei der Aktualisierung bleiben folgende Felder unverändert:
+//   * CADPROJ_ID
+//   * CADSRC_ID
+//   * ARTNR
+//
+// Diese Funktion wird im Zuge des Imports (CADIF_Import) aufgerufen.
+//
+// @result: object - TBeRightsTable:
+// HINWEIS ZUR RÜCKGABE:
+//   Die Rückgabe ist das Tabellenobjekt (CADART) im Insert- oder Edit-Modus
+//   damit anschließend ggf. noch weitere Daten im editierten Datensatz ergänzt
+//   werden können.
+//******************************************************************************
+function _CADIF_CheckAndAddArticle(oDM:O, nCADSRCId:N, cArticleNo:C)
+| nCADPROJId |
+
+   // CADSRC-ID und CADPROJ-ID validieren
+   nCADPROJId := CADIF_GetAndValidateProjectIdBySourceId_Internal(oDM, nCADSRCId),
+
+   result := DbGetTable(oDM, waCADART),
+   result.CbIndexName := 'CADSRC_ID_ARTNR',
+   if result.CbFindKey({nCADSRCId, cArticleNo}) then
+      result.CbEdit(),
+   else
+      result.CbAppend(),
+      result:CADSRC_ID  := nCADSRCId,
+      result:CADPROJ_ID := nCADPROJId,
+      result:ARTNR      := cArticleNo,
+      result:STATUS_STD := gl_CADIF_Status_Default,
+      result:STATUS_IND := gl_CADIF_Status_Default,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion legt eine zu importierende Stücklisten-Position als Datensatz
+// in der CADSTKL an.
+// Diese Funktion wird im Zuge des Imports (CADIF_Import) aufgerufen.
+//
+// @result: object - TBeRightsTable:
+// HINWEIS ZUR RÜCKGABE:
+//   Die Rückgabe ist das Tabellenobjekt (CADSTKL) im Insert- oder Edit-Modus
+//   damit anschließend ggf. noch weitere Daten im editierten Datensatz ergänzt
+//   werden können.
+//******************************************************************************
+function _CADIF_CheckAndAddPartsListPosition(oDM:O,
+                                             nCADSRCId:N,
+                                             cArticleNo_Assembly:C,
+                                             cArticleNo_Part:C,
+                                             cPositionNo:C:='')
+| nCADPROJId |
+
+   // CADSRC-ID und CADPROJ-ID validieren
+   nCADPROJId := CADIF_GetAndValidateProjectIdBySourceId_Internal(oDM, nCADSRCId),
+
+   result := DbGetTable(oDM, waCADSTKL),
+   result.CbIndexName := 'CADSRC_ID_ARTNR1_ARTNR2_POSNR',
+   if result.CbFindKey({nCADSRCId, cArticleNo_Assembly, cArticleNo_Part, cPositionNo}) then
+      result.CbEdit(),
+   else
+      result.CbAppend(),
+      result:CADSRC_ID  := nCADSRCId,
+      result:CADPROJ_ID := nCADPROJId,
+      result:ARTNR1     := cArticleNo_Assembly,
+      result:ARTNR2     := cArticleNo_Part,
+      result:POSNR      := cPositionNo,
+      result:STATUS_STD := gl_CADIF_Status_Default,
+      result:STATUS_IND := gl_CADIF_Status_Default,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion legt einen Datensatz für ein Dokument an.
+//
+// HINWEIS:
+//   Diese Funktion wird aktuell noch nicht genutzt und ist noch nicht
+//   implementiert!
+//
+// @result: null - kein Rückgabe
+//******************************************************************************
+function _CADIF_CheckAndAddDocument(oDM:O,
+                                    nCADSRCId:N,
+                                    cArticleNo:C,
+                                    cTitle:C,
+                                    cDocumentId:C)
+   SetError('CADIF_CheckAndAddDocument(): Not yet implemented'),
+end,
+
+//******************************************************************************
+// Diese Funktion schreibt den übergebenen Wert in das entsprechende Feld der
+// übergebenen Tabelle.
+//
+// HINWEIS:
+//   Die übergebene Tabelle "oTable" muss entweder eine Instanz der Tabelle
+//   CADART oder der Tabelle CADSTKL sein.
+//
+// @result: null - kein Rückgabe
+//******************************************************************************
+function _CADIF_WriteField(oTable:O, cFieldName:C, uValue:U, cFieldDescription:C:='')
+| oField, aAdditionalInfo, uValueInfo |
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der Datentyp des überegebenen Wertes mit dem
+   // Feld-Typ des übergebenen Feldes kompatibel ist.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ValidateValueDataType(cValueDataType:C, oField:O)
+   | cFieldDataType, bIsValid |
+
+      case DbFieldType(oField)
+         of 'CURDOUBLE'   :: cFieldDataType := 'N',
+         of 'LOGICAL'     :: cFieldDataType := 'L',
+         of 'NUMERIC'     :: cFieldDataType := 'N',
+         of 'DATE'        :: cFieldDataType := 'D',
+         of 'CHARACTER'   :: cFieldDataType := 'C',
+         of 'CICHARACTER' :: cFieldDataType := 'C',
+         of 'MEMO'        :: cFieldDataType := 'C',
+         of 'BINARY'      :: cFieldDataType := 'C',
+         of 'IMAGE'       :: cFieldDataType := 'C',
+         of 'VARCHAR'     :: cFieldDataType := 'C',
+         of 'DOUBLE'      :: cFieldDataType := 'N',
+         of 'INTEGER'     :: cFieldDataType := 'N',
+         of 'AUTOINC'     :: cFieldDataType := 'N',
+         of 'RAW'         :: cFieldDataType := 'C',
+         of 'SHORTINT'    :: cFieldDataType := 'N',
+         of 'TIME'        :: cFieldDataType := 'D',
+         of 'TIMESTAMP'   :: cFieldDataType := 'D',
+         otherwise
+            cFieldDataType := '',
+      endcase,
+
+      SetErrorIf(
+         not (cValueDataType $ cFieldDataType),
+         'Data type <' + cValueDataType + '> of value and data type <' + cFieldDataType + '> of field "' + oField.FieldName + '" do not match'
+      ),
+   end,
+
+   // Im Falle eines Standard-Feldes (physikalisches Tabellen-Feld) überprüft
+   // die Funktion den Datentyp von uValue und stellt sicher, dass dieser mit
+   // dem Datentyp des Feldes übereinstimmt.
+   // Sofern das angegebene Feld kein Standard-Feld in der Tabelle ist, so wird
+   // der Feldwert in das in der Tabelle enthaltene allgemeine Feld "EXTRA_INFO"
+   // im KVU-Format geschrieben.
+
+   CADIF_ValidateTableIsReadWriteFieldCompatible_Internal(oTable),
+   SetErrorIf(not EditModes(oTable), 'Dataset must be in edit or insert mode'),
+
+   oField := DbField(cFieldName, oTable),
+   if empty(oField) then
+      aAdditionalInfo := StrToArr(oTable:EXTRA_INFO),
+      uValueInfo      := KVU_Get(aAdditionalInfo, cFieldName, {}),
+      CADIF_WriteIndividualFieldValue_Internal(uValueInfo, uValue, cFieldDescription),
+      KVU_Set(aAdditionalInfo, cFieldName, uValueInfo),
+      oTable:EXTRA_INFO := ArrToStr(aAdditionalInfo),
+   else
+      // Datentyp des zu setzenden Wertes validieren
+      ValidateValueDataType(ValType(uValue), oField),
+      if not DbReplace(oField, uValue) then
+         SetError('Failed to set value <' + ToString(uValue) + '> in field <' + cFieldName + '>'),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion dient als Pendant zur Funktion CADIF_WriteField() und gibt den
+// durch "cFieldName" angegebenen Feldinhalt aus der übergebenen Tabelle zurück.
+// Sofern das Feld nicht gefunden wurde, wird der übergebene Wert für Parameter
+// "uDefaultValue" zurückgegeben.
+//
+// HINWEIS:
+//   Die übergebene Tabelle "oTable" muss entweder eine Instanz der Tabelle
+//   CADART oder der Tabelle CADSTKL sein.
+//
+// @result: variant - der Feldwert
+//******************************************************************************
+function _CADIF_ReadField(oTable:O, cFieldName:C, uDefaultValue:U:=nil)
+| aAdditionalInfo, uValueInfo |
+
+   // Handelt es sich bei dem Feldnamen nicht um ein Standard-Tabellenfeld, so
+   // wird der Feldwert aus dem Feld "EXTRA_INFO" per KVU-Funktionen ermittelt.
+
+   CADIF_ValidateTableIsReadWriteFieldCompatible_Internal(oTable),
+
+   if empty(DbField(cFieldName, oTable)) then
+      aAdditionalInfo := StrToArr(oTable:EXTRA_INFO),
+      uValueInfo      := KVU_Get(aAdditionalInfo, cFieldName, uDefaultValue),
+      result          := CADIF_ReadIndividualFieldValue_Internal(uValueInfo, uDefaultValue),
+   else
+      result := AsVariant(cFieldName, oTable),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion importiert das übergebene Projekt.
+// Dabei werden die vorhanden Daten aus den Tabellen CADART und CADSTKL in die
+// jeweiligen be-Tabellen Dab010 und Dab210 importiert.
+//
+// @result: boolean - Der import konnte fehlerfrei durchgeführt werden Ja/Nein
+//          Bei fehlerfreiem Import: true
+//          Ansonsten: false
+//******************************************************************************
+function _CADIF_Import(oDM:O, nProjectId:N)
+| oCADPROJ, oCADSRC |
+
+   //***************************************************************************
+   // Diese Funktion importiert einen einzelnen CADART-Datensatz in die Dab010.
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ImportArticleRecord_Internal(oDM:O, oCADART:O)
+   | oDab010 |
+
+      oDab010 := MyGetTable(oDM, waDab010, ''),
+      oDab010.CbIndexName   := 'DAB011',
+      oDab010.WriteProtocol := true,
+
+      if oDab010.CbFindKey({oCADART:ARTNR}) then
+         oDab010.CbEdit(),
+      else
+         oDab010.CbAppend(),
+         oDab010:ARTNR := oCADART:ARTNR,
+      endif,
+
+      oDab010:ARTTYP := oCADART:ARTTYP,
+      oDab010:BEZ1   := oCADART:BEZ1,
+      oDab010:BEZ2   := oCADART:BEZ2,
+
+      // Ggf. individuellen Import auslösen
+      CADIF_ImportRecordIndividual_Trigger_Internal(oDM, oCADART, oDab010),
+
+      oDab010.CbPost(),
+   end,
+
+   //***************************************************************************
+   // Diese Funktion importiert einen einzelnen CADSTKL-Datensatz in die Dab210.
+   // @result: integer - ID des erstellten/aktualisierten Dab020-Datensatzes
+   //***************************************************************************
+   function ImportPartsListPositionRecord_Internal(oDM:O, oCADSTKL:O)
+   | oDab210 |
+
+      oDab210 := MyGetTable(oDM, waDab210, ''),
+      oDab210.CbIndexName   := 'DAB212',
+      oDab210.WriteProtocol := true,
+
+      if oDab210.CbFindKey({oCADSTKL:ARTNR2, oCADSTKL:ARTNR1}) then
+         oDab210.CbEdit(),
+      else
+         oDab210.CbAppend(),
+         oDab210:ARTNR1 := oCADSTKL:ARTNR1,
+         oDab210:ARTNR2 := oCADSTKL:ARTNR2,
+      endif,
+
+      oDab210:POSNR := oCADSTKL:POSNR,
+      oDab210:MENGE := oCADSTKL:QUANTITY,
+
+      // Ggf. individuellen Import auslösen
+      CADIF_ImportRecordIndividual_Trigger_Internal(oDM, oCADSTKL, oDab210),
+
+      oDab210.CbPost(),
+
+      result := oDab210:ID,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion verarbeitet einen einzelnen CADSRC-Datensatz und importiert
+   // jeweils die dazugehörigen CADART- und CADSTKL-Datensätze.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ImportDataSourceRecord_Internal(oDM:O, nCADSRCId:N)
+   |
+      oCADART, oCADSTKL, nDab210Id,
+      oAssembliesMemtable
+   |
+
+      //************************************************************************
+      // Erzeugt die Baugruppen-Memtable.
+      // @result: object - TBeMemTable
+      //************************************************************************
+      function AssembliesMemtable_Create(oOwner:O, cName:C)
+         result := CreateObject('TBeMemTable', cName, oOwner),
+         result.CbAddField('ASSEMBLY_ARTICLE_NO', ftString, mBeArtNoLen),
+         result.CbAddIndex('ASSEMBLY_ARTICLE_NO', 'ASSEMBLY_ARTICLE_NO', ixPrimary),
+         result.CbOpen(),
+      end,
+
+      //************************************************************************
+      // Ermittelt die Baugruppen-Memtable und erzeugt diese ggf. neu.
+      // @result: object - TBeMemTable
+      //************************************************************************
+      function AssembliesMemtable_Get(oOwner:O)
+      | cAssembliesMemtableName |
+
+         cAssembliesMemtableName := 'AssembliesMemtable',
+         result                  := FindObject(oOwner, cAssembliesMemtableName),
+         if empty(result) then
+            result := AssembliesMemtable_Create(oOwner, cAssembliesMemtableName),
+         else
+            result.CbEmptyTable(),
+         endif,
+      end,
+
+      //************************************************************************
+      // Sammelt alle Baugruppen-Artikelnummern aus der CADSTKL und legt diese
+      // als Datensatz in der Memtabel an.
+      //
+      // @result: null - keine Rückgabe
+      //************************************************************************
+      function AssembliesMemtable_CollectAssemblies(oMemtable:O, oCADSTKL:O)
+         oCADSTKL.CbFirst(),
+         while not oCADSTKL.CbEof do
+            if not oMemtable.CbFindKey({oCADSTKL:ARTNR1}) then
+               oMemtable.CbAppend(),
+               oMemtable:ASSEMBLY_ARTICLE_NO := oCADSTKL:ARTNR1,
+               oMemtable.CbPost(),
+            endif,
+            oCADSTKL.CbNext(),
+         end,
+      end,
+
+      //************************************************************************
+      // Diese Funktion löscht alle alten durch den CAD-Import angelegten
+      // Stücklistenpositionen, zu allen Baugruppen-Artikelnummern, die in der
+      // übergebenen Baugruppen-Memtable enthalten sind.
+      //
+      // @result: null - keine Rückgabe
+      //************************************************************************
+      function DeleteAllOldImportedPartsListPositions(oDM:O, oMemtable:O)
+      | oDab210, oCADSTKL |
+
+         oDab210 := MyGetTable(oDM, waDab210, ''),
+         oDab210.CbIndexName   := 'DAB211',
+         oDab210.WriteProtocol := true,
+         oCADSTKL := DbGetTable(oDM, waCADSTKL, 'CADSTKL_DAB210_ID'),
+         oCADSTKL.CbIndexName := 'DAB210_ID',
+
+         while not oMemtable.CbEof do
+            oDab210.CbSetRangeEx({oMemtable:ASSEMBLY_ARTICLE_NO}),
+            oDab210.CbFirst(),
+            while not oDab210.CbEof do
+               if oCADSTKL.CbFindKey({oDab210:ID}) then
+                  oDab210.CbDelete(),
+               else
+                  oDab210.CbNext(),
+               endif,
+            end,
+
+            oMemtable.CbNext(),
+         end,
+      end,
+
+      oCADART := DbGetTable(oDM, waCADART),
+      oCADART.CbIndexName := 'CADSRC_ID_ARTNR',
+      oCADART.CbSetRangeEx({nCADSRCId}),
+
+      oCADSTKL := DbGetTable(oDM, waCADSTKL),
+      oCADSTKL.CbIndexName := 'CADSRC_ID_ARTNR1_ARTNR2_POSNR',
+      oCADSTKL.CbSetRangeEx({nCADSRCId}),
+
+      result := oCADART.CbDataAvailable or oCADSTKL.CbDataAvailable,
+      if result then
+         oCADART.CbFirst(),
+         while not oCADART.CbEof do
+            ImportArticleRecord_Internal(oDM, oCADART),
+            CADIF_SetStatus_Internal(oDM, oCADART, gl_CADIF_Status_Imported, true),
+
+            oCADART.CbNext(),
+         end,
+
+         // Bevor die Stücklistenpositionen importiert werden müssen alle alten
+         // Positionen der zu importierenden Baugruppe(n) gelöscht werden, um
+         // nicht verwendete Positionen ggf. zu entfernen.
+         // Dabei werden aber nur Stücklistenpositionen gelöscht, welche zu
+         // einem früheren Zeitpunkt durch den CAD-Import angelegt wurden, nicht
+         // jedoch Positionen, welche manuell über die be-Benutzeroberfläche
+         // angelegt wurden.
+         // Hierfür wird zum einen eine Memtable mit allen
+         // Baugruppen-Artikelnumern, die in einer Datenquelle vorkommen,
+         // erstellt.
+         oAssembliesMemtable := AssembliesMemtable_Get(oDM),
+         AssembliesMemtable_CollectAssemblies(oAssembliesMemtable, oCADSTKL),
+         DeleteAllOldImportedPartsListPositions(oDM, oAssembliesMemtable),
+
+         oCADSTKL.CbFirst(),
+         while not oCADSTKL.CbEof do
+            nDab210Id := ImportPartsListPositionRecord_Internal(oDM, oCADSTKL),
+            oCADSTKL.CbEdit(),
+            oCADSTKL:DAB210_ID := nDab210Id,
+            CADIF_SetStatus_Internal(oDM, oCADSTKL, gl_CADIF_Status_Imported, true),
+            oCADSTKL.CbPost(),
+
+            oCADSTKL.CbNext(),
+         end,
+      endif,
+   end,
+
+   // Sicherstellen, dass der Import nur mit aktiver Transaktion durchgeführt
+   // wird.
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Data module must contain an active transaction'),
+
+   oCADPROJ := DbGetTable(oDM, waCADPROJ),
+   oCADPROJ.CbIndexName := 'ID',
+   SetErrorIf(not oCADPROJ.CbFindKey({nProjectId}), 'Project with ID <' + str(nProjectId) + '> does not exist'),
+
+   oCADSRC := DbGetTable(oDM, waCADSRC),
+   oCADSRC.CbIndexName := 'CADPROJ_ID_SRC_NAME',
+   oCADSRC.CbSetRangeEx({nProjectId}),
+   result := oCADSRC.CbDataAvailable,
+   if result then
+      oCADSRC.CbFirst(),
+      while result and not oCADSRC.CbEof do
+         result := ImportDataSourceRecord_Internal(oDM, oCADSRC:ID),
+         if result then
+            CADIF_SetStatus_Internal(oDM, oCADSRC, gl_CADIF_Status_Imported, true),
+         endif,
+         oCADSRC.CbNext(),
+      end,
+      CADIF_SetStatus_Internal(oDM, oCADPROJ, gl_CADIF_Status_Imported, true),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion prüft den Status des Standard-Prozesses und setzt entsprechend
+// die Status-, Warnungs- und Fehler-Felder in den entsprechenden Tabellen.
+//
+// @result: null - kein Rückgabe
+//******************************************************************************
+function _CADIF_ValidateStandard(oDM:O, nProjectId:N)
+| oCADPROJ, oCADSRC, nTempStatus, nStatus_CADPROJ, nStatus_CADSRC |
+
+   oCADPROJ := DbGetTable(oDM, waCADPROJ),
+   oCADPROJ.CbIndexName := 'ID',
+   SetErrorIf(not oCADPROJ.CbFindKey({nProjectId}), 'Project with ID <' + str(nProjectId) + '> does not exist'),
+
+   nStatus_CADPROJ := gl_CADIF_Status_Default,
+
+   oCADSRC := DbGetTable(oDM, waCADSRC),
+   oCADSRC.CbIndexname := 'CADPROJ_ID_SRC_NAME',
+   oCADSRC.CbSetRangeEx({nProjectId}),
+   oCADSRC.CbFirst(),
+   while not oCADSRC.CbEof do
+      nStatus_CADSRC := gl_CADIF_Status_Default,
+      nTempStatus    := CADIF_ValidateStandard_CADART_Internal(oDM, oCADSRC:ID),
+      nStatus_CADSRC := CADIF_CalculateNewStatus_Internal(nStatus_CADSRC, nTempStatus),
+      nTempStatus    := CADIF_ValidateStandard_CADSTKL_Internal(oDM, oCADPROJ:ID, oCADSRC:ID),
+      nStatus_CADSRC := CADIF_CalculateNewStatus_Internal(nStatus_CADSRC, nTempStatus),
+
+      CADIF_SetStatus_Internal(oDM, oCADSRC, nStatus_CADSRC, true),
+
+      nStatus_CADPROJ := CADIF_CalculateNewStatus_Internal(nStatus_CADPROJ, nStatus_CADSRC),
+
+      oCADSRC.CbNext(),
+   end,
+
+   CADIF_SetStatus_Internal(oDM, oCADPROJ, nStatus_CADPROJ, true),
+end,
+
+//##############################################################################
+//##############################################################################
+// Internal Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion validiert den übergebenen nSourceType und löst ggf. eine
+// Exception aus, sofern nSourceType nicht gültig ist.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_ValidateDataSourceType_Internal(nSourceType:N)
+   SetErrorIf(
+      nSourceType <> gl_CADIF_SourceType_File     and
+      nSourceType <> gl_CADIF_SourceType_FileLink and
+      nSourceType <> gl_CADIF_SourceType_Hyperlink,
+      'Source type <' + str(nSourceType) + '> is not valid'
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion validiert den übergebenen nDataOperationMode und löst ggf.
+// eine Exception aus, sofern nDataOperationMode nicht gültig ist.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_ValidateDataOperationMode_Internal(nDataOperationMode:N)
+   SetErrorIf(
+      nDataOperationMode <> gl_CADIF_DataOperationMode_Create and
+      nDataOperationMode <> gl_CADIF_DataOperationMode_Update and
+      nDataOperationMode <> gl_CADIF_DataOperationMode_Delete,
+      'Data operation mode <' + str(nDataOperationMode) + '> is not valid'
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob die übergebene Tabelle eine
+// CADIF_ReadField-/CADIF_WriteField-kompatible Tabelleninstanz ist.
+// Das bedeutet, die die Tabelle muss eine Instanz von entweder CADART oder
+// CADSTKL sein.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_ValidateTableIsReadWriteFieldCompatible_Internal(oTable:O)
+   SetErrorIf(
+      oTable.Workarea <> waCADART and oTable.Workarea <> waCADSTKL,
+      'Table instance must be an instance of either CADART or CADSTKL'
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ein Projekt mit der übergebenen ID existiert.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_ValidateProjectExists_Internal(oDM:O, nProjectId:N)
+| oCADPROJ |
+
+   oCADPROJ := DbGetTable(oDM, waCADPROJ),
+   oCADPROJ.CbIndexName := 'ID',
+   SetErrorIf(
+      not oCADPROJ.CbFindKey({nProjectId}),
+      'Project with ID <' + str(nProjectId) + '> does not exist'
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion validiert im ersten Schritt die übergebene CADSRC-ID indem
+// diese sicherstellt, dass der Datensatz mit der übergenen ID existert.
+// Anschließend wird sichergestellt, dass der mit dem CADSRC-Datensatz
+// verbundene CADPROJ-Datensatz existiert und dessen ID als Ergebnis
+// zurückgegeben.
+//
+// @result: integer - Datensatz-ID des verknüpften Projekts
+//******************************************************************************
+function _CADIF_GetAndValidateProjectIdBySourceId_Internal(oDM:O, nCADSRCId:N)
+| oCADSRC |
+
+   oCADSRC := DbGetTable(oDM, waCADSRC),
+   oCADSRC.CbIndexName := 'ID',
+
+   SetErrorIf(
+      not oCADSRC.CbFindKey({nCADSRCId}),
+      'Data source with ID <' + str(nCadSRCId) + '> does not exist'
+   ),
+   CADIF_ValidateProjectExists_Internal(oDM, oCADSRC:CADPROJ_ID),
+
+   result := oCADSRC:CADPROJ_ID,
+end,
+
+//******************************************************************************
+// Diese Funktion berechnet anahnd des aktuellen und des vermeintlichen neuen
+// Status den tatsächlichen neuen Status.
+//
+// @result: integer - Neuer berechneter Status
+//******************************************************************************
+function _CADIF_CalculateNewStatus_Internal(nCurrentStatus:N, nNewStatus:N)
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der übergebene Status in der übergebenen Liste
+   // vorkommt.
+   //
+   // @result: boolean - Der übergebene Status kommt in der Liste vor Ja/Nein
+   //***************************************************************************
+   function ContainsStatus(aStatusList:A, nStatus:N)
+   | i |
+
+      result := false,
+      for i := 1 to ALen(aStatusList) do
+         result := nStatus = aStatusList[i],
+         if result then
+            break,
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // Neuen Status anhand der erlaubten neuen Status berechnen.
+   // @result: integer - Neuer berechneter Status
+   //***************************************************************************
+   function CalculateNewStatus(nCurrentStatus:N, nNewStatus:N, aAllowedNewStatusList:A)
+      if ContainsStatus(aAllowedNewStatusList, nNewStatus) then
+         result := nNewStatus,
+      else
+         result := nCurrentStatus,
+      endif,
+   end,
+
+   case nCurrentStatus
+      of gl_CADIF_Status_Default ::
+         result := CalculateNewStatus(nCurrentStatus, nNewStatus, {
+            gl_CADIF_Status_Warning,
+            gl_CADIF_Status_Error,
+            gl_CADIF_Status_Validated,
+            gl_CADIF_Status_Imported
+         }),
+
+      of gl_CADIF_Status_Validated ::
+         result := CalculateNewStatus(nCurrentStatus, nNewStatus, {
+            gl_CADIF_Status_Warning,
+            gl_CADIF_Status_Error,
+            gl_CADIF_Status_Imported
+         }),
+
+      of gl_CADIF_Status_Warning ::
+         result := CalculateNewStatus(nCurrentStatus, nNewStatus, {
+            gl_CADIF_Status_Error,
+            gl_CADIF_Status_Imported
+         }),
+
+      of gl_CADIF_Status_Error ::
+         result := CalculateNewStatus(nCurrentStatus, nNewStatus, {
+            gl_CADIF_Status_Imported
+         }),
+
+      otherwise
+         result := nCurrentStatus,
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion dient für das Schreiben des Datensatz-Status.
+// @result: boolean - Status wurde geschrieben Ja/Nein
+//******************************************************************************
+function _CADIF_SetStatus_Internal(oDM:O, oTable:O, nStatus:N, bIsStandard:L)
+| cStatusFieldName, oStatusField, bExplicitEdit |
+
+   result := false,
+
+   SetErrorIf(
+      oTable.Workarea <> waCADPROJ and oTable.Workarea <> waCADSRC and
+      oTable.Workarea <> waCADART  and oTable.Workarea <> waCADSTKL,
+      'Table instance must be an instance of either CADPROJ, CADSRC, CADART or CADSTKL'
+   ),
+
+   cStatusFieldName := 'STATUS_',
+   if bIsStandard then
+      cStatusFieldName += 'STD',
+   else
+      cStatusFieldName += 'IND',
+   endif,
+
+   if nStatus <> AsNumber(cStatusFieldName, oTable) then
+      oStatusField  := DbField(cStatusFieldName,  oTable),
+      bExplicitEdit := not EditModes(oTable),
+
+      if bExplicitEdit then
+         oTable.CbEdit(),
+      endif,
+
+      result := DbReplace(oStatusField, nStatus),
+
+      if bExplicitEdit then
+         oTable.CbPost(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion dient für das Schreiben des Datensatz-Status. Dabei wird beim
+// Schreiben der jeweiligen Zielfelder auf Standard bzw. Individuell und Fehler
+// bzw. Warnung geachtet.
+//
+// @result: boolean - Status wurde geschrieben Ja/Nein
+//******************************************************************************
+function _CADIF_SetStatusAndMessage_Internal(oDM:O, oTable:O, nStatus:N, cMessage:C, bIsStandard:L)
+|
+   cMessageFieldName, oMessageField, cCurrentMessage,
+   bExplicitEdit
+|
+
+   result := CADIF_SetStatus_Internal(oDM, oTable, nStatus, bIsStandard),
+
+   if nStatus = gl_CADIF_Status_Error or
+      nStatus = gl_CADIF_Status_Warning then
+      case nStatus
+         of gl_CADIF_Status_Error   :: cMessageFieldName := 'ERROR_',
+         of gl_CADIF_Status_Warning :: cMessageFieldName := 'WARN_',
+      endcase,
+      if bIsStandard then
+         cMessageFieldName += 'STD',
+      else
+         cMessageFieldName += 'IND',
+      endif,
+
+      oMessageField   := DbField(cMessageFieldName, oTable),
+      cCurrentMessage := AsString(cMessageFieldName, oTable),
+      bExplicitEdit   := not EditModes(oTable),
+
+      if bExplicitEdit then
+         oTable.CbEdit(),
+      endif,
+
+      result := DbReplace(oMessageField, ConcatTrenner(cMessage, cCurrentMessage, CRLF + CRLF)) and result,
+
+      if bExplicitEdit then
+         oTable.CbPost(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den übergebenen Fehlertext in das entsprechende Feld und
+// das Statusfeld auf "Fehler", sofern die übergebene Bedingung zutrifft.
+//
+// @result: boolean - Rückgabe ist die übergebene Bedingung
+//******************************************************************************
+function _CADIF_SetErrorStatusIf_Internal(oDM:O, oTable:O, bCondition:L, cErrorMessage:C, bIsStandard:L)
+   result := bCondition,
+   if bCondition then
+      CADIF_SetStatusAndMessage_Internal(oDM, oTable, gl_CADIF_Status_Error, cErrorMessage, bIsStandard),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den übergebenen Warnungstext in das entsprechende Feld
+// und das Statusfeld auf "Warnung", sofern die übergebene Bedingung zutrifft.
+//
+// @result: boolean - Rückgabe ist die übergebene Bedingung
+//******************************************************************************
+function _CADIF_SetWarnStatusIf_Internal(oDM:O, oTable:O, bCondition:L, cWarnMessage:C, bIsStandard:L)
+   result := bCondition,
+   if bCondition then
+      CADIF_SetStatusAndMessage_Internal(oDM, oTable, gl_CADIF_Status_Warning, cWarnMessage, bIsStandard),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion führt die interne Validierung der zu einem Projekt angelegten
+// CADART-Datensätze durch. Dabei wird der höchstwertigste Status aller CADART-
+// Datensätze zurückgegeben.
+//
+// @result: integer - höchster Status aller CADART-Datensätze
+//******************************************************************************
+function _CADIF_ValidateStandard_CADART_Internal(oDM:O, nSourceId:N)
+| oCADART, nTempStatus |
+
+   //***************************************************************************
+   function ValidateSingleRecord(oDM:O, oCADART:O)
+   | bIsError |
+
+      bIsError := CADIF_SetErrorStatusIf_Internal(
+         oDM, oCADART,
+         empty(trim(oCADART:ARTNR)),
+         'Artikelnummer darf nicht leer sein',
+         true
+      ),
+      bIsError := CADIF_SetErrorStatusIf_Internal(
+         oDM, oCADART,
+         empty(trim(oCADART:ARTTYP)),
+         'Artikeltyp darf nicht leer sein',
+         true
+      ) or bIsError,
+
+      if bIsError then
+         result := gl_CADIF_Status_Error,
+      else
+         result := gl_CADIF_Status_Validated,
+         CADIF_SetStatus_Internal(oDM, oCADART, result, true),
+      endif,
+   end,
+
+   result  := gl_CADIF_Status_Default,
+   oCADART := DbGetTable(oDM, waCADART),
+   oCADART.CbIndexName := 'CADSRC_ID_ARTNR',
+   oCADART.CbSetRangeEx({nSourceId}),
+   oCADART.CbFirst(),
+   while not oCADART.CbEof do
+      nTempStatus := ValidateSingleRecord(oDM, oCADART),
+      result      := CADIF_CalculateNewStatus_Internal(result, nTempStatus),
+      oCADART.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion führt die interne Validierung der zu einem Projekt angelegten
+// CADSTKL-Datensätze durch. Dabei wird der höchstwertigste Status aller CADSTKL
+// Datensätze zurückgegeben.
+//
+// @result: integer - höchster Status aller CADSTKL-Datensätze
+//******************************************************************************
+function _CADIF_ValidateStandard_CADSTKL_Internal(oDM:O, nProjectId:N, nSourceId:N)
+| oCADSTKL, nTempStatus |
+
+   //***************************************************************************
+   // Diese Funktion prüft erst, ob ein Artikel mit der übergebenen
+   // Artikelnummer der Dab010 existiert. Wenn nicht, wird der Artikel in der
+   // Tabelle CADART unter der aktuellen CAD-Projekt-ID gesucht.
+   //
+   // @result: boolean
+   //   - true:  Artikel wurde entwerder in der Dab010 oder in der CADART gefunden
+   //   - false: Artikel wurde nicht gefunden
+   //***************************************************************************
+   function ArticleNoExists(oDM:O, cArticleNo:C, nProjectId:N)
+   | oDab010, oCADART |
+
+      oDab010 := MyGetTable(oDM, waDab010, 'DAB010_ARTNR_EXISTS'),
+      oDab010.CbIndexName := 'DAB011',
+      result := oDab010.CbFindKey({cArticleNo}),
+      if not result then
+         oCADART := DbGetTable(oDM, waCADART, 'CADART_ARTNR_EXISTS'),
+         oCADART.CbIndexName := 'CADPROJ_ID_ARTNR',
+         result := oCADART.CbFindKey({nProjectId, cArticleNo}),
+      endif,
+   end,
+
+   //***************************************************************************
+   function ValidateSingleRecord(oDM:O, oCADSTKL:O, nProjectId:N)
+   | cArticleNo_Assembly, cArticleNo_Part, bIsError, bIsWarning |
+
+      cArticleNo_Assembly := trim(oCADSTKL:ARTNR1),
+      cArticleNo_Part     := trim(oCADSTKL:ARTNR2),
+
+      bIsError := CADIF_SetErrorStatusIf_Internal(
+         oDM, oCADSTKL,
+         not ArticleNoExists(oDM, cArticleNo_Assembly, nProjectId),
+         'ARTNR1 <' + cArticleNo_Assembly + '> existiert nicht',
+         true
+      ),
+      bIsError := CADIF_SetErrorStatusIf_Internal(
+         oDM, oCADSTKL,
+         not ArticleNoExists(oDM, cArticleNo_Part, nProjectId),
+         'ARTNR2 <' + cArticleNo_Part + '> existiert nicht',
+         true
+      ) or bIsError,
+
+      bIsWarning := CADIF_SetWarnStatusIf_Internal(
+         oDM, oCADSTKL,
+         oCADSTKL:QUANTITY = 0,
+         'Menge der Stücklistenposition ist leer',
+         true
+      ),
+
+      if bIsError then
+         result := gl_CADIF_Status_Error,
+      else
+         if bIsWarning then
+            result := gl_CADIF_Status_Warning,
+         else
+            result := gl_CADIF_Status_Validated,
+            CADIF_SetStatus_Internal(oDM, oCADSTKL, result, true),
+         endif,
+      endif,
+   end,
+
+   result   := gl_CADIF_Status_Default,
+   oCADSTKL := DbGetTable(oDM, waCADSTKL),
+   oCADSTKL.CbIndexName := 'CADSRC_ID_ARTNR1_ARTNR2_POSNR',
+   oCADSTKL.CbSetRangeEx({nSourceId}),
+   oCADSTKL.CbFirst(),
+   while not oCADSTKL.CbEof do
+      nTempStatus := ValidateSingleRecord(oDM, oCADSTKL, nProjectId),
+      result      := CADIF_CalculateNewStatus_Internal(result, nTempStatus),
+      oCADSTKL.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion stößt den individuellen Import eines einzelnen Datensatzes an.
+// Dies geschieht nur dann, wenn die globale Konstante
+//   gl_CADIF_Config_DefaultRecordImport_ScriptName
+// einen gültigen Programmnamen enthält.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_ImportRecordIndividual_Trigger_Internal(oDM:O, oSourceTable:O, oDestinationTable:O)
+| aParams |
+
+   aParams := {},
+   KVU_Set(aParams, 'ImportRecordIndividual.dataModule',       oDM),
+   KVU_Set(aParams, 'ImportRecordIndividual.sourceTable',      oSourceTable),
+   KVU_Set(aParams, 'ImportRecordIndividual.destinationTable', oDestinationTable),
+
+   CallIfExists(gl_CADIF_Config_DefaultRecordImport_ScriptName, aParams),
+end,
+
+//******************************************************************************
+// Diese Funktion speichert den übergebenen Wert (ggf. mit Feldbeschreibung)
+// unter dem übergebenen Feld-Schlüssel im KVU-Array ab.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _CADIF_WriteIndividualFieldValue_Internal(uValueInfo:R, uValue:U, cFieldDescription:C:='')
+| uLocalValueInfo |
+
+   uLocalValueInfo := uValueInfo,
+   startseq
+      if ValType(uLocalValueInfo) <> 'A' then
+         uLocalValueInfo := {},
+      endif,
+
+      KVU_Set(uLocalValueInfo, 'value', uValue),
+      if not empty(cFieldDescription) then
+         KVU_Set(uLocalValueInfo, 'description', cFieldDescription),
+      endif,
+   always
+      uValueInfo := uLocalValueInfo,
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt aus dem übergebenen KVU-Array "aData" anhand des
+// Schlüssels "cKey" den Feldwert.
+// Wird der Schlüssel im Array nicht gefunden, so wird der Default-Wert
+// zurückgegeben.
+//
+// @result: variant - Wert des Feldes mit dem übergebenen Schlüssel
+//******************************************************************************
+function _CADIF_ReadIndividualFieldValue_Internal(uValueInfo:A, uDefaultValue:U:=nil)
+   if ValType(uValueInfo) == 'A' then
+      result := KVU_Get(uValueInfo, 'value', uDefaultValue),
+   else
+      // Um Kompatibilität zu bewahren wird der in uValueInfo enthaltene Wert
+      // zurückgegeben, sofern dies kein Array ist.
+      result := uValueInfo,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt aus dem übergebenen KVU-Array "aData" anhand des
+// Schlüssels "cKey" die Feldbeschreibung.
+// Wird der Schlüssel im Array nicht gefunden, so wird der Default-Wert
+// zurückgegeben.
+//
+// @result: string - Beschreibung des Feldes mit dem übergebenen Schlüssel
+//******************************************************************************
+function _CADIF_ReadIndividualFieldDescription_Internal(uValueInfo:A, uDefaultValue:U:=nil)
+   if ValType(uValueInfo) == 'A' then
+      result := KVU_Get(uValueInfo, 'description', uDefaultValue),
+   else
+      result := uDefaultValue,
+   endif,
+end,
+

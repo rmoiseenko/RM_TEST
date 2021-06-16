@@ -1,0 +1,345 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Installations-Script für das Standard-Package "VatIdValidation"
+//##############################################################################
+//##############################################################################
+
+|
+   // Workareas
+   nWorkarea_UIDSTM,
+   nWorkarea_UIDRES,
+
+   // Merkmalstabellen IDs
+   nMMTID_AddressType,
+   nMMTID_ResultStatus,
+   nMMTID_EventType,
+   nMMTID_VerificationMode,
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+   i,
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_UIDSTM := 750,
+nWorkarea_UIDRES := 751,
+
+nMMTID_AddressType      := 8018,
+nMMTID_ResultStatus     := 8019,
+nMMTID_EventType        := 8020,
+nMMTID_VerificationMode := 8021,
+
+//##############################################################################
+//##############################################################################
+// Merkmalstabellen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "UID-Prüfung: Adresstyp" hinzu.
+// @result: null
+//******************************************************************************
+function MMT_Create_Internal(oDM:O, nId:N, cName:C, aValues:A, cFilter:C:='')
+| oDabMTA, oDabMDT, i, cColor |
+
+   oDabMTA := MyGetTable(oDM, waDabMTA, ''),
+
+   oDabMTA.CbAppend(),
+   oDabMTA:TAB_ID     := nId,
+   oDabMTA:BEZ        := cName,
+   oDabMTA:DEFAULT    := 'N', // Default-Merkmalstabelle: false
+   oDabMTA:CHG_DEF    := 'false',
+   oDabMTA:CHG_USR    := 'false',
+   oDabMTA:FILT_DEF   := cFilter,
+   oDabMTA:FILT_USR   := '',
+   oDabMTA:DSREF_DEF  := '',
+   oDabMTA:DSREF_USR  := '',
+   oDabMTA:TAB_DEF    := '',
+   oDabMTA:SORTTYP    := 'S',
+   oDabMTA:DISPVALUE  := 'AllTrim(DABMDT:BEZ1)',
+   oDabMTA:FLD_DATA   := 'WERT',
+   oDabMTA:FLD_VIEW   := 'WERT;BEZ1;BEZ2;BEZ3',
+   oDabMTA:REFRESH    := false,
+   oDabMTA:MASK       := '!!!!!!!!!',
+   oDabMTA:BROWSERID  := 'ATTDEF',
+   oDabMTA:HIERARCHIE := false,
+   oDabMTA:MC_FIXED   := 'N',
+   oDabMTA:MC_SEP     := '/',
+   oDabMTA:USER_ADMIN := false,
+   oDabMTA.CbPost(),
+
+   oDabMDT := MyGetTable(oDM, waDabMDT, ''),
+
+   for i := 1 to ALen(aValues) do
+      if ALen(aValues[i]) > 3 then
+         cColor := aValues[i, 4],
+      else
+         cColor := '',
+      endif,
+
+      oDabMDT.CbAppend(),
+      oDabMDT:TAB_ID    := nId,
+      oDabMDT:DEFAULT   := false,
+      oDabMDT:MASTER_ID := 0,
+      oDabMDT:SORT_ID   := aValues[i, 2],
+      oDabMDT:WERT      := ToString(aValues[i, 1]),
+      oDabMDT:BEZ1      := aValues[i, 3],
+      oDabMDT:BEZ2      := '',
+      oDabMDT:BEZ3      := '',
+      oDabMDT:FARBE     := cColor,
+      oDabMDT:IMG_LISTE := 0,
+      oDabMDT:IMG_INDEX := 0,
+      oDabMDT.CbPost(),
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "UID-Prüfung: Adress-Typ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_AddressType_Create(oDM:O, nId:N)
+| cFilter |
+
+   cFilter :=
+      '| oMasterTable, cFilter |'                                                           + CRLF + CRLF +
+      'cFilter      := '''','                                                               + CRLF +
+      'oMasterTable := GetOwner(DabMTA),'                                                   + CRLF + CRLF +
+      'if not Empty(oMasterTable) and'                                                      + CRLF +
+      '   ClassOf(oMasterTable, ''TBeStandardTable'') and'                                  + CRLF +
+      '   oMasterTable.Workarea = waUIDSTM then'                                            + CRLF + CRLF +
+      '   // Falls es sich um einene Lieferanten handelt'                                   + CRLF +
+      '   if empty(oMasterTable:KDNR) then'                                                 + CRLF +
+      '      cFilter := ''WERT = '' + str(gl_VATIDV_AddressType_MainAddress) + '' OR '' +'  + CRLF +
+      '                 ''WERT = '' + str(gl_VATIDV_AddressType_VatIdVerificationAddress),' + CRLF +
+      '   endif,'                                                                           + CRLF +
+      'endif,'                                                                              + CRLF + CRLF +
+      'cFilter',
+
+   MMT_Create_Internal(oDM, nId, 'UID-Prüfung: Adress-Typ', {
+      {10, 100, 'Hauptanschrift'},
+      {20, 200, 'Lieferanschrift'},
+      {30, 300, 'Rechnungsanschrift'},
+      {40, 400, 'UID-Anschrift'}
+   }, cFilter),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "UID-Prüfung: Ergebnis-Status" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_ResultStatus_Create(oDM:O, nId:N)
+   MMT_Create_Internal(oDM, nId, 'UID-Prüfung: Ergebnis-Status', {
+      {0, 100, 'nicht definiert',                        str(GetBeDesignColor(dcbWhite,  dcgLevel2))},
+      {1, 200, 'stimmt überein',                         str(GetBeDesignColor(dcbGreen,  dcgLevel2))},
+      {2, 300, 'stimmt nicht überein',                   str(GetBeDesignColor(dcbRed,    dcgLevel2))},
+      {3, 400, 'nicht angefragt',                        str(GetBeDesignColor(dcbWhite,  dcgLevel2))},
+      {4, 500, 'vom EU-Mitgliedsstaat nicht mitgeteilt', str(GetBeDesignColor(dcbOrange, dcgLevel2))}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "UID-Prüfung: Ereignis-Typ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_EventType_Create(oDM:O, nId:N)
+   MMT_Create_Internal(oDM, nId, 'UID-Prüfung: Ereignis-Typ', {
+      {10, 100, 'vor Lieferschein-Druck'},
+      {20, 200, 'vor Rechnungs-Druck'},
+      {30, 300, 'manuell'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "UID-Prüfung: Prüfungs-Modus" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_VerificationMode_Create(oDM:O, nId:N)
+   MMT_Create_Internal(oDM, nId, 'UID-Prüfung: Prüfungs-Modus', {
+      {0,  100, 'undefiniert'},
+      {10, 200, 'einfach'},
+      {20, 300, 'qualifiziert'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion löscht die MMT mit der angegeben ID.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_Delete(oDM:O, nId:N)
+| cStatementTemplate |
+
+   cStatementTemplate := 'DELETE FROM @@TABLENAME@@ WHERE TAB_ID = ' + Str(nID),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMTA)), oDM),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMDT)), oDM),
+end,
+
+//##############################################################################
+//##############################################################################
+// Felddefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "UIDSTM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function UIDSTM_AddFields(oTableDefinition:R)
+                                                                                                              // 2 = fspCustNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KDNR',      0, 0, ftInteger,        'Kundennummer',     '', 2, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+                                                                                                              // 3 = fspSuppNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LINR',      0, 0, ftInteger,        'Liferantennummer', '', 3, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TYP',       0, 0, gl_PCKGU_ftShort, 'Adresstyp',        '', 0, 1, 'TBeCombo', '', nMMTID_AddressType, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME1',   255, 0, ftString,         'Firmenname 1',     '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME2',   255, 0, ftString,         'Firmenname 2',     '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME3',   255, 0, ftString,         'Firmenname 3',     '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PLZ',      50, 0, ftString,         'Postleitzahl',     '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ORT',     255, 0, ftString,         'Ort',              '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STRASSE', 255, 0, ftString,         'Straße',           '', 0, 0, 'TBeEdit',  '', 0,                  true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LANDNR',    3, 0, ftString,         'Land-Nr.',         '', 0, 0, 'TBeCombo', '', 102069,             true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "UIDRES" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function UIDRES_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'UIDSTM_ID',    0, 0, ftInteger,        'Datensatz-ID in UIDSTM',         '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KDNR',         0, 0, ftInteger,        'Kundennummer',                   '', 0, 0, '', '', 2,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LINR',         0, 0, ftInteger,        'Liferantennummer',               '', 0, 0, '', '', 3,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'VATID',       15, 0, ftString,         'Umsatzsteuer-ID',                '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME',       255, 0, ftString,         'Firmenname',                     '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PLZ',        255, 0, ftString,         'Postleitzahl',                   '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ORT',        255, 0, ftString,         'Ort',                            '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STRASSE',    255, 0, ftString,         'Straße',                         '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERG_NAME',     0, 0, gl_PCKGU_ftShort, 'Ergebnis-Status: Name',          '', 0, 1, '', '', nMMTID_ResultStatus,     true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERG_PLZ',      0, 0, gl_PCKGU_ftShort, 'Ergebnis-Status: PLZ',           '', 0, 1, '', '', nMMTID_ResultStatus,     true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERG_ORT',      0, 0, gl_PCKGU_ftShort, 'Ergebnis-Status: Ort',           '', 0, 1, '', '', nMMTID_ResultStatus,     true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERG_STR',      0, 0, gl_PCKGU_ftShort, 'Ergebnis-Status: Straße',        '', 0, 1, '', '', nMMTID_ResultStatus,     true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PRUEFDATUM',   0, 0, ftDateTime,       'Prüfungsdatum',                  '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'RET_CODE',     0, 0, ftInteger,        'Rückgabe-Code',                  '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PRUEF_MODE',   0, 0, gl_PCKGU_ftShort, 'Prüfungs-Modus',                 '', 0, 1, '', '', nMMTID_VerificationMode, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'S_PRUEF_OK',   0, 0, ftBoolean,        'Einfache Prüfung erfolgreich',   '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'Q_PRUEF_OK',   0, 0, ftBoolean,        'Qualifizierte Prüfung erfolgr.', '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GUELTIGAB',    0, 0, ftDate,           'Gültig ab',                      '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GUELTIGBIS',   0, 0, ftDate,           'Gültig bis',                     '', 0, 0, '', '', 0,                       true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EVENT_TYP',    0, 0, gl_PCKGU_ftShort, 'Auslösendes Ereignis',           '', 0, 1, '', '', nMMTID_EventType,        true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//##############################################################################
+//##############################################################################
+// Indexdefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "UIDSTM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function UIDSTM_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'KDNR', {'KDNR'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LINR', {'LINR'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "UIDRES" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function UIDRES_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'UIDSTM_ID_PRUEFDATUM', {'UIDSTM_ID', 'PRUEFDATUM'}, '', '', false, false, true,  512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'VATID',                {'VATID'},                   '', '', false, false, false, 512),
+end,
+
+//##############################################################################
+//##############################################################################
+// Tabellendefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle UIDSTM.
+// @result: array - TableDefinition der Tabelle UIDSTM
+//******************************************************************************
+function UIDSTM_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('UIDSTM', nWorkarea_UIDSTM, 'UID-Prüfung Stammdaten', '', true, false),
+   UIDSTM_AddFields(result),
+   UIDSTM_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle UIDRES.
+// @result: array - TableDefinition der Tabelle UIDRES
+//******************************************************************************
+function UIDRES_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('UIDRES', nWorkarea_UIDRES, 'UID-Prüfung Prüfungsergebnisse', '', true, false),
+   UIDRES_AddFields(result),
+   UIDRES_AddIndexes(result),
+end,
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', true),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOK, 7, true),
+         mrCancel
+      },
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+            //          müssen die folgenden beiden Zeilen einkommentiert werden:
+            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_UIDSTM, 'UIDSTM', cUsername, cPassword),
+            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_UIDRES, 'UIDRES', cUsername, cPassword),
+            // Merkmalstabellen löschen
+            MMT_Delete(oDM, nMMTID_AddressType),
+            MMT_Delete(oDM, nMMTID_ResultStatus),
+            MMT_Delete(oDM, nMMTID_EventType),
+            MMT_Delete(oDM, nMMTID_VerificationMode),
+
+            PCKGU_AddTableAndMetaInfo(oDM, UIDSTM_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, UIDRES_CreateTableDefinition(), cUsername, cPassword),
+            // Merkmalstabellen anlegen
+            MMT_AddressType_Create(oDM, nMMTID_AddressType),
+            MMT_ResultStatus_Create(oDM, nMMTID_ResultStatus),
+            MMT_EventType_Create(oDM, nMMTID_EventType),
+            MMT_VerificationMode_Create(oDM, nMMTID_VerificationMode),
+
+            oDM.CbTransaction_Commit(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

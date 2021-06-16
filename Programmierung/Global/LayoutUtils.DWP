@@ -1,0 +1,333 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die "Layouts"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'LAYU' steht für 'LAY'out-'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_LAYU_AusfuhrModus_Inland:_U:=100,      // Lieferung ins Inland
+   gl_LAYU_AusfuhrModus_EGOhneUID:_U:=200,   // Lieferung ins EG-Ausland ohne UID-Nr.
+   gl_LAYU_AusfuhrModus_EG:_U:=210,          // Innergemeinschaftliche Lieferung ins EG-Ausland
+   gl_LAYU_AusfuhrModus_Drittland:_U:=300    // Lieferung in Drittland (nicht EG-Ausland)
+|
+
+//******************************************************************************
+// Landesbezeichnung
+// @Result: String
+//******************************************************************************
+Function _LAYU_DescriptionOfCountry(cLandNr, nSprache)
+  | oDIA020 |
+   Result := "",
+   oDIA020 := beopen(waDIA020,"DIA021"),
+   Startseq,
+     if dbseek({cLandnr},oDIA020) then
+       case nSprache
+         of 1 ::
+            Result := asvariant("X_BEZ_E",oDIA020),
+         otherwise
+       endcase,
+       Result := e2v(Result, oDIA020:BEZ),
+       Result := AllTrim(Result),
+     endif,
+   Always
+     beclose(oDIA020),
+   stopseq,
+end,
+
+//******************************************************************************
+// Erzeugt Ausgabe für Adress-Memofelder in Belegen
+// @Result: String - formatierte Adresse für Memo-Objekte in Layouts
+//******************************************************************************
+function _LAYU_Internal_FormatAddress(cName1:C, cName2:C, cName3:C, cKontakt:C, cStrasse:C, cPLZORT:C, cLandNr:C, nSprache:N, bKurzFormat:L)
+  | cCRLF, cSPACE |
+   cCRLF  := iif(bKurzFormat, "", CRLF),
+   cSPACE := iif(bKurzFormat, ", ", ""),
+   Result := AllTrim(cName1) + cCRLF,
+   Result += if(Empty(cName2),   '', cSPACE + AllTrim(cName2) + cCRLF),
+   Result += if(Empty(cName3),   '', cSPACE + AllTrim(cName3) + cCRLF),
+   if not bKurzFormat then
+      Result += if(Empty(cKontakt), '', AllTrim(cKontakt) + CRLF),
+   endif,
+   Result += if(Empty(cStrasse), '', cSPACE + AllTrim(cStrasse)+cCRLF),
+   Result += cSPACE + AllTrim(cPLZORT),
+   if not Empty(Result) then
+      if not Empty(cLandNr) and cLandNr <> "004" then
+         Result += crlf + LAYU_DescriptionOfCountry(cLandnr, nSprache),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Erzeugt Ausgabe für Adress-Memofelder in Belegen
+// neue Version
+// Parameter für cSchalter:
+//   H = Hauptanschrift
+//   L = Lieferanschrift
+//   R = Rechnungsanschrift
+//******************************************************************************
+function _LAYU_FormatCustomerOrderAddress(oTable, cSchalter, nSprache, bPrintContact, bFallBackToStandard, bKurzFormat)
+| oDAB000, oDAB005, cLandnr, cKontakt |
+
+   Result   := "",
+   oDAB000 := beopen(waDAB000,1),
+   oDAB005 := beopen(waDAB005,"DAB007"),
+   startseq,
+      cKontakt := "",
+      cLandnr  := "",
+      // Landnummer für Hauptanschrift
+      // Fald LANDNR gibt es im Standard nicht im Auftragskopf
+      // daher über asVariant abfragen
+      if oTable.workarea = waDAB050 then
+        cLandnr := AsVariant("X_LANDNR", oTable),                               // falls es in der DAB050 ein Individualfeld gibt
+        cLandNr := E2V(cLandnr, LookUp(waDab000, 1, {{oTable:KDNR}}, "LANDNR", "", lm_lookup)),
+      else,
+        cLandnr := e2v(cLandnr,AsVariant("LANDNR", oTable)),
+      endif,
+      // Kontakt mitdrucken
+      if oTable.workarea = waDAB050 and bPrintContact then
+         cKontakt := oTable:KONTAKT,
+      endif,
+      case cSchalter
+         of 'H' ::  // aus AB-Anschrift holen
+            if not Empty(oTable:NAME1 + oTable:NAME2) then
+               Result := LAYU_Internal_FormatAddress(oTable:Name1, oTable:Name2, oTable:Name3, cKontakt, oTable:Strasse, oTable:PLZORT, cLandNr, nSprache, bKurzFormat),
+            endif,
+         of 'L' ::  // aus LS-Anschrift holen
+           if not Empty(oTable:LNAME1 + oTable:LNAME2) then
+              Result := LAYU_Internal_FormatAddress(oTable:LName1, oTable:LName2, oTable:LName3, cKontakt, oTable:LStrasse, oTable:LPLZORT, oTable:LLANDNR, nSprache, bKurzFormat),
+           endif,
+         of 'R' :: // aus RE-Anschrift holen
+           if not Empty(oTable:RNAME1 + oTable:RNAME2) then
+              Result := LAYU_Internal_FormatAddress(oTable:RName1, oTable:RName2, oTable:RName3, cKontakt, oTable:RStrasse, oTable:RPLZORT, oTable:RLANDNR, nSprache, bKurzFormat),
+           endif,
+      endcase,
+      // was soll passieren, wenn über den Schalter keine Anschrift gefunden wurde
+      //   z.B. bei AB: Lieferanschrift soll diese nur gedruckt werden, wenn abweichend => also bFallBackToStandort = false
+      //   z.B. bei Lieferschein: Lieferanschrift muss IMMER gedruckt werden => also bFallBackToStandort = true
+      if Empty(Result) then
+         if bFallBackToStandard then
+            Result := LAYU_Internal_FormatAddress(oTable:Name1, oTable:Name2, oTable:Name3, cKontakt, oTable:Strasse, oTable:PLZORT, cLandNr, nSprache, bKurzFormat),
+         endif,
+      endif,
+   always
+      beclose(oDAB000),
+      beclose(oDAB005),
+   stopseq,
+end,
+
+//******************************************************************************
+// Termin umformatieren auf internationales Format
+// @Result = String
+//******************************************************************************
+function _LAYU_FormatDeliveryDate(cTermin, nSprache)
+   Result := cTermin,
+   if cTermin = "KW.99.99" then
+      Result := LUU_GetLabel("LBAUFABRUF", nSprache),
+   else,
+      if SubStr(cTermin, 1, 2) = "KW" then
+         Result := SubStr(cTermin, 1, 2) + " " + SubStr(cTermin, 4, 2) + "/" + SubStr(DateStr(cTermin), 1, 4),
+      else,
+         if nSprache = 0 then
+            Result := SubStr(DateStr(cTermin), 7, 2) + "." + SubStr(DateStr(cTermin), 5, 2) + "." + SubStr(DateStr(cTermin), 1, 4),
+         else,
+            Result := SubStr(DateStr(cTermin), 1, 4) + "-" + SubStr(DateStr(cTermin), 5, 2) + "-" + SubStr(DateStr(cTermin), 7, 2),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Datumsfeld formatieren
+// @Result = String
+//******************************************************************************
+Function _LAYU_FormatDate(uDate, nSprache)
+   Result := uDate,
+   if Empty(uDate) then
+      Result := "",
+   else,
+     if valtype(uDate) = "C" then
+        uDate := Strtodatetime(uDate),
+     endif,
+     if nSprache = 0 then
+        Result := formatdatetime('DD.MM.YYYY', uDate),
+     else,
+        Result := formatdatetime('YYYY-MM-DD', uDate),
+     endif,
+   endif,
+end,
+
+//******************************************************************************
+// Klartext über Labels übersetzen
+// @Result: Label-String
+// *****************************************************************************
+Function _LAYU_TranslateLabels(cZahlbed, nSprache)
+  Result := cZahlbed,
+  Function Translate(cString,cText,cLabel)
+    result := cString,
+    if cText $ cString then
+      result := strtran(cString,cText,LUU_GetLabel("LB"+strtran(cText,' ',''), nSprache)),
+    endif,
+  end,
+  if nSprache <> 0 then
+    Result := Translate(result,"Tage"                    ,"LBTAGE"),
+    Result := Translate(result,"netto"                   ,"LBNETTO"),
+    Result := Translate(result,"Skonto bis zum"          ,"LBSKONTOBISZUM"),
+    Result := Translate(result,"Skonto"                  ,"LBSKONTO"),
+    Result := Translate(result,"bis zum"                 ,"LBBISZUM"),
+    Result := Translate(result,"bis"                     ,"LBBIS"),
+    Result := Translate(result,"Serien-Nummer"           ,"LBSERIENNUMMER"),
+    Result := Translate(result,"Miete/Einheit"           ,"LBMIETE_EINHEIT"),
+    Result := Translate(result,"Monate"                  ,"LBMONATE"),
+    Result := Translate(result,"Monat"                   ,"LBMONAT"),
+    Result := Translate(result,"Vermietung"              ,"LBVERMIETUNG"),
+    Result := Translate(result,"Leihstellung"            ,"LBLEIHSTELLUNG"),
+    Result := Translate(result,"Mietzeit von"            ,"LBMIETZEITVON"),
+    Result := Translate(result,"Mietzeit bis"            ,"LBMIETZEITBIS"),
+    Result := Translate(result,"Mietdauer"               ,"LBMIETDAUER"),
+    Result := Translate(result,"Zwischen-Rechnung"       ,"LBZWISCHENRECHNUNG"),
+    Result := Translate(result,"Mindestzeit"             ,"LBMINDESTZEIT"),
+    Result := Translate(result,"Rückgabe"                ,"LBRUECKGABE"),
+    Result := Translate(result,"frei Haus"               ,"LBFREIHAUS"),
+    Result := Translate(result,"ab Werk"                 ,"LBABWERK"),
+    Result := Translate(result,"Spedition"               ,"LBSPEDITION"),
+  endif,
+  // ToDo - Folgemonat für Zahlungsbedingungen noch offen - noch keine Labels vorhanden
+end,
+
+//******************************************************************************
+// Gültigkeit formatieren
+// @Result: String
+//******************************************************************************
+Function _LAYU_TranslateValidity(dGueltigVon,dGueltigBis,nSprache)
+  Result := "",
+  if not Empty(dGueltigVon) then
+     if not Empty(dGueltigBis) then
+        Result += LUU_GetLabel("LBGUELTIGVON", nSprache) + ' ' + FormatDateTime('DD.MM.YYYY', dGueltigVon),
+     else,
+        Result += LUU_GetLabel("LBGUELTIGAB", nSprache) + ' ' + FormatDateTime('DD.MM.YYYY', dGueltigVon),
+     endif,
+  endif,
+  if not Empty(dGueltigBis) then
+     if not Empty(dGueltigVon) then
+        Result += " "+ LUU_GetLabel("LBBIS", nSprache) + ' ' + FormatDateTime('DD.MM.YYYY', dGueltigBis),
+     else,
+        Result += " "+ LUU_GetLabel("LBGUELTIGBIS", nSprache) + ' ' + FormatDateTime('DD.MM.YYYY', dGueltigBis),
+     endif,
+  endif,
+  Result := LTrim(Result),
+end,
+
+//******************************************************************************
+// Funktion kann aus einem Beleg mit Übergabe von Report.ReportID aufgerufen werden
+// die Funktion findet dazu den passenden Labelnamen auf Deutsch
+// @Result: String-Labelname
+//******************************************************************************
+function _LAYU_DescriptionForReport(oReportObject)
+  | cReportType |
+   cReportType := Left(oReportObject.ReportId, 4),
+   result := rtrim(lookup(waDABR70,"REPORT_PR",{{cReportType}},"BEZ","")),
+end,
+
+//******************************************************************************
+// Funktion prüft, ob der übergebene Report vom BelegTyp einer der
+//    angegebenen Belegtypen ist.
+// Zur Nutzung im Layout z.B. im "OnPrint":
+//    "LAYU_IsReportType(Report, '/PRRE/RECH/')"
+// @Result: true / false
+//******************************************************************************
+function _LAYU_IsReportType(oReportObject, cReportTypesAsDividedString)
+| cReportType |
+   cReportType := Left(oReportObject.ReportId, 4),
+   Result      := cReportType $ cReportTypesAsDividedString,
+end,
+
+//******************************************************************************
+// Ermittlung des Hintergrundformulars
+// oPrintInfo im Moment nicht notwendig, da vorhanden, wird es übergeben
+// cDevice für Ausgabe, 'Printer', 'Email', 'Screen', 'Fax'
+// bOriginal = gibt an, ob es sich um einen Originaldruck handelt
+// nBackgroundno = Vorgabe eines explizit gewünschten HG-Layouts
+//******************************************************************************
+function _LAYU_ReportBackground(oPrintInfo, cDevice, bOriginal, nBackgroundNo)
+   result := e2v(nBackgroundNo,1),
+   case alltrim(cDevice)
+     of 'Printer' ::
+       result := 0,
+     of 'Screen' ::
+       result := 1,
+   endcase,
+end,
+
+//******************************************************************************
+// Lieferbedingungen formatieren / ausgeben
+// oTable ist der Kundenstamm (Dab000) oder Auftragskopf (Dab050)
+// @Result: Lieferbedingungs-Text, noch nicht "übersetzt"
+//******************************************************************************
+function _LAYU_FormatDeliveryConditions(oTable)
+  result := "",
+  if not empty(oTable:LB) then
+    result := oTable:LB,
+  else,
+    result := asvariant("LB"+str(oTable:LIEFBED),DABPAR),
+  endif,
+end,
+
+//******************************************************************************
+// Versandart formatieren / ausgeben
+// oTable ist der Kundenstamm (Dab000) oder Auftragskopf (Dab050)
+// @Result: Versand-Art / -Bezeichnung als Text
+//******************************************************************************
+Function _LAYU_FormatModeOfDispatch(oTable)
+  | cVersArt |
+  result   := "",
+  result   := rtrim(lookup(waDAB760,"VERSENDER",{{oTable:versender}},"name","")),
+  cVersArt :=  lookup(waDAB765,"VERSANDTYP",{{oTable:versender,oTable:versandart}},"versandart",""),
+  if .not. "Standard" $ cVersart then // typischerweise gibt es eine Versandart die einfach "Standard" heißt, diese Info ist auf dem Beleg aber "langweilig".
+    result += ", "+cVersArt,
+  endif,
+end,
+
+//******************************************************************************
+// Modus der Lieferung bestimmen - Inland, EG, Ausland
+// - 100 Lieferung ins Inland
+// - 200 Lieferung ins EG-Ausland ohne UID-Nr.
+// - 210 Innergemeinschaftliche Lieferung ins EG-Ausland
+// - 300 Lieferung in Drittland (nicht EG-Ausland)
+// Denkbare Erweiterung: Reverse Charge-Fälle erkennen und mit eigene Modi zurückgeben.
+// => "updatefähig" mittels globaler Variable machen, die kundenspezifisch gesetzt wird
+// @Result: Modus der Lieferung als Integer-Wert
+//******************************************************************************
+function _LAYU_GetAusfuhrModus(oDab050)
+  | oDAB000, oDIA020, nKdnr, cLandnr, bAbwLief, cUIDNR |
+    Result  := gl_LAYU_AusfuhrModus_Inland,
+
+    oDAB000 := beopen(waDAB000,1),
+    oDIA020 := beopen(waDIA020,"DIA021"),
+    startseq,
+       if dbseek({oDAB050:KDNR},oDAB000) then
+          bAbwLief := not empty(oDAB050:LLANDNR),
+          cLandnr := iif(bAbwLief, oDAB050:LLANDNR, iif(oDAB050:RE_AN > 0 , oDAB050:RLANDNR, oDAB000:LANDNR)),
+          if not empty(cLandNr)
+             and cLandNr <> '004'
+             and dbseek({cLandNr},oDIA020) then
+             cUIDNR := oDAB000:UST_IDNR,
+             case true
+               of oDIA020:EG_KZ <> "J" ::                                         // nicht EG => Drittland
+                  result := gl_LAYU_AusfuhrModus_Drittland,
+               of oDIA020:EG_KZ = "J" and empty(cUIDNR) ::                        // EG ohne UID => EG, aber mit Mwst
+                  result := gl_LAYU_AusfuhrModus_EGOhneUID,
+               of oDIA020:EG_KZ = "J" and not empty(cUIDNR) ::                    // EG mit UID => EG, ohne Mwst
+                  result := gl_LAYU_AusfuhrModus_EG,
+             endcase,
+           endif,
+       endif,
+    always
+       BeClose(oDAB000),
+       BeClose(oDIA020),
+    stopseq,
+end,

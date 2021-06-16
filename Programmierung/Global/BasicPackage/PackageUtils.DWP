@@ -1,0 +1,1347 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Funktionen zum Erstellen oder Löschen von Tabellen mit
+//               Metainformationen wie z.B. Tabellen- bzw. Feldrechte.
+//               Der Prefix "PCKGU" steht für "Package-Utils".
+//##############################################################################
+//##############################################################################
+
+|
+   // Konstanten: TableDefinition
+   gl_PCKGU_TableDef_TableName:_C,
+   gl_PCKGU_TableDef_AliasName:_C,
+   gl_PCKGU_TableDef_WorkArea:_C,
+   gl_PCKGU_TableDef_IndexFileName:_C,
+   gl_PCKGU_TableDef_Description:_C,
+   gl_PCKGU_TableDef_Comment:_C,
+   gl_PCKGU_TableDef_FieldDefinitions:_C,
+   gl_PCKGU_TableDef_IndexDefinitions:_C,
+
+   // Konstanten: FieldDefinition
+   gl_PCKGU_FieldDef_FieldName:_C,
+   gl_PCKGU_FieldDef_FieldLength:_C,
+   gl_PCKGU_FieldDef_FieldDecimals:_C,
+   gl_PCKGU_FieldDef_FieldType:_C,
+   gl_PCKGU_FieldDef_Description:_C,
+   gl_PCKGU_FieldDef_Comment:_C,
+   // Spzielle Feldeigenschaften
+   gl_PCKGU_FieldDef_FieldSpecification:_C,
+   gl_PCKGU_FieldDef_FieldAlignment:_C,
+   // Masken/Anzeige
+   gl_PCKGU_FieldDef_MaskControlClassType:_C,
+   gl_PCKGU_FieldDef_PictureMask:_C,
+   gl_PCKGU_FieldDef_AttributeID:_C,
+   gl_PCKGU_FieldDef_AvailableForMasks:_C,
+   gl_PCKGU_FieldDef_RequieredForMasks:_C,
+   gl_PCKGU_FieldDef_MulipleExistenceOnMaskAllowed:_C,
+   gl_PCKGU_FieldDef_UserDefinable:_C,
+   gl_PCKGU_FieldDef_TakeOverOnMasterDataCopy:_C,
+   gl_PCKGU_FieldDef_EditableByUser:_C,
+   gl_PCKGU_FieldDef_MaskControlContent:_C,
+   // Standort-Logik
+   gl_PCKGU_FieldDef_FieldIsLocationable:_C,
+   gl_PCKGU_FieldDef_FieldLocationType:_C,
+   gl_PCKGU_FieldDef_FieldLocationCopyMode:_C,
+   // Feld-Rechte
+   gl_PCKGU_FieldDef_DefaultRight_Read:_C,
+   gl_PCKGU_FieldDef_DefaultRight_Edit:_C,
+   gl_PCKGU_FieldDef_DefaultRight_Validate:_C,
+   gl_PCKGU_FieldDef_DefaultRight_MaskValidate:_C,
+   gl_PCKGU_FieldDef_DefaultRightTrigger_Update:_C,
+   gl_PCKGU_FieldDef_DefaultRightTrigger_New:_C,
+
+   // Konstanten: IndexDefinition
+   gl_PCKGU_IndexDef_IndexName:_C,
+   gl_PCKGU_IndexDef_IndexExpression:_C,
+   gl_PCKGU_IndexDef_IndexDescription:_C,
+   gl_PCKGU_IndexDef_IndexCondition:_C,
+   gl_PCKGU_IndexDef_IsIndexUnique:_C,
+   gl_PCKGU_IndexDef_IsIndexCompound:_C,
+   gl_PCKGU_IndexDef_IsIndexDescend:_C,
+   gl_PCKGU_IndexDef_IndexPageSize:_C,
+   gl_PCKGU_IndexDef_IsFTSIndex:_C,
+   gl_PCKGU_IndexDef_FTSIndexField:_C,
+   gl_PCKGU_IndexDef_FTSMinLength:_C,
+   gl_PCKGU_IndexDef_FTSMaxLength:_C,
+   gl_PCKGU_IndexDef_FTSProtectNumbers:_C,
+   gl_PCKGU_IndexDef_FTSDelimiters:_C,
+   gl_PCKGU_IndexDef_FTSDropChars:_C,
+   gl_PCKGU_IndexDef_FTSConditionalChars:_C,
+   gl_PCKGU_IndexDef_FTSNoiseWords:_C,
+   gl_PCKGU_IndexDef_FTSDelimitersDef:_C,
+   gl_PCKGU_IndexDef_FTSDropCharsDef:_C,
+   gl_PCKGU_IndexDef_FTSConditionalCharsDef:_C,
+   gl_PCKGU_IndexDef_FTSNoiseWordsDef:_C,
+
+   // Datentyp: ShortInt
+   gl_PCKGU_ftShort:_N,
+   // Datentyp: CiCharacter
+   gl_PCKGU_ftCiCharacter:_N
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_PCKGU_ftShort       := 2,
+gl_PCKGU_ftCiCharacter := 100,
+
+// -----------------------------------------------------------------------------
+// Konstanten: TableDefinition
+gl_PCKGU_TableDef_TableName     := 'TableName',
+gl_PCKGU_TableDef_AliasName     := 'AliasName',
+gl_PCKGU_TableDef_WorkArea      := 'Workarea',
+gl_PCKGU_TableDef_IndexFileName := 'IndexFileName',
+gl_PCKGU_TableDef_Description   := 'Description',
+gl_PCKGU_TableDef_Comment       := 'Comment',
+
+gl_PCKGU_TableDef_FieldDefinitions := 'FieldDefinitions',
+gl_PCKGU_TableDef_IndexDefinitions := 'IndexDefinitions',
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Konstanten: FieldDefinition
+gl_PCKGU_FieldDef_FieldName     := 'FieldName',
+gl_PCKGU_FieldDef_FieldLength   := 'FieldLength',
+gl_PCKGU_FieldDef_FieldDecimals := 'FieldDecimals',
+gl_PCKGU_FieldDef_FieldType     := 'FieldType',
+gl_PCKGU_FieldDef_Description   := 'Description',
+gl_PCKGU_FieldDef_Comment       := 'Comment',
+
+// Spzielle Feldeigenschaften
+gl_PCKGU_FieldDef_FieldSpecification := 'FieldSpecification',
+gl_PCKGU_FieldDef_FieldAlignment     := 'FieldAlignment',
+
+// Masken/Anzeige
+gl_PCKGU_FieldDef_MaskControlClassType          := 'MaskControlClassType',
+gl_PCKGU_FieldDef_PictureMask                   := 'PictureMask',
+gl_PCKGU_FieldDef_AttributeID                   := 'AttributeID',
+gl_PCKGU_FieldDef_AvailableForMasks             := 'AvailableForMasks',
+gl_PCKGU_FieldDef_RequieredForMasks             := 'RequieredForMasks',
+gl_PCKGU_FieldDef_MulipleExistenceOnMaskAllowed := 'MulipleExistenceOnMaskAllowed',
+gl_PCKGU_FieldDef_UserDefinable                 := 'UserDefinable',
+gl_PCKGU_FieldDef_TakeOverOnMasterDataCopy      := 'TakeOverOnMasterDataCopy',
+gl_PCKGU_FieldDef_EditableByUser                := 'EditableByUser',
+gl_PCKGU_FieldDef_MaskControlContent            := 'MaskControlContent',
+
+// Standort-Logik
+gl_PCKGU_FieldDef_FieldIsLocationable   := 'FieldIsLocationable',
+gl_PCKGU_FieldDef_FieldLocationType     := 'FieldLocationType',
+gl_PCKGU_FieldDef_FieldLocationCopyMode := 'FieldLocationCopyMode',
+
+// Feld-Rechte
+gl_PCKGU_FieldDef_DefaultRight_Read          := 'DefaultRight_Read',
+gl_PCKGU_FieldDef_DefaultRight_Edit          := 'DefaultRight_Edit',
+gl_PCKGU_FieldDef_DefaultRight_Validate      := 'DefaultRight_Validate',
+gl_PCKGU_FieldDef_DefaultRight_MaskValidate  := 'DefaultRight_MaskValidate',
+gl_PCKGU_FieldDef_DefaultRightTrigger_Update := 'DefaultRightTrigger_Update',
+gl_PCKGU_FieldDef_DefaultRightTrigger_New    := 'DefaultRightTrigger_New',
+// -----------------------------------------------------------------------------
+
+// -----------------------------------------------------------------------------
+// Konstanten: IndexDefinition
+gl_PCKGU_IndexDef_IndexName              := 'IndexName',
+gl_PCKGU_IndexDef_IndexExpression        := 'IndexExpression',
+gl_PCKGU_IndexDef_IndexDescription       := 'IndexDescription',
+gl_PCKGU_IndexDef_IndexCondition         := 'IndexCondition',
+gl_PCKGU_IndexDef_IsIndexUnique          := 'IsIndexUnique',
+gl_PCKGU_IndexDef_IsIndexCompound        := 'IsIndexCompound',
+gl_PCKGU_IndexDef_IsIndexDescend         := 'IsIndexDescend',
+gl_PCKGU_IndexDef_IndexPageSize          := 'IndexPageSize',
+gl_PCKGU_IndexDef_IsFTSIndex             := 'IsFTSIndex',
+gl_PCKGU_IndexDef_FTSIndexField          := 'FTSIndexField',
+gl_PCKGU_IndexDef_FTSMinLength           := 'FTSMinLength',
+gl_PCKGU_IndexDef_FTSMaxLength           := 'FTSMaxLength',
+gl_PCKGU_IndexDef_FTSProtectNumbers      := 'FTSProtectNumbers',
+gl_PCKGU_IndexDef_FTSDelimiters          := 'FTSDelimiters',
+gl_PCKGU_IndexDef_FTSDropChars           := 'FTSDropChars',
+gl_PCKGU_IndexDef_FTSConditionalChars    := 'FTSConditionalChars',
+gl_PCKGU_IndexDef_FTSNoiseWords          := 'FTSNoiseWords',
+gl_PCKGU_IndexDef_FTSDelimitersDef       := 'FTSDelimitersDef',
+gl_PCKGU_IndexDef_FTSDropCharsDef        := 'FTSDropCharsDef',
+gl_PCKGU_IndexDef_FTSConditionalCharsDef := 'FTSConditionalCharsDef',
+gl_PCKGU_IndexDef_FTSNoiseWordsDef       := 'FTSNoiseWordsDef',
+// -----------------------------------------------------------------------------
+
+//##############################################################################
+//##############################################################################
+// PCKGU_IndexDefinition Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Constructor für PCKGU_IndexDefinition
+// @Result: object - PCKGU_IndexDefinition
+//******************************************************************************
+function _PCKGU_IndexDefinition_Create(cIndexName:C,
+                                       aIndexExpression:A,
+                                       cIndexDescription:C,
+                                       cIndexCondition:C,
+                                       bIsIndexUnique:L,
+                                       bIsIndexCompound:L,
+                                       bIsIndexDescend:L,
+                                       nIndexPageSize:N)
+   Result := {},
+
+   KVU_Set(Result, gl_PCKGU_IndexDef_IndexName,        cIndexName),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IndexExpression,  aIndexExpression),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IndexDescription, cIndexDescription),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IndexCondition,   cIndexCondition),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IsIndexUnique,    bIsIndexUnique),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IsIndexCompound,  bIsIndexCompound),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IsIndexDescend,   bIsIndexDescend),
+   KVU_Set(Result, gl_PCKGU_IndexDef_IndexPageSize,    nIndexPageSize),
+end,
+
+//##############################################################################
+//##############################################################################
+// PCKGU_TableDefinition Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Fügt einer Tabellendefinition eine neue Felddefinition hinzu
+//
+// ACHTUNG:
+//  Da es sich aktuell bei PCKGU_FieldDefinition um ein Array handelt, wird
+//  lediglich eine Kopie der PCKGU_IndexDefinition zurückgegeben, weil im
+//  Codeblock Arrays bei der Zuweisung immer kopiert werden!
+//
+// @Result: object - PCKGU_FieldDefinition
+//******************************************************************************
+function _PCKGU_TableDefinition_AddField(oTableDefinition:R,
+                                         cFieldName:C,
+                                         nFieldLength:N,
+                                         nFieldDecimals:N,
+                                         nFieldType:N,
+                                         cDescription:C,
+                                         cComment:C,
+                                         nFieldSpecification:N,
+                                         nFieldAlign:N,
+                                         cMaskControlClassType:C,
+                                         cPictureMask:C,
+                                         nAttributeID:N,
+                                         bAvailableForMasks:L,
+                                         bRequieredForMasks:L,
+                                         bMulipleExistenceOnMaskAllowed:L,
+                                         bUserDefinable:L,
+                                         bTakeOverOnMasterDataCopy:L,
+                                         bEditableByUser:L,
+                                         cMaskControlContent:C,
+                                         bFieldIsLocationable:L,
+                                         nFieldLocationType:N,
+                                         nFieldLocationCopyMode:N,
+                                         cDefaultRight_Read:C,
+                                         cDefaultRight_Edit:C,
+                                         cDefaultRight_Validate:C,
+                                         cDefaultRight_MaskValidate:C,
+                                         cDefaultRightTrigger_Update:C,
+                                         cDefaultRightTrigger_New:C)
+| oFieldDefinitions |
+
+   Result := {},
+
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldName,                     cFieldName),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldLength,                   nFieldLength),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldDecimals,                 nFieldDecimals),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldType,                     nFieldType),
+   KVU_Set(Result, gl_PCKGU_FieldDef_Description,                   cDescription),
+   KVU_Set(Result, gl_PCKGU_FieldDef_Comment,                       cComment),
+
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldSpecification,            nFieldSpecification),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldAlignment,                nFieldAlign),
+
+   KVU_Set(Result, gl_PCKGU_FieldDef_MaskControlClassType,          cMaskControlClassType),
+   KVU_Set(Result, gl_PCKGU_FieldDef_PictureMask,                   cPictureMask),
+   KVU_Set(Result, gl_PCKGU_FieldDef_AttributeID,                   nAttributeID),
+   KVU_Set(Result, gl_PCKGU_FieldDef_AvailableForMasks,             bAvailableForMasks),
+   KVU_Set(Result, gl_PCKGU_FieldDef_RequieredForMasks,             bRequieredForMasks),
+   KVU_Set(Result, gl_PCKGU_FieldDef_MulipleExistenceOnMaskAllowed, bMulipleExistenceOnMaskAllowed),
+   KVU_Set(Result, gl_PCKGU_FieldDef_UserDefinable,                 bUserDefinable),
+   KVU_Set(Result, gl_PCKGU_FieldDef_TakeOverOnMasterDataCopy,      bTakeOverOnMasterDataCopy),
+   KVU_Set(Result, gl_PCKGU_FieldDef_EditableByUser,                bEditableByUser),
+   KVU_Set(Result, gl_PCKGU_FieldDef_MaskControlContent,            cMaskControlContent),
+
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldIsLocationable,           bFieldIsLocationable),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldLocationType,             nFieldLocationType),
+   KVU_Set(Result, gl_PCKGU_FieldDef_FieldLocationCopyMode,         nFieldLocationCopyMode),
+
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRight_Read,             cDefaultRight_Read),
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRight_Edit,             cDefaultRight_Edit),
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRight_Validate,         cDefaultRight_Validate),
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRight_MaskValidate,     cDefaultRight_MaskValidate),
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRightTrigger_Update,    cDefaultRightTrigger_Update),
+   KVU_Set(Result, gl_PCKGU_FieldDef_DefaultRightTrigger_New,       cDefaultRightTrigger_New),
+
+   // Felddefinition in Tabellendefinition hinzufügen
+   oFieldDefinitions := KVU_GetAssert(oTableDefinition, gl_PCKGU_TableDef_FieldDefinitions),
+   AAdd(oFieldDefinitions, Result),
+   KVU_Set(oTableDefinition, gl_PCKGU_TableDef_FieldDefinitions, oFieldDefinitions),
+end,
+
+//******************************************************************************
+// Fügt einer Tabellendefinition eine neue Index-Definition hinzu
+//
+// ACHTUNG:
+//  Da es sich aktuell bei PCKGU_IndexDefinition um ein Array handelt, wird
+//  lediglich eine Kopie der PCKGU_IndexDefinition zurückgegeben, weil im
+//  Codeblock Arrays bei der Zuweisung immer kopiert werden!
+//
+// @Result: object - PCKGU_IndexDefinition
+//******************************************************************************
+function _PCKGU_TableDefinition_AddIndex(oTableDefinition:R,
+                                         cIndexName:C,
+                                         aIndexExpression:A,
+                                         cIndexDescription:C,
+                                         cIndexCondition:C,
+                                         bIsIndexUnique:L,
+                                         bIsIndexCompound:L,
+                                         bIsIndexDescend:L,
+                                         nIndexPageSize:N)
+| oIndexDefinitions |
+
+   Result := PCKGU_IndexDefinition_Create(cIndexName,
+                                          aIndexExpression,
+                                          cIndexDescription,
+                                          cIndexCondition,
+                                          bIsIndexUnique,
+                                          bIsIndexCompound,
+                                          bIsIndexDescend,
+                                          nIndexPageSize),
+
+   KVU_Set(Result, gl_PCKGU_IndexDef_IsFTSIndex, False),
+
+   // Index-Definition in Tabellendefinition hinzufügen
+   oIndexDefinitions := KVU_GetAssert(oTableDefinition, gl_PCKGU_TableDef_IndexDefinitions),
+   AAdd(oIndexDefinitions, Result),
+   KVU_Set(oTableDefinition, gl_PCKGU_TableDef_IndexDefinitions, oIndexDefinitions),
+end,
+
+//******************************************************************************
+// Fügt einer Tabellendefinition eine neue FTS-Index-Definition hinzu
+//
+// ACHTUNG:
+//  Da es sich aktuell bei PCKGU_IndexDefinition um ein Array handelt, wird
+//  lediglich eine Kopie der PCKGU_IndexDefinition zurückgegeben, weil im
+//  Codeblock Arrays bei der Zuweisung immer kopiert werden!
+//
+// @Result: object - PCKGU_IndexDefinition
+//******************************************************************************
+function _PCKGU_TableDefinition_AddFTSIndex(oTableDefinition:R,
+                                            cIndexName:C,
+                                            aIndexExpression:C,
+                                            cIndexDescription:C,
+                                            cIndexCondition:C,
+                                            bIsIndexUnique:L,
+                                            bIsIndexCompound:L,
+                                            bIsIndexDescend:L,
+                                            nIndexPageSize:N,
+                                            cFTSIndexField:C,
+                                            nFTSMinLength:N,
+                                            nFTSMaxLength:N,
+                                            bFTSProtectNumbers:L,
+                                            cFTSDelimiters:C,
+                                            cFTSDropChars:C,
+                                            cFTSConditionalChars:C,
+                                            cFTSNoiseWords:C,
+                                            bFTSDelimitersDef:L,
+                                            bFTSDropCharsDef:L,
+                                            bFTSConditionalCharsDef:L,
+                                            bFTSNoiseWordsDef:L)
+| oIndexDefinitions |
+
+   Result := PCKGU_IndexDefinition_Create(cIndexName,
+                                          aIndexExpression,
+                                          cIndexDescription,
+                                          cIndexCondition,
+                                          bIsIndexUnique,
+                                          bIsIndexCompound,
+                                          bIsIndexDescend,
+                                          nIndexPageSize),
+
+   KVU_Set(Result, gl_PCKGU_IndexDef_IsFTSIndex,             True),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSIndexField,          cFTSIndexField),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSMinLength,           nFTSMinLength),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSMaxLength,           nFTSMaxLength),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSProtectNumbers,      bFTSProtectNumbers),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSDelimiters,          cFTSDelimiters),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSDropChars,           cFTSDropChars),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSConditionalChars,    cFTSConditionalChars),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSNoiseWords,          cFTSNoiseWords),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSDelimitersDef,       bFTSDelimitersDef),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSDropCharsDef,        bFTSDropCharsDef),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSConditionalCharsDef, bFTSConditionalCharsDef),
+   KVU_Set(Result, gl_PCKGU_IndexDef_FTSNoiseWordsDef,       bFTSNoiseWordsDef),
+
+   // Index-Definition in Tabellendefinition hinzufügen
+   oIndexDefinitions := KVU_GetAssert(oTableDefinition, gl_PCKGU_TableDef_IndexDefinitions),
+   AAdd(oIndexDefinitions, Result),
+   KVU_Set(oTableDefinition, gl_PCKGU_TableDef_IndexDefinitions, oIndexDefinitions),
+end,
+
+//******************************************************************************
+// Constructor für ein PCKGU_TableDefinition Codeblock-Objekt
+// @Result: object - PCKGU_TableDefinition
+//******************************************************************************
+function _PCKGU_TableDefinition_Create(cTableName:C,
+                                       nWorkarea:N,
+                                       cDescription:C,
+                                       cComment:C,
+                                       bDefaultFields:L,
+                                       bDefaultFtsField:L,
+                                       cDefaultFtsUpdateTrigger:C:='',
+                                       cDefaultFtsIndexName:C:='SUCHE_FTS')
+|
+   aFields, aIndices,
+   cFTSDropChars, cFTSConditionalChars, cFTSDelimiters
+|
+
+   //***************************************************************************
+   // Felddefinitionen für Default-Standard-Felder
+   // @Result: null
+   //***************************************************************************
+   function AddDefaultFieldDefinitions(oSelf:R)
+      PCKGU_TableDefinition_AddField(oSelf, 'ID',         0, 0, ftInteger,  'Datensatz-ID',             '', 0, 0, '',                  '', 0,   True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oSelf, 'ERSTELLT',   0, 0, ftDateTime, 'Erstellt am / um',         '', 0, 0, 'TBeDateTimePicker', '', 0,   True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oSelf, 'PLATZ',      3, 0, ftString,   'Erstellt durch',           '', 0, 0, 'TBeCombo',          '', -11, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oSelf, 'GEAENDERT',  0, 0, ftDateTime, 'Zuletzt geändert am / um', '', 0, 0, 'TBeDateTimePicker', '', 0,   True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oSelf, 'GEAEND_USR', 3, 0, ftString,   'Zuletzt geändert durch',   '', 0, 0, 'TBeCombo',          '', -11, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   end,
+
+   //***************************************************************************
+   // Index-Definitionen für Default-Standard-Indices
+   // @Result: null
+   //***************************************************************************
+   function AddDefaultIndexDefinitions(oSelf:R)
+      PCKGU_TableDefinition_AddIndex(oSelf, 'ID',         {'ID'},         '', '', False,  False, False, 512),
+      PCKGU_TableDefinition_AddIndex(oSelf, 'ERSTELLT',   {'ERSTELLT'},   '', '', False,  False, False, 512),
+      PCKGU_TableDefinition_AddIndex(oSelf, 'PLATZ',      {'PLATZ'},      '', '', False,  False, False, 512),
+      PCKGU_TableDefinition_AddIndex(oSelf, 'GEAENDERT',  {'GEAENDERT'},  '', '', False,  False, False, 512),
+      PCKGU_TableDefinition_AddIndex(oSelf, 'GEAEND_USR', {'GEAEND_USR'}, '', '', False,  False, False, 512),
+   end,
+
+   Result := {},
+
+   // TODO:
+   //  * validieren von cTableName
+   //  * validieren von nWorkarea
+   //  * validieren von cDescription
+
+   KVU_Set(Result, gl_PCKGU_TableDef_TableName,        cTableName),
+   KVU_Set(Result, gl_PCKGU_TableDef_AliasName,        cTableName),
+   KVU_Set(Result, gl_PCKGU_TableDef_WorkArea,         nWorkarea),
+   KVU_Set(Result, gl_PCKGU_TableDef_IndexFileName,    cTableName + '.adi'),
+   KVU_Set(Result, gl_PCKGU_TableDef_Description,      cDescription),
+   KVU_Set(Result, gl_PCKGU_TableDef_Comment,          cComment),
+   KVU_Set(Result, gl_PCKGU_TableDef_FieldDefinitions, {}),
+   KVU_Set(Result, gl_PCKGU_TableDef_IndexDefinitions, {}),
+
+   // Ggf. Default-Felder hinzufügen
+   if bDefaultFields then
+      AddDefaultFieldDefinitions(Result),
+      AddDefaultIndexDefinitions(Result),
+   endif,
+
+   // Ggf. Default-FTS Feld "SUCHE" hinzufügen
+   if bDefaultFtsField then
+      // Diese Liste kommt aus U_DbStructureDefinitionRecordTypes.pas  ->   "'()[]{}'#130#132#145#146#147#148#153#169#176
+      cFTSDropChars :=
+         '"'  +
+         "''" +          // ' Muss hier doppelt mitgegeben werden, da ignorierte Zeichen im SQL als String mitgegeben werden ( Bsp: '!?''()' )
+         '()[]{}'  +
+         Chr(130) + Chr(132) + Chr(145) + Chr(146) +
+         Chr(147) + Chr(148) + Chr(153) + Chr(169) + Chr(176),
+
+      cFTSConditionalChars :=
+         Chr(33)  + Chr(35)  + Chr(36)  + Chr(38)  + Chr(44)  + Chr(45)  +
+         Chr(46)  + Chr(58)  + Chr(59)  + Chr(63)  + Chr(94)  + Chr(95)  +
+         Chr(126) + Chr(128) + Chr(161) + Chr(191),
+
+      // Hier verwenden wir den ADS-Default, das sind #8#9#10#11#12#13#32
+      cFTSDelimiters := '',
+
+      PCKGU_TableDefinition_AddField(Result, 'SUCHE', 0, 0, ftMemo, 'Volltext-Suche', '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', cDefaultFtsUpdateTrigger, ''),
+      PCKGU_TableDefinition_AddFTSIndex(Result, cDefaultFtsIndexName, '', '', '', False, False, False, 512, 'SUCHE', 1, 30, True, cFTSDelimiters, cFTSDropChars, cFTSConditionalChars, '', True, False, False, False),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * PCKGU_SQLText_CreateTable() [REQ-XXX]
+//
+//******************************************************************************
+// Neue Tabelle erzeugen (SQL)
+// @Result: string - SQL-Script zum Erzeugen einer neuen Tabelle
+//******************************************************************************
+function _PCKGU_SQLText_CreateTable_Internal(cTableName:C, aFields:A)
+| i, nLen, cFieldDef |
+
+   //***************************************************************************
+   // Felddefinition parsen
+   // @Result: string - Felddefinition als SQL-Text
+   //***************************************************************************
+   function ParseFieldDefinition(aFieldDefinition:A)
+   |
+      cFieldName, cFieldType, nFieldType, nFieldLength, nDecimals,
+      bHasFieldSpecification, cFieldSpecification
+   |
+
+      //************************************************************************
+      function DetermineFieldTypeString(nFieldType:N)
+         Result := '',
+         case nFieldType
+            of ftBlob                 :: Result := 'blob',
+            of ftBoolean              :: Result := 'logical',
+            of gl_PCKGU_ftShort       :: Result := 'short',
+            of ftInteger              :: Result := 'integer',
+            of ftFloat                :: Result := 'double',
+            of ftString               :: Result := 'char',
+            of gl_PCKGU_ftciCharacter :: Result := 'cichar',
+            of ftMemo                 :: Result := 'memo',
+            of ftDateTime             :: Result := 'timestamp',
+            of ftDate                 :: Result := 'date',
+            of ftTime                 :: Result := 'time',
+
+            otherwise
+               SetError('Invalid field type <' + Str(nFieldType) + '>!'),
+         endcase,
+      end,
+
+      //************************************************************************
+      function FieldTypeHasDecimals(nFieldType:N)
+         case nFieldType
+            of {ftFloat} :: result := true,
+            otherwise       result := false,
+         endcase,
+      end,
+
+      //************************************************************************
+      function SanatizeFieldName(cFieldName:C)
+      | cSQLKeywords |
+
+         Result       := cFieldName,
+         cSQLKeywords := {'DESC', 'TYPE', 'USER'},
+         if SeekInArray(Upper(Result), cSQLKeywords) <> -1 then
+            Result := '"' + Result + '"',
+         endif,
+      end,
+
+      cFieldName   := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldName, ''),
+      cFieldName   := SanatizeFieldName(cFieldName),
+      nFieldType   := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldType, -1),
+      cFieldType   := DetermineFieldTypeString(nFieldType),
+      nFieldLength := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldLength,   0),
+      nDecimals    := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldDecimals, 0),
+
+      bHasFieldSpecification := nFieldLength > 0 or
+                                (FieldTypeHasDecimals(nFieldType) and nDecimals > 0),
+
+      SetErrorIf(Empty(AllTrim(cFieldName)), 'Empty field name is not allowed!'),
+      SetErrorIf(Empty(AllTrim(cFieldType)), 'Invalid field type <' + cFieldType + '>!'),
+
+      Result := cFieldName + ' ' + cFieldType + iif(bHasFieldSpecification, '(', ''),
+      cFieldSpecification := ConcatTrenner(
+         iif(nFieldLength > 0, Str(nFieldLength), ''),
+         iif(nDecimals > 0, Str(nDecimals), ''),
+         ', '
+      ),
+      Result += cFieldSpecification + iif(bHasFieldSpecification, ')', ''),
+   end,
+
+   SetErrorIf(Empty(AllTrim(cTableName)), 'Empty table name is not allowed!'),
+
+   Result := 'CREATE TABLE ' + cTableName,
+   nLen   := ALen(aFields),
+   if nLen > 0 then
+      Result += CRLF + '(',
+      for i := 1 to nLen do
+         cFieldDef := ParseFieldDefinition(aFields[i]),
+         if not Empty(cFieldDef) then
+            Result += CRLF + '   ' + cFieldDef + iif(i < nLen, ',', ''),
+         endif,
+      next,
+      Result += CRLF + ')',
+   endif,
+   Result += ' IN DATABASE;', // Tabellen sollen immer gleich dem DataDictionary hinzugefügt werden
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Index für eine bereits bestehende Tabelle erzeugen (SQL)
+// @Result: string - SQL-Script zum erzeugen eines Index
+//******************************************************************************
+function _PCKGU_SQLText_CreateIndex(cTableName:C, aIndexOptions:A)
+|
+  i, nLen, cKeyField, cFtsKeyField, cItem, bFieldDescending, bIsFtsIndex, cIndexName, bUnique, bDescending, aKeyFields,
+  nFTSMinLength, nFTSMaxLength, bFTSProtectNumbers, cFTSDelimiters, cFTSDropChars, cFTSConditionalChars, cFTSNoiseWords,
+  bFTSDelimitersDef, bFTSDropCharsDef, bFTSConditionalCharsDef, bFTSNoiseWordsDef, cIndexCondition,
+  cIndexTagName, nIndexPageSize, cExpression
+|
+
+   cIndexName      := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_IndexName),
+   bUnique         := KVU_Get(aIndexOptions, gl_PCKGU_IndexDef_IsIndexUnique,   False),
+   bDescending     := KVU_Get(aIndexOptions, gl_PCKGU_IndexDef_IsIndexDescend,  False),
+   bIsFtsIndex     := KVU_Get(aIndexOptions, gl_PCKGU_IndexDef_IsFTSIndex,      False),
+   cIndexCondition := KVU_Get(aIndexOptions, gl_PCKGU_IndexDef_IndexCondition,  ''),
+
+   SetErrorIf(Empty(AllTrim(cTableName)),  'Empty table name is not allowed!'),
+   SetErrorIf(Empty(AllTrim(cIndexName)),  'Empty index name is not allowed!'),
+   SetErrorIf(bIsFtsIndex and not empty(cIndexCondition), 'FTS Index cannot have a condition'),
+
+   // Leider kann ein Index mit Bedingung nicht über CREATE INDEX angelegt werden sondern muss über sp_CreateIndex90() angelegt werden
+   if not empty(cIndexCondition) then
+      SetErrorIf(bUnique,     'package-installer: Index with CONDITION and UNIQUE is not implemented'),
+      SetErrorIf(bDescending, 'package-installer: Index with CONDITION and DESCENDING is not implemented'),
+
+      cIndexTagName  := cTableName + '.adi',
+      nIndexPageSize := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_IndexPageSize),
+      // Key Felder parsen
+      aKeyFields     := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_IndexExpression),
+      cExpression    := '',
+      nLen   := ALen(aKeyFields),
+      for i := 1 to nLen do
+         if ValType(aKeyFields[i]) == 'A' and ALen(aKeyFields[i]) > 1 then
+            cKeyField        := aKeyFields[i, 1],
+            bFieldDescending := aKeyFields[i, 2],
+         else
+            cKeyField        := aKeyFields[i],
+            bFieldDescending := bDescending,
+         endif,
+         SetErrorIf(ValType(cKeyField) <> 'C', 'Key field must be a string!'),
+         SetErrorIf(bDescending, 'package-installer: DESCENDING Key-Fields Index are not implemented'),
+         cExpression := ConcatTrenner(cExpression, cKeyField, ';'),
+      next,
+
+      // Hochkommas escapen
+      cIndexCondition := StrTran(cIndexCondition, "'", "''"),
+
+      Result :=
+         "EXECUTE PROCEDURE sp_CreateIndex90( '" + cTableName + "', '" + cIndexTagName + "', '" + cIndexName + "', '" + cExpression + "', '" + cIndexCondition + "', 0, " + Str(nIndexPageSize) + ", NULL )",
+   else
+      Result :=
+         'CREATE ' + iif(bUnique, 'UNIQUE ', '') + 'INDEX ' + cIndexName + ' ON ' + cTableName + CRLF,
+
+      // Key-Felder parsen
+      Result += '(' + CRLF,
+      if bIsFtsIndex then
+         cFtsKeyField  := KVU_GetAssert(aIndexOptions, GL_PCKGU_INDEXDEF_FTSINDEXFIELD),
+         Result        += cFtsKeyField,
+      else
+         aKeyFields   := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_IndexExpression),
+
+         nLen   := ALen(aKeyFields),
+         for i := 1 to nLen do
+            if ValType(aKeyFields[i]) == 'A' and ALen(aKeyFields[i]) > 1 then
+               cKeyField        := aKeyFields[i, 1],
+               bFieldDescending := aKeyFields[i, 2],
+            else
+               cKeyField        := aKeyFields[i],
+               bFieldDescending := bDescending,
+            endif,
+            SetErrorIf(ValType(cKeyField) <> 'C', 'Key field must be a string!'),
+            Result += '   ' + cKeyField + ' ' + iif(bFieldDescending, 'DESC', '') + iif(i < nLen, ',' + CRLF, ''),
+         next,
+      endif,
+      Result += CRLF + ')',
+
+      // FTS Index-Optionen definieren
+      if bIsFtsIndex then
+         Result += ' CONTENT ',
+
+         nFTSMinLength           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSMinLength),
+         nFTSMaxLength           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSMaxLength),
+         bFTSProtectNumbers      := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSProtectNumbers),
+         cFTSDelimiters          := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDelimiters),
+         cFTSDropChars           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDropChars),
+         cFTSConditionalChars    := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSConditionalChars),
+         cFTSNoiseWords          := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSNoiseWords),
+         bFTSDelimitersDef       := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDelimitersDef),
+         bFTSDropCharsDef        := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDropCharsDef),
+         bFTSConditionalCharsDef := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSConditionalCharsDef),
+         bFTSNoiseWordsDef       := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSNoiseWordsDef),
+
+         Result += crlf +
+            "MIN WORD " + Str(nFTSMinLength) + crlf +
+            "MAX WORD " + Str(nFTSMaxLength) + crlf +
+            iif(bFTSDelimitersDef,       "" , "NEW ") +  "DELIMITERS '"   + cFTSDelimiters       + "'" + crlf +
+            iif(bFTSDropCharsDef,        "" , "NEW ") +  "DROPCHARS '"    + cFTSDropChars        + "'" + crlf +
+            iif(bFTSNoiseWordsDef,       "" , "NEW ") +  "NOISE '"        + cFTSNoiseWords       + "'" + crlf +
+            iif(bFTSConditionalCharsDef, "" , "NEW ") +  "CONDITIONALS '" + cFTSConditionalChars + "'" + crlf +
+            iif(bFTSProtectNumbers, "PROTECTNUMBERS" + crlf, ''),
+
+      endif,
+   endif,
+
+   Result += ';',
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Neue Tabelle erzeugen
+//
+// Parameter:
+//  * aTableDefinition: Tabellendefinitions-Array
+//
+// @Result: string - SQL-Script zum Erzeugen einer neuen Tabelle
+//******************************************************************************
+function _PCKGU_SQLText_CreateTable(aTableDefinition:A)
+|
+   cTableName, cQuotedTableNameWithExtension, aFields, aIndices,
+   i, cIndexSQL, cDirectory, bStoreInWinbeDirectory
+|
+
+   //***************************************************************************
+   // Relativen Pfad zu einem be-Verzeichnis ermitteln
+   // @Result: string - relativer Pfad
+   //***************************************************************************
+   function DetermineRelativeBeDirectory(cBaseDirectory:C, cDestinationDirectory:C)
+
+      //************************************************************************
+      function HasTrailingBackslash(cPath:C)
+         Result := Right(cPath, 1) == '\',
+      end,
+      //************************************************************************
+      function ExcludeTrailingBackslash(cPath:C)
+         Result := iif(HasTrailingBackslash(cPath), Left(cPath, Len(cPath) - 1), cPath),
+      end,
+
+      cBaseDirectory        := ExcludeTrailingBackslash(cBaseDirectory),
+      cBaseDirectory        := ExcludeTrailingBackslash(ExtractFilePath(cBaseDirectory)),
+      cDestinationDirectory := ExcludeTrailingBackslash(cDestinationDirectory),
+
+      if Upper(cDestinationDirectory) = Upper(cBaseDirectory) then
+         Result := '..\' + Right(cDestinationDirectory, Len(cDestinationDirectory) - Len(cBaseDirectory) - 1) + '\',
+      else
+         SetError('Relativer Pfad zum be Hidden-Verzeichnis konnte nicht ermittelt werden'),
+      endif,
+   end,
+
+   // Tabellennamen validieren
+   cTableName := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_TableName),
+   SetErrorIf(Len(cTableName) > 10, 'Table name is limited to 10 characters'),
+
+   aFields  := KVU_Get(aTableDefinition, gl_PCKGU_TableDef_FieldDefinitions, {}),
+   aIndices := KVU_Get(aTableDefinition, gl_PCKGU_TableDef_IndexDefinitions, {}),
+
+   // Tabellen-Pfad ermitteln
+   cDirectory             := DBU_GetBeHiddenPath(),
+   bStoreInWinbeDirectory := Empty(AllTrim(cDirectory)) or not DirectoryExists(cDirectory),
+   // vollständigen Tabellennamen ermitteln (mit Verzeichnisangabe)
+   if bStoreInWinbeDirectory then
+      cDirectory := '',
+   else
+      cDirectory := DetermineRelativeBeDirectory(mBeDefault, cDirectory),
+   endif,
+   cDirectory := Lower(cDirectory), // Auch der be Standard speichert neue Tabellen mit einem lower-case Pfad
+
+   // SQL-Text für Tabellen-Definition erzeugen
+   Result := PCKGU_SQLText_CreateTable_Internal('"' + cDirectory + cTableName + '"', aFields),
+
+   // SQL-Text für Tabellen-Indices erzeugen
+   for i := 1 to ALen(aIndices) do
+      cIndexSQL := PCKGU_SQLText_CreateIndex(cTableName, aIndices[i]),
+      Result += CRLF + cIndexSQL
+   next,
+
+   // Tabelle noch mal aus dem DD entfernen und dann genauso hinzufügen, wie das der Standard macht
+   Result += CRLF + CRLF + 'DROP TABLE ' + cTableName + ' FROM DATABASE NO_DELETE;',
+   Result += CRLF +
+   'EXECUTE PROCEDURE sp_AddTableToDatabase(' + CRLF +
+   "   '" + cTableName + ".ADT', " + CRLF +                // <- Tabellle mit Endung '.ADT' registrieren
+   "   '" + cDirectory + cTableName + ".ADT', "  + CRLF +
+   "   3, // ADT " + CRLF +
+   "   2, // OEM " + CRLF +
+   "   ''," + CRLF +
+   "   'This table was added by the package installer' );",
+
+   // Rechte für die neue Tabelle anlegen
+   cQuotedTableNameWithExtension := '"' + cTableName + '.ADT"',
+   Result += CRLF,
+   Result += CRLF + 'GRANT ALL ON ' + cQuotedTableNameWithExtension + ' TO BE_DEFAULT;',
+   Result += CRLF + 'GRANT ALL ON ' + cQuotedTableNameWithExtension + ' TO BE_DEFAULT_WRITE;',
+   if IsBeDBVersion7() then
+      Result += CRLF + 'GRANT ALL ON ' + cQuotedTableNameWithExtension + ' TO BE_REPLICATION;',
+   endif,
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Die Funktion erzeugt den SQL-Text zum Löschen einer bestimmten
+// Tabelle, die sich im DataDictionary befindet.
+//
+// @Result: string - SQL-Script
+//******************************************************************************
+function _PCKGU_SQLText_DropTable(cTableName)
+| cDirectory |
+
+   // ggf. Dateinamenserweiterung anfügen
+   cTableName += iif(Upper(Right(cTableName, 4)) == '.ADT', '', '.ADT'),
+
+   Result := 'DROP TABLE "' + cTableName + '"' + ';',     // Achtung: Würde man hier "FROM DATABASE" ergänzen, dann würde die Tabelle nur
+                                                          // aus dem DD gelöscht, nicht auch von der Festplatte
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Die Funktion prüft, ob Tabellendefinitions-Datensätze in der DabFIL für eine
+// bestimmte Workarea existieren.
+//
+// @Result: boolean - Workarea ist in der DabFIL definiert
+//******************************************************************************
+function _PCKGU_TableDefinitionRecordsForWorkareaExist_DM(oDM:O, nWorkarea:N)
+| oDabFIL, bUseDM |
+
+   Result := False,
+   bUseDM := not Empty(oDM),
+
+   if bUseDM then
+      oDabFIL := DbGetTable(oDM, waDabFIL, 'DABFIL'),
+   else
+      oDabFIL := BeOpen(waDabFIL, 'DABFIL'),
+   endif,
+   startseq
+      if bUseDM then
+         oDabFIL.IndexName := 'DABFIL',
+      endif,
+      Result := oDabFIL.CbFindKey({nWorkarea}),
+   always
+      if not bUseDM then
+         BeClose(oDabFIL),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Die Funktion prüft, ob Tabellendefinitions-Datensätze in der DabFIL für eine
+// bestimmte Workarea existieren.
+//
+// @Result: boolean - Workarea ist in der DabFIL definiert
+//******************************************************************************
+function _PCKGU_TableDefinitionRecordsForWorkareaExist(nWorkarea:N)
+   Result := PCKGU_TableDefinitionRecordsForWorkareaExist_DM(nil, nWorkarea),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Tabellendefinitions-Datensätze in der DabFIL hinzufügen (be-eigene Meta-Daten-Verwaltung).
+//
+// @Result: null
+//******************************************************************************
+function _PCKGU_AddTableDefinitionRecords(oDM:O, aTableDefinition:A)
+|
+   oDabFIL,
+   nWorkarea, aFields, i
+|
+
+   //***************************************************************************
+   function GenerateIndexInfoArray(aIndexDefinitions:A, cIndexFileName:C)
+   |
+      i, aIndexDefinitionRecord,
+      cIndexName, aExpression, cCondition, bIsCompound,
+      bIsCustomKeyIndex, bIsDescending, bIsUnique, nPageSize,
+      bIsFtsIndex, bProtectNumbers
+   |
+
+      //************************************************************************
+      function GenerateIndexExpressionString(aIndexExpressionArray:A)
+      | i |
+
+         Result := '',
+         for i := 1 to ALen(aIndexExpressionArray) do
+            Result := ConcatTrenner(Result, aIndexExpressionArray[i], ';'),
+         next,
+      end,
+
+      //************************************************************************
+      // Liefert die FTS Optionen als String-Array
+      // z.B. '{"SUCHE","","","[]{}#130#132#145#146#147#148#153#169#176","!#$&,-.:;?^_~#128#161#191",.T.,.F.,.T.,.F.,1,30,512}'
+      //************************************************************************
+      function BuildFtsDetailArray(aIndexOptions)
+      | cFtsKeyField, cFTSDelimiters, cFTSNoiseWords, cFTSDropChars, cFTSConditionalChars, bFTSDelimitersDef,
+        bFTSNoiseWordsDef, bFTSDropCharsDef, bFTSConditionalCharsDef,  nFTSMinLength, nFTSMaxLength, nPageSize |
+         cFtsKeyField            := KVU_GetAssert(aIndexOptions, GL_PCKGU_INDEXDEF_FTSINDEXFIELD),
+         cFTSDelimiters          := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDelimiters),
+         cFTSNoiseWords          := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSNoiseWords),
+         cFTSDropChars           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDropChars),
+         cFTSConditionalChars    := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSConditionalChars),
+         bFTSDelimitersDef       := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDelimitersDef),         
+
+         // Sofern Default Characters = true müsste man auch in die DABFIL die Default Filter zusätzlich zu den individuell angegebenen reinschreiben,
+         // sonst entsteht eine Abweichung zwischen Index und Indexdefinition aus der DABFIL         
+         bFTSNoiseWordsDef       := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSNoiseWordsDef),
+         SetErrorIf(bFTSNoiseWordsDef, 'Usage of default value is not implemented'),
+         bFTSDropCharsDef        := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSDropCharsDef),
+         SetErrorIf(bFTSDropCharsDef, 'Usage of default value is not implemented'),
+         bFTSConditionalCharsDef := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSConditionalCharsDef),
+         SetErrorIf(bFTSConditionalCharsDef, 'Usage of default value is not implemented'),
+
+         nFTSMinLength           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSMinLength),
+         nFTSMaxLength           := KVU_GetAssert(aIndexOptions, gl_PCKGU_IndexDef_FTSMaxLength),
+         nPageSize               := KVU_Get(aIndexOptions, gl_PCKGU_IndexDef_IndexPageSize,   512),
+
+         Result := {cFtsKeyField, cFTSDelimiters, cFTSNoiseWords, '"' + cFTSDropChars + '"',cFTSConditionalChars,
+                    bFTSDelimitersDef, bFTSNoiseWordsDef, bFTSDropCharsDef, bFTSConditionalCharsDef,
+                    nFTSMinLength, nFTSMaxLength, nPageSize},         
+      end,
+
+
+      Result := {},
+      for i := 1 to ALen(aIndexDefinitions) do
+         aIndexDefinitionRecord := aIndexDefinitions[i],
+         cIndexName        := KVU_GetAssert(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IndexName),
+         aExpression       := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IndexExpression, {}),
+         cCondition        := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IndexCondition,  ''),
+         bIsCompound       := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IsIndexCompound, False),
+         bIsDescending     := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IsIndexDescend,  False),
+         bIsUnique         := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IsIndexUnique,   False),
+         nPageSize         := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IndexPageSize,   512),
+         bProtectNumbers   := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_FTSProtectNumbers, False),
+         bIsCustomKeyIndex := False,
+         bIsFtsIndex       := KVU_Get(aIndexDefinitionRecord, gl_PCKGU_IndexDef_IsFTSIndex, False),
+
+         if bIsFtsIndex then
+            AAdd(Result, {
+               cIndexName,
+               cIndexFileName,
+               '%FTS%',
+               BuildFtsDetailArray(aIndexDefinitionRecord),
+               false,                                                     
+               false,                                               
+               bProtectNumbers,
+               false,                                                       
+               nPageSize
+            }),
+         else
+            AAdd(Result, {
+               cIndexName,
+               cIndexFileName,
+               GenerateIndexExpressionString(aExpression),
+               cCondition,
+               bIsCompound,
+               bIsCustomKeyIndex,
+               bIsDescending,
+               bIsUnique,
+               nPageSize
+            }),
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // DabFIL Tabellen-Definitions-Datensatz anlegen
+   // @Result: null
+   //***************************************************************************
+   function DabFIL_CreateTableDefinitionRecord(oDabFIL:O, aTableDefinition:A)
+   | cTableName, cTableAlias, nWorkarea, cDescription, aIndexInfo |
+
+      cTableAlias  := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_AliasName),
+      cTableName   := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_TableName),
+      nWorkarea    := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_Workarea),
+      cDescription := KVU_Get(aTableDefinition, gl_PCKGU_TableDef_Description, ''),
+      aIndexInfo   := GenerateIndexInfoArray(
+         KVU_Get(aTableDefinition, gl_PCKGU_TableDef_IndexDefinitions, {}),
+         KVU_Get(aTableDefinition, gl_PCKGU_TableDef_IndexFileName,    cTableName + '.adi')
+      ),
+
+      oDabFIL.CbAppend(),
+      oDabFIL:DATEI    := nWorkarea,
+      oDabFIL:NAME     := cDescription,
+      oDabFIL:WIN_DATA :=
+         'TBL:' + cTableName + '.ADT' + CRLF +
+         'ALI:' + Upper(cTableAlias)  + CRLF +
+         'ADD:J'                      + CRLF +
+         'IDX:' + ArrToStr(aIndexInfo),
+      oDabFIL.CbPost(),
+   end,
+
+   //***************************************************************************
+   // DabFIL Feld-Definitions-Datensatz anlegen
+   // @Result: null
+   //***************************************************************************
+   function DabFIL_CreateFieldDefinitionRecord(oDabFIL:O, nWorkarea:N, aFieldDefinition:A)
+   | cFieldName, aDefaultRights, aMaskOptions |
+
+      //************************************************************************
+      // Default-Rechte ermitteln
+      // @Result: array - Default-Rechte im DabFIL-Format
+      //************************************************************************
+      function DetermineDefaultRights(aFieldDefinition:A)
+         //*********************************************************************
+         function AddDefaultRight(aRights:R, cType:C, cRightString:C)
+         | aRightItem |
+
+            cRightString := Trim(cRightString),
+            if not Empty(cRightString) then
+               aRightItem := {cType, cRightString},
+               AAdd(aRights, aRightItem),
+            endif,
+         end,
+
+         Result := {},
+         AddDefaultRight(Result, 'R', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRight_Read,          '')),
+         AddDefaultRight(Result, 'C', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRight_Edit,          '')),
+         AddDefaultRight(Result, 'P', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRight_Validate,      '')),
+         AddDefaultRight(Result, 'M', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRight_MaskValidate,  '')),
+         AddDefaultRight(Result, 'U', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRightTrigger_Update, '')),
+         AddDefaultRight(Result, 'N', KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_DefaultRightTrigger_New,    '')),
+      end,
+
+      //************************************************************************
+      // Masken- und Oberflächen-Optionen ermitteln
+      // @Result: array - Masken-Optionen im DabFIL-Format
+      //************************************************************************
+      function DetermineMaskOptions(aFieldDefinition:A)
+      |
+//         // Konstanten: Masken - Optionstypen
+//         motDefault:N := 1, // -> Wird im Code nicht verwendet
+//         motUser:N    := 2, // -> Wird im Code nicht verwendet
+         // Konstanten: Masken - Optionen
+         //  -> Default
+         moCopyAble,
+         moSemaLock,
+         moNotInMaskAvial,
+         moDuplInMask,
+         moMustExistInMask,
+         moFieldAlign,
+         moFieldGlobal,
+         moFieldLocation,
+         moFieldDepartion,
+         moFieldUserLocation,
+         moFieldSpec,
+           moFieldSpecNone,
+           moFieldSpecArtNo,
+           moFieldSpecCustNo,
+           moFieldSpecSuppNo,
+           moFieldSpecAgentNo,
+           moFieldSpecMAccount,
+           moFieldSpecSAccount,
+           moFieldSpecMSPAccount,
+           moFieldSpecCommissNo,
+         moFieldAttribID,
+         moNotUserDef,
+         moNonCopyAble,
+         //  -> User
+         moFieldLocDontCopy,
+         moMaskOptUserDef,
+         // Konstanten: Feld-Ausrichtung
+         faDefault,
+         faLeft,
+         faRight,
+         faCenter,
+         // Konstanten: Standort-Typ
+         ltGlobal,
+         ltLocation,
+         ltDepart,
+         // Konstanten: Feld-Spezifizierung
+         fspNone,
+         fspArtNo,
+         fspCustNo,
+         fspSuppNo,
+         fspAgentNo,
+         fspMAccount,
+         fspSAccount,
+         fspMSPAccount,
+         fspCommissNo,
+
+
+         aDefaultOptions, aUserOptions
+      |
+
+         //*********************************************************************
+         function AddMaskOptionValue(cOptions:R, cValue:C)
+            cOptions := cOptions + cValue + ',',
+         end,
+
+         // Konstanten: Masken - Optionen
+         //  -> Default
+         moCopyAble            := 'K',
+         moSemaLock            := 'S',
+         moNotInMaskAvial      := 'N',
+         moDuplInMask          := 'M',
+         moMustExistInMask     := 'E',
+         moFieldAlign          := 'A',
+         moFieldGlobal         := 'G',
+         moFieldLocation       := 'L',
+         moFieldDepartion      := 'D',
+         moFieldUserLocation   := 'U',
+         moFieldSpec           := 'F',
+           moFieldSpecNone       := 'N',
+           moFieldSpecArtNo      := 'A',
+           moFieldSpecCustNo     := 'K',
+           moFieldSpecSuppNo     := 'Z',
+           moFieldSpecAgentNo    := 'V',
+           moFieldSpecMAccount   := 'M',
+           moFieldSpecSAccount   := 'S',
+           moFieldSpecMSPAccount := 'P',
+           moFieldSpecCommissNo  := 'C',
+         moFieldAttribID       := 'T',
+         moNotUserDef          := 'X',
+         moNonCopyAble         := 'O',
+         //  -> User
+         moFieldLocDontCopy    := 'C',
+         moMaskOptUserDef      := 'M',
+         // Konstanten: Feld-Ausrichtung
+         faDefault := 0,
+         faLeft    := 1,
+         faRight   := 2,
+         faCenter  := 3,
+         // Konstanten: Standort-Typ
+         ltGlobal   := 0,
+         ltLocation := 1,
+         ltDepart   := 2,
+         // Konstanten: Feld-Spezifizierung
+         fspNone       := 0,
+         fspArtNo      := 1,
+         fspCustNo     := 2,
+         fspSuppNo     := 3,
+         fspAgentNo    := 4,
+         fspMAccount   := 5,
+         fspSAccount   := 6,
+         fspMSPAccount := 7,
+         fspCommissNo  := 8,
+
+         Result          := {},
+         aDefaultOptions := '',
+         aUserOptions    := '',
+
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_TakeOverOnMasterDataCopy, False) then
+            AddMaskOptionValue(aDefaultOptions, moCopyAble),
+         endif,
+         if not KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_AvailableForMasks, True) then
+            AddMaskOptionValue(aDefaultOptions, moNotInMaskAvial),
+         endif,
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_MulipleExistenceOnMaskAllowed, False) then
+            AddMaskOptionValue(aDefaultOptions, moDuplInMask),
+         endif,
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_RequieredForMasks, False) then
+            AddMaskOptionValue(aDefaultOptions, moMustExistInMask),
+         endif,
+         AddMaskOptionValue(aDefaultOptions, moFieldAlign + Str(KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldAlignment, faDefault))),
+         case KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldLocationType, ltGlobal)
+            of ltLocation :: AddMaskOptionValue(aDefaultOptions, moFieldLocation),
+            of ltDepart   :: AddMaskOptionValue(aDefaultOptions, moFieldDepartion),
+         endcase,
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldIsLocationable, False) then
+            AddMaskOptionValue(aDefaultOptions, moFieldUserLocation),
+         endif,
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldSpecification, fspNone) <> fspNone then
+            aDefaultOptions := aDefaultOptions + moFieldSpec,
+            case KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_FieldSpecification, fspNone)
+               of fspArtNo      :: AddMaskOptionValue(aDefaultOptions, moFieldSpecArtNo),
+               of fspCustNo     :: AddMaskOptionValue(aDefaultOptions, moFieldSpecCustNo),
+               of fspSuppNo     :: AddMaskOptionValue(aDefaultOptions, moFieldSpecSuppNo),
+               of fspAgentNo    :: AddMaskOptionValue(aDefaultOptions, moFieldSpecAgentNo),
+               of fspMAccount   :: AddMaskOptionValue(aDefaultOptions, moFieldSpecMAccount),
+               of fspSAccount   :: AddMaskOptionValue(aDefaultOptions, moFieldSpecSAccount),
+               of fspMSPAccount :: AddMaskOptionValue(aDefaultOptions, moFieldSpecMSPAccount),
+               of fspCommissNo  :: AddMaskOptionValue(aDefaultOptions, moFieldSpecCommissNo),
+            endcase,
+         endif,
+         if KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_AttributeID, 0) <> 0 then
+            AddMaskOptionValue(aDefaultOptions, moFieldAttribID + Str(KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_AttributeID, 0))),
+         endif,
+         if not KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_UserDefinable, True) then
+            AddMaskOptionValue(aDefaultOptions, moNotUserDef),
+         endif,
+
+         Result := {
+            aDefaultOptions,
+            aUserOptions,
+         },
+      end,
+
+      cFieldName := KVU_GetAssert(aFieldDefinition, gl_PCKGU_FieldDef_FieldName),
+
+      oDabFIL.CbAppend(),
+
+      // Basis Feld-Eigenschaften schreiben
+      oDabFIL:DATEI     := nWorkarea,
+      oDabFIL:FELD      := cFieldName,
+      oDabFIL:NAME      := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_Description,    ''),
+      oDabFIL:KOMMENTAR := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_Comment,        ''),
+      oDabFIL:GET       := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_EditableByUser, True),
+
+      // Feld-Rechte und -Trigger schreiben
+      aDefaultRights := DetermineDefaultRights(aFieldDefinition),
+      if ALen(aDefaultRights) > 0 then
+         oDabFIL:STDFLDCOND := ArrToStr(aDefaultRights),
+      else
+         oDabFIL:STDFLDCOND := '',
+      endif,
+
+      // Oberflächen- und Masken-Eigenschaften schreiben
+      aMaskOptions       := DetermineMaskOptions(aFieldDefinition),
+      oDabFIL:MSK_PICT   := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_PictureMask, ''),
+      oDabFIL:MSK_OPTION := ArrToStr(aMaskOptions),
+
+      // Maske ist benutzerdefiniert:
+      // -> Masken-Control-Inhalt nicht überschreiben
+      // -> Masken-Control-Typ nicht überschreiben
+      //
+      // TODO:
+      //  Für gl_PCKGU_FieldDef_MaskControlClassType muss noch der
+      //  Control-Klassen-Name validiert werden!
+      oDabFIL:MSK_INHALT := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_MaskControlContent,   ''),
+      oDabFIL:MSK_TYP    := KVU_Get(aFieldDefinition, gl_PCKGU_FieldDef_MaskControlClassType, ''),
+
+      // Rechte oder Trigger definiert?
+      oDabFIL:MSK_USER := (oDabFIL:STDFLDCOND <> '') or
+                          (oDabFIL:MSK_PICT   <> '') or
+                          (oDabFIL:MSK_OPTION <> '') or
+                          (oDabFIL:MSK_INHALT <> ''),
+
+      oDabFIL.CbPost(),
+   end,
+
+   // Datenmodul validieren
+   SetErrorIf(Empty(oDM),                     'oDM must be set'),
+   SetErrorIf(not ClassOf(oDM, 'TBeDbGet'),   'Expecting oDM to be of type TBeDbGet'),
+   SetErrorIf(not oDM.CbTransaction_Active(), 'Expecting oDM to be within an active transaction'),
+
+   nWorkarea := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_Workarea),
+
+   // Workarea validieren
+   SetErrorIf(nWorkarea < 1 or nWorkarea > 999, 'Invalid workarea <' + Str(nWorkarea) + '>'),
+
+   oDabFIL := DbGetTable(oDM, waDabFIL, 'DABFIL'),
+   SetErrorIf(oDabFIL.CbFindKey({nWorkarea}), 'meta-info for table with workarea <' + Str(nWorkarea) + '> already exists in DABFIL'),
+
+   // Index- und Feld-Informationen ermitteln
+   aFields := KVU_Get(aTableDefinition, gl_PCKGU_TableDef_FieldDefinitions, {}),
+
+   // Tabellen- und Felddefinitions-Datensätze anlegen
+   DabFIL_CreateTableDefinitionRecord(oDabFIL, aTableDefinition),
+   for i := 1 to ALen(aFields) do
+      DabFIL_CreateFieldDefinitionRecord(oDabFIL, nWorkarea, aFields[i]),
+   next,
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+// Tabellendefinitions-Datensätze für eine bestimmte Workarea aus der DabFIL
+// löschen, damit die Tabelle beim nächsten DataDictionary-Neuaufbau aus dem
+// DataDictionary genommen wird.
+//
+// @Result: null
+//******************************************************************************
+function _PCKGU_DeleteTableDefinitionRecords(oDM:O, nWorkarea:N)
+   DBU_SQLExecute_DM(
+      'DELETE FROM ' + DbSQLTableName(waDABFIL) + ' WHERE DATEI = ' + Str(nWorkarea),
+      oDM
+   ),
+end,
+
+//******************************************************************************
+// Funktion "installiert" eine Individual-Tabelle inkl. DABFIL-Infos
+// @Result: null
+//******************************************************************************
+function _PCKGU_AddTableAndMetaInfo(oDM:O, aTableDefinition:A, cDbUserName:C, cDbPassword:C)
+| nWorkarea, cTableName, cIndexFileName, cSQLScript |
+
+   // Datenmodul validieren
+   SetErrorIf(Empty(oDM),                     'oDM must not be empty'),
+   SetErrorIf(not Classof(oDM, 'TBeDbGet'),   'expecting oDM to be of type TBeDbGet'),
+   SetErrorIf(not oDM.CbTransaction_Active(), 'expecting oDM to be within an active transaction'),
+
+   nWorkarea      := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_Workarea),
+   cTableName     := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_TableName),
+   cIndexFileName := KVU_GetAssert(aTableDefinition, gl_PCKGU_TableDef_IndexFilename),
+
+   // Sicherstellen, dass eine Tabelle mit der gleichen Workarea noch nicht im DD existiert
+   Result := not PCKGU_TableDefinitionRecordsForWorkareaExist_DM(oDM, nWorkarea),
+   if Result then
+      // DABFIL-Datensätze für die Tabellendefinition anlegen
+      PCKGU_AddTableDefinitionRecords(oDM, aTableDefinition),
+
+      // Tabellenstruktur per SQL erstellen (CREATE TABLE ...)
+      // ACHTUNG: DB-Struktur-Änderungen sind niemals transaktions-gestützt
+      cSQLScript := PCKGU_SQLText_CreateTable(aTableDefinition),                Prs('PCKGU_AddTableAndMetaInfo()', cSQLScript),
+      DBU_SQLExecute_Credentials(cSQLScript, cDbUserName, cDbPassword),
+
+      WriteLn("Die Tabelle '" + cTableName + "' wurde neu angelegt mit zugehörigen DABFIL Metadaten."),
+   else
+      WriteLn('WARNING: Table <' + cTableName + '> was not created, because meta-info for table with the workarea <' + Str(nWorkarea) + '> already exists in DABFIL'),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion "deinstalliert" eine Individual-Tabelle inkl. DABFIL-Infos
+// @Result: null
+//******************************************************************************
+function _PCKGU_RemoveTableAndMetaInfo(oDM:O, nWorkarea:N, cTableName:C, cDbUserName:C, cDbPassword:C)
+| cSQLScript |
+
+   // Datenmodul validieren
+   SetErrorIf(Empty(oDM),                     'oDM must not be empty'),
+   SetErrorIf(not Classof(oDM, 'TBeDbGet'),   'expecting oDM to be of type TBeDbGet'),
+   SetErrorIf(not oDM.CbTransaction_Active(), 'expecting oDM to be within an active transaction'),
+
+   // DABFIL-Datensätze löschen, sofern vorhanden (in Transaktion)
+   if PCKGU_TableDefinitionRecordsForWorkareaExist_DM(oDM, nWorkarea) then
+      PCKGU_DeleteTableDefinitionRecords(oDM, nWorkarea),
+   endif,
+
+   // Tabelle per SQL löschen (DROP TABLE ...)
+   // ACHTUNG: DB-Struktur-Änderungen sind niemals transaktions-gestützt
+   cSQLScript := PCKGU_SQLText_DropTable(cTableName),                           Prs('PCKGU_RemoveTableAndMetaInfo()', cSQLScript),
+   DBU_SQLExecute_Credentials(cSQLScript, cDbUserName, cDbPassword),
+
+   WriteLn("Die Tabelle '" + cTableName + "' wurde gelöscht, die zugehörigen DABFIL Metadaten ebenso."),
+end,
+
+
+//******************************************************************************
+// Alle RIGHTS*.BER Dateien löschen (sofern das zulässig ist)
+// -> Nach Änderungen an DABFIL Infos muss der Cache neu aufgebaut werden durch die nächste startende 'be_32.exe'
+// @Result: null
+//******************************************************************************
+function _PCKGU_DeleteAllRightsBerCacheFiles()
+| aFiles, aFile, cFileName, cOldFileName, cNewFileName |
+
+   aFiles := DirArray(mbeDefault, 'RIGHTS*.BER', faAnyFile),
+
+   WriteLn(Replicate('*', 80)),
+   WriteLn('Entferne Rechte (DABFIL) Cache Dateien, damit Cache neu aufgebaut wird beim nächsten Start einer be_32.exe.'),
+
+
+   if ALen(aFiles) = 0 then
+      WriteLn('   -> "RIGHTS*.BER" Dateien vorhanden in "' + mbeDefault + '".'),
+   endif,
+
+   foreach aFile in aFiles do
+      cFileName := aFile[1],
+      WriteLn(cFileName),
+
+      cOldFileName := mbeDefault + cFileName,
+      cNewFileName := mbeDefault + cFileName + '.renamed-on-' + FormatDateTime('YYYY-MM-DD--HH-MM-SS', Now()) + '-by-packageInstaller.old-can-be-deleted',
+      if RenameFile(cOldFileName, cNewFileName) then
+         WriteLn('   -> Datei "' + cFileName + '" wurde umbenannt'),
+      else
+         WriteLn('   -> ACHTUNG: Datei "' + cOldFileName + '" konnte nicht umbenannt werden, datei ist entweder im Zugriff oder dieser Client hat keine Zugriffsrechte'),
+      endif,
+   next,
+
+   WriteLn(Replicate('*', 80)),
+end,
+
+

@@ -1,0 +1,256 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inbound Transport
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet den eingehenden Transport-Prozess für das
+//   Datenübertragungsprotokoll "Verzeichnis" ab.
+//
+// Rückgabe:
+//   array - KVU-Array mit folgenden Informationen:
+//   {
+//      {'processedFilesCount', <integer>}, // Anzahl der verarbeiteten Dateien
+//      {'skippedFilesList',    <integer>}  // Liste der übersprungenen Dateien
+//   }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDITRCHId:P2,
+   m_oProgressCallback:P3
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion prüft, ob der aktuelle Windows-User für den angegebenen Pfad
+// alle Rechte besitzt.
+//
+// @result: boolean
+//******************************************************************************
+function CheckFullPathRights(cPath:C)
+| cTestFile1, cTestFile2, oFile, cContent, cBuffer, i |
+
+   result     := false,
+   cTestFile1 := 'BEALLRIGHT1.TMP',
+   cTestFile2 := 'BEALLRIGHT2.TMP',
+
+
+
+   if not empty(cPath) and DirectoryExists(cPath) then
+      if Right(cPath, 1) <> '\' then
+         cPath += '\',
+      endif,
+
+      cContent := '',
+      for i := 0 to 255 do
+         cContent += chr(i),
+      next,
+
+      startseq
+         if File(cPath + cTestFile1) then
+            DeleteFile(cPath + cTestFile1),
+         endif,
+         if File(cPath + cTestFile2) then
+            DeleteFile(cPath + cTestFile2),
+         endif,
+
+         // Erstellen
+         oFile := FOpen(cPath + cTestFile1, _or(FO_CREATE, FO_EXCLUSIVE)),
+         FClose(oFile),
+
+         // Schreiben
+         oFile := FOpen(cPath + cTestFile1, _or(FO_WRITE, FO_EXCLUSIVE)),
+         startseq
+            FWrite(oFile, cContent),
+         always
+            FClose(oFile),
+         stopseq,
+
+         // Lesen
+         cBuffer := '',
+         oFile := FOpen(cPath + cTestFile1, _or(FO_READ, FO_EXCLUSIVE)),
+         startseq
+            FSeek(oFile, 0, FS_SET),
+            FRead(oFile, cBuffer, oFile.Size),
+            FWrite(oFile, cContent),
+         always
+            FClose(oFile),
+         stopseq,
+
+         result := cBuffer == cContent,
+
+         if result then
+            // Umbenennen
+            result := RenameFile(cPath + cTestFile1, cPath + cTestFile2),
+
+            if result then
+               // Löschen
+               result := DeleteFile(cPath + cTestFile2),
+            endif,
+         endif,
+      onerror
+         result := false,
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion archiviert die Datei mit dem übergebenen Dateipfad in einem
+// Unterverzeichnis (z.B.: .\imported\2018-05-04).
+//
+// @result: boolean - Datei konnte in das Archiv-Verzeichnis verschoben werden
+//******************************************************************************
+function ArchiveFile(cSourcePath:C, cFileName:C)
+| cSourceFilePath, cDestinationPath, cDestinationFilePath, cArchiveDirectoryName |
+
+   cSourceFilePath       := cSourcePath + '\' + cFileName,
+   cDestinationPath      := cSourcePath + '\imported\' + FormatDateTime('YYYY-MM-DD', Today()),
+   cDestinationFilePath  := cDestinationPath + '\' + cFileName,
+   
+   ForceDirectories(cDestinationPath),
+
+   result := RenameFile(cSourceFilePath, cDestinationFilePath),
+end,
+
+//******************************************************************************
+// Diese Funktion liest genau eine Datei ein.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportInbound_FileSystem_SingleFile(oDM:O,
+                                                nEDITRCHId:N,
+                                                cRetrievalPath:C,
+                                                cFilePath:C,
+                                                cFileName:C,
+                                                nTotalFileCount:N,
+                                                nFileIndex:N,
+                                                oProgressCallback:O)
+| oEDIMessage, oEDIMSG, cErrorMessage |
+
+   cErrorMessage := '',
+
+   oEDIMessage := EDI_Message_Inbound_Create(oDM, nEDITRCHId),
+   startseq
+      startseq
+         EDI_Message_SetContentFromFile(oEDIMessage, cFilePath),
+         EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Read),
+
+         if not empty(cFileName) then
+            SetErrorIf(not ArchiveFile(cRetrievalPath, cFileName), 'Unable to archive file: ' + cFilePath),
+         endif,
+
+         // ggf. Fortschritt-Callback ausführen
+         EDI_Process_UpdateProgress(oProgressCallback, nFileIndex, nTotalFileCount, cFileName),
+      onerror
+         cErrorMessage := 'Transport - TransportInbound_FileSystem_SingleFile' + crlf +
+                          'Die Datei konnte nicht archiviert werden: ' + cFilePath,
+         EDI_Message_LogError(oEDIMessage, cErrorMessage),
+         EDI_Message_LogErrorAndSave(oEDIMessage, cErrorMessage), //GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+   stopseq,
+end,
+
+//******************************************************************************
+// Eingehender Transport-Prozess für das Protokoll "Verzeichnis"
+// @result: array - KVU-Array mit folgenden Informationen:
+//   {
+//      {processedFilesCount, <integer>}, // Anzahl der verarbeiteten Dateien
+//      {skippedFilesList,    <integer>}  // Amzahl der übersprungenen Dateien
+//   }
+//******************************************************************************
+function TransportInbound_FileSystem(oDM:O, nEDITRCHId:N, oProgressCallback:O:=nil)
+|
+   oEDITRCH,
+   cRetrievalPath, nFileCount, i, aFileList, cFileName, cFilePath, aFileExtList,
+   nProcessedFilesCount, aSkippedFilesList
+|
+
+   //***************************************************************************
+   function AAddFromArray(aPrimaryArray:R, aSecondaryArray)
+   | i |
+      for i := 1 to ALen(aSecondaryArray) do
+         AAdd(aPrimaryArray, aSecondaryArray[i]),
+      next,
+   end,
+
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+
+   SetErrorIf(not oEDITRCH.CbFindKey({nEDITRCHId}), 'EDITRCH record with ID <' + str(nEDITRCHId) + '> does not exist'),
+
+   cRetrievalPath := oEDITRCH:URI,
+
+   SetErrorIf(not DirectoryExists(cRetrievalPath),     'Directory does not exist in filesystem: ' + cRetrievalPath),
+   SetErrorIf(not CheckFullPathRights(cRetrievalPath), 'Insufficient rights for given path'),
+
+   result       := {},
+   aFileList    := {}, 
+
+   if EDI_Transport_Inbound_GetExtensionsAsArray(oEDITRCH:MASK, aFileExtList) then
+      for i := 1 to ALen(aFileExtList) do
+         AAddFromArray(aFileList, DirArray(cRetrievalPath, '*.' + aFileExtList[i], faSysFile)),
+      next,
+   else
+      aFileList  := DirArray(cRetrievalPath, '*', faSysFile),
+   endif,
+
+   nFileCount := ALen(aFileList),
+
+   nProcessedFilesCount := 0,
+   aSkippedFilesList    := {},
+
+   for i := 1 to nFileCount do
+      cFileName := aFileList[i, 1],
+      cFilePath := cRetrievalPath + '\' + cFileName,
+
+      if File(cFilePath) then
+         startseq
+            oDM.CbTransaction_Begin(),
+            startseq
+               TransportInbound_FileSystem_SingleFile(
+                  oDM,
+                  nEDITRCHId,
+                  cRetrievalPath,
+                  cFilePath,
+                  cFileName,
+                  i,
+                  nFileCount,
+                  oProgressCallback
+               ),
+               nProcessedFilesCount++,
+               oDM.CbTransaction_Commit(),
+            always
+               if oDM.CbTransaction_TryRollback() then
+                  DbResetDM(oDM),
+               endif,
+            stopseq,
+         onerror
+            AAdd(aSkippedFilesList, {cFileName, StrTran(GetErrorText(GetErrorObj()), CRLF, ' ') + ArrToStr(GetErrorStack(true))}),
+         stopseq,
+      endif,
+   next,
+
+   KVU_Set(result, 'processedFilesCount', nProcessedFilesCount),
+   KVU_Set(result, 'skippedFilesList',    aSkippedFilesList),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+TransportInbound_FileSystem(m_oDM, m_nEDITRCHId, m_oProgressCallback)
+

@@ -1,0 +1,819 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Über das Programm "Übersetzungen" können
+//               Labels erstellt/verwaltet werden.
+//               Pro Label können n-Sprachen hinzugefügt werden.
+//               Es können Label-Bezeichnungen oder Label-Texte(RTF-Text oder PlainText)
+//               hinterlegt werden.
+//
+//               Die Labels können für Layout, GUIs oder z.B. beas Services verwendet werden, um mehrsprache Texte anzuzeigen, drucken, ausgeben...
+//
+//##############################################################################
+//##############################################################################
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_cFormID, m_cWinPosSaveId,
+   m_cBrowserMaster, m_cBrowserDetail, m_cContainsFilter,
+   m_oDM, m_oDABUBK, m_oDABUBP, m_bFieldTextOnlyExists,
+   
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ActiveDesignMode, A_Export, A_HelpContent, A_Import, A_ImportExport,
+   act_beInfo, act_CancelFSLabel, act_CancelLabelGerman, act_DateUser,
+   act_DeleteFs, act_DeleteLabel, act_NewFs, act_NewLabel, act_SaveFSLabel,
+   act_SaveLabelGerman, al_Main, bbtn_Export, bbtn_Import, bbtn_ImportExport,
+   BeBarDockControl2, BeBarDockControl3, beBarDockControl4, BeSplitter1,
+   BeSplitter2, bipnl_Fremdsprachen, bipnl_GermanLabel, bipnl_hinweis,
+   bipnl_Top, bm_Main, bm_MainBar1, bm_MainBar2, bm_MainBar3, btn_beInfo,
+   btn_CancelFSLabel, btn_CancelLabelGerman, btn_DateUser, btn_delete_fs,
+   btn_DeleteLabel, btn_DesignMode, btn_NewFs, btn_NewLabel, btn_SaveFSLabel,
+   btn_SaveLabelGerman, ds_DABUBK, ds_DABUBP, edt_bez, edt_bez_fs, edt_InfoText,
+   edt_labelid, edt_MemoEdit, edt_MemoFsEdit, edt_memoFsRTF, edt_MemoRTF,
+   edt_Search, edt_sprache, gpnl_LABEL, gpnl_LABELFW, grd_DABUBK, grd_DABUBP,
+   lbl_Bez, lbl_Bez_Fs, lbl_FremdtextMemo, lbl_InfoText, lbl_LabelID,
+   lbl_Langtext, lbl_Sprache, lbl_TextOnly, pnl_Browser, pnl_eigeneSprache,
+   pnl_FremdspracheDetail, pnl_Fremdsprachen, pnl_FremdsprachenRight,
+   pnl_Ground, pnl_InfoText, pnl_LabelDeutsch, pnl_LabelDeutschFelder,
+   pnl_langtext, pnl_LangtextFs, pnl_Left, pnl_Main, pnl_Memo, pnl_MemoEdit,
+   pnl_MemoFsEdit, pnl_MemoFsRTF, pnl_MemoRTF, pnl_Right, pnl_titel,
+   tgl_Plaintext
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID              := "@UEBERSETZ",
+m_cWinPosSaveId        := "@UEBERSETZ",
+m_cBrowserMaster       := "@UEB_KOPF",
+m_cBrowserDetail       := "@UEB_POS",
+m_bFieldTextOnlyExists := false,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Actions aktivieren/deaktivieren
+//******************************************************************************
+function ActionsEnabled()
+   | bEditUBK, bEditUBP, bPlainText, bShowPlainText |
+   bEditUBK                         := DBState(m_oDABUBK) <> dsBrowse,
+   bEditUBP                         := DBState(m_oDABUBP) <> dsBrowse,
+   act_SaveLabelGerman.enabled      := bEditUBK,
+   act_CancelLabelGerman.enabled    := bEditUBK,
+   act_NewLabel.enabled             := not bEditUBK and not bEditUBP,
+   act_DeleteLabel.enabled          := not bEditUBK and not bEditUBP and not NoDs(m_oDABUBK),
+   act_NewFs.enabled                := not bEditUBK and not bEditUBP,
+   act_DeleteFs.enabled             := not bEditUBK and not bEditUBP,
+   act_SaveFSLabel.enabled          := bEditUBP,
+   act_CancelFSLabel.enabled        := bEditUBP,
+   pnl_Fremdsprachen.enabled        := not bEditUBK,
+   pnl_Memo.enabled                 := not bEditUBP,
+   pnl_Left.enabled                 := not bEditUBP and not bEditUBK,
+   edt_labelid.enabled              := DBState(m_oDABUBK) = dsInsert,
+   act_DateUser.enabled             := not NoDs(m_oDABUBK),
+   
+   // Edits für den Langtext steuern
+   // -> Wenn flag TEXTONLY gesetzt ist dann wird das Edit angezeigt
+   bShowPlainText := m_bFieldTextOnlyExists AND iif(bEditUBK, tgl_Plaintext.Checked, AsVariant('TEXTONLY', m_oDABUBK) = true),
+   pnl_MemoRtf.Visible    := not bShowPlainText,
+   pnl_MemoEdit.Visible   := bShowPlainText,
+   pnl_MemoFsRtf.Visible  := not bShowPlainText,
+   pnl_MemoFsEdit.Visible := bShowPlainText,
+   
+   A_ImportExport.Visible := mBeSupervisor,
+end,
+
+//******************************************************************************
+// Umschalten des Label-Druckmodus
+// @Result: null
+//******************************************************************************
+function ToggleDesignModus()
+   if gl_LUU_DesignModus then
+      A_ActiveDesignMode.Caption := "Designmodus deaktivieren",
+      bipnl_hinweis.Caption      := "Labeldruck ist aktiviert - alle Label-Formulare werden nur mit den Label-ID's gedruckt",
+      bipnl_hinweis.Visible      := True,
+      bipnl_hinweis.ColorMode    := ipcmWarning,
+   else
+      A_ActiveDesignMode.caption := "Designmodus aktivieren",
+      bipnl_hinweis.visible      := False,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateTableForTranslation(oOwner:O)
+   Result := CreateObject('TbeMemTable', 'MEMTABLE_TRANSLATIONEXPORT', oOwner),
+   Result.CbAddField('ObjName', ftMemo, 0),
+   Result.CbAddField('NativeCap', ftMemo, 0),
+   Result.CbAddField('Caption', ftMemo, 0),
+   Result.CbAddField('NativeHin', ftMemo, 0),
+   Result.CbAddField('Hint', ftMemo, 0),
+   Result.Active := true,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FillTranslationMemTable(oMemTable:R, nLanguage:N, lExportAll := true)
+   | oDabUBKBookmark, oDabUBPBookmark|
+   m_oDABUBK.CbDisableControls(),
+   m_oDABUBP.CbDisableControls(),
+   startseq
+      oDabUBKBookmark := m_oDABUBK.CbBookmark,
+      oDabUBPBookmark := m_oDABUBP.CbBookmark,
+      
+      if lExportAll then
+         m_oDABUBK.CbCancelRange(),
+      endif,
+      m_oDABUBP.CbCancelRange(),
+      
+      m_oDABUBK.CbFirst(),
+      while not m_oDABUBK.CbEoF do
+         
+         oMemTable.CbAppend(),
+         oMemTable:ObjName   := m_oDABUBK:LABEL,
+         oMemTable:NativeCap := m_oDABUBK:BEZ,
+         if m_oDABUBK:TEXTONLY then
+            oMemTable:NativeHin := RtfToText(m_oDABUBK:MEMO),
+         endif,
+         if m_oDABUBP.CbFindKey({Trim(m_oDABUBK:LABEL), nLanguage}) then
+            oMemTable:Caption := m_oDABUBP:BEZ,
+            if m_oDABUBK:TEXTONLY then
+               oMemTable:Hint := RtfToText(m_oDABUBP:MEMO),
+            endif,
+         endif,
+         oMemTable.CbPost(),
+         
+         m_oDABUBK.CbNext(),
+      end,
+   always
+      m_oDABUBK.CbBookmark := oDabUBKBookmark,
+      m_oDABUBP.CbBookmark := oDabUBPBookmark,
+      m_oDABUBK.CbEnableControls(),
+      m_oDABUBP.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ImportTranslations(oMemTable:R, nLanguage, lImportAll)
+   | cLabelPosition, oDabUBPBookmark, oDabUBKBookmark |
+   
+   m_oDABUBK.CbDisableControls(),
+   m_oDABUBP.CbDisableControls(),
+   oDabUBKBookmark := m_oDABUBK.CbBookmark,
+   oDabUBPBookmark := m_oDABUBP.CbBookmark,
+   startseq
+      m_oDABUBK.CbCancelRange(),
+      m_oDABUBP.CbCancelRange(),
+      
+      startseq
+         BeStartTransaction(m_oDM),
+         
+         oMemTable.CbFirst(),
+         while not oMemTable.CbEoF do
+            
+            if m_oDABUBK.CbFindKey({oMemTable:ObjName}) then
+               
+               if m_oDABUBP.CbFindKey({oMemTable:ObjName, nLanguage}) then
+                  if lImportAll then
+                     m_oDABUBP.CbEdit(),
+                     m_oDABUBP:BEZ   := oMemTable:CAPTION,
+                     if m_oDABUBK:TEXTONLY then
+                        m_oDABUBP:MEMO  := oMemTable:HINT,
+                     endif,
+                     m_oDABUBP.CbPost(),
+                  endif,
+               else
+                  if not empty(oMemTable:CAPTION) or not empty(oMemTable:HINT) then
+                     m_oDABUBP.CbAppend(),
+                     m_oDABUBP:LABEL   := Trim(oMemTable:ObjName),
+                     m_oDABUBP:SPRACHE := nLanguage,
+                     m_oDABUBP:BEZ     := oMemTable:CAPTION,
+                     if m_oDABUBK:TEXTONLY then
+                        m_oDABUBP:MEMO    := oMemTable:HINT,
+                     endif,
+                     m_oDABUBP.CbPost(),
+                  endif,
+               endif,
+            endif,
+            
+            oMemTable.CbNext(),
+         end,
+         BeCommitTransaction(m_oDM),
+         m_oDABUBK.IndexName := "LABEL",
+         m_oDABUBP.IndexName := "LABEL_SPRACHE",
+      onerror
+         BeRollbackTransaction(m_oDM),
+         GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+      stopseq,
+   always
+      m_oDABUBK.CbBookmark := oDabUBKBookmark,
+      m_oDABUBP.CbBookmark := oDabUBPBookmark,
+      m_oDABUBK.CbEnableControls(),
+      m_oDABUBP.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnen aller benötigten Tabellen und mit der GUI verknüpfen
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oDM := BeCreateTransactionDM(oForm, 'FORLBLDM'),
+   
+   m_oDABUBK := DBGetTable(m_oDM, waDABUBK),
+   m_oDABUBP := DBGetTable(m_oDM, waDABUBP),
+   
+   m_oDABUBK.IndexName := "LABEL",
+   m_oDABUBP.IndexName := "LABEL_SPRACHE",
+   
+   m_oDABUBK.WriteProtocol   := True,
+   m_oDABUBP.WriteProtocol   := True,
+   m_oDABUBK.CheckUserRights := True,
+   m_oDABUBP.CheckUserRights := True,
+   
+   AssignEvent(m_oDABUBP, 'AfterInsert', 'DABUBPNewRecord'),
+   
+   ds_DABUBK.DataSet         := m_oDABUBK,
+   grd_DABUBK.ID             := m_cBrowserMaster,
+   grd_DABUBK.ReadWriteProps := False,
+   
+   ds_DABUBP.DataSet         := m_oDABUBP,
+   grd_DABUBP.ID             := m_cBrowserDetail,
+   grd_DABUBP.ReadWriteProps := False,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ImportExecute( Sender )
+   |
+      aDialogResult, oMemTable, cFileName, lImportAll, nLanguage, oDabUBPBookmark
+   |
+   
+   startseq
+      aDialogResult :=  DU_InputDialog('Import', 'Import der Labels',
+         { DU_InputDialog_CreateInputControlDefinition('FILENAME', 'Importdatei', gl_DU_InputControlType_File, '', 0, '', True),
+         DU_InputDialog_CreateInputControlDefinition('IMPORT_ALL', 'Bereits übersetzte überschreiben?', gl_DU_InputControlType_Logical, '', 0, false, false) },
+         {mrOk, mrCancel}, {}),
+      
+      if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+         
+         if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+            cFileName  := DU_InputDialogResult_GetInputValue(aDialogResult, 'FILENAME'),
+            lImportAll := DU_InputDialogResult_GetInputValue(aDialogResult, 'IMPORT_ALL'),
+            
+            nLanguage := val(StrToken(cFileName, '.', TokenCount(cFileName, '.') - 1)),
+            nLanguage := LU_ISOLanguageCodeToBeLayoutLanguage(LU_BeGuiLanguageToISOLanguageCode(nLanguage)),
+            
+            if nLanguage <> 0 then
+               oMemTable := CreateObject('TbeMemTable', 'IMPORTTRANSLATION'),
+               startseq
+                  
+                  ImportExcelFile(oMemTable, cFileName, 1, 2 ),
+                  
+                  ImportTranslations(oMemTable, nLanguage, lImportAll)
+               always
+                  DestroyObject(oMemTable),
+               stopseq,
+            else
+               MessageDlg('Die Datei muss eine gültige Oberflächensprachen-Nummer haben.', mtError),
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ExportExecute( Sender )
+   |
+      oMemTable, aDialogResult, cFileName, nLanguage, lExportAll, cGuiLanguage
+   |
+   startseq
+      oMemTable := CreateTableForTranslation(nil),
+      startseq
+         
+         aDialogResult :=  DU_InputDialog('Export', 'Export der Labels',
+            { DU_InputDialog_CreateInputControlDefinition('DIRECTORY', 'Export in', gl_DU_InputControlType_Directory, '', 0, '', True),
+            DU_InputDialog_CreateInputControlDefinition('LANGUAGE', 'Sprache', gl_DU_InputControlType_Attribute, '', -17, 1, True),
+            DU_InputDialog_CreateInputControlDefinition('NOT_ALL', 'aktiven Filter berücksichtigen', gl_DU_InputControlType_Logical, '', 0, True, false) },
+            {mrOk, mrCancel}, {}),
+         
+         if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+            cFileName := DU_InputDialogResult_GetInputValue(aDialogResult, 'DIRECTORY'),
+            nLanguage := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'LANGUAGE')),
+            lExportAll := not DU_InputDialogResult_GetInputValue(aDialogResult, 'NOT_ALL'),
+            
+            if nLanguage <> 0 then
+               
+               cGuiLanguage := StrZero(LU_ISOLanguageCodeToBeGuiLanguage(LU_BeLayoutLanguageToISOLanguageCode(nLanguage)), 3),
+               
+               cFileName += 'Labels.' + cGuiLanguage + '.xlsx',
+               
+               FillTranslationMemTable(oMemTable, nLanguage, lExportAll),
+               
+               
+               ExportExcelFile(cFileName, oMemTable, true),
+            else
+               MessageDlg('Sie müssen eine Fremdsprache wählen!', mtError),
+            endif,
+         endif,
+      always
+         DestroyObject(oMemTable),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Datensatz speichern auf Labelebene
+//******************************************************************************
+function act_SaveLabelGermanExecute( Sender )
+   if LookUp(waDABUBK, 'LABEL', {{UPPER(m_oDABUBK:LABEL)}}, 'not EOF()') and DBSTATE(m_oDABUBK) = dsInsert then
+      MyFocusControl(oForm, edt_labelid),
+      MessageDlg('Für dieses Label existiert bereits einen Datensatz.', mtError),
+   else
+      writeln('"' + LU_ExtractLabelIdentifier(UPPER(m_oDABUBK:LABEL)) + '"'),
+      writeln('"' + Alltrim(UPPER(m_oDABUBK:LABEL)) + '"'),
+      if LU_ExtractLabelIdentifier(Alltrim(UPPER(m_oDABUBK:LABEL))) <> Alltrim(UPPER(m_oDABUBK:LABEL)) then
+         MessageDlg('Die LabelID entspricht nicht dem korrekten Format! Ein Abgrenzung aus einem Unterstrich und einer Nummernkette ist nicht möglich.', mtWarning),
+      else
+         MyPost(m_oDABUBK),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Abbrechen auf Labelebene
+//******************************************************************************
+function act_CancelLabelGermanExecute( Sender )
+   if JN("Änderungen verwerfen?") then
+      DBCancel(m_oDABUBK),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datensatz neu auf Labelebene
+//******************************************************************************
+function act_NewLabelExecute( Sender )
+   edt_labelid.enabled := True,
+   MyFocusControl(oForm, edt_labelid),
+   MyAppend(m_oDABUBK),
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen auf Labelebene
+//******************************************************************************
+function act_DeleteLabelExecute( Sender )
+   | bDelete |
+   if JN("Label " + RTrim(m_oDABUBK:LABEL) + " inkl. aller Fremdsprachenlabels löschen") then
+      BeginSuspend(m_oDABUBK),
+      BeginSuspend(m_oDABUBP),                     // Hier wird ein Suspend benötigt, da für Standard-Tabellen das
+      startseq                                     // Löschen von Datensätzen über CB nicht erlaubt ist.
+         DBScope({m_oDABUBK:LABEL}, {m_oDABUBK:LABEL}, m_oDABUBP),
+         DBGoTop(m_oDABUBP),
+         bDelete := True,
+         while not eof(m_oDABUBP) do
+            if not DBDelete(m_oDABUBP) then
+               bDelete := False,
+               DBSkip(1, m_oDABUBP),
+            endif,
+         end,
+         if bDelete then
+            MyDelete(m_oDABUBK),
+         else,
+            MessageDlg("Fehler beim Löschen", 0, 4),
+         endif,
+      always
+         EndSuspend(m_oDABUBK),
+         EndSuspend(m_oDABUBP),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: globale Variable umstellen
+//         Hintergrund: wenn aktiv werden auf den Belege nicht die Inhalte
+//         sondern die LabelID's gedruckt, damit man danach die Übersetzungen
+//         machen kann
+//******************************************************************************
+function A_ActiveDesignModeExecute( Sender )
+   gl_LUU_DesignModus   := not gl_LUU_DesignModus,
+   btn_DesignMode.Down := gl_LUU_DesignModus,
+   ToggleDesignModus(),
+end,
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function act_beInfoExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_LUU_IndiOnlineHelp_SQLWhere),
+end,
+
+//******************************************************************************
+// Action: Datensatz neu auf Detailebene
+//******************************************************************************
+function act_NewFsExecute( Sender )
+   MyAppend(m_oDABUBP),
+   MyFocusControl(oForm, edt_sprache),
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen auf Detailebene
+//******************************************************************************
+function act_DeleteFsExecute( Sender )
+   if JN("FS Label "+RTrim(m_oDABUBP:LABEL)+" für Sprache "+str(m_oDABUBP:sprache)+" löschen?") then
+      BeginSuspend(m_oDABUBP),                                                  // Hier wird ein Suspend benötigt, da für Standard-Tabellen das
+      startseq                                                                  // Löschen von Datensätzen über CB nicht erlaubt ist.
+         MyDelete(m_oDABUBP),
+      always
+         EndSuspend(m_oDABUBP),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datensatz speichern auf Detailebene
+//******************************************************************************
+function act_SaveFSLabelExecute( Sender )
+   if m_oDABUBP:SPRACHE = 0 then
+      MessageDlg('Die deutsche Übersetzung wird im Kopf geführt. In den Positionen können nur abweichende Sprachen aufgenommen werden!', mtError),
+   else
+      if LookUp(waDABUBP, 'LABEL_SPRACHE', {{UPPER(m_oDABUBP:LABEL), m_oDABUBP:SPRACHE}}, 'not EOF()') and DBSTATE(m_oDABUBP) = dsInsert then
+         MyFocusControl(oForm, edt_sprache),
+         MessageDlg('Für diese Sprache gibt es bereits einen Datensatz.', mtError),
+      else
+         MyPost(m_oDABUBP),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Editmodus abbrechen auf Detailebene
+//******************************************************************************
+function act_CancelFSLabelExecute( Sender )
+   if JN("Änderungen verwerfen?") then
+      DBCancel(m_oDABUBP),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datum/User einfügen
+//******************************************************************************
+function act_DateUserExecute( Sender )
+   GWU_InsertDatumUserIntoRTF('INFOTEXT', m_oDABUBK, edt_InfoText),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// OnKlick Toggleswitch
+//******************************************************************************
+function tgl_PlaintextClick( Sender )
+   startseq
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// OnScrollUpdate Dataset
+//******************************************************************************
+function ds_DABUBKScroll_Update( Sender )
+   startseq
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Maske Schließen
+//******************************************************************************
+function FormExClose( Sender, oAction )
+   gl_LUU_DesignModus := false, // Zur Sicherheit beim Schließen des Formulars
+                                // den DesignModus deaktiveren, denn sonst druckt
+                                // man womöglich aus Versehen im DesignModus weiter.
+   oAction := caFree,
+end,
+
+//******************************************************************************
+// Event: Form Zerstören
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := True,
+   
+   // Wenn sich eine der Tabellen noch in Bearbeitung befindet, nachfragen ob
+   // die Änderungen verworfen werden sollen
+   if EditModes(m_oDABUBK) or EditModes(m_oDABUBP) then
+      bCanClose := JN('Das Fenster befindet sich noch in Bearbeitung. ' + crlf +
+         'Änderungen verwerfen und Fenster schließen?'),
+      if bCanClose then
+         DBCancel(m_oDABUBK),
+         DBCancel(m_oDABUBP),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Label aus DABUBK übernehmen
+//******************************************************************************
+function DABUBPNewRecord( Sender )
+   m_oDABUBP:LABEL := m_oDABUBK:LABEL,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),                                // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+// Event: Beim Auslösen der Suche/Filterung
+//******************************************************************************
+function edt_SearchSearchExecute( Sender )
+   | cInputText |
+   cInputText := edt_Search.Text,
+   if Empty(cInputText) then
+      m_cContainsFilter := '',
+   else
+      m_cContainsFilter := PrepareTextForFTSSearch(waDABUBK,
+         'SUCHE',
+         cInputText,
+         '',
+         False,
+         True,
+         'AND',
+         True),
+   endif,
+   
+   m_oDABUBK.Filter   := m_cContainsFilter,
+   m_oDABUBK.Filtered := not Empty(m_cContainsFilter),
+   DBRefresh(m_oDABUBK),
+end,
+
+//******************************************************************************
+// Event: Datenänderung auf Labelebene
+//******************************************************************************
+function ds_DABUBKDataChange( Sender )
+   DBScope({m_oDABUBK:label}, {m_oDABUBK:label}, m_oDABUBP),
+   DBGoTop(m_oDABUBP),
+   btn_delete_fs.Enabled := not NoDs(m_oDABUBP),
+end,
+
+//******************************************************************************
+// Event: Statusänderung auf Detailebene
+//******************************************************************************
+function ds_DABUBPStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Statusänderung auf Labelebene
+//******************************************************************************
+function ds_DABUBKStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Nach Wechsel in den Supervisor-Modus
+//******************************************************************************
+function oFormAfterAdminModeChange( Sender )
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion die dynamisch je nach Stand der Datenbank die Objekte der Maske
+// steuert. Dies dient der rückwärstkompatibilität der Toolbox
+// @Result: null
+//******************************************************************************
+function ControlMaskObj()
+   | oFieldDABUBK_LABEL |
+   // Prüfen ob das Feld TEXTONLY existiert um die Maske entsprechend zu steuern (siehe Actionsenabled())
+   m_bFieldTextOnlyExists := not empty(GetTableFieldInfo(m_oDABUBK.Workarea, 'TEXTONLY')),
+   // Wenn das Feld TEXTONLY existiert dann Toogleswitch anzeigen
+   tgl_Plaintext.Visible  := m_bFieldTextOnlyExists,
+   tgl_Plaintext.DataField := iif(m_bFieldTextOnlyExists, 'TEXTONLY', ''),
+   
+   // Wenn das Feld LABEL der DABUBK vom Typ CiCharacter ist, kann im Feld auch
+   // lowerCase Chars eingegeben werden
+   oFieldDABUBK_LABEL := DbField('LABEL', m_oDABUBK),
+   if not empty(oFieldDABUBK_LABEL) AND DbFieldType(oFieldDABUBK_LABEL) = 'CICHARACTER' then
+      edt_LabelID.CharCase := 'ecNormal',
+   endif,
+end,
+
+//******************************************************************************
+// Formular auf Standard setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   m_cContainsFilter      := '',
+   MyFocusControl(oForm, edt_search),
+   
+   edt_MemoRTF.Font.Name   := 'Arial',
+   edt_MemoRTF.Font.Size   := 8,
+   edt_InfoText.Font.Name  := 'Arial',
+   edt_InfoText.Font.Size  := 8,
+   edt_memoFsRTF.Font.Name := 'Arial',
+   edt_memoFsRTF.Font.Size := 8,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwnerForm),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.OrigCapt       := 'Übersetzungen',
+   oForm.ImageIndex     := 81,                                                  // Image-Index für den Window-Navigator setzen
+   
+   AssignEvent(oForm, 'AfterAdminModeChange', 'oFormAfterAdminModeChange'),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ActiveDesignMode     := FindObject(oForm, "A_ActiveDesignMode"),
+   A_Export               := FindObject(oForm, "A_Export"),
+   A_HelpContent          := FindObject(oForm, "A_HelpContent"),
+   A_Import               := FindObject(oForm, "A_Import"),
+   A_ImportExport         := FindObject(oForm, "A_ImportExport"),
+   act_beInfo             := FindObject(oForm, "act_beInfo"),
+   act_CancelFSLabel      := FindObject(oForm, "act_CancelFSLabel"),
+   act_CancelLabelGerman  := FindObject(oForm, "act_CancelLabelGerman"),
+   act_DateUser           := FindObject(oForm, "act_DateUser"),
+   act_DeleteFs           := FindObject(oForm, "act_DeleteFs"),
+   act_DeleteLabel        := FindObject(oForm, "act_DeleteLabel"),
+   act_NewFs              := FindObject(oForm, "act_NewFs"),
+   act_NewLabel           := FindObject(oForm, "act_NewLabel"),
+   act_SaveFSLabel        := FindObject(oForm, "act_SaveFSLabel"),
+   act_SaveLabelGerman    := FindObject(oForm, "act_SaveLabelGerman"),
+   al_Main                := FindObject(oForm, "al_Main"),
+   bbtn_Export            := FindObject(oForm, "bbtn_Export"),
+   bbtn_Import            := FindObject(oForm, "bbtn_Import"),
+   bbtn_ImportExport      := FindObject(oForm, "bbtn_ImportExport"),
+   BeBarDockControl2      := FindObject(oForm, "BeBarDockControl2"),
+   BeBarDockControl3      := FindObject(oForm, "BeBarDockControl3"),
+   beBarDockControl4      := FindObject(oForm, "beBarDockControl4"),
+   BeSplitter1            := FindObject(oForm, "BeSplitter1"),
+   BeSplitter2            := FindObject(oForm, "BeSplitter2"),
+   bipnl_Fremdsprachen    := FindObject(oForm, "bipnl_Fremdsprachen"),
+   bipnl_GermanLabel      := FindObject(oForm, "bipnl_GermanLabel"),
+   bipnl_hinweis          := FindObject(oForm, "bipnl_hinweis"),
+   bipnl_Top              := FindObject(oForm, "bipnl_Top"),
+   bm_Main                := FindObject(oForm, "bm_Main"),
+   bm_MainBar1            := FindObject(oForm, "bm_MainBar1"),
+   bm_MainBar2            := FindObject(oForm, "bm_MainBar2"),
+   bm_MainBar3            := FindObject(oForm, "bm_MainBar3"),
+   btn_beInfo             := FindObject(oForm, "btn_beInfo"),
+   btn_CancelFSLabel      := FindObject(oForm, "btn_CancelFSLabel"),
+   btn_CancelLabelGerman  := FindObject(oForm, "btn_CancelLabelGerman"),
+   btn_DateUser           := FindObject(oForm, "btn_DateUser"),
+   btn_delete_fs          := FindObject(oForm, "btn_delete_fs"),
+   btn_DeleteLabel        := FindObject(oForm, "btn_DeleteLabel"),
+   btn_DesignMode         := FindObject(oForm, "btn_DesignMode"),
+   btn_NewFs              := FindObject(oForm, "btn_NewFs"),
+   btn_NewLabel           := FindObject(oForm, "btn_NewLabel"),
+   btn_SaveFSLabel        := FindObject(oForm, "btn_SaveFSLabel"),
+   btn_SaveLabelGerman    := FindObject(oForm, "btn_SaveLabelGerman"),
+   ds_DABUBK              := FindObject(oForm, "ds_DABUBK"),
+   ds_DABUBP              := FindObject(oForm, "ds_DABUBP"),
+   edt_bez                := FindObject(oForm, "edt_bez"),
+   edt_bez_fs             := FindObject(oForm, "edt_bez_fs"),
+   edt_InfoText           := FindObject(oForm, "edt_InfoText"),
+   edt_labelid            := FindObject(oForm, "edt_labelid"),
+   edt_MemoEdit           := FindObject(oForm, "edt_MemoEdit"),
+   edt_MemoFsEdit         := FindObject(oForm, "edt_MemoFsEdit"),
+   edt_memoFsRTF          := FindObject(oForm, "edt_memoFsRTF"),
+   edt_MemoRTF            := FindObject(oForm, "edt_MemoRTF"),
+   edt_Search             := FindObject(oForm, "edt_Search"),
+   edt_sprache            := FindObject(oForm, "edt_sprache"),
+   gpnl_LABEL             := FindObject(oForm, "gpnl_LABEL"),
+   gpnl_LABELFW           := FindObject(oForm, "gpnl_LABELFW"),
+   grd_DABUBK             := FindObject(oForm, "grd_DABUBK"),
+   grd_DABUBP             := FindObject(oForm, "grd_DABUBP"),
+   lbl_Bez                := FindObject(oForm, "lbl_Bez"),
+   lbl_Bez_Fs             := FindObject(oForm, "lbl_Bez_Fs"),
+   lbl_FremdtextMemo      := FindObject(oForm, "lbl_FremdtextMemo"),
+   lbl_InfoText           := FindObject(oForm, "lbl_InfoText"),
+   lbl_LabelID            := FindObject(oForm, "lbl_LabelID"),
+   lbl_Langtext           := FindObject(oForm, "lbl_Langtext"),
+   lbl_Sprache            := FindObject(oForm, "lbl_Sprache"),
+   lbl_TextOnly           := FindObject(oForm, "lbl_TextOnly"),
+   pnl_Browser            := FindObject(oForm, "pnl_Browser"),
+   pnl_eigeneSprache      := FindObject(oForm, "pnl_eigeneSprache"),
+   pnl_FremdspracheDetail := FindObject(oForm, "pnl_FremdspracheDetail"),
+   pnl_Fremdsprachen      := FindObject(oForm, "pnl_Fremdsprachen"),
+   pnl_FremdsprachenRight := FindObject(oForm, "pnl_FremdsprachenRight"),
+   pnl_Ground             := FindObject(oForm, "pnl_Ground"),
+   pnl_InfoText           := FindObject(oForm, "pnl_InfoText"),
+   pnl_LabelDeutsch       := FindObject(oForm, "pnl_LabelDeutsch"),
+   pnl_LabelDeutschFelder := FindObject(oForm, "pnl_LabelDeutschFelder"),
+   pnl_langtext           := FindObject(oForm, "pnl_langtext"),
+   pnl_LangtextFs         := FindObject(oForm, "pnl_LangtextFs"),
+   pnl_Left               := FindObject(oForm, "pnl_Left"),
+   pnl_Main               := FindObject(oForm, "pnl_Main"),
+   pnl_Memo               := FindObject(oForm, "pnl_Memo"),
+   pnl_MemoEdit           := FindObject(oForm, "pnl_MemoEdit"),
+   pnl_MemoFsEdit         := FindObject(oForm, "pnl_MemoFsEdit"),
+   pnl_MemoFsRTF          := FindObject(oForm, "pnl_MemoFsRTF"),
+   pnl_MemoRTF            := FindObject(oForm, "pnl_MemoRTF"),
+   pnl_Right              := FindObject(oForm, "pnl_Right"),
+   pnl_titel              := FindObject(oForm, "pnl_titel"),
+   tgl_Plaintext          := FindObject(oForm, "tgl_Plaintext"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   act_SaveLabelGerman.tag   := 32165479,
+   act_CancelLabelGerman.tag := 32165478,
+   act_SaveFSLabel.tag       := 32165479,
+   act_CancelFSLabel.tag     := 32165478,
+   edt_sprache.BeAttributeID := -17,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   SetDefaults(),
+   OpenDataBaseAndLinkToGUI(),
+   ControlMaskObj(),
+   gl_LUU_DesignModus := false,
+   ToggleDesignModus(),
+   ActionsEnabled(),
+   ShowGUI(),
+onerror
+   DestroyObject(oForm),
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+      GetErrorText() + crlf + crlf +
+      DebugArr(GetErrorStack(True)), mtError),
+stopseq,
+
+oForm

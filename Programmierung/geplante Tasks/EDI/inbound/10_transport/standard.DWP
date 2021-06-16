@@ -1,0 +1,91 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   EDI Task-Programm zum Abrufen von eingehenden Nachrichten aller aktiven
+//   Transportkanäle.
+//
+// Parameter:
+//   * m_nSchedulerID:  ID des ausgeführten Schedulers
+//   * m_nTaskID:       ID des ausgeführten Tasks
+//   * m_aCustomParams: Array mit benutzerdefinierten Übergabeparametern
+//
+// Rückgabe:
+//   standard Task-Result (siehe Funktion TSKPL_SetTaskResult)
+//
+//##############################################################################
+//##############################################################################
+|
+   m_nSchedulerId:P1,
+   m_nTaskId:P2,
+   m_aCustomParams:P3,
+
+   m_oProgressCallback, m_oErrorCallback,
+   m_aTaskResult,
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+function Task_OnError(sender:O)
+| aData |
+
+   startseq
+      aData := sender.Data,
+      TSKPL_WriteCustomLog(m_nTaskId, KVU_Get(aData, 'errorInfo.text', '')),
+
+      result := mrOk,
+   onerror
+      result := mrAbort,
+   stopseq,
+end,
+
+function Task_OnProgress(sender:O)
+| aData, cMessage |
+
+   startseq
+      aData    := KVU_Get(sender.Data, 'data', {}),
+      cMessage :=
+         KVU_Get(aData, 'transportChannel.name', '') +
+         ': total received: ' + str(KVU_Get(aData, 'process.processedMessagesCount', 0)) +
+         ', skipped: '        + str(ALen(KVU_Get(aData, 'process.skippedMessagesList', {}))),
+
+      TSKPL_WriteCustomLog(m_nTaskId, cMessage),
+
+      result := mrOk,
+   onerror
+      TSKPL_WriteCustomLog(m_nTaskId, GetErrorText(GetErrorObj())),
+      result := mrAbort,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Task
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oErrorCallback := CallbackInfo('Task_OnError'),
+   startseq
+      m_oProgressCallback := CallbackInfo('Task_OnProgress'),
+      startseq
+         m_aTaskResult := Call('EDI\_tasks\inbound\10_transport\standard', m_oErrorCallback, m_oProgressCallback),
+      always
+         DestroyObject(m_oProgressCallback),
+      stopseq,
+   always
+      DestroyObject(m_oErrorCallback),
+   stopseq,
+
+   TSKPL_SetTaskResult(m_aResult, gl_TSKPL_TaskResult_Success, m_aTaskResult),
+onerror
+   TSKPL_SetTaskResult(m_aResult, gl_TSKPL_TaskResult_Failure, GetErrorText()),
+stopseq,
+
+// Ergebnis explizit zurückgeben
+m_aResult
+

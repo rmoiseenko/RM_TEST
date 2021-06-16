@@ -1,0 +1,37 @@
+SELECT
+
+      PGKANG.STANDORT          AS "Standort",
+      PGKANG.DATUM             AS "Datum",
+      PGKANG.JAHR              AS "Jahr",
+      PGKANG.KW                AS "Kalenderwoche",
+      CAST(Trim(CAST(PGKANG.JAHR AS SQL_CHAR(4))) + '-' + iif(PGKANG.KW < 10, '0', '') + CAST(PGKANG.KW AS SQL_CHAR) AS SQL_CHAR(7))
+                               AS "Jahr+Kalenderwoche", // StrZero() als SQL-Funktion ist erst ab ADS 12 verfügbar
+
+      PGKANG.RESTYP            AS "Ressourcentyp",
+      Trim(DABMDT_RESTYP.BEZ1) AS "Ressourcentyp Bez.",
+      PGKANG.QUALI             AS "Qualifikation",
+      DABVTM.BEZ               AS "Qualifikation Bez.",
+      PGKANG.RES_ID            AS "Ressource",
+      iif(PGKANG.RESTYP = 'R',
+          DAB330.BEZ,
+          DAB262.NAME)         AS "Ressource Bez.",
+
+      PGKANG.KAPA_MIN          AS "Kapazitätsangebot Minuten",
+      Round(CONVERT(PGKANG.KAPA_MIN, SQL_DOUBLE) / 60, 2)
+                               AS "Kapazitätsangebot Stunden"
+
+   FROM "PGKANG.ADT" PGKANG
+
+   LEFT JOIN "DABVTM.ADT" DABVTM        ON (DABVTM.VORG_TYP = PGKANG.QUALI)
+   LEFT JOIN "DAB262.ADT" DAB262        ON (DAB262.PERSNR   = PGKANG.RES_ID AND PGKANG.RESTYP = 'M')
+   LEFT JOIN "DAB330.ADT" DAB330        ON (DAB330.ID       = PGKANG.RES_ID AND PGKANG.RESTYP = 'R')
+   LEFT JOIN "DABMDT.ADT" DABMDT_RESTYP ON (DABMDT_RESTYP.TAB_ID = 101004 AND DABMDT_RESTYP.WERT = PGKANG.RESTYP)
+   
+   WHERE
+          PGKANG.STANDORT = @STANDORT@
+      AND DATUM >= @DATUM_VON@
+      AND DATUM <= @DATUM_BIS@
+
+      @QUALI_AND_RES_FILTER@
+
+  ORDER BY TERM_INDEX    

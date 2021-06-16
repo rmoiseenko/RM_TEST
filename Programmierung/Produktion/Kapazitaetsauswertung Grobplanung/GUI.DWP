@@ -1,0 +1,2148 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung:
+//   Oberfläche zur Anzeige der Auswertungen der Kapazitäts-grobplanung
+//
+//
+//   Hinweis:
+//       Fenster ist ausgelegt als MDI Child, Aufruf per
+//         GFU_ShowMDIChild('PRODUKTION_KAPA_GROB_AUSWERTUNG', 'Produktion\Kapazitaetsauswertung Grobplanung\GUI')
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cPositionSaveID, m_cFormID, m_oDM_GUI,
+   m_cBrowserID_AllData,
+   m_oChartKapaAngebotMem,
+   m_oChartKapaNachfrageMem,
+   m_oAllDataMem,
+
+   m_oPGKBDP, m_cBrowserID_PlanDemand,
+   m_oDab340Query, m_cBrowserID_ActualDemand,
+
+   m_aAngebotSeries,
+   m_aNachfrageSeries,
+
+   m_oMemQualiTree, m_cBrowserID_QualiTree,
+
+   m_aFilterArray,
+   m_aQualiTreeSelectionArray,
+   m_dToday_FilterVal,
+   m_dDatumFrom_FilterVal,
+   m_dDatumTo_FilterVal,
+   m_bUseActualData,
+   m_cResTyp_FilterVal,
+
+   m_aQualiIDArray_FilterVal,
+   m_cDataHintsMessage,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ExportActualDemand, A_ExportAngebot, A_ExportPlanDemand,
+   A_ExportSavedPlanDemand, A_GoTo_Baugruppe, A_GoTo_Dispovorschlag,
+   A_GoTo_Fertigungsauftrag, A_RefreshChartAndData, A_RefreshQualiTree,
+   A_ShowAngebotGUI, A_ShowIndiHelp, A_ShowJobs, A_StandardRessourcen, actions,
+   BeBarButton1, BeBarButton2, BeBarButton3, BeBarButton4, BeBarButton5,
+   BeBarButton6, BeBarButton7, BeBarButton8, BeBarManager, BeBarSubItem1,
+   BeLabel1, BeLabel2, BePanel1, bipnl_TopInfo, btn_ShowIndiHelp,
+   btn_ShowWeeks_10, btn_ShowWeeks_12, btn_ShowWeeks_2, btn_ShowWeeks_20,
+   btn_ShowWeeks_4, btn_ShowWeeks_6, btn_ShowWeeks_8, charttool_AntiAliasing,
+   chk_Logarithmic, chk_ShowActualData, chk_ShowKumValues, chk_ShowResources,
+   DBChartMain, dockControl_Main, ds_ActualDemandValues, ds_grid_data,
+   ds_PlanDemandValues, ds_QualiTree, dtp_Today, edt_KWFrom, edt_KWTo,
+   grid_ActualDemandValues, grid_data, grid_PlanDemandValues, grid_QualiTree,
+   lbl_KwTo, lbl_Today, mnu_GoTo_Baugruppe, mnu_GoTo_Dispovorschlag,
+   mnu_GoTo_Fertigungsauftrag, N1, pc_ChartDetailGrids, pc_main, pnl_Chart,
+   pnl_ChartDetailGrids, pnl_Client, pnl_DataHintsAvail, pnl_Left, pnl_main,
+   pnl_QualiTreeBackPanel, pnl_SyncJobWarning, pnl_TopInfo, pnl_ViewFilter,
+   pnl_WarningsBackground, popupMenu_Nachfrage,
+   series_angebot_F12_Designer_test, Series_area_F12_Designer_Test,
+   series_nachfrage_F12_Designer_test, timer_SyncJobsInfo, toolbar_Main,
+   ts_ActualDemandValues, ts_chart, ts_grid_data, ts_PlanDemandValues
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                             := '@PGKUA',
+m_cPositionSaveID                     := '@PGKUA',
+
+m_cBrowserID_AllData                  := '@PGKUA',
+m_cBrowserID_PlanDemand               := '@PGKUABD',
+m_cBrowserID_ActualDemand             := '@PGKUABA',
+m_cBrowserID_QualiTree                := '@PGKUAQT',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bHasNachfrageDetails, bHasQualiTreeData |
+
+   bHasNachfrageDetails  := not empty(m_oPGKBDP)       and not NoDs(m_oPGKBDP),
+   bHasQualiTreeData     := not empty(m_oMemQualiTree) and not NoDs(m_oMemQualiTree),
+
+   A_GoTo_Dispovorschlag.Enabled    := bHasNachfrageDetails and m_oPGKBDP:AUF_WA = waDab215,
+   A_GoTo_Fertigungsauftrag.Enabled := bHasNachfrageDetails and m_oPGKBDP:AUF_WA = waDab035,
+   A_GoTo_Baugruppe.Enabled         := bHasNachfrageDetails,
+
+   A_ExportAngebot.Enabled          := bHasQualiTreeData,
+   A_ExportPlanDemand.Enabled       := bHasQualiTreeData,
+   A_ExportActualDemand.Enabled     := bHasQualiTreeData,
+
+   dtp_Today.Enabled                := not chk_ShowActualData.Checked,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetNachfrageSeriesColor(oSeries, nSeriesColor, nBarPenColor)
+   oSeries.SeriesColor         := nSeriesColor,
+   oSeries.BarPen.Color        := nBarPenColor,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function InitChartAngebotLineSeries(oSeries, cTitleCaption, nSeriesColor, bDottedLine)
+  oSeries.Title                 := cTitleCaption,
+  oSeries.SeriesColor           := nSeriesColor,
+  oSeries.Pointer.Visible       := false,
+  oSeries.LinePen.Width         := iif(bDottedLine, 1, 2),
+  oSeries.LinePen.Style         := iif(bDottedLine, 1, 0), // 0 = durchgezogene Linie
+
+  if ClassOf(oSeries, 'TAreaSeries') then
+     oSeries.LinePen.Visible      := false,
+     oSeries.AreaLinesPen.Color   := nSeriesColor,
+     oSeries.AreaLinesPen.Visible := true,
+  endif,
+
+  oSeries.Marks.Visible         := false,
+  oSeries.Marks.Frame.Visible   := false,
+  oSeries.Marks.Font.Name       := gl_PGKU_GUI_cFontName,
+  oSeries.Marks.Font.Color      := gl_PGKU_GUI_nGrayFontColor_Intense,
+  oSeries.Marks.Arrow.Visible   := false,
+  oSeries.Marks.ArrowLength     := 10,
+  oSeries.Marks.Transparent     := true,
+
+end,
+
+//******************************************************************************
+// Funktion erzeugt die Memtable für das Chart Kapazitätsangebot
+// @Result: null
+//******************************************************************************
+function CreateChartAngebotMem(oOwner)
+   Result := Createobject('TBeMemTable', 'CHART_MEM_ANGEBOT', oOwner),
+
+   Result.CbAddField('KW',                   ftInteger,  0), // KW
+   Result.CbAddField('JAHR',                 ftInteger,  0), // Jahr
+   Result.CbAddField('KW_INT',               ftInteger,  0), // KW im Format 201506
+   Result.CbAddField('KW_COUNTER',           ftInteger,  0), // KW als durchgehende Nummer für die X-Achse im Chart
+   Result.CbAddField('KW_LABEL',             ftString,   8), // KW Text z.B. "KW.06.15"
+   Result.CbAddField('KAPA_STUNDEN',         ftFloat,    0), // Anzahl Stunden Kapazität Gesamt
+   Result.CbAddField('KAPA_STUNDEN_KUM',     ftFloat,    0), // Anzahl Stunden Kapazität Gesamt kumuliert
+   Result.CbAddField('KAPA_STUNDEN_R',       ftFloat,    0), // Anzahl Stunden Kapazität Ressourcen
+   Result.CbAddField('KAPA_STUNDEN_R_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Ressourcen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_M',       ftFloat,    0), // Anzahl Stunden Kapazität Personen
+   Result.CbAddField('KAPA_STUNDEN_M_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Personen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_LABEL_R', ftString,  20), // Anzahl Stunden Kapazität als Text Ressourcen
+   Result.CbAddField('KAPA_STUNDEN_LABEL_M', ftString,  20), // Anzahl Stunden Kapazität als Text Personen
+
+   Result.Active := true,
+
+   Result.CbAddIndex('KW_INT', 'KW_INT', ixPrimary),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function NachfrageMem_KapStundenFieldName(cResTyp, nStatus)
+   Result :=  'KAPA_STUNDEN_' + Upper(cResTyp) + '_' + Str(nStatus),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function NachfrageMem_KapStundenLabelFieldName(cResTyp, nStatus)
+   Result := NachfrageMem_KapStundenFieldName(cResTyp, nStatus) + '_LABEL',
+end,
+
+
+//******************************************************************************
+// Funktion erzeugt die Memtable für die Chart Kapazitätsnachfrage
+// @Result: null
+//******************************************************************************
+function CreateChartNachfrageMem(oOwner)
+| i, nStatus |
+   Result := Createobject('TBeMemTable', 'CHART_MEM_NACHFRAGE', oOwner),
+
+   Result.CbAddField('KW',                 ftInteger,  0), // KW
+   Result.CbAddField('JAHR',               ftInteger,  0), // Jahr
+   Result.CbAddField('KW_INT',             ftInteger,  0), // KW im Format 201506
+   Result.CbAddField('KW_COUNTER',         ftInteger,  0), // KW als durchgehende Nummer für die X-Achse im Chart
+   Result.CbAddField('KW_LABEL',           ftString,   8), // KW Text z.B. "KW.06.15"
+
+
+
+   // je Auftragsstatus und Ressourcen-Typ eine Kapazitäts-Nachfrage-Summe
+   // => Außerdem die Summe aller Status je RessourcenTyp als ein Feld
+   Result.CbAddField('KAPA_STUNDEN',         ftFloat,    0), // Anzahl Stunden Kapazität
+   Result.CbAddField('KAPA_STUNDEN_KUM',     ftFloat,    0), // Anzahl Stunden Kapazität kumuliert
+   Result.CbAddField('KAPA_STUNDEN_LABEL',   ftString,  20), // Anzahl Stunden Kapazität als Text
+
+   Result.CbAddField('KAPA_STUNDEN_R',       ftFloat,    0), // Anzahl Stunden Kapazität Ressourcen
+   Result.CbAddField('KAPA_STUNDEN_R_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Ressourcen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_R_LABEL', ftString,  20), // Anzahl Stunden Kapazität Ressourcen als Text
+
+   Result.CbAddField('KAPA_STUNDEN_M',       ftFloat,    0), // Anzahl Stunden Kapazität Mitarbeiter
+   Result.CbAddField('KAPA_STUNDEN_M_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Mitarbeiter kumuliert
+   Result.CbAddField('KAPA_STUNDEN_M_LABEL', ftString,  20), // Anzahl Stunden Kapazität Mitarbeiter als Text
+
+   for i := 1 to ALen(gl_PGKU_GUI_NachfrageSeries_Array) do
+      nStatus := gl_PGKU_GUI_NachfrageSeries_Array[i, 1],
+
+      Result.CbAddField(NachfrageMem_KapStundenFieldName(     'R', nStatus), ftFloat,    0), // Anzahl Stunden Kapazität
+      Result.CbAddField(NachfrageMem_KapStundenLabelFieldName('R', nStatus), ftString,  20), // Anzahl Stunden Kapazität als Text
+
+      Result.CbAddField(NachfrageMem_KapStundenFieldName(     'M', nStatus), ftFloat,    0), // Anzahl Stunden Kapazität
+      Result.CbAddField(NachfrageMem_KapStundenLabelFieldName('M', nStatus), ftString,  20), // Anzahl Stunden Kapazität als Text
+   next,
+
+   Result.Active := true,
+
+   Result.CbAddIndex('KW_INT', 'KW_INT', ixPrimary),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateAllDataMem(oOwner)
+   Result := Createobject('TBeMemTable', , oOwner),
+
+   Result.CbAddField('KW',                           ftInteger,  0), // KW
+   Result.CbAddField('JAHR',                         ftInteger,  0), // Jahr
+   Result.CbAddField('KW_INT',                       ftInteger,  0), // KW im Format 201506
+   Result.CbAddField('KW_COUNTER',                   ftInteger,  0), // KW als durchgehende Nummer für die X-Achse im Chart
+   Result.CbAddField('KW_LABEL',                     ftString,   8), // KW Text z.B. "KW.06.15"
+
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT_R',       ftFloat,    0), // Anzahl Stunden Kapazität Angebot Ressourcen
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT_R_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Angebot Ressourcen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT_M',       ftFloat,    0), // Anzahl Stunden Kapazität Angebot Personen
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT_M_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Angebot Personen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_ANGEBOT_KUM',     ftFloat,    0), // Anzahl Stunden Kapazität Angebot kumuliert
+
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE_R',     ftFloat,    0), // Anzahl Stunden Kapazität Nachfrage Personen
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE_R_KUM', ftFloat,    0), // Anzahl Stunden Kapazität Nachfrage Personen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE_M',     ftFloat,    0), // Anzahl Stunden Kapazität Nachfrage Personen
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE_M_KUM', ftFloat,    0), // Anzahl Stunden Kapazität Nachfrage Personen kumuliert
+   Result.CbAddField('KAPA_STUNDEN_NACHFRAGE_KUM',   ftFloat,    0), // Anzahl Stunden Kapazität Nachfrage kumuliert
+
+   Result.Active := true,
+
+   Result.CbAddIndex('KW_INT', 'KW_INT', ixPrimary),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function KWInt(nJahr, nKW)
+   Result := nJahr * 100 + nKW,
+end,
+
+
+//******************************************************************************
+// Funktion berechnet einen durchgehenden Integer-Wert, der die Wochen "sortiert"
+//   über Jahresgrenzen hinweg) und immer identische Abstände hat.
+// Der Wert ist notwendig für die Chart-X-Achsen-Darstellung.
+// @Result: Integer
+//******************************************************************************
+function KWToKWCounter(nJahr, nKW)
+| cKWString, dFridayOfWeek |
+   cKWString     := 'KW.' + StrZero(nKW, 2) + '.' + Right(Str(nJahr), 2),
+   dFridayOfWeek := WToD(cKWString),
+   Result        := PGKU_FirstDayOfWeek(dFridayOfWeek), // der Wert ist ohnehin künstlich, daher ist es das leichteste, den Montag der Woche als Integer-Wert zu nutzen.
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function StundenLabel(nStunden)
+   if nStunden <> 0 then
+      Result := FormatStd(nStunden, 2) + ' h',
+   else
+      Result := '',
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function QualiIdArrayToString(aQualiIDArray)
+| i |
+   Result := '',
+   for i := 1 to ALen(aQualiIDArray) do
+      Result := ConcatTrenner(Result, Str(aQualiIDArray[i]), ', '),
+   next,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FillMemTableWithEmptyRecordsInViewArea(oMemTable, dDatumFrom, dDatumTo)
+| dStartOfFirstWeek, dtEndOfLastWeek, dStartOfCurWeek, dEndOfCurWeek |
+
+   oMemTable.CbEmptyTable(),
+   oMemTable.CbIndexName := 'KW_INT',
+
+   dStartOfFirstWeek := PGKU_FirstDayOfWeek(dDatumFrom),
+   dtEndOfLastWeek   := PGKU_LastDayOfWeek(dDatumTo),
+   dStartOfCurWeek   := dStartOfFirstWeek,
+   dEndOfCurWeek     := PGKU_LastDayOfWeek(dStartOfFirstWeek),
+   while dEndOfCurWeek <= dtEndOfLastWeek do
+      oMemTable.CbAppend(),
+      oMemTable:KW                 := PGKU_GetPlanungsperiodenKW(dStartOfCurWeek),
+      oMemTable:JAHR               := PGKU_GetPlanungsperiodenJahr(dStartOfCurWeek),
+      oMemTable:KW_INT             := KWInt(oMemTable:JAHR, oMemTable:KW),
+      oMemTable:KW_COUNTER         := KWToKWCounter(oMemTable:JAHR, oMemTable:KW),
+      oMemTable:KW_LABEL           := 'KW.' + StrZero(oMemTable:KW, 2) + '.' + Right(Str(oMemTable:JAHR), 2),
+      oMemTable.CbPost(),
+
+      // Auf die nächste Woche wechseln
+      dStartOfCurWeek    := dStartOfCurWeek + 7,
+      dEndOfCurWeek      := dEndOfCurWeek   + 7,
+   end,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadAngebotMem(oMemTable, nStandort, dToday, dDatumFrom, dDatumTo, bUseActualData)
+| cSQL, oQuery, nKAPA_STUNDEN_R_KUM, nKAPA_STUNDEN_M_KUM, nKWInt |
+
+   //***************************************************************************
+   // Die Memtable mit einem Datensatz je sichtbarer Woche füllen
+   // => Sonst gibt es keine Linie am Anfang bzw. Ende, wenn in diesem
+   //    Bereich kein Angebot besteht
+   //***************************************************************************
+   FillMemTableWithEmptyRecordsInViewArea(oMemTable, dDatumFrom, dDatumTo),     // Browse(, oMemtable),
+
+   //***************************************************************************
+   // Angebot aus Datenbank laden
+   //***************************************************************************
+   cSQL := PGKU_SQL_Angebot_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_verdichtet', nStandort, dToday, dDatumFrom, dDatumTo, m_aFilterArray, bUseActualData),
+   // WriteLn(cSQL),
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.ProtocolActive := false,
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+
+      DbGoTop(oQuery),
+
+      nKAPA_STUNDEN_R_KUM := 0,
+      nKAPA_STUNDEN_M_KUM := 0,
+      while not EoF(oQuery) do
+
+         nKWInt := KWInt(oQuery:JAHR, oQuery:KW),
+
+         if oMemTable.CbFindKey({nKWInt}) then
+            oMemTable.CbEdit(),
+         else
+            SetError('week ' + Str(oQuery:JAHR) + ' / ' + Str(oQuery:KW) + ' not found in memtable'),
+         endif,
+
+         oMemTable:KAPA_STUNDEN         := oQuery:KAPA_STUNDEN,
+         oMemTable:KAPA_STUNDEN_R       := oQuery:KAPA_STUNDEN_R,
+         oMemTable:KAPA_STUNDEN_M       := oQuery:KAPA_STUNDEN_M,
+
+         oMemTable:KAPA_STUNDEN_LABEL_R := StundenLabel(oQuery:KAPA_STUNDEN_R),
+         oMemTable:KAPA_STUNDEN_LABEL_M := StundenLabel(oQuery:KAPA_STUNDEN_M),
+
+         oMemTable.CbPost(),
+         DbSkip(1, oQuery),
+      end,
+
+      // Browse(, oMemTable),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   //***************************************************************************
+   // "Angebot kumuliert" ausfüllen
+   //***************************************************************************
+   nKAPA_STUNDEN_R_KUM := 0,
+   nKAPA_STUNDEN_M_KUM := 0,
+   DbGoTop(oMemTable),
+   while not Eof(oMemTable) do
+
+      nKAPA_STUNDEN_R_KUM          += oMemTable:KAPA_STUNDEN_R,
+      nKAPA_STUNDEN_M_KUM          += oMemTable:KAPA_STUNDEN_M,
+
+      oMemTable.CbEdit(),
+      if nKAPA_STUNDEN_R_KUM > 0 then // "kumuliert"-Feld erst schreiben ab der ersten positiven Zahl, dann zeichnet das Chart die "kumuliert"-Linie erst ab diesem Moment.
+         oMemTable:KAPA_STUNDEN_R_KUM := nKAPA_STUNDEN_R_KUM,
+      endif,
+      if nKAPA_STUNDEN_M_KUM > 0 then
+         oMemTable:KAPA_STUNDEN_M_KUM := nKAPA_STUNDEN_M_KUM,
+      endif,
+      oMemTable:KAPA_STUNDEN_KUM   := oMemTable:KAPA_STUNDEN_R_KUM + oMemTable:KAPA_STUNDEN_M_KUM,
+      oMemTable.CbPost(),
+
+      DbSkip(1, oMemTable),
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Bedarf_LoadAndReplaceSQLPlaceholder(cSQLResourceName, nStandort, dDatumFrom, dDatumTo, bUseActualData, aQualiResFilterArray)
+| cQualiAndResSQLFilter |
+   Result := PGKU_LoadSQLScriptByName(cSQLResourceName),
+
+   Result := StrTran(Result, '@STANDORT@',       Str(nStandort)),
+
+   Result := StrTran(Result, '@DATUM_VON@',      DateToSql(dDatumFrom, true)),
+   Result := StrTran(Result, '@DATUM_BIS@',      DateToSql(dDatumTo,   true)),
+
+   Result := StrTran(Result, '@DATUM_ZEIT_VON@', DateTimeToSql(dDatumFrom,   true)),
+   Result := StrTran(Result, '@DATUM_ZEIT_BIS@', DateTimeToSql(dDatumTo + 1, true)),
+
+   // Berechnete Spalte für "Auftrags-Status als Text"
+   Result := StrTran(Result, '@PGKBDK.AUF_STATUS_AS_TEXT@', PGKU_GUI_GetAuftragsStatus_SQLBezeichnung('PGKBDK.AUF_STATUS', "Auftrag Status des Auftrags Bez.", 6)),
+
+   // Berechnete Spalte für "Arbeitsgang-Status als Text"
+   Result := StrTran(Result, '@PGKBDP_ARB_STATUS_AS_TEXT@', PGKU_GUI_ArbeitsgangStatus_SQLBezeichnung('PGKBDP_ARB_STATUS', "Pos. Status des Arbeitsgangs Bez.", 6)),
+   Result := StrTran(Result, '@PGKBDP.ARB_STATUS_AS_TEXT@', PGKU_GUI_ArbeitsgangStatus_SQLBezeichnung('PGKBDP.ARB_STATUS', "Pos. Status des Arbeitsgangs Bez.", 6)),
+
+   // Berechnete Spalte für "Bereitschaft als Text"
+   Result := StrTran(Result, '@PGKBDP_ARB_BEREIT_AS_TEXT@', PGKU_GUI_GetArbeitsgangBereitschaft_SQLBezeichnung('PGKBDP_ARB_BEREIT', "Pos. Bereitschaft Arbeitsgang Bez.", 6)),
+   Result := StrTran(Result, '@PGKBDP.ARB_BEREIT_AS_TEXT@', PGKU_GUI_GetArbeitsgangBereitschaft_SQLBezeichnung('PGKBDP.ARB_BEREIT', "Pos. Bereitschaft Arbeitsgang Bez.", 6)),
+
+   // MM-Tabelle für Feld DAB035:KAP_PRIORI und analoge Felder
+   SetErrorIf(gl_PGKU_Kap_Priori_MMTabellenID = -1, 'MM-Tabellen-ID für KAP_PRIOR ist nicht definiert - <Utils_Basic_InitVars> einrichten!'),
+   Result := StrTran(Result, '@MM_TABELLE_KAP_PRIORI@', Str(gl_PGKU_Kap_Priori_MMTabellenID)),
+
+   if bUseActualData then
+      cQualiAndResSQLFilter := PGKU_SQL_BuildQualiAndResFilter('INNER_RESULT',  'PGKBDP_D270_RESID', 'PGKBDP_QUALI', aQualiResFilterArray),
+   else
+      cQualiAndResSQLFilter := PGKU_SQL_BuildQualiAndResFilter('PGKBDP',        'D270_RESID',        'QUALI',        aQualiResFilterArray),
+   endif,
+
+   if not empty(cQualiAndResSQLFilter) then
+      cQualiAndResSQLFilter := 'AND (' + cQualiAndResSQLFilter + ')',
+   endif,
+   Result := StrTran(Result, '@QUALI_AND_RES_FILTER@', cQualiAndResSQLFilter),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadNachfrageMem(oMemTable, nStandort, dDatumFrom, dDatumTo, bUseActualData)
+| cSQLResourceName, cSQL, oQuery, nStatus, nKWInt, nKAPA_STUNDEN_R_KUM, nKAPA_STUNDEN_M_KUM |
+
+   if bUseActualData then
+      cSQLResourceName := 'Produktion\Kapazitaetsauswertung Grobplanung\SQL\bedarf_verdichtet_nach_istwerten',
+   else
+      cSQLResourceName := 'Produktion\Kapazitaetsauswertung Grobplanung\SQL\bedarf_verdichtet_nach_planwerten',
+   endif,
+
+   cSQL := Bedarf_LoadAndReplaceSQLPlaceholder(cSQLResourceName, nStandort, dDatumFrom, dDatumTo, bUseActualData, m_aFilterArray),           // WriteLn(cSQL),
+
+   //***************************************************************************
+   // Die Memtable mit einem Datensatz je sichtbarer Woche füllen
+   // => sonst gibt es keine ordentlichen Labels auf der X-Achse für Wochen, in denen keine Nachfrage besteht
+   //***************************************************************************
+   FillMemTableWithEmptyRecordsInViewArea(oMemTable, dDatumFrom, dDatumTo),                                                                  // Browse(, oMemtable),
+
+   //***************************************************************************
+   // Nachfrage-Daten ausfüllen
+   //***************************************************************************
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.ProtocolActive := false,
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+
+      DbGoTop(oQuery),
+      while not eof(oQuery) do
+
+         nKWInt := KWInt(oQuery:JAHR, oQuery:KW),
+
+         if oMemTable.CbFindKey({nKWInt}) then
+            oMemTable.CbEdit(),
+         else
+            SetError('week ' + Str(oQuery:JAHR) + ' / ' + Str(oQuery:KW) + ' not found in memtable'),
+         endif,
+
+         // je Auftragsstatus und Ressourcen-Typ eine Kapazitäts-Nachfrage-Summe
+
+         // Summenfelder (Alle Status) schreiben
+         nStatus := oQuery:AUF_STATUS,
+
+         oMemTable:KAPA_STUNDEN       += oQuery:KAPA_STUNDEN,
+         oMemTable:KAPA_STUNDEN_LABEL := StundenLabel(oMemTable:KAPA_STUNDEN),
+         oMemTable:KAPA_STUNDEN_R     += oQuery:KAPA_STUNDEN_R,
+         oMemTable:KAPA_STUNDEN_M     += oQuery:KAPA_STUNDEN_M,
+
+
+         // Einzelfelder (je Status)
+         DbReplace(DbField('KAPA_STUNDEN_R_' + Str(nStatus),            oMemTable),              oQuery:KAPA_STUNDEN_R  ),
+         DbReplace(DbField('KAPA_STUNDEN_R_' + Str(nStatus) + '_LABEL', oMemTable), StundenLabel(oQuery:KAPA_STUNDEN_R) ),
+
+         DbReplace(DbField('KAPA_STUNDEN_M_' + Str(nStatus),            oMemTable),              oQuery:KAPA_STUNDEN_M  ),
+         DbReplace(DbField('KAPA_STUNDEN_M_' + Str(nStatus) + '_LABEL', oMemTable), StundenLabel(oQuery:KAPA_STUNDEN_M) ),
+
+         oMemTable.CbPost(),
+
+         DbSkip(1, oQuery),
+      end,
+
+      // Browse('', oMemTable),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   //***************************************************************************
+   // "Nachfrage kumuliert" ausfüllen
+   //***************************************************************************
+   nKAPA_STUNDEN_R_KUM := 0,
+   nKAPA_STUNDEN_M_KUM := 0,
+   DbGoTop(oMemTable),
+   while not Eof(oMemTable) do
+
+      nKAPA_STUNDEN_R_KUM          += oMemTable:KAPA_STUNDEN_R,
+      nKAPA_STUNDEN_M_KUM          += oMemTable:KAPA_STUNDEN_M,
+
+      oMemTable.CbEdit(),
+      oMemTable:KAPA_STUNDEN_R_KUM := nKAPA_STUNDEN_R_KUM,
+      oMemTable:KAPA_STUNDEN_M_KUM := nKAPA_STUNDEN_M_KUM,
+      oMemTable:KAPA_STUNDEN_KUM   := oMemTable:KAPA_STUNDEN_R_KUM + oMemTable:KAPA_STUNDEN_M_KUM,
+      oMemTable.CbPost(),
+
+      DbSkip(1, oMemTable),
+   end,
+
+end,
+
+//******************************************************************************
+// Funktion befüllt die Memtable zur Anzeige auf der Tabkarte "tabellarische Darstellung"
+//   auf Basis der Einzel-MemTables
+// @Result: null
+//******************************************************************************
+function FillAllDataMem(oAllDataMem, oAngebotMem, oNachfrageMem)
+
+   DbDisableControls(oAllDataMem),
+   startseq
+      oAllDataMem.CbEmptyTable(),
+      oAllDataMem.CbIndexName := 'KW_INT',
+
+      // Angebot übertragen
+      oAngebotMem.CbFirst(),
+      while not oAngebotMem.CbEoF do
+         oAllDataMem.CbAppend(),
+         oAllDataMem:KW                         := oAngebotMem:KW,
+         oAllDataMem:JAHR                       := oAngebotMem:JAHR,
+         oAllDataMem:KW_INT                     := oAngebotMem:KW_INT,
+         oAllDataMem:KW_COUNTER                 := oAngebotMem:KW_COUNTER,
+         oAllDataMem:KW_LABEL                   := oAngebotMem:KW_LABEL,
+         oAllDataMem:KAPA_STUNDEN_ANGEBOT_R     := oAngebotMem:KAPA_STUNDEN_R,
+         oAllDataMem:KAPA_STUNDEN_ANGEBOT_R_KUM := oAngebotMem:KAPA_STUNDEN_R_KUM,
+         oAllDataMem:KAPA_STUNDEN_ANGEBOT_M     := oAngebotMem:KAPA_STUNDEN_M,
+         oAllDataMem:KAPA_STUNDEN_ANGEBOT_M_KUM := oAngebotMem:KAPA_STUNDEN_M_KUM,
+         oAllDataMem:KAPA_STUNDEN_ANGEBOT_KUM   := oAngebotMem:KAPA_STUNDEN_KUM,
+         oAllDataMem.CbPost(),
+
+         oAngebotMem.CbNext(),
+      end,
+
+      // Nachfrage übertragen
+      oNachfrageMem.CbFirst(),
+      while not oNachfrageMem.CbEoF do
+
+         if oAllDataMem.CbFindKey({oNachfrageMem:KW_INT}) then
+            oAllDataMem.CbEdit(),
+         else
+            oAllDataMem.CbAppend(),
+            oAllDataMem:KW                    := oNachfrageMem:KW,
+            oAllDataMem:JAHR                  := oNachfrageMem:JAHR,
+            oAllDataMem:KW_INT                := oNachfrageMem:KW_INT,
+            oAllDataMem:KW_COUNTER            := oNachfrageMem:KW_COUNTER,
+            oAllDataMem:KW_LABEL              := oNachfrageMem:KW_LABEL,
+         endif,
+
+         oAllDataMem:KAPA_STUNDEN_NACHFRAGE_R     := oNachfrageMem:KAPA_STUNDEN_R,
+         oAllDataMem:KAPA_STUNDEN_NACHFRAGE_R_KUM := oNachfrageMem:KAPA_STUNDEN_R_KUM,
+         oAllDataMem:KAPA_STUNDEN_NACHFRAGE_M     := oNachfrageMem:KAPA_STUNDEN_M,
+         oAllDataMem:KAPA_STUNDEN_NACHFRAGE_M_KUM := oNachfrageMem:KAPA_STUNDEN_M_KUM,
+         oAllDataMem:KAPA_STUNDEN_NACHFRAGE_KUM   := oNachfrageMem:KAPA_STUNDEN_KUM,
+
+         oAllDataMem.CbPost(),
+
+         oNachfrageMem.CbNext(),
+      end,
+
+      oAllDataMem.CbFirst(),
+   always
+      DbEnableControls(oAllDataMem),
+   stopseq,
+
+end,
+
+//******************************************************************************
+// Funktion berechnet und setzt den Maximalwert für die Chart-Y-Achse (LeftAxis)
+//
+// Hintergrund:
+//   Sofern kumulierte Werte angezeigt werden, ist die automatische Ermittlung der
+//   Y-Achsen-Höhe nicht mehr immer sinnvoll. Warum? Weil die kumulierte Angebotskurve
+//   zwangsläufig immer steigt, das ist aber nur so lange interessant, wie
+//   diese nicht permanent über der kumulierten Nachfrage liegt. Die Obergrenze für die Anzeige
+//   im Chart ist also sinnvollerweise die Obergrenze der kumulierten Nachfrage
+//   Dennoch soll der Beginn der Angebotskurve(n) sichtbar sein, daher wird dieser
+//   Wert mindestens als Y-Achse genutzt.
+//******************************************************************************
+function CalcChartLeftAxisMaximum(bShowCumulated)
+| nMaximumKumNachfrage, nMinimumKumAngebot_R, nMinimumKumAngebot_M  |
+
+   if bShowCumulated then
+
+      nMaximumKumNachfrage := 0,
+      nMinimumKumAngebot_R := 0,
+      nMinimumKumAngebot_M := 0,
+
+      m_oAllDataMem.CbDisableControls(),
+      startseq
+         DbGoTop(m_oAllDataMem),
+         while not EoF(m_oAllDataMem) do
+            nMaximumKumNachfrage := Max(nMaximumKumNachfrage, m_oAllDataMem:KAPA_STUNDEN_NACHFRAGE_R_KUM),
+            nMaximumKumNachfrage := Max(nMaximumKumNachfrage, m_oAllDataMem:KAPA_STUNDEN_NACHFRAGE_M_KUM),
+
+            if nMinimumKumAngebot_R = 0 then
+               nMinimumKumAngebot_R := m_oAllDataMem:KAPA_STUNDEN_ANGEBOT_R_KUM,
+            endif,
+
+            if nMinimumKumAngebot_M = 0 then
+               nMinimumKumAngebot_M := m_oAllDataMem:KAPA_STUNDEN_ANGEBOT_M_KUM,
+            endif,
+
+            DbSkip(1, m_oAllDataMem),
+         end,
+      always
+         m_oAllDataMem.CbEnableControls(),
+      stopseq,
+
+
+      DBChartMain.LeftAxis.AutomaticMaximum := false,
+      DBChartMain.LeftAxis.Maximum          := Max(nMaximumKumNachfrage, Max(nMinimumKumAngebot_R, nMinimumKumAngebot_M)),
+   else
+      DBChartMain.LeftAxis.AutomaticMaximum := true,
+   endif,                                                                       // WriteLn('CalcChartLeftAxisMaximum(): set "DBChartMain.LeftAxis.AutomaticMaximum" to ' + ToString(DBChartMain.LeftAxis.AutomaticMaximum), 'Maximum Minium values:', nMaximumKumNachfrage, nMinimumKumAngebot_R, nMinimumKumAngebot_M),
+end,
+
+//******************************************************************************
+// Funktion liefert einen SQL-Select-Teilausdruck zur expliziten Selektion
+// aller Felder einer Tabelle
+// Über den Parameter @cIgnoreList können Felder angegeben werden, die
+// ignoriert werden sollen
+// @Result: String
+//******************************************************************************
+function GetAllFieldsForSQLSelect(nWorkarea, cAlias, cIgnoreList)
+| oTableInfo, i, oField, cFieldName |
+   Result := '',
+   cAlias := iif(empty(cAlias), '', cAlias + '.'),
+   oTableInfo := GetTableInfo(nWorkarea),
+   for i := 0 to oTableInfo.CbFieldList.CbCount - 1 do
+      oField := oTableInfo.CbFieldList.CbFieldInfoByIndex(i),
+      if not empty(oField) then
+         cFieldName := oField.FieldName,
+         if cFieldName <> 'FIELD_NOT_FOUND' then
+            if empty(cIgnoreList) or not cFieldName $ cIgnoreList then
+               Result := ConcatTrenner(Result, cAlias + cFieldName, ', '),
+            endif,
+         endif,
+      endif,
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadActualDemandDataQuery(oQuery, nStandort, dDatumFrom, dDatumTo, cOnlyResType)
+| cSQL, cQualiAndResSQLFilter, cDab340Fields |
+
+   cSQL := Bedarf_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\bedarf_einzeln_nach_istwerten', nStandort, dDatumFrom, dDatumTo, true, m_aFilterArray),
+
+   // Liste aller Dab340-Felder, explizit selektiert
+   cDab340Fields := GetAllFieldsForSQLSelect(waDab340, 'DAB340', 'BUTYP,LFDDISPONR,LFDPOSNR,MEMO'), // in der DabFiL gibt es u.U. noch Felder, die es in der Tabelle gar nicht mehr gibt, daher die "IgnoredFields"
+   cSQL := StrTran(cSQL, '@ALL_DAB340_FIELDS@', cDab340Fields),
+
+   cSQL := StrTran(cSQL, '@RESTYP@', cOnlyResType),
+
+   // WriteLn(cSQL),
+
+   // Nachfrage-Daten ausfüllen
+   oQuery.SQL    := cSQL,
+   oQuery.Active := true,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateAngebotSeries(oOwner, oParentChart)
+| rt, cResTyp, nColorBase, oSeries, cTitle |
+   m_aAngebotSeries := {},
+
+
+   for rt := 1 to 2 do
+      cResTyp    := iif(rt = 1, 'R', 'M'),
+      nColorBase := iif(rt = 1, gl_PGKU_GUI_nRessourcenBaseColor, gl_PGKU_GUI_nPersonenBaseColor),
+
+      //************************************************************************
+      // Angebots-Linie
+      //************************************************************************
+      oSeries    := nil,
+      cTitle     := iif(rt = 1, 'Angebot Ressourcen', 'Angebot Personen'),
+
+
+      oSeries                     := CreateObject('TLineSeries', 'series_angebot_' + cResTyp, oOwner, oParentChart),
+      oSeries.ParentChart         := oParentChart,
+
+      oSeries.DataSource          := m_oChartKapaAngebotMem,
+      oSeries.XLabelsSource       := 'KW_LABEL',
+      oSeries.XValues.ValueSource := 'KW_COUNTER',
+      oSeries.YValues.ValueSource := 'KAPA_STUNDEN_' + cResTyp,
+
+      InitChartAngebotLineSeries(oSeries, cTitle, GetBeDesignColor(nColorBase, dcgLevel4), false),
+
+      AAdd(m_aAngebotSeries, {oSeries, cResTyp, false}),
+
+      //************************************************************************
+      // Angebots-Linie kumuliert
+      //************************************************************************
+      oSeries    := nil,
+      cTitle     := iif(rt = 1, 'Angebot Ressourcen kum.', 'Angebot Personen kum.'),
+
+      oSeries                     := CreateObject('TLineSeries', 'series_angebot_kum_' + cResTyp, oOwner, oParentChart),
+      oSeries.ParentChart         := oParentChart,
+
+      oSeries.DataSource          := m_oChartKapaAngebotMem,
+      oSeries.XLabelsSource       := 'KW_LABEL',
+      oSeries.XValues.ValueSource := 'KW_COUNTER',
+      oSeries.YValues.ValueSource := 'KAPA_STUNDEN_' + cResTyp + '_KUM',
+
+      InitChartAngebotLineSeries(oSeries, cTitle, GetBeDesignColor(nColorBase, dcgLevel4), true),
+
+      AAdd(m_aAngebotSeries, {oSeries, cResTyp, true}),
+   next,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateNachfrageSeries(oOwner, oParentChart)
+| i, nStatus, oSeries, cTitleBase, nColorBase, bActive, rt, cResTyp, cTitle |
+
+   m_aNachfrageSeries := {},
+
+   //***************************************************************************
+   // 2x Nachfrage-Linie "kumuliert" für Personen und Ressourcen
+   //***************************************************************************
+   for rt := 1 to 2 do
+      cResTyp := iif(rt = 1, 'R', 'M'),
+      oSeries := nil,
+      cTitle  := 'Bedarf ' + iif(rt = 1, 'Ressourcen', 'Personen') + ' kum.',
+
+      // oSeries                     := CreateObject('TLineSeries', 'series_nachfrage_kum_' + cResTyp, oOwner, oParentChart),
+      oSeries                     := CreateObject('TAreaSeries', 'series_nachfrage_kum_' + cResTyp, oOwner, oParentChart),
+      oSeries.ParentChart         := oParentChart,
+
+      oSeries.DataSource          := m_oChartKapaNachfrageMem,
+      oSeries.XLabelsSource       := 'KW_LABEL',
+      oSeries.XValues.ValueSource := 'KW_COUNTER',
+      oSeries.YValues.ValueSource := 'KAPA_STUNDEN_' + cResTyp + '_KUM',
+
+      oSeries.Stairs              := true,
+      oSeries.Transparency        := 80,
+
+      nColorBase := iif(rt = 1, gl_PGKU_GUI_nRessourcenBaseColor, gl_PGKU_GUI_nPersonenBaseColor),
+      InitChartAngebotLineSeries(oSeries, cTitle, GetBeDesignColor(nColorBase, dcgLevel4), true),
+
+      AAdd(m_aNachfrageSeries, {oSeries, cResTyp, true, 0}),
+   next,
+
+   //***************************************************************************
+   // n gestapelte Balken Series für die verschiedenen Bedarfs-Status
+   //    => umgekehrte Reihenfolge, damit der fortgeschrittenste
+   //       Status unten gestapelt ist
+   //***************************************************************************
+   for i := ALen(gl_PGKU_GUI_NachfrageSeries_Array) downto 1 do
+      nStatus    := gl_PGKU_GUI_NachfrageSeries_Array[i, 1],
+      bActive    := gl_PGKU_GUI_NachfrageSeries_Array[i, 2],
+      cTitleBase := PGKU_GUI_GetAuftragsStatus_DisplayValue(nStatus) + iif(EditorMode(), ' (' + Str(nStatus) + ')', ''),
+      nColorBase := PGKU_GUI_GetAuftragsStatus_Color(nStatus),
+
+      for rt := 1 to 2 do
+         cResTyp := iif(rt = 1, 'R', 'M'),
+         oSeries := nil,
+         cTitle  := cTitleBase + iif(rt = 1, ' Ressourcen', ' Personen'),
+
+         if bActive then
+            // neue Series erstellen
+            oSeries                     := CreateObject('TBarSeries', 'series_nachfrage_' + Str(nStatus) + '_' + cResTyp, oOwner, oParentChart),
+            oSeries.ParentChart         := oParentChart,
+
+            oSeries.DataSource          := m_oChartKapaNachfrageMem,
+            oSeries.XLabelsSource       := 'KW_LABEL', // NachfrageMem_KapStundenLabelFieldName(cResTyp, nStatus),
+            oSeries.XValues.ValueSource := 'KW_COUNTER',
+            oSeries.YValues.ValueSource := NachfrageMem_KapStundenFieldName(cResTyp, nStatus),
+
+            oSeries.MultiBar            := 2, // = mbStacked
+            oSeries.StackGroup          := iif(rt = 1, 0, 1),
+
+            oSeries.Title               := cTitle,
+            SetNachfrageSeriesColor(oSeries, PGKU_GUI_GetAuftragsStatus_BaseColor(nStatus, false), PGKU_GUI_GetAuftragsStatus_BaseColor(nStatus, true)),
+            oSeries.BarWidthPercent     := 20,
+            oSeries.OffsetPercent       := iif(rt = 1, -5, 5),
+            oSeries.Shadow.Visible      := false,
+
+            oSeries.Marks.Visible       := false,
+            oSeries.Marks.Frame.Visible := false,
+            oSeries.Marks.Font.Name     := gl_PGKU_GUI_cFontName,
+            oSeries.Marks.Font.Color    := gl_PGKU_GUI_nGrayFontColor_Intense,
+            oSeries.Marks.Arrow.Visible := false,
+            oSeries.Marks.ArrowLength   := 1,
+            oSeries.Marks.Transparent   := true,
+
+            AssignEvent(oSeries, 'OnMouseEnter', 'series_nachfrageMouseEnter'),
+            AssignEvent(oSeries, 'OnMouseLeave', 'series_nachfrageMouseLeave'),
+            AssignEvent(oSeries, 'OnClick',      'series_nachfrageClick'),
+
+            AAdd(m_aNachfrageSeries, {oSeries, cResTyp, false, nStatus}),
+         endif,
+      next,
+
+   next,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM_GUI := CreateObject('TBeDbGet', '', oForm),
+
+   //***************************************************************************
+   // Memtable für den Qualifikations-Baum links
+   //***************************************************************************
+   m_oMemQualiTree:= PGKU_QualiTree_CreateMemtable(oForm),
+   GU_LinkTableToGUI(m_oMemQualiTree, ds_QualiTree, grid_QualiTree, m_cBrowserID_QualiTree, false),
+
+   //***************************************************************************
+   // Nachfrage-Tabelle für Click im Chart
+   //***************************************************************************
+   m_oPGKBDP           := DbGetTable(m_oDM_GUI, waPGKBDP),
+   m_oPGKBDP.IndexName := 'START_SP',
+
+   DbFilter('ID = -1', m_oPGKBDP),
+   grid_PlanDemandValues.UseOnlyRegisteredDataSets := True,
+   GU_LinkTableToGUI(m_oPGKBDP, ds_PlanDemandValues, grid_PlanDemandValues, m_cBrowserID_PlanDemand, false),
+
+
+   // Dab340 Ist-Daten für Click im Chart
+   m_oDab340Query           := CreateObject('TBeAdsQuery', '', oForm),
+   m_oDab340Query.AliasName := 'JOIN340',
+   m_oDab340Query.ProtocolActive := false,
+   LoadActualDemandDataQuery(m_oDab340Query, -1, Date(), Date(), ''),
+   grid_ActualDemandValues.UseOnlyRegisteredDataSets := True,
+   GU_LinkTableToGUI(m_oDab340Query, ds_ActualDemandValues, grid_ActualDemandValues, m_cBrowserID_ActualDemand, false),
+
+
+   //***************************************************************************
+   // Kapazitätsnachfrage im Chart (MemTable & Chart-Series)
+   //***************************************************************************
+   m_oChartKapaNachfrageMem             := CreateChartNachfrageMem(oForm),
+   DestroyObject(series_nachfrage_F12_Designer_test), // diese Series ist nur im F12-Designer für das Testen des Aussehends, lesen der Eigenschaften etc. vorhanden
+   CreateNachfrageSeries(oForm, DBChartMain),
+
+   //***************************************************************************
+   // Kapazitätsangebot im Chart (MemTable & Chart-Series)
+   //***************************************************************************
+   m_oChartKapaAngebotMem             := CreateChartAngebotMem(oForm),
+   DestroyObject(series_angebot_F12_Designer_test),   // diese Series ist nur im F12-Designer für das Testen des Aussehends, lesen der Eigenschaften etc. vorhanden
+   CreateAngebotSeries(oForm, DBChartMain),
+
+   DestroyObject(Series_area_F12_Designer_Test),
+
+
+   DBChartMain.ExecRefreshChart,
+
+
+   //***************************************************************************
+   // Daten-Darstellung
+   //    alle Werte Angebot und Nachfrage vereint in tabellarischen Ansicht
+   //***************************************************************************
+   m_oAllDataMem                      := CreateAllDataMem(oForm),
+   GU_LinkTableToGui(m_oAllDataMem, ds_grid_data, grid_data, m_cBrowserID_AllData, false),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetNachfrageSeriesArrayPosition(oSeries)
+| i |
+   Result := 0,
+   // Status der Series ermitteln
+   for i := 1 to ALen(m_aNachfrageSeries) do
+      if m_aNachfrageSeries[i, 1] = oSeries then
+         Result := i,
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetNachfrageSeries_Status(oSeries)
+| nPos |
+   Result := 0,
+   nPos   := GetNachfrageSeriesArrayPosition(oSeries),
+   if nPos > 0 then
+      Result := m_aNachfrageSeries[nPos, 4],
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetNachfrageSeries_ResTyp(oSeries)
+| nPos |
+   Result := 0,
+   nPos   := GetNachfrageSeriesArrayPosition(oSeries),
+   if nPos > 0 then
+      Result := m_aNachfrageSeries[nPos, 2],
+   endif,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActivateSeriesByResTyp(cResTyp, bActive, bResTypIsAlone, bShowCumulated)
+| i, oSeries |
+   Result := 0,
+
+   // WriteLn('ActivateSeriesByResTyp', cResTyp, bActive, ALen(m_aAngebotSeries), ALen(m_aNachfrageSeries)),
+
+   // Angebots-Series
+   for i := 1 to ALen(m_aAngebotSeries) do
+      if m_aAngebotSeries[i, 2] = cResTyp then
+         oSeries        := m_aAngebotSeries[i, 1],
+         if m_aAngebotSeries[i, 3] = true then
+            oSeries.Active := bActive and bShowCumulated,
+         else
+            oSeries.Active := bActive,
+         endif,
+      endif,
+   next,
+
+   // Nachfrage-Series
+   for i := 1 to ALen(m_aNachfrageSeries) do
+      if m_aNachfrageSeries[i, 2] = cResTyp then
+         oSeries        := m_aNachfrageSeries[i, 1],
+         if m_aNachfrageSeries[i, 3] = true then
+            oSeries.Active := bActive and bShowCumulated,
+         else
+            oSeries.Active := bActive,
+         endif,
+
+         // Wenn einer der beiden Res-Typen alleine dargestellt wird, dann muss keine "Verschiebung" nach links und rechts erfolgen (Lücke zwischen den Stack-Groups)
+         if m_aNachfrageSeries[i, 3] = false then // nicht für die "kumulierten" Series
+            if bResTypIsAlone then
+               oSeries.OffsetPercent       := 0,
+            else
+               oSeries.OffsetPercent       := iif(cResTyp = 'R', -5, 5),
+            endif,
+         endif,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function HighLightMouseOverSeries(oSeries, bEnter)
+| nStatus, nColor, nBorderColor |
+
+   nStatus := GetNachfrageSeries_Status(oSeries),
+
+   // Farben für Series ermitteln - in Abhängigkeit des Status
+   if bEnter then
+      nColor       := PGKU_GUI_GetAuftragsStatus_HighlightColor(nStatus, false),
+      nBorderColor := PGKU_GUI_GetAuftragsStatus_HighlightColor(nStatus, true),
+   else
+      nColor       := PGKU_GUI_GetAuftragsStatus_BaseColor(nStatus, false),
+      nBorderColor := PGKU_GUI_GetAuftragsStatus_BaseColor(nStatus, true),
+   endif,
+
+   SetNachfrageSeriesColor(oSeries, nColor, nBorderColor),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ClearChartAndData()
+   m_oChartKapaAngebotMem.CbEmptyTable(),
+   m_oChartKapaNachfrageMem.CbEmptyTable(),
+   m_oAllDataMem.CbEmptyTable(),
+
+   DBChartMain.ExecRefreshChart,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ClearBedarfsDetails()
+   DbFilter('ID = -1', m_oPGKBDP),
+   LoadActualDemandDataQuery(m_oDab340Query, -1, Date(), Date(), ''), // leere Selektion
+end,
+
+//******************************************************************************
+// Quali-Tree durchgehen und alles auswerten, was selektiert ist
+//    Array aufbauen der Form {cResTyp, nQualiID, nResID, cBezeichnung}
+// @Result: null
+//******************************************************************************
+function SaveQualiTreeSelectionToArray()
+| oBookMark, cQualiIdString, i, nCurQuali |
+   m_aFilterArray               := {},
+   m_aQualiTreeSelectionArray   := {},
+   m_oMemQualiTree.CbDisableControls(),
+   oBookMark := m_oMemQualiTree.CbBookMark,
+   startseq
+      DbGoTop(m_oMemQualiTree),
+      while not EoF(m_oMemQualiTree) do
+         if m_oMemQualiTree:SELECTED then
+            if m_oMemQualiTree:RES_ID > 0 then
+               AAdd(m_aQualiTreeSelectionArray, {m_oMemQualiTree:RESTYP, 0,   m_oMemQualiTree:RES_ID, AllTrim(m_oMemQualiTree:BEZ)}),
+               AAdd(m_aFilterArray,             {m_oMemQualiTree:RESTYP, 0,   m_oMemQualiTree:RES_ID, AllTrim(m_oMemQualiTree:BEZ)}),
+            else
+               AAdd(m_aQualiTreeSelectionArray, {m_oMemQualiTree:RESTYP, m_oMemQualiTree:QUALI_ID, 0, AllTrim(m_oMemQualiTree:BEZ)}),
+
+               cQualiIdString      := m_oMemQualiTree:QUALI_ID_STRING, // liegt in der Form "900030/900028/900029" vor
+               for i := 1 to TokenCount(cQualiIdString, '/') do
+                  nCurQuali := Token(cQualiIdString, '/', i),
+                  if not empty(nCurQuali) then
+                     nCurQuali := Val(nCurQuali),
+                     if nCurQuali <> 0 then
+                        AAdd(m_aFilterArray, {m_oMemQualiTree:RESTYP, nCurQuali, 0, iif(i = 1, AllTrim(m_oMemQualiTree:BEZ), '')}), // Bezeichnung nur bei der ersten Quali aufnehmen
+                     endif,
+                  endif,
+               next,
+            endif,
+         endif,
+         Skip(1, m_oMemQualiTree),
+      end,
+   always
+      m_oMemQualiTree.CbBookMark := oBookMark,
+      m_oMemQualiTree.CbEnableControls(),
+   stopseq,                                                                     // WriteLn('SaveQualiTreeSelectionToArray(): End', m_aQualiTreeSelectionArray),
+end,
+
+//******************************************************************************
+// letzte Selektion im Qualifikations-Baum wiederherstellen
+// @Result: null
+//******************************************************************************
+function RestoreQualiTreeSelection()
+| i, oBookMark |
+
+
+   oBookMark := m_oMemQualiTree.CbBookMark,
+   startseq
+
+      // 1. Schritt: alles deselektieren
+      DbGoTop(m_oMemQualiTree),
+      while not EoF(m_oMemQualiTree) do
+         if m_oMemQualiTree:SELECTED then
+            MyEdit(m_oMemQualiTree),
+            m_oMemQualiTree:SELECTED := false,
+            MyPost(m_oMemQualiTree),
+         endif,
+         Skip(1, m_oMemQualiTree),
+      end,
+
+      // 2. Schritt: Selektion wiederherstellen aus Array
+      for i := 1 to ALen(m_aQualiTreeSelectionArray) do
+
+         if m_aQualiTreeSelectionArray[i, 2] > 0 then
+            if m_oMemQualiTree.CbLocate('QUALI_ID', {m_aQualiTreeSelectionArray[i, 2]}, 0) then
+               MyEdit(m_oMemQualiTree),
+               m_oMemQualiTree:SELECTED := true,
+               MyPost(m_oMemQualiTree),
+            endif,
+         else
+            if m_aQualiTreeSelectionArray[i, 3] > 0 then
+               if m_oMemQualiTree.CbLocate('RESTYP;RES_ID', {m_aQualiTreeSelectionArray[i, 1], m_aQualiTreeSelectionArray[i, 3]}, 0) then
+                  MyEdit(m_oMemQualiTree),
+                  m_oMemQualiTree:SELECTED := true,
+                  MyPost(m_oMemQualiTree),
+               endif,
+            endif,
+         endif,
+      end,
+
+   always
+      m_oMemQualiTree.CbBookMark := oBookMark,
+      m_oMemQualiTree.CbEnableControls(),
+   stopseq,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ReloadQualiTree(bShowResourcesInTree, cResTypes, dDatumFrom, dDatumTo, bUseActualData)
+| nLastQuali, nLastRes, nTreeIDCounter, bCanReload, aRes, cWarnings |
+   m_oMemQualiTree.CbDisableControls(),
+   startseq
+      // Information zur Wiederherstellung der aktuell ausgewewählten Cursor-Position
+      nLastQuali := m_oMemQualiTree:QUALI_ID,
+      nLastRes   := m_oMemQualiTree:RES_ID,
+
+      // Aktuelle Selektion speichern
+      SaveQualiTreeSelectionToArray(),
+
+      m_oMemQualiTree.CbEmptyTable(),
+
+      nTreeIDCounter      := 0,
+      m_cDataHintsMessage := '',
+      PGKU_QualiTree_BuildTree(m_oDM_GUI,    m_oMemQualiTree, 0,         dDatumFrom, dDatumTo, bShowResourcesInTree, 0, cResTypes, nTreeIDCounter),
+
+      aRes                := PGKU_QualiTree_LoadAngebotUndNachfrage(m_oMemQualiTree, mStandort, dDatumFrom, dDatumTo, bShowResourcesInTree,    cResTypes, bUseActualData, nTreeIDCounter),
+      cWarnings           := AllTrim(aRes[1]),
+      m_cDataHintsMessage := ConcatTrenner(m_cDataHintsMessage, cWarnings, crlf + crlf),
+
+      aRes                := PGKU_QualiTree_CalcHigherLevelQualiValues(m_oMemQualiTree, 0),
+      cWarnings           := AllTrim(aRes[4]),
+      m_cDataHintsMessage := ConcatTrenner(m_cDataHintsMessage, cWarnings, crlf + crlf),
+
+                                        // WriteLn(m_cDataHintsMessage),
+      m_oMemQualiTree.CbIndexName := '', // physikalische Sortierung = Baum-Darstellung
+
+      RestoreQualiTreeSelection(),
+
+      bCanReload := false,
+      if nLastRes > 0 then
+         bCanReload := m_oMemQualiTree.CbLocate('RES_ID', {nLastRes}, 0),
+      else
+         if nLastQuali > 0 then
+            bCanReload := m_oMemQualiTree.CbLocate('QUALI_ID', {nLastQuali}, 0),
+         else
+            DbGoTop(m_oMemQualiTree),
+            bCanReload := m_oMemQualiTree:ROOT_KNOTEN, // "Alle Pers. & Res."-Satz?
+         endif,
+      endif,
+
+      if bCanReload then
+         ActionExecute(A_RefreshChartAndData),
+      else
+         ClearChartAndData(), // Chart-Anzeige resetten
+      endif,
+
+      // Detail-Daten-Anzeige in jedem Fall leeren, da diese u.U. nicht mehr zum Chart passt
+      ClearBedarfsDetails(),
+   always
+      m_oMemQualiTree.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function UpdateSeriesVisibility(cResTypFilter, bShowCumulated)
+   // Je nachdem, ob nur ein ResTyp zu sehen ist, die anderen Series deaktivieren (ausblenden)
+   SetErrorIf(not empty(cResTypFilter) and not cResTypFilter $ '/R/M/', "not empty(cResTypFilter) and not cResTypFilter $ '/R/M/'"),
+   if not empty(cResTypFilter) then
+      case AllTrim(cResTypFilter)
+         of 'R' :: ActivateSeriesByResTyp('R', true,  true, bShowCumulated),
+                   ActivateSeriesByResTyp('M', false, true, bShowCumulated),
+         of 'M' :: ActivateSeriesByResTyp('R', false, true, bShowCumulated),
+                   ActivateSeriesByResTyp('M', true,  true, bShowCumulated),
+      endcase,
+   else
+      ActivateSeriesByResTyp('R', true, false, bShowCumulated),
+      ActivateSeriesByResTyp('M', true, false, bShowCumulated),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion wählt aktuelle Zeile des Quali-Trees aus "markiert" und wählt andere
+// Zeilen ggf. ab, sofern die Selektion nicht zusammen passt.
+// @Result: null
+//******************************************************************************
+function ToggleQualiTreeSelection()
+| bIsQuali, bIsRes, oBookMark |
+   bIsQuali := m_oMemQualiTree:QUALI_ID > 0,
+   bIsRes   := m_oMemQualiTree:RES_ID   > 0,
+   MyEdit(m_oMemQualiTree),
+   m_oMemQualiTree:SELECTED := not m_oMemQualiTree:SELECTED,
+   MyPost(m_oMemQualiTree),
+
+   // Sicherstellen, dass nicht gleichzeitig Qualis und Ressourcen ausgewählt sind
+   // und außerdem nicht gleichzeit "alles" (Rootknoten) und eine detailliertere Auswahl
+   m_oMemQualiTree.CbDisableControls(),
+   oBookMark := m_oMemQualiTree.CbBookMark,
+   startseq
+      DbGoTop(m_oMemQualiTree),
+      while not EoF(m_oMemQualiTree) do
+         if m_oMemQualiTree:SELECTED then
+            if bIsQuali then
+               if m_oMemQualiTree:RES_ID > 0 or m_oMemQualiTree:ROOT_KNOTEN then
+                  MyEdit(m_oMemQualiTree),
+                  m_oMemQualiTree:SELECTED := false,
+                  MyPost(m_oMemQualiTree),
+               endif,
+            else
+               if bIsRes then
+                  if m_oMemQualiTree:QUALI_ID > 0 or m_oMemQualiTree:ROOT_KNOTEN then
+                     MyEdit(m_oMemQualiTree),
+                     m_oMemQualiTree:SELECTED := false,
+                     MyPost(m_oMemQualiTree),
+                  endif,
+               else
+                  if not m_oMemQualiTree:ROOT_KNOTEN then
+                     MyEdit(m_oMemQualiTree),
+                     m_oMemQualiTree:SELECTED := false,
+                     MyPost(m_oMemQualiTree),
+                  endif,
+               endif,
+            endif,
+         endif,
+         Skip(1, m_oMemQualiTree),
+      end,
+
+   always
+      m_oMemQualiTree.CbBookMark := oBookMark,
+      m_oMemQualiTree.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshSyncJobInfoPanel()
+| oSQLQuery, nCount, nErrorCount |
+
+   oSQLQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oSQLQuery.ProtocolActive := false,
+      oSQLQuery.SQL    := 'SELECT SUM(1) AS ANZAHL_GESAMT, SUM(iif(FEHLER, 1, 0)) AS ANZAHL_FEHLER FROM ' + DbSQLTableName(waPGKSYA) + ' WHERE STANDORT = ' + Str(mStandort),
+      oSQLQuery.Active := true,
+
+      nCount      := oSQLQuery:ANZAHL_GESAMT,
+      nErrorCount := oSQLQuery:ANZAHL_FEHLER,
+   always
+      DestroyObject(oSQLQuery),
+   stopseq,
+
+   if nCount = 0 then
+      pnl_SyncJobWarning.Visible := false,
+   else
+      if nErrorCount > 0 then
+         pnl_SyncJobWarning.ColorMode := ipcmError,
+         pnl_SyncJobWarning.Caption   := 'Es ' + iif(nErrorCount = 1, 'liegt ', 'liegen ') + Str(nErrorCount) + ' Terminierungs-Fehler vor (hier Klicken für Details).',
+      else
+         pnl_SyncJobWarning.ColorMode := ipcmWarning,
+         pnl_SyncJobWarning.Caption   := 'Es ' + iif(nCount = 1,      'liegt ', 'liegen ') +  Str(nCount) + ' nicht verarbeitete Terminierungs-Aufgabe' + iif(nCount = 1, '', 'n')  +  ' vor (hier Klicken für Details).',
+      endif,
+      pnl_SyncJobWarning.Visible := true,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshDataHintsAvailPanel()
+   pnl_DataHintsAvail.Visible := not empty(m_cDataHintsMessage),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshWarningPanels()
+   RefreshSyncJobInfoPanel(),
+   RefreshDataHintsAvailPanel(),
+   // Wenn beide Panels nicht sichtbar sind, dann den Bereich ausblenden
+   pnl_WarningsBackground.Visible :=    pnl_SyncJobWarning.Visible
+                                     or pnl_DataHintsAvail.Visible,
+end,
+
+//******************************************************************************
+// Funktion liefert eine exportfreundlichen SQL-Feld-Listen-Teilausdruck
+//    auf Basis der Felder einer Workarea
+// @Result: String
+//******************************************************************************
+function GetExportFriendlySQLFieldList(nWorkarea, cSourceFieldAlias, nIndent, cIgnoreList, cDestFieldPrefix, bKommaAmEnde)
+| i, oField, cFieldName, cLine, oTable |
+   Result            := '',
+   cSourceFieldAlias := iif(empty(cSourceFieldAlias), '', cSourceFieldAlias + '.'),
+
+   oTable := BeOpen(nWorkarea), // Leider bekommt man die Felder über die Funktion GetTableInfo() nicht in der Original-Reihenfolge. Daher hier die Tabelle nutzen.
+   startseq
+      for i := 1 to DbFCount(oTable) do
+         oField := DbField(i, oTable),
+         if not empty(oField) then
+            cFieldName := oField.FieldName,
+            if cFieldName <> 'FIELD_NOT_FOUND' and cFieldName <> 'REC_NO' then
+               if empty(cIgnoreList) or not cFieldName $ cIgnoreList then
+                  cLine  := Replicate(' ', nIndent) + cSourceFieldAlias + PadR(cFieldName, 11) + ' AS "' + cDestFieldPrefix + oField.DisplayLabel  + '"',
+                  Result := ConcatTrenner(Result, cLine, ', ' + crlf),
+               endif,
+            endif,
+         endif,
+      end,
+   always
+      BeClose(oTable),
+   stopseq,
+
+   if bKommaAmEnde and not empty(Result) then
+      Result += ','
+   endif,
+end,
+
+//******************************************************************************
+// Funktion führt den Export der Kapazitätsangebots-Daten aus
+// @Result: null
+//******************************************************************************
+function ExportAngebotToExcel()
+| cSQL |
+   cSQL  := PGKU_SQL_Angebot_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_export', mStandort, m_dDatumFrom_FilterVal, m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, m_aFilterArray, false), // hier werden alle Daten des Angebots selektiert ("Today" = DatumFrom)
+
+   PGKU_GUI_Export_SQLQueryToExcel(cSQL, 'Kapazitätsangebot.xlsx', 'Kapazitätsangebot', true),
+end,
+
+//******************************************************************************
+// Export der Plan-Kapazitätsnachfrage
+// @Result: keine Rückgabe
+//******************************************************************************
+function ExportPlanDemandToExcel()
+| cSQL |
+   cSQL  := Bedarf_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\bedarf_export_nach_planwerten', mStandort, m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, false, m_aFilterArray),
+   // WriteLn(cSQL),
+
+   PGKU_GUI_Export_SQLQueryToExcel(cSQL, 'KapazitätsbedarfPlanwerte.xlsx', 'Kapazitätsbedarf Planwerte', true),
+end,
+
+//******************************************************************************
+// Export der Ist-Kapazitätsnachfrage
+// @Result: keine Rückgabe
+//******************************************************************************
+function ExportActualDemandToExcel()
+| cSQL |
+   cSQL  := Bedarf_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\bedarf_export_nach_istwerten', mStandort, m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, true, m_aFilterArray),
+   // WriteLn(cSQL),
+
+   PGKU_GUI_Export_SQLQueryToExcel(cSQL, 'KapazitätsbedarfIstwerte.xlsx', 'Kapazitätsbedarf Istwerte', true),
+end,
+
+//******************************************************************************
+// Export der Kapazitätsbedarf historisierte Planwerte
+// @Result: keine Rückgabe
+//******************************************************************************
+function ExportSavedPlanDemandToExcel()
+| cSQL |
+   cSQL  := PGKU_LoadSQLScriptByName('Produktion\Kapazitaetsauswertung Grobplanung\Historisierung Planwerte\sql_export'),    
+   cSQL  := StrTran( cSQL, '@PGKPHP_AUF_STATUS_AS_TEXT@',
+                     PGKU_GUI_GetAuftragsStatus_SQLBezeichnung('PGKPHP.AUF_STATUS', "Plan Status des Auftrags Bez.", 6)
+                     ),
+   //WriteLn(cSQL),
+   PGKU_GUI_Export_SQLQueryToExcel(cSQL, 'KapazitätsbedarfHistorisiertePlanwerte.xlsx', 'Kapazitätsbedarf Historisierte Planwerte', true),
+end,
+
+//******************************************************************************
+// Funktion öffnet das Fenster "Produktion - Dispoplanung (Dab215) und positioniert
+// die übergebene Dab215:ID (nicht AUTOINC!)
+// @Result: keine Rückgabe
+//******************************************************************************
+function ShowDispoPlanungProduktion(nDab215ID)
+| oProdDispoPlanForm, oMainTable, oDataSource |
+
+   oProdDispoPlanForm := ShowBeWindow(bwProdDispoPlan, ''),
+   if not Empty(oProdDispoPlanForm) then
+      oDataSource := FindObject(oProdDispoPlanForm, 'ds_Browser'),
+      if not empty(oDataSource) then
+         oMainTable := oDataSource.DataSet,
+         if not empty(oMainTable) and oMainTable.Workarea = waDab215 then       // prs('', {ClassName(oMainTable), oMainTable.Workarea, oMainTable.AliasName, oMainTable.IndexName, oMainTable:ID}),
+            if not DbLocate('ID', {nDab215ID}, 0, oMainTable) then
+               MessageDlg('Der Dispositionsvorschlag konnte auf Grund von Filter-Einstellungen nicht positioniert werden.'),
+            endif,
+         endif,
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: OnDestroy
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+//******************************************************************************
+// Event:
+//******************************************************************************
+function timer_SyncJobsInfoTimer( Sender )
+   startseq
+      timer_SyncJobsInfo.Enabled := false,
+      RefreshWarningPanels(),
+      timer_SyncJobsInfo.Enabled := true,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktualisieren der Terminierungsaufgaben-Informationsleiste', GetErrorObj()), 
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Klick auf Infopanel für Sync-Aufgaben-Hinweise
+//******************************************************************************
+function pnl_SyncJobWarningClick( Sender )
+  ActionExecute(A_ShowJobs),
+end,
+
+//******************************************************************************
+// Event: Klick auf Infopanel für Daten-Hinweise
+//******************************************************************************
+function pnl_DataHintsAvailClick( Sender )
+  if not empty(m_cDataHintsMessage) then
+     MessageDlg('Folgende Warnungen / Hinweise sind beim Ermitteln der Daten aufgetreten: ' + crlf + crlf + m_cDataHintsMessage, mtWarning),
+  endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_PlanDemandValuesScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Klick auf einen der Buttons zur Schnell-Auswahl der Anzahl Wochen
+//******************************************************************************
+function btn_ShowWeeks_Click( Sender )
+| nWeeks, dFirstWeekStart, dLastWeekStart |
+
+   case Sender
+      of  btn_ShowWeeks_2  :: nWeeks := 2,
+      of  btn_ShowWeeks_4  :: nWeeks := 4,
+      of  btn_ShowWeeks_6  :: nWeeks := 6,
+      of  btn_ShowWeeks_8  :: nWeeks := 8,
+      of  btn_ShowWeeks_10 :: nWeeks := 10,
+      of  btn_ShowWeeks_12 :: nWeeks := 12,
+      of  btn_ShowWeeks_20 :: nWeeks := 20,
+      otherwise               nWeeks := 0,
+   endcase,
+
+   if nWeeks > 0 then
+      dFirstWeekStart := WToD('KW.' + AllTrim(edt_KWFrom.Text)),
+      SetErrorIf(empty(dFirstWeekStart), 'empty(dFirstWeekStart)'),
+      dFirstWeekStart := PGKU_FirstDayOfWeek(dFirstWeekStart),
+
+      dLastWeekStart  := dFirstWeekStart + ((nWeeks - 1) * 7),
+
+      edt_KWTo.Text   := KW(PGKU_FirstDayOfWeek(dLastWeekStart)),
+
+      ActionExecute(A_RefreshQualiTree),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Klick auf "Ist-Daten anzeigen" (im Quali-Baum)
+//******************************************************************************
+function chk_ShowActualDataClick( Sender )
+   ActionExecute(A_RefreshQualiTree),
+end,
+
+//******************************************************************************
+// Event: Klick auf "Ressourcen anzeigen" (im Quali-Baum)
+//******************************************************************************
+function chk_ShowResourcesClick( Sender )
+   ActionExecute(A_RefreshQualiTree),
+end,
+
+//******************************************************************************
+// Event: Klick auf "Kumulierte Werte anzeigen"
+//******************************************************************************
+function chk_ShowKumValuesClick( Sender )
+   UpdateSeriesVisibility(m_cResTyp_FilterVal, chk_ShowKumValues.Checked), // Sichtbarkeit der Series steuern
+   CalcChartLeftAxisMaximum(chk_ShowKumValues.Checked),
+end,
+
+//******************************************************************************
+// Event: Klick auf "Logarithmisch"
+//******************************************************************************
+function chk_LogarithmicClick( Sender )
+  // bei sehr großen Y-Achsen-Ausreißern empfielt sich ggf. die Logarithmische Darstellung
+  DBChartMain.LeftAxis.Logarithmic         := chk_Logarithmic.Checked,
+  DBChartMain.LeftAxis.LogarithmicBase     := 2,
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function grid_QualiTreeDblClick( Sender )
+   ToggleQualiTreeSelection(),
+   ActionExecute(A_RefreshChartAndData),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function series_nachfrageMouseEnter( Sender )
+   HighLightMouseOverSeries(Sender, true),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function series_nachfrageMouseLeave( Sender )
+   HighLightMouseOverSeries(Sender, false),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function series_nachfrageClick( Sender, nValueIndex, nButton, nShiftstate, nX, nY )
+| cPeriodFilter, cFilter, cClickedSeriesResTyp, cQualiAndResSQLFilter, dStartOfWeek, dEndOfWeek, cKwString, nOldCursor |
+
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq
+      WriteLn(Sender, nValueIndex, nButton, nShiftstate, nX, nY),
+      cClickedSeriesResTyp := GetNachfrageSeries_ResTyp(Sender),
+
+      // Browse(, m_oChartKapaNachfrageMem),
+
+      if m_oChartKapaNachfrageMem.CbGoTo(nValueIndex) then   // nValueIndex ist der x.te-Wert in der Quell-Tabelle (0-Basiert)
+         // WriteLN(m_oChartKapaNachfrageMem:KW),
+         // Browse(, m_oChartKapaNachfrageMem),
+
+         if m_bUseActualData then
+            cKwString    := 'KW.' + StrZero(m_oChartKapaNachfrageMem:KW, 2) + '.' + Right(Str(m_oChartKapaNachfrageMem:JAHR), 2),
+            dStartOfWeek := PGKU_FirstDayOfWeek( WToD(cKwString) ),
+            dEndOfWeek   := PGKU_LastDayOfWeek( dStartOfWeek ),
+            // Writeln(cKwString, dStartOfWeek, dEndOfWeek),
+
+            LoadActualDemandDataQuery(m_oDab340Query, mStandort, dStartOfWeek, dEndOfWeek, cClickedSeriesResTyp),
+            DbFilter('ID = -1', m_oPGKBDP), // leere Selektion
+         else
+            // Basis-Filter + angeklickter Ressourcen-Typ
+            cFilter               := '',
+            cFilter               := ConcatTrenner(cFilter, 'ARTTYP = "A" AND NOT KAP_SPERRE AND RESTYP = "' + cClickedSeriesResTyp + '"', ' AND '),
+
+            // Filterung auf Qualifikationen oder Ressourcen
+            cQualiAndResSQLFilter := PGKU_SQL_BuildQualiAndResFilter('', 'D270_RESID', 'QUALI', m_aFilterArray),
+            if not empty(cQualiAndResSQLFilter) then
+               cQualiAndResSQLFilter := '(' + cQualiAndResSQLFilter + ')',
+            endif,
+            cFilter       := ConcatTrenner(cFilter, cQualiAndResSQLFilter, ' AND '),
+
+            // Filterung auf angeklickte Periode
+            cPeriodFilter := 'PP_JAHR = ' + Str(m_oChartKapaNachfrageMem:JAHR)
+                             + ' AND ' +
+                             'PP_KW   = ' + Str(m_oChartKapaNachfrageMem:KW),
+            cFilter       := ConcatTrenner(cFilter, cPeriodFilter, ' AND '),
+
+            WriteLn('Filterung der Detail-Ansicht auf Bedarfs-Positionen', cFilter),
+
+            DbFilter(cFilter, m_oPGKBDP),
+            LoadActualDemandDataQuery(m_oDab340Query, -1, Date(), Date(), ''), // leere Selektion
+         endif,
+      else
+         ClearBedarfsDetails(),
+      endif,
+   always
+      SetCursor(nOldCursor),
+   stopseq,      
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: "Kapazitätsangebot exportieren"
+//******************************************************************************
+function A_ExportAngebotExecute( Sender )
+   startseq
+      if Jn('<Angebotsdaten> entsprechend der aktuell gesetzten Filterbedingungen nach Excel exportieren?', true) then
+         ExportAngebotToExcel(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "Kapazitätsbedarf Planwerte exportieren"
+//******************************************************************************
+function A_ExportPlanDemandExecute( Sender )
+   startseq
+      if Jn('<Kapazitätsbedarf Planwerte> entsprechend der aktuell gesetzten Filterbedingungen nach Excel exportieren?', true) then
+         ExportPlanDemandToExcel(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "Kapazitätsbedarf Istwerte exportieren"
+//******************************************************************************
+function A_ExportActualDemandExecute( Sender )
+   startseq
+      if Jn('<Kapazitätsbedarf Istwerte> entsprechend der aktuell gesetzten Filterbedingungen nach Excel exportieren?', true) then
+         ExportActualDemandToExcel(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "Kapazitätsbedarf historisierte Planwerte exportieren"
+//******************************************************************************
+function A_ExportSavedPlanDemandExecute( Sender )
+   startseq
+      if Jn('<historisierte Planwerte> nach Excel exportieren?', true) then
+         ExportSavedPlanDemandToExcel(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Export.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "gehe zu: Baugruppe"
+//******************************************************************************
+function A_GoTo_BaugruppeExecute( Sender )
+| cBaugruppenArtnr |
+   startseq,
+      cBaugruppenArtnr := LookUp(waPGKBDK, 'AUF_WA_ID', {{m_oPGKBDP:AUF_WA, m_oPGKBDP:AUF_ID}}, 'ARTNR_BG', ''),
+      if not empty(cBaugruppenArtnr) then
+         ShowBeWindow(bwArticle, cBaugruppenArtnr),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zur Baugruppe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "gehe zu: Dispositionsvorschlag"
+//******************************************************************************
+function A_GoTo_DispovorschlagExecute( Sender )
+| nDispoPlanID |
+   startseq,
+      if m_oPGKBDP:AUF_WA = waDab215 then
+         nDispoPlanID := m_oPGKBDP:AUF_ID,
+         if not empty(nDispoPlanID) then
+            ShowDispoPlanungProduktion(nDispoPlanID),
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zum Dispositionsvorschlag.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "gehe zu: Fertigungsauftrag"
+//******************************************************************************
+function A_GoTo_FertigungsauftragExecute( Sender )
+| cBestPosNr, oProdOrdersForm, oClearFilterAction |
+   startseq
+      if m_oPGKBDP:AUF_WA = waDab035 then
+         cBestPosNr := LookUp(waPGKBDK, 'AUF_WA_ID', {{m_oPGKBDP:AUF_WA, m_oPGKBDP:AUF_ID}}, 'BESTPOSNR', ''),
+         if not empty(cBestPosNr) then
+            // Das Fenster wird erst angezeigt, dann wird der ggf. vorhandene Anzeige-Filter
+            // geleert, dann wird versucht, den FA zu positionieren.
+            // -> Macht man das nicht so, kommt erstens ggf. die Meldung "Auftrag befindet
+            //    sich nicht in aktueller Auswahl!" und zweitens kommt anschließend
+            //    eine Fehlermeldung.
+            oProdOrdersForm := ShowBeWindow(bwProduction, ),
+            if not empty(oProdOrdersForm) then
+               oClearFilterAction := FindObject(oProdOrdersForm, 'A_ClearFilter'),
+               if not empty(oClearFilterAction) then
+                  ActionExecute(oClearFilterAction),
+                  ShowBeWindow(bwProduction, cBestPosNr),
+               endif,
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zum Fertigungsauftrag.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Qualifikations-Baum neu aufbauen
+//******************************************************************************
+function A_RefreshQualiTreeExecute( Sender )
+| bShowResourcesInTree, cResTypes, nOldCursor |
+   startseq
+      nOldCursor := SetCursor(crHourglass),
+      startseq
+         // Zeitlicher Anzeigebereich
+         m_dDatumFrom_FilterVal := WToD('KW.' + AllTrim(edt_KWFrom.Text)),
+         SetErrorIf(empty(m_dDatumFrom_FilterVal), 'empty(dDatumFrom)'),
+         m_dDatumFrom_FilterVal := PGKU_FirstDayOfWeek(m_dDatumFrom_FilterVal),
+
+         m_dDatumTo_FilterVal   := WToD('KW.' + AllTrim(edt_KWTo.Text)),
+         SetErrorIf(empty(m_dDatumTo_FilterVal), 'empty(dDatumTo)'),
+         m_dDatumTo_FilterVal   := PGKU_LastDayOfWeek(m_dDatumTo_FilterVal),
+
+         SetErrorIf(m_dDatumFrom_FilterVal > m_dDatumTo_FilterVal, 'dDatumFrom > dDatumTo'),
+
+         m_dToday_FilterVal := dtp_Today.Date,
+         if m_dToday_FilterVal < m_dDatumFrom_FilterVal then // "heute" darf nicht außerhalb des anzuzeigenden Bereichs liegen, sonst werden Angebots-Daten geladen, die nicht in den Anzeige-Bereich passen
+            dtp_Today.Date     := m_dDatumFrom_FilterVal,
+            m_dToday_FilterVal := dtp_Today.Date,
+         else
+            if m_dToday_FilterVal > m_dDatumTo_FilterVal then
+               dtp_Today.Date     := m_dDatumTo_FilterVal,
+               m_dToday_FilterVal := dtp_Today.Date,
+            endif,
+         endif,
+         SetErrorIf(empty(m_dToday_FilterVal), 'empty(m_dToday_FilterVal)'),
+
+         m_bUseActualData                 := chk_ShowActualData.Checked,
+         ts_PlanDemandValues.TabVisible   := not m_bUseActualData,
+         ts_ActualDemandValues.TabVisible := m_bUseActualData,
+
+         bShowResourcesInTree := chk_ShowResources.Checked,
+         cResTypes            := 'RM',
+         ReloadQualiTree(bShowResourcesInTree, cResTypes, m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, m_bUseActualData),
+
+         // Warnungs-Panels aktualisieren
+         RefreshWarningPanels(),
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Laden des Planungsbereichs.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ShowJobsExecute( Sender )
+   startseq
+      GFU_ShowModal(nil, 'Produktion\Kapazitaetsauswertung Grobplanung\SyncJobs\AdminGUI'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Reaktivieren der Aufgabe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Oberfläche zur Pflege der Standardressourcen aufrufen
+//******************************************************************************
+function A_StandardRessourcenExecute( Sender )
+   startseq
+      Call('Produktion\Kapazitaetsauswertung Grobplanung\StandardRessourceGUI'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anzeigen der Standard-Ressourcen-Pflege-Oberfläche.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Oberfläche zur Administration des Kapazitätsangebots aufrufen
+//******************************************************************************
+function A_ShowAngebotGUIExecute( Sender )
+   startseq
+      Call('Produktion\Kapazitaetsauswertung Grobplanung\Angebot\GUI'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anzeigen der Angebots-Oberfläche.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Anzeige aktualisieren
+//******************************************************************************
+function A_RefreshChartAndDataExecute( Sender )
+| i, cChartTitle, bResourcesVisible, bPersonsVisible, nOldCursor |
+
+   startseq
+      nOldCursor := SetCursor(crHourGlass),
+      startseq
+
+         SaveQualiTreeSelectionToArray(),
+
+         // Überschrift und Ressourcen-Typ-Filter ermitteln
+         cChartTitle         := '',
+         bResourcesVisible   := false,
+         bPersonsVisible     := false,
+         if ALen(m_aFilterArray) = 0 then
+            cChartTitle      := 'Alle Personen & Ressourcen',
+         else
+            for i := 1 to ALen(m_aFilterArray) do
+               cChartTitle := ConcatTrenner(cChartTitle, m_aFilterArray[i, 4], ', '),
+               case m_aFilterArray[i, 1]
+                  of 'R' :: bResourcesVisible := true,
+                  of 'M' :: bPersonsVisible   := true,
+               endcase,
+            end,
+         endif,
+
+         // m_cResTyp_FilterVal steht auf 'R' bzw. 'M', wenn nur(!) Ressourcen oder Personsn zu sehen sind. Wenn es sich um eine Mischung handelt, ist der Filter-Text leer
+         m_cResTyp_FilterVal := '',
+         if bResourcesVisible and not bPersonsVisible then
+            m_cResTyp_FilterVal := 'R',
+         else
+            if bPersonsVisible and not bResourcesVisible then
+               m_cResTyp_FilterVal := 'M',
+            endif,
+         endif,
+
+         // WriteLn(m_cResTyp_FilterVal, DebugArr(m_aFilterArray)),
+
+         LoadAngebotMem(   m_oChartKapaAngebotMem,   mStandort, m_dToday_FilterVal, m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, m_bUseActualData),
+         LoadNachfrageMem( m_oChartKapaNachfrageMem, mStandort,                     m_dDatumFrom_FilterVal, m_dDatumTo_FilterVal, m_bUseActualData),
+
+         UpdateSeriesVisibility(m_cResTyp_FilterVal, chk_ShowKumValues.Checked), // Sichtbarkeit der Series steuern
+
+         FillAllDataMem(m_oAllDataMem, m_oChartKapaAngebotMem, m_oChartKapaNachfrageMem),
+
+         CalcChartLeftAxisMaximum(chk_ShowKumValues.Checked),
+
+         DBChartMain.Title.Text := cChartTitle,
+         DBChartMain.ExecRefreshChart,
+
+         ClearBedarfsDetails(),
+
+         // Warnungs-Panels aktualisieren
+         RefreshWarningPanels(),
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktualisieren der Daten.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_PGKU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function InitChart()
+
+  pnl_Chart.Color                          := gl_PGKU_GUI_nBackgroundColor,
+  DBChartMain.Color                        := gl_PGKU_GUI_nBackgroundColor,
+
+  DBChartMain.BevelOuter                   := bvNone,
+
+  // X-Achse
+  DBChartMain.BottomAxis.Axis.Color        := gl_PGKU_GUI_nGrayLineColor,
+  DBChartMain.BottomAxis.Axis.Width        := 1,
+  DBChartMain.BottomAxis.LabelsFont.Name   := gl_PGKU_GUI_cFontName,
+  DBChartMain.BottomAxis.LabelsFont.Color  := gl_PGKU_GUI_nGrayFontColor,
+  DBChartMain.BottomAxis.MinimumOffset     := 50,
+  DBChartMain.BottomAxis.MaximumOffset     := 50,
+  DBChartMain.BottomAxis.Grid.Visible      := false, // keine horizontalen Linien im Hintergrund
+  DBChartMain.BottomAxis.Ticks.Visible     := false,
+  DBChartMain.BottomAxis.MinorTicks.Visible:= false,
+
+  // Y-Achse
+  DBChartMain.LeftAxis.Axis.Color          := gl_PGKU_GUI_nGrayLineColor,
+  DBChartMain.LeftAxis.Axis.Width          := 1,
+  DBChartMain.LeftAxis.Axis.Visible        := false,
+  DBChartMain.LeftAxis.AxisValuesFormat    := '#,##0.###  ',
+  DBChartMain.LeftAxis.LabelsFont.Name     := gl_PGKU_GUI_cFontName,
+  DBChartMain.LeftAxis.LabelsFont.Color    := gl_PGKU_GUI_nGrayFontColor,
+  DBChartMain.LeftAxis.AutomaticMinimum    := false,
+  DBChartMain.LeftAxis.MaximumOffset       := 50,
+  DBChartMain.LeftAxis.MinorTicks.Visible  := false,
+  DBChartMain.LeftAxis.Ticks.Visible       := false,
+  DBChartMain.LeftAxis.Grid.Color          := gl_PGKU_GUI_nGrayLineColor,
+  DBChartMain.LeftAxis.Grid.Style          := 0, // durchgezogene Linie
+  DBChartMain.LeftAxis.Title.Font.Name     := gl_PGKU_GUI_cFontName,
+  DBChartMain.LeftAxis.Title.Font.Color    := gl_PGKU_GUI_nGrayFontColor,
+  DBChartMain.LeftAxis.Title.Caption       := 'Stunden',
+
+  DBChartMain.BottomWall.Visible           := false,
+  DBChartMain.View3D                       := false,
+  DBChartMain.View3DWalls                  := false,
+  DBChartMain.Chart3DPercent               := 5,
+  DBChartMain.DepthAxis.LabelsFont.Name    := gl_PGKU_GUI_cFontName,
+  DBChartMain.DepthTopAxis.LabelsFont.Name := gl_PGKU_GUI_cFontName,
+  DBChartMain.Foot.Font.Name               := gl_PGKU_GUI_cFontName,
+  DBChartMain.Frame.Color                  := gl_PGKU_GUI_nGrayLineColor,
+
+  DBChartMain.LeftWall.Color               := clInfoBk,
+  DBChartMain.LeftWall.Pen.Color           := gl_PGKU_GUI_nGrayLineColor,
+
+  DBChartMain.Legend.Color                 := gl_PGKU_GUI_nBackgroundColor,
+  DBChartMain.Legend.Frame.Color           := gl_PGKU_GUI_nGrayLineColor,
+  DBChartMain.Legend.Frame.Visible         := false,
+  DBChartMain.Legend.Font.Name             := gl_PGKU_GUI_cFontName,
+  DBChartMain.Legend.Font.Color            := gl_PGKU_GUI_nGrayFontColor,
+  DBChartMain.Legend.Shadow.Visible        := false,
+  DBChartMain.Legend.Alignment             := 1, // 'laRight'
+  DBChartMain.Legend.ResizeChart           := true,
+  DBChartMain.Legend.Visible               := true,
+  DBChartMain.Legend.Symbol.Shadow.Visible := false,
+
+  DBChartMain.RightAxis.LabelsFont.Name    := gl_PGKU_GUI_cFontName,
+  DBChartMain.SubFoot.Font.Name            := gl_PGKU_GUI_cFontName,
+  DBChartMain.SubTitle.Font.Name           := gl_PGKU_GUI_cFontName,
+  DBChartMain.TopAxis.LabelsFont.Name      := gl_PGKU_GUI_cFontName,
+
+  // Titel
+  DBChartMain.Title.Font.Name              := gl_PGKU_GUI_cFontName,
+  DBChartMain.Title.Text                   := '',
+  DBChartMain.Title.Font.Size              := 12,
+  DBChartMain.Title.Font.Style             := fsItalic,
+  DBChartMain.Title.Font.Color             := gl_PGKU_GUI_nGrayFontColor,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID  := m_cPositionSaveID,
+   oForm.Name            := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt        := 'Kapazitätsauswertung Grobplanung',
+   oForm.ImageIndex      := 219,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ExportActualDemand               := FindObject(oForm, "A_ExportActualDemand"),
+   A_ExportAngebot                    := FindObject(oForm, "A_ExportAngebot"),
+   A_ExportPlanDemand                 := FindObject(oForm, "A_ExportPlanDemand"),
+   A_ExportSavedPlanDemand            := FindObject(oForm, "A_ExportSavedPlanDemand"),
+   A_GoTo_Baugruppe                   := FindObject(oForm, "A_GoTo_Baugruppe"),
+   A_GoTo_Dispovorschlag              := FindObject(oForm, "A_GoTo_Dispovorschlag"),
+   A_GoTo_Fertigungsauftrag           := FindObject(oForm, "A_GoTo_Fertigungsauftrag"),
+   A_RefreshChartAndData              := FindObject(oForm, "A_RefreshChartAndData"),
+   A_RefreshQualiTree                 := FindObject(oForm, "A_RefreshQualiTree"),
+   A_ShowAngebotGUI                   := FindObject(oForm, "A_ShowAngebotGUI"),
+   A_ShowIndiHelp                     := FindObject(oForm, "A_ShowIndiHelp"),
+   A_ShowJobs                         := FindObject(oForm, "A_ShowJobs"),
+   A_StandardRessourcen               := FindObject(oForm, "A_StandardRessourcen"),
+   actions                            := FindObject(oForm, "actions"),
+   BeBarButton1                       := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                       := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                       := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4                       := FindObject(oForm, "BeBarButton4"),
+   BeBarButton5                       := FindObject(oForm, "BeBarButton5"),
+   BeBarButton6                       := FindObject(oForm, "BeBarButton6"),
+   BeBarButton7                       := FindObject(oForm, "BeBarButton7"),
+   BeBarButton8                       := FindObject(oForm, "BeBarButton8"),
+   BeBarManager                       := FindObject(oForm, "BeBarManager"),
+   BeBarSubItem1                      := FindObject(oForm, "BeBarSubItem1"),
+   BeLabel1                           := FindObject(oForm, "BeLabel1"),
+   BeLabel2                           := FindObject(oForm, "BeLabel2"),
+   BePanel1                           := FindObject(oForm, "BePanel1"),
+   bipnl_TopInfo                      := FindObject(oForm, "bipnl_TopInfo"),
+   btn_ShowIndiHelp                   := FindObject(oForm, "btn_ShowIndiHelp"),
+   btn_ShowWeeks_10                   := FindObject(oForm, "btn_ShowWeeks_10"),
+   btn_ShowWeeks_12                   := FindObject(oForm, "btn_ShowWeeks_12"),
+   btn_ShowWeeks_2                    := FindObject(oForm, "btn_ShowWeeks_2"),
+   btn_ShowWeeks_20                   := FindObject(oForm, "btn_ShowWeeks_20"),
+   btn_ShowWeeks_4                    := FindObject(oForm, "btn_ShowWeeks_4"),
+   btn_ShowWeeks_6                    := FindObject(oForm, "btn_ShowWeeks_6"),
+   btn_ShowWeeks_8                    := FindObject(oForm, "btn_ShowWeeks_8"),
+   charttool_AntiAliasing             := FindObject(oForm, "charttool_AntiAliasing"),
+   chk_Logarithmic                    := FindObject(oForm, "chk_Logarithmic"),
+   chk_ShowActualData                 := FindObject(oForm, "chk_ShowActualData"),
+   chk_ShowKumValues                  := FindObject(oForm, "chk_ShowKumValues"),
+   chk_ShowResources                  := FindObject(oForm, "chk_ShowResources"),
+   DBChartMain                        := FindObject(oForm, "DBChartMain"),
+   dockControl_Main                   := FindObject(oForm, "dockControl_Main"),
+   ds_ActualDemandValues              := FindObject(oForm, "ds_ActualDemandValues"),
+   ds_grid_data                       := FindObject(oForm, "ds_grid_data"),
+   ds_PlanDemandValues                := FindObject(oForm, "ds_PlanDemandValues"),
+   ds_QualiTree                       := FindObject(oForm, "ds_QualiTree"),
+   dtp_Today                          := FindObject(oForm, "dtp_Today"),
+   edt_KWFrom                         := FindObject(oForm, "edt_KWFrom"),
+   edt_KWTo                           := FindObject(oForm, "edt_KWTo"),
+   grid_ActualDemandValues            := FindObject(oForm, "grid_ActualDemandValues"),
+   grid_data                          := FindObject(oForm, "grid_data"),
+   grid_PlanDemandValues              := FindObject(oForm, "grid_PlanDemandValues"),
+   grid_QualiTree                     := FindObject(oForm, "grid_QualiTree"),
+   lbl_KwTo                           := FindObject(oForm, "lbl_KwTo"),
+   lbl_Today                          := FindObject(oForm, "lbl_Today"),
+   mnu_GoTo_Baugruppe                 := FindObject(oForm, "mnu_GoTo_Baugruppe"),
+   mnu_GoTo_Dispovorschlag            := FindObject(oForm, "mnu_GoTo_Dispovorschlag"),
+   mnu_GoTo_Fertigungsauftrag         := FindObject(oForm, "mnu_GoTo_Fertigungsauftrag"),
+   N1                                 := FindObject(oForm, "N1"),
+   pc_ChartDetailGrids                := FindObject(oForm, "pc_ChartDetailGrids"),
+   pc_main                            := FindObject(oForm, "pc_main"),
+   pnl_Chart                          := FindObject(oForm, "pnl_Chart"),
+   pnl_ChartDetailGrids               := FindObject(oForm, "pnl_ChartDetailGrids"),
+   pnl_Client                         := FindObject(oForm, "pnl_Client"),
+   pnl_DataHintsAvail                 := FindObject(oForm, "pnl_DataHintsAvail"),
+   pnl_Left                           := FindObject(oForm, "pnl_Left"),
+   pnl_main                           := FindObject(oForm, "pnl_main"),
+   pnl_QualiTreeBackPanel             := FindObject(oForm, "pnl_QualiTreeBackPanel"),
+   pnl_SyncJobWarning                 := FindObject(oForm, "pnl_SyncJobWarning"),
+   pnl_TopInfo                        := FindObject(oForm, "pnl_TopInfo"),
+   pnl_ViewFilter                     := FindObject(oForm, "pnl_ViewFilter"),
+   pnl_WarningsBackground             := FindObject(oForm, "pnl_WarningsBackground"),
+   popupMenu_Nachfrage                := FindObject(oForm, "popupMenu_Nachfrage"),
+   series_angebot_F12_Designer_test   := FindObject(oForm, "series_angebot_F12_Designer_test"),
+   Series_area_F12_Designer_Test      := FindObject(oForm, "Series_area_F12_Designer_Test"),
+   series_nachfrage_F12_Designer_test := FindObject(oForm, "series_nachfrage_F12_Designer_test"),
+   timer_SyncJobsInfo                 := FindObject(oForm, "timer_SyncJobsInfo"),
+   toolbar_Main                       := FindObject(oForm, "toolbar_Main"),
+   ts_ActualDemandValues              := FindObject(oForm, "ts_ActualDemandValues"),
+   ts_chart                           := FindObject(oForm, "ts_chart"),
+   ts_grid_data                       := FindObject(oForm, "ts_grid_data"),
+   ts_PlanDemandValues                := FindObject(oForm, "ts_PlanDemandValues"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   m_cDataHintsMessage              := '',
+   bipnl_TopInfo.Caption            := oForm.OrigCapt,
+
+   dtp_Today.Date                   := Date(),
+   edt_KWFrom.Text                  := KW(PGKU_FirstDayOfWeek(Date() - 3*7)), // Default: 3 Wochen von heute in die Vergangenheit, damit Überhänge aus der Rückwärtsterminierung sichtbar werden
+   edt_KWTo.Text                    := KW(PGKU_FirstDayOfWeek(Date() + 5*7)), // Default: 5 Wochen von heute nach vorne
+
+   toolbar_Main.DockControl         := dockControl_Main,
+
+   grid_PlanDemandValues.PopupMenu  := popupMenu_Nachfrage,
+
+   pc_main.ActivePage               := ts_chart,
+   chk_ShowKumValues.Checked        := true,  
+
+   InitChart(),
+
+   RefreshWarningPanels(),
+
+   timer_SyncJobsInfo.Interval      := 15000,
+   timer_SyncJobsInfo.Enabled       := true,
+
+   ts_PlanDemandValues.TabVisible   := not chk_ShowActualData.Checked,
+   ts_ActualDemandValues.TabVisible := chk_ShowActualData.Checked,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+   MyFocusControl(oForm, dtp_today),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

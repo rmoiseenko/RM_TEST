@@ -1,0 +1,265 @@
+//##############################################################################
+// Sammlung von 'U'msatzsteuer'H'elper'U'tils - hilfreiche Funktionen für die
+//    Umsetzung des Konjunktur-Pakets 2020
+//##############################################################################
+
+
+//##############################################################################
+// Funktionen zum Ermitteln der Liefer-Region
+//##############################################################################
+
+//******************************************************************************
+// INTERNE FUNKTION, NICHT DIREKT AUFRUFEN
+//    Prüft, ob ein Land zum Zeitpunkt 'dGueltig' EU-Mitglied ist.
+//******************************************************************************
+function _UHU_CountryIsEu_INTERNAL(cKeyField:C, cKeyValue:C, dGueltig:D:=0, bResultIfCountryNotFound:L:=false)
+| oDia020, bAfterEntry, bBeforeLeave |
+
+   if dGueltig = 0 then
+      dGueltig := mBDatum, // Wenn kein Gültigkeits-Datum gegeben, dann Buchungs-Datum nutzen
+   endif,
+
+   case cKeyField
+     of 'LANDNR' :: oDia020 := BeOpen(waDia020, 'DIA021'), // Index: LANDNR
+     of 'ISO'    :: oDia020 := BeOpen(waDia020, 'DIA023'), // Index: UPPER(ISO)
+     otherwise SetError('unknown keyfield ' + cKeyField),
+   endcase,
+   startseq
+      if DbSeek({cKeyValue}, oDia020) then
+         if oDia020:EG_KZ = 'J' then
+            bAfterEntry  := Empty(oDia020:EG_AB)  or (oDia020:EG_AB  <= dGueltig),
+            bBeforeLeave := Empty(oDia020:EG_BIS) or (oDia020:EG_BIS >= dGueltig),
+            Result       := bAfterEntry and bBeforeLeave,
+         else
+            Result       := false,
+         endif,
+      else
+         Result := bResultIfCountryNotFound,
+      endif,
+   always
+      BeClose(oDia020),
+   stopseq,
+end,
+
+//******************************************************************************
+// Prüft (per Dia020:LANDNR), ob ein Land zum Zeitpunkt 'dGueltig' EU-Mitglied ist.
+//******************************************************************************
+function _UHU_LandNr_IsEu(cDia020_LandNr, dGueltig:D:=0, bResultIfCountryNotFound:L:=false)
+  Result := UHU_CountryIsEu_INTERNAL('LANDNR', cDia020_LandNr, dGueltig, bResultIfCountryNotFound),
+end,
+
+//******************************************************************************
+// Prüft (per Dia020:ISO), ob ein Land zum Zeitpunkt 'dGueltig' EU-Mitglied ist.
+//******************************************************************************
+function _UHU_ISOCode_IsEu(cDia020_ISOCode, dGueltig:D:=0, bResultIfCountryNotFound:L:=false)
+  Result := UHU_CountryIsEu_INTERNAL('ISO', cDia020_ISOCode, dGueltig, bResultIfCountryNotFound),
+end,
+
+//******************************************************************************
+// Auf Grund der Umsatzsteuer-ID Nummer prüfen, ob das Land EU-Mitglied ist
+//******************************************************************************
+function _UHU_CheckUstIdNrIsEU(cUstIdNr, dGueltig:D:=0)
+| cCountryISOCode |
+
+   function IsoCodeFromUstIdNr(cUstIdNo)
+     Result := Upper(Left(cUstIdNo, 2)),
+
+     // In Griechenland beginnen die USt-Ids mit EL statt mit GR
+     if cUstIdNo = 'EL' then
+       Result := 'GR',
+     endif,
+   end,
+
+   if empty(cUstIdNr) then
+      Result := false,
+   else
+      cCountryISOCode := IsoCodeFromUstIdNr(cUstIdNr),
+
+      // Falls das Land nicht gefunden würde (obwohl USt.Id gefüllt ist), dann an diese
+      // Stelle hier als EU betrachten -> letzter Parameter in 'UHU_Dia020_ISOCode_IsEu()'
+      Result          := UHU_ISOCode_IsEu(cCountryISOCode, dGueltig, true),
+   endif,
+
+end,
+
+//******************************************************************************     // TODO: "Umsatzsteuerkontext" berücksichtigen
+// Liefert 'INLAND', 'EU' oder 'DRITTLAND' für einen Verkaufs-Vorgang
+//******************************************************************************
+function _UHU_GetSteuerRegion_Verkauf(oDab000, oDab050, dGueltig:D:=0)
+| cUstIdNr, bD050UstFieldAvailable, bCountryIsEU |
+
+   SetErrorIf(empty(oDAB000) or oDAB000.Workarea <> waDab000, 'wrong oDAB000 param'),
+   SetErrorIf(empty(oDAB050) or oDAB050.Workarea <> waDab050, 'wrong oDAB050 param'),
+
+   // USt-IdNr aus Lieferadresse oder Kundenstamm bestimmen (ab Version 7 verfügbar)
+   bD050UstFieldAvailable := not empty(DBField('LIEFUSTBER', oDab050)),
+   if bD050UstFieldAvailable and oDab050:LIEFUSTBER then
+      cUstIdNr := oDab050:L_UST_IDNR,
+   else
+      cUstIdNr := oDab000:UST_IDNR,
+   endif,
+
+   bCountryIsEU := UHU_CheckUstIdNrIsEU(cUstIdNr, dGueltig),
+
+   case true
+      of oDab000:MWSTKZ and bCountryIsEU :: Result := 'EU',
+      of oDab000:MWSTKZ                  :: Result := 'DRITTLAND',
+   otherwise
+                                            Result := 'INLAND',
+   endcase,
+end,
+
+//******************************************************************************
+// Liefert 'INLAND', 'EU' oder 'DRITTLAND' für einen Einkaufs-Vorgang
+//******************************************************************************
+function _UHU_GetSteuerRegion_Einkauf(oDab100, dGueltig:D:=0)
+| bCountryIsEU |
+
+   bCountryIsEU := UHU_CheckUstIdNrIsEU(oDab100:UST_IDNR, dGueltig),
+
+   case true
+      of oDab100:MWSTKZ and bCountryIsEU :: Result := 'EU',
+      of oDab100:MWSTKZ                  :: Result := 'DRITTLAND',
+   otherwise
+                                            Result := 'INLAND',
+   endcase,
+end,
+
+//##############################################################################
+// Funktionen zum Einsatz in den Erlös- und Aufwands-Konten-Formeln
+//   beim Einsatz in der Funktion sind die Tabellen alle positioniert
+//##############################################################################
+
+//******************************************************************************
+// Result: Konto-Nummer oder 0
+//******************************************************************************
+function _UHU_Formel_ErloesKontoStandard(cRegion, oDABPAR, oDAB310, oDAB010, oDAB050, oDAB055, oDAB000)
+
+   SetErrorIf(empty(oDABPAR) or oDABPAR.Workarea <> waDabPAR, 'wrong oDABPAR param'),
+   SetErrorIf(empty(oDAB310) or oDAB310.Workarea <> waDab310, 'wrong oDAB310 param'),
+   SetErrorIf(empty(oDAB010) or oDAB010.Workarea <> waDab010, 'wrong oDAB010 param'),
+   SetErrorIf(empty(oDAB050) or oDAB050.Workarea <> waDab050, 'wrong oDAB050 param'),
+   SetErrorIf(empty(oDAB055) or oDAB055.Workarea <> waDab055, 'wrong oDAB055 param'),
+   SetErrorIf(empty(oDAB000) or oDAB000.Workarea <> waDab000, 'wrong oDAB000 param'),
+
+   case cRegion
+      of 'INLAND'    :: Result := oDab310:UMSINL,
+      of 'EU'        :: Result := oDab310:UMSEG,
+      of 'DRITTLAND' :: Result := oDab310:UMSAUS,
+   otherwise
+      SetError('unknown <region>'),
+   endcase,
+end,
+
+//******************************************************************************
+// Result: Konto-Nummer oder 0
+//******************************************************************************
+function _UHU_Formel_AufwandsKontoStandard(cRegion, oDABPAR, oDAB310, oDAB010, oDAB235, oDAB100)
+
+   SetErrorIf(empty(oDABPAR) or oDABPAR.Workarea <> waDabPAR, 'wrong oDABPAR param'),
+   SetErrorIf(empty(oDAB310) or oDAB310.Workarea <> waDab310, 'wrong oDAB310 param'),
+   SetErrorIf(empty(oDAB010) or oDAB010.Workarea <> waDab010, 'wrong oDAB010 param'),
+   SetErrorIf(empty(oDAB235) or oDAB235.Workarea <> waDab235, 'wrong oDAB235 param'),
+   SetErrorIf(empty(oDAB100) or oDAB100.Workarea <> waDab100, 'wrong oDAB100 param'),
+
+   case cRegion
+      of 'INLAND'    :: Result := oDab310:WEINL,
+      of 'EU'        :: Result := oDab310:WEEG,
+      of 'DRITTLAND' :: Result := oDab310:WEAUS,
+   otherwise
+      SetError('unknown <region>'),
+   endcase,
+end,
+
+//******************************************************************************
+// Ermittelt die Standard-Kontierung wie sie in der FiBu ablaufen würde, wenn in
+//   der DabDF keine Vorkontierung enthalten ist
+// cMode: 'F'aktura-Erlöse oder 'W'arenaufwand
+// Rückgabe: Konto-Nr. oder 0
+//******************************************************************************
+function _UHU_GetFiBu_KontoStandard_Internal(cRegion, cMandant, cMode)
+| cDFParFieldName |
+
+  //****************************************************************************
+  // "Sicheres" Auslesen eines Feldes der DFPAR (mit Prüfung auf korreten Mandanten)
+  //****************************************************************************
+  function UHU_GetFieldValueFromMandantenDFPar(cTableMandant, cDFParKontoFieldName)
+  | cExpectedTableName, oDFPar, cActualTableName |
+     Result := 0,
+
+     cExpectedTableName := 'DFPAR' + cTableMandant,
+
+     // Hier nicht die Konstante 'waDFPar' = 70 nutzen, damit dieser Codeblock auch in einem System ohne FiBu compiliert
+     oDFPar := BeOpen(70),
+     startseq
+       cActualTableName := Left(oDFPar.TableName, Len(cExpectedTableName)),
+
+       // Könnte das passieren, wenn die Cache-table-Instanz vor einem Abteilungswechsel schon geöffnet war?
+       SetErrorIf(cActualTableName <> cExpectedTableName,
+                  'unexpected table name "' + cActualTableName + '", expected "' + cExpectedTableName + '"'),
+
+       oDFPar.CbFirst(), // Erster Datensatz ist der Einstellungen-Datensatz
+
+       Result := AsVariant(cDFParKontoFieldName, oDFPar),
+     always
+       BeClose(oDFPar),
+     stopseq,
+  end,
+
+  SetErrorIf(empty(cRegion),                'cRegion must not be empty'),
+  SetErrorIf(Len(cMandant) <> 3,            'cMandant must be char(3)'),
+  SetErrorIf(cMode <> 'F' and cMode <> 'W', 'cMode must "F" or "W"'),
+
+  // Wenn FiBu nicht aktiv ist, dann immer 0 zurück geben, damit die Funktion
+  // immer eingesetzt werden kann.
+  Result := 0,
+
+  // FiBu aktiv? (ist ein globales Feld, nicht standort-fähig)
+  if DABPAR:FIBU_AKTIV then
+
+      case cMode
+        of 'F' ::
+
+            case cRegion
+               of 'INLAND'    :: cDFParFieldName := 'FAKINL',
+               of 'EU'        :: cDFParFieldName := 'FAKEG',
+               of 'DRITTLAND' :: cDFParFieldName := 'FAKEXP',
+            otherwise
+               SetError('unknown <region> ' + cRegion),
+            endcase,
+
+        of 'W' ::
+
+            case cRegion
+               of 'INLAND'    :: cDFParFieldName := 'WEINL',
+               of 'EU'        :: cDFParFieldName := 'WEEG',
+               of 'DRITTLAND' :: cDFParFieldName := 'WEEXP',
+            otherwise
+               SetError('unknown <region> ' + cRegion),
+            endcase,
+
+     endcase,
+
+     Result := UHU_GetFieldValueFromMandantenDFPar(cMandant, cDFParFieldName),
+
+     SetErrorIf(empty(Result), 'DFPAR:' + cDFParFieldName + ' is empty for company ' + cMandant + ' - param must be defined!'),
+  endif,
+end,
+
+//******************************************************************************
+// Ermittelt die Standard-Erlös-Kontierung wie sie in der FiBu ablaufen würde, wenn in
+//   der DabDF keine Vorkontierung enthalten ist
+// Rückgabe: Konto-Nr. oder 0
+//******************************************************************************
+function _UHU_GetFiBu_ErloesKontoStandard(cRegion, cMandant)
+  Result := UHU_GetFiBu_KontoStandard_Internal(cRegion, cMandant, 'F'),
+end,
+
+//******************************************************************************
+// Ermittelt die Standard-Warenaufwands-Kontierung wie sie in der FiBu ablaufen würde, wenn in
+//   der DabDF keine Vorkontierung enthalten ist
+// Rückgabe: Konto-Nr. oder 0
+//******************************************************************************
+function _UHU_GetFiBu_AufwandsKontoStandard(cRegion, cMandant)
+  Result := UHU_GetFiBu_KontoStandard_Internal(cRegion, cMandant, 'W'),
+end,

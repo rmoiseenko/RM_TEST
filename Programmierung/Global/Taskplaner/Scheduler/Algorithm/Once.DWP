@@ -1,0 +1,8 @@
+function _TSKPL_CalculateStart_Once(aTaskExecutionOptions:A)
+| dtDate, dtTime |
+
+   dtDate := KVU_GetAssert(aTaskExecutionOptions, 'execution.Date'),
+   dtTime := KVU_GetAssert(aTaskExecutionOptions, 'execution.Time'),
+
+   result := dtDate + dtTime,
+end,

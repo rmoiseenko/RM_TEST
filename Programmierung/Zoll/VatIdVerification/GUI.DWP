@@ -1,0 +1,613 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Docking ermöglicht die Konfiguration, die manuelle Ausführung der
+//   qualifizierten Ust.-ID Prüfung und die Übersicht über alle bisher
+//   durchgeführten Prüfungen.
+//   Das Docking kann sowohl für den Kundenstamm als auch für den Lieferanten-
+//   stamm verwendet werden.
+//   Das Programm ist Teil des Packages "VatIdVerification".
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'UID_CHECK_DOCKING',
+//        self,
+//        'Zoll\VatIdVerification\GUI'
+//     )
+//
+//   Das Individual-Menü kann sowohl auf der Kundenstamm- sowie auf der
+//   Lieferantenstamm-Maske verwendet werden.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+
+   m_oDM, m_oDM_GUI, m_oUIDSTM, m_oUIDRES, m_oLastVerificationTable,
+
+   m_cPositionSaveId, m_cFormId, m_cResultsBrowserId,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_ExecuteVatIdValidation, A_NewConfiguration, A_Save,
+   actions, bar_Top, bardock_Top, barmngr_Main, bbtn_Cancel,
+   bbtn_ExecuteVatIdValidation, bbtn_NewConfiguration, bbtn_Save,
+   bvl_AddressConfiguration_Part1, bvl_AddressConfiguration_Part2,
+   bvl_StatusLastVerification, chk_LastVerification_Qualified,
+   chk_LastVerification_Simple, cmb_AddressType, cmb_LastVerification_Mode,
+   ds_LastVerification, ds_MasterTable, ds_UIDRES, ds_UIDSTM, edt_City,
+   edt_Country, edt_ErrorText, edt_Name1, edt_Name2, edt_Name3, edt_Street,
+   edt_VatId, edt_ZipCode, grd_Results, ipnl_MainTitle,
+   lbl_AddressConfiguration_Title, lbl_AddressType, lbl_City, lbl_Country,
+   lbl_LastVerification_Mode, lbl_LastVerification_Qualified,
+   lbl_LastVerification_Simple, lbl_Name1, lbl_Name2, lbl_Name3,
+   lbl_StatusLastVerification, lbl_Street, lbl_VatId, lbl_ZipCode,
+   pnl_AddressConfiguration, pnl_AddressConfiguration_Part1,
+   pnl_AddressConfiguration_Part2, pnl_Header, pnl_Results, pnl_Settings,
+   pnl_StatusLastVerification, pnl_StatusLastVerification_Part
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId   := '@UIDCHKPOS',
+m_cFormId           := '@UIDCHECK',
+m_cResultsBrowserId := '@UIDCHKRES',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsInEditMode, bIsDataAvailable, bUseVatIdCheckAddress |
+
+   bIsInEditMode         := EditModes(m_oUIDSTM),
+   bIsDataAvailable      := m_oUIDSTM.CbDataAvailable,
+   bUseVatIdCheckAddress := bIsDataAvailable and
+                            m_oUIDSTM:TYP = gl_VATIDV_AddressType_VatIdVerificationAddress,
+
+   // Enabled-Zustand der Actions steuern
+   A_NewConfiguration.Enabled       := not bIsDataAvailable,
+   A_Save.Enabled                   := bIsInEditMode,
+   A_Cancel.Enabled                 := bIsInEditMode,
+   A_ExecuteVatIdValidation.Enabled := not bIsInEditMode and bIsDataAvailable,
+
+   // ReadOnly-Zusatand der Eingabe-Controls steuern
+   InputControl_SetReadOnlyState(cmb_AddressType, not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_Name1,       not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_Name2,       not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_Name3,       not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_ZipCode,     not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_City,        not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_Street,      not bUseVatIdCheckAddress),
+   InputControl_SetReadOnlyState(edt_Country,     not bUseVatIdCheckAddress),
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_QualifiedVatIdCheck',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_QualifiedVatIdCheck_GUI', oForm),
+
+   // Master-Table (DAB000/DAB100)
+   if EditorMode() then
+      m_oMasterTable := DbGetTable(m_oDM_GUI, waDab000),
+      DbSeek({257926}, m_oMasterTable),
+   endif,
+   ds_MasterTable.DataSet := m_oMasterTable,
+
+   // UIDSTM - UID-Stammdaten
+   m_oUIDSTM         := VATIDV_UIDSTM_Open(m_oDM_GUI, m_oMasterTable.Workarea),
+   ds_UIDSTM.DataSet := m_oUIDSTM,
+
+   // UIDRES - UID-Prüfungsergebnisse
+   m_oUIDRES           := DbGetTable(m_oDM_GUI, waUIDRES),
+   m_oUIDRES.IndexName := 'UIDSTM_ID_PRUEFDATUM',
+   GU_LinkTableToGUI(m_oUIDRES, ds_UIDRES, grd_Results, m_cResultsBrowserId, false),
+
+   // LastVerificationTable - UID-Prüfungsergebnisse
+   m_oLastVerificationTable           := DbGetTable(m_oDM_GUI, waUIDRES, 'UIDRES_LAST_VERIFICATION'),
+   m_oLastVerificationTable.IndexName := 'UIDSTM_ID_PRUEFDATUM',
+   ds_LastVerification.DataSet        := m_oLastVerificationTable,
+
+   // Events zuweisen
+   AssignEvent(ds_UIDSTM,      'OnScroll_Update', 'ds_UIDSTMScroll_Update'),
+   AssignEvent(ds_UIDRES,      'OnScroll_Update', 'ds_UIDRESScroll_Update'),
+   AssignEvent(ds_MasterTable, 'OnScroll_Update', 'ds_MasterTableScroll_Update'),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Schlüssel-Wert des aktuellen Master-Datensatzes
+// anhand der Workarea (DAB000, DAB100) der Master-Tabelle.
+//
+// @result: integer - Schlüssel-Wert des aktuellen Master-Datensatzes
+//******************************************************************************
+function DetermineMasterTableKey()
+   result := 0,
+   case m_oMasterTable.Workarea
+      of waDab000 :: result := m_oMasterTable:KDNR,
+      of waDab100 :: result := m_oMasterTable:LINR,
+      otherwise
+         SetError('Workarea <' + Str(m_oMasterTable.Workarea) + '> not allowed'),
+   endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Tabelle UIDSTM mit der Master-Tabelle.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeUIDSTM()
+   m_oUIDSTM.CbSetRangeEx({DetermineMasterTableKey()}),
+   edt_VatId.Text := trim(m_oMasterTable:UST_IDNR),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Tabelle UIDRES mit der Tabelle UIDSTM.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeUIDRES()
+   m_oUIDRES.CbSetRangeEx({m_oUIDSTM:ID}),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert die Tabelle LastVerificationTable mit der
+// Tabelle UIDSTM.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeLastVerificationTable()
+   m_oLastVerificationTable.CbSetRangeEx({m_oUIDSTM:ID}),
+   m_oLastVerificationTable.CbFirst(),
+end,
+
+//******************************************************************************
+// Diese Funktion synchronisiert alle Tabellen mit der Master-Tabelle.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeAllTables()
+   SynchronizeUIDSTM(),
+   SynchronizeUIDRES(),
+   SynchronizeLastVerificationTable(),
+end,
+
+//******************************************************************************
+// Diese Funktion übersetzt die Rückgabe-Codes aus der qulifizierten UID-Prüfung
+// in ausführliche Beschreibungen.
+//
+// @result: string - Beschreibung des Rückgabe-Codes
+//******************************************************************************
+Function VATIDV_ReturnCodeToText(nErrorCode:N)
+  case nErrorCode
+     of 200 :: result := 'Die angefragte USt-IdNr. ist gültig.',
+     of 201 :: result := 'Die angefragte USt-IdNr. ist ungültig.',
+     of 202 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie ist nicht in der Unternehmerdatei des betreffenden EU-Mitgliedstaates registriert.',
+     of 203 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie ist erst ab dem ... gültig.',
+     of 204 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie war im Zeitraum von ... bis ... gültig.',
+     of 205 :: result := 'Ihre Anfrage kann derzeit durch den angefragten EU-Mitgliedstaat oder aus anderen Gründen nicht beantwortet werden. Bitte versuchen Sie es später noch einmal. Bei wiederholten Problemen wenden Sie sich bitte an das Bundeszentralamt für Steuern - Dienstsitz Saarlouis.',
+     of 206 :: result := 'Ihre deutsche USt-IdNr. ist ungültig. Eine Bestätigungsanfrage ist daher nicht möglich. Den Grund hierfür können Sie beim Bundeszentralamt für Steuern - Dienstsitz Saarlouis - erfragen.',
+     of 207 :: result := 'Ihnen wurde die deutsche USt-IdNr. ausschliesslich zu Zwecken der Besteuerung des innergemeinschaftlichen Erwerbs erteilt. Sie sind somit nicht berechtigt, Bestätigungsanfragen zu stellen.',
+     of 208 :: result := 'Für die von Ihnen angefragte USt-IdNr. läuft gerade eine Anfrage von einem anderen Nutzer. Eine Bearbeitung ist daher nicht möglich. Bitte versuchen Sie es später noch einmal.',
+     of 209 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie entspricht nicht dem Aufbau der für diesen EU-Mitgliedstaat gilt. ( Aufbau der USt-IdNr. aller EU-Länder)',
+     of 210 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie entspricht nicht den Prüfziffernregeln die für diesen EU-Mitgliedstaat gelten.',
+     of 211 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie enthält unzulässige Zeichen.',
+     of 212 :: result := 'Die angefragte USt-IdNr. ist ungültig. Sie enthält ein unzulässiges Länderkennzeichen.',
+     of 213 :: result := 'Die Abfrage einer deutschen USt-IdNr. ist nicht möglich.',
+     of 214 :: result := 'Ihre deutsche USt-IdNr. ist fehlerhaft. Sie beginnt mit ''DE'' gefolgt von 9 Ziffern.',
+     of 215 :: result := 'Ihre Anfrage enthält nicht alle notwendigen Angaben für eine einfache Bestätigungsanfrage (Ihre deutsche USt-IdNr. und die ausl. USt-IdNr.',
+               result += CRLF + 'Ihre Anfrage kann deshalb nicht bearbeitet werden.',
+     of 216 :: result := 'Ihre Anfrage enthält nicht alle notwendigen Angaben für eine qualifizierte Bestätigungsanfrage (Ihre deutsche USt-IdNr., die ausl. USt-IdNr., Firmenname einschl. Rechtsform und Ort).',
+               result += CRLF + 'Es wurde eine einfache Bestätigungsanfrage durchgeführt mit folgenden Ergebnis:',
+               result += CRLF + 'Die angefragte USt-IdNr. ist gültig.',
+     of 217 :: result := 'Bei der Verarbeitung der Daten aus dem angefragten EU-Mitgliedstaat ist ein Fehler aufgetreten. Ihre Anfrage kann deshalb nicht bearbeitet werden.',
+     of 218 :: result := 'Eine qualifizierte Bestätigung ist zur Zeit nicht möglich. Es wurde eine einfache Bestätigungsanfrage mit folgendem Ergebnis durchgeführt:',
+               result += CRLF + 'Die angefragte USt-IdNr. ist gültig.',
+     of 219 :: result := 'Bei der Durchführung der qualifizierten Bestätigungsanfrage ist ein Fehler aufgetreten. Es wurde eine einfache Bestätigungsanfrage mit folgendem Ergebnis durchgeführt:',
+               result += 'Die angefragte USt-IdNr. ist gültig.',
+     of 220 :: result := 'Bei der Anforderung der amtlichen Bestätigungsmitteilung ist ein Fehler aufgetreten. Sie werden kein Schreiben erhalten.',
+     of 221 :: result := 'Die Anfragedaten enthalten nicht alle notwendigen Parameter oder einen ungültigen Datentyp. Weitere Informationen erhalten Sie bei den Hinweisen zum Schnittstelle - Aufruf.',
+     of 222 :: result := 'Die angefragte USt-IdNr. ist gültig. Bitte beachten Sie die Umstellung auf ausschließlich HTTPS (TLS 1.2) zum 07.01.2019.',
+     of 999 :: result := 'Eine Bearbeitung Ihrer Anfrage ist zurzeit nicht möglich. Bitte versuchen Sie es später noch einmal.',
+  endcase,
+end,
+
+//******************************************************************************
+// Diese Funktion führt diverse Validierungen vor dem Ausführen der UID-Prüfung
+// durch und zeigt ggf. entsprechende Fehlermeldungen an, um den Benutzer auf
+// die Fehler hinzuweisen.
+//
+// @result: boolean - Validierung erfolgreich Ja/Nein
+//******************************************************************************
+function ValidateBeforeExecuteVatIdVerification()
+| cMessage |
+
+   cMessage := 'Die UID-Prüfung kann nicht durchgeführt werden.' + CRLF,
+
+   result := not empty(gl_VATIDV_SenderVatId),
+   if result then
+      result := not empty(trim(m_oMasterTable:UST_IDNR)),
+      if not result then
+         MessageDlg(cMessage + 'Die angefragte Ust.-ID ist nicht gesetzt.', mtError),
+      endif,
+   else
+      MessageDlg(cMessage + 'Die Ust.-ID des Anfragenden ist nicht gesetzt.' + CRLF +
+                 'Hierfür muss die globale Variable gl_VATIDV_SenderVatId konfiguriert werden.', mtError),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Ändern des Adresstyps
+//******************************************************************************
+function cmb_AddressTypeChange( Sender )
+   if EditModes(m_oUIDSTM) then
+      m_oUIDSTM:TYP := val(cmb_AddressType.Value),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle UIDSTM
+//******************************************************************************
+function ds_UIDSTMScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle UIDRES
+//******************************************************************************
+function ds_UIDRESScroll_Update( Sender )
+   edt_ErrorText.Text := '',
+   if m_oUIDRES.CbDataAvailable then
+      edt_ErrorText.Text := str(m_oUIDRES:RET_CODE) + ' - ' +
+                            VATIDV_ReturnCodeToText(m_oUIDRES:RET_CODE),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Master-Tabelle
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   SynchronizeAllTables(),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstört des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oUIDSTM),
+   if not bCanClose then
+      bCanClose := Jn('Es sind nicht gespeicherte Änderungen vorhanden.' + CRLF +
+                      'Sollen die Änderungen verworfen werden?', false),
+      if bCanClose then
+         m_oUIDSTM.CbCancel(),
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Qualifizierte UID-Prüfung durchführen
+//******************************************************************************
+function A_ExecuteVatIdValidationExecute( Sender )
+| nCursorTemp |
+
+   startseq
+      if ValidateBeforeExecuteVatIdVerification() then
+         nCursorTemp := SetCursor(crHourglass),
+         startseq
+            startseq
+               VATIDV_QualifiedVatIdVerification(
+                  m_oDM,
+                  m_oMasterTable.Workarea,
+                  DetermineMasterTableKey(),
+                  gl_VATIDV_EventType_ManualRequest
+               ),
+            always
+               // Ggf. muss die Tabelle UIDSTM synchronisiert werden, sofern vor
+               // der ersten Prüfung noch kein UIDSTM-Datensatz für diesen
+               // Kunden/Lieferanten existiert hat.
+               m_oUIDSTM.CbRefresh(),
+               SynchronizeUIDSTM(),
+               SynchronizeUIDRES(),
+
+               // Nach der UID-Prüfung muss die Anzeige der
+               // Historisierungstabelle aktualisiert werden.
+               m_oUIDRES.CbDisableControls(),
+               startseq
+                  m_oUIDRES.CbRefresh(),
+                  m_oUIDRES.CbFirst(),
+               always
+                  m_oUIDRES.CbEnableControls(),
+               stopseq,
+
+               // Außerdem muss die Anzeige "Letzte Prüfung" aktualisiert werden.
+               SynchronizeLastVerificationTable(),
+            stopseq,
+         always
+            SetCursor(nCursorTemp),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Ausführen der qualifizierten UID-Prüfung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oUIDSTM.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   if not DbPost(m_oUIDSTM) then
+      MessageDlg('Fehler beim Sperichern der neuen UID-Prüfungskonfiguration', mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Neue UID-Prüfungskonfiguration anlegen
+//******************************************************************************
+function A_NewConfigurationExecute( Sender )
+   startseq
+      VATIDV_UIDSTM_FindOrAdd(m_oDM_GUI, m_oUIDSTM, m_oMasterTable.Workarea, DetermineMasterTableKey()),
+      m_oUIDRES.CbRefresh(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anlegen einer UID-Prüfungskonfiguration', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'Qualifizierte USt.-ID Prüfung',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                        := FindObject(oForm, "A_Cancel"),
+   A_ExecuteVatIdValidation        := FindObject(oForm, "A_ExecuteVatIdValidation"),
+   A_NewConfiguration              := FindObject(oForm, "A_NewConfiguration"),
+   A_Save                          := FindObject(oForm, "A_Save"),
+   actions                         := FindObject(oForm, "actions"),
+   bar_Top                         := FindObject(oForm, "bar_Top"),
+   bardock_Top                     := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                    := FindObject(oForm, "barmngr_Main"),
+   bbtn_Cancel                     := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_ExecuteVatIdValidation     := FindObject(oForm, "bbtn_ExecuteVatIdValidation"),
+   bbtn_NewConfiguration           := FindObject(oForm, "bbtn_NewConfiguration"),
+   bbtn_Save                       := FindObject(oForm, "bbtn_Save"),
+   bvl_AddressConfiguration_Part1  := FindObject(oForm, "bvl_AddressConfiguration_Part1"),
+   bvl_AddressConfiguration_Part2  := FindObject(oForm, "bvl_AddressConfiguration_Part2"),
+   bvl_StatusLastVerification      := FindObject(oForm, "bvl_StatusLastVerification"),
+   chk_LastVerification_Qualified  := FindObject(oForm, "chk_LastVerification_Qualified"),
+   chk_LastVerification_Simple     := FindObject(oForm, "chk_LastVerification_Simple"),
+   cmb_AddressType                 := FindObject(oForm, "cmb_AddressType"),
+   cmb_LastVerification_Mode       := FindObject(oForm, "cmb_LastVerification_Mode"),
+   ds_LastVerification             := FindObject(oForm, "ds_LastVerification"),
+   ds_MasterTable                  := FindObject(oForm, "ds_MasterTable"),
+   ds_UIDRES                       := FindObject(oForm, "ds_UIDRES"),
+   ds_UIDSTM                       := FindObject(oForm, "ds_UIDSTM"),
+   edt_City                        := FindObject(oForm, "edt_City"),
+   edt_Country                     := FindObject(oForm, "edt_Country"),
+   edt_ErrorText                   := FindObject(oForm, "edt_ErrorText"),
+   edt_Name1                       := FindObject(oForm, "edt_Name1"),
+   edt_Name2                       := FindObject(oForm, "edt_Name2"),
+   edt_Name3                       := FindObject(oForm, "edt_Name3"),
+   edt_Street                      := FindObject(oForm, "edt_Street"),
+   edt_VatId                       := FindObject(oForm, "edt_VatId"),
+   edt_ZipCode                     := FindObject(oForm, "edt_ZipCode"),
+   grd_Results                     := FindObject(oForm, "grd_Results"),
+   ipnl_MainTitle                  := FindObject(oForm, "ipnl_MainTitle"),
+   lbl_AddressConfiguration_Title  := FindObject(oForm, "lbl_AddressConfiguration_Title"),
+   lbl_AddressType                 := FindObject(oForm, "lbl_AddressType"),
+   lbl_City                        := FindObject(oForm, "lbl_City"),
+   lbl_Country                     := FindObject(oForm, "lbl_Country"),
+   lbl_LastVerification_Mode       := FindObject(oForm, "lbl_LastVerification_Mode"),
+   lbl_LastVerification_Qualified  := FindObject(oForm, "lbl_LastVerification_Qualified"),
+   lbl_LastVerification_Simple     := FindObject(oForm, "lbl_LastVerification_Simple"),
+   lbl_Name1                       := FindObject(oForm, "lbl_Name1"),
+   lbl_Name2                       := FindObject(oForm, "lbl_Name2"),
+   lbl_Name3                       := FindObject(oForm, "lbl_Name3"),
+   lbl_StatusLastVerification      := FindObject(oForm, "lbl_StatusLastVerification"),
+   lbl_Street                      := FindObject(oForm, "lbl_Street"),
+   lbl_VatId                       := FindObject(oForm, "lbl_VatId"),
+   lbl_ZipCode                     := FindObject(oForm, "lbl_ZipCode"),
+   pnl_AddressConfiguration        := FindObject(oForm, "pnl_AddressConfiguration"),
+   pnl_AddressConfiguration_Part1  := FindObject(oForm, "pnl_AddressConfiguration_Part1"),
+   pnl_AddressConfiguration_Part2  := FindObject(oForm, "pnl_AddressConfiguration_Part2"),
+   pnl_Header                      := FindObject(oForm, "pnl_Header"),
+   pnl_Results                     := FindObject(oForm, "pnl_Results"),
+   pnl_Settings                    := FindObject(oForm, "pnl_Settings"),
+   pnl_StatusLastVerification      := FindObject(oForm, "pnl_StatusLastVerification"),
+   pnl_StatusLastVerification_Part := FindObject(oForm, "pnl_StatusLastVerification_Part"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   InputControl_SetReadOnlyState(edt_VatId,                      true),
+   InputControl_SetReadOnlyState(cmb_LastVerification_Mode,      true),
+   InputControl_SetReadOnlyState(chk_LastVerification_Simple,    true),
+   InputControl_SetReadOnlyState(chk_LastVerification_Qualified, true),
+
+   // Controls: Bereich "Adress-Konfiguration"
+   cmb_AddressType.DataSource := ds_UIDSTM,
+   cmb_AddressType.DataField  := 'TYP',
+   edt_Name1.DataSource       := ds_UIDSTM,
+   edt_Name1.DataField        := 'NAME1',
+   edt_Name2.DataSource       := ds_UIDSTM,
+   edt_Name2.DataField        := 'NAME2',
+   edt_Name3.DataSource       := ds_UIDSTM,
+   edt_Name3.DataField        := 'NAME3',
+   edt_ZipCode.DataSource     := ds_UIDSTM,
+   edt_ZipCode.DataField      := 'PLZ',
+   edt_City.DataSource        := ds_UIDSTM,
+   edt_City.DataField         := 'ORT',
+   edt_Street.DataSource      := ds_UIDSTM,
+   edt_Street.DataField       := 'STRASSE',
+   edt_Country.DataSource     := ds_UIDSTM,
+   edt_Country.DataField      := 'LANDNR',
+
+   lbl_AddressType.DataSource        := ds_UIDSTM,
+   lbl_AddressType.DataField         := 'TYP',
+   lbl_AddressType.UseDefaultCaption := true,
+   lbl_Name1.DataSource              := ds_UIDSTM,
+   lbl_Name1.DataField               := 'NAME1',
+   lbl_Name1.UseDefaultCaption       := true,
+   lbl_Name2.DataSource              := ds_UIDSTM,
+   lbl_Name2.DataField               := 'NAME2',
+   lbl_Name2.UseDefaultCaption       := true,
+   lbl_Name3.DataSource              := ds_UIDSTM,
+   lbl_Name3.DataField               := 'NAME3',
+   lbl_Name3.UseDefaultCaption       := true,
+   lbl_ZipCode.DataSource            := ds_UIDSTM,
+   lbl_ZipCode.DataField             := 'PLZ',
+   lbl_ZipCode.UseDefaultCaption     := true,
+   lbl_City.DataSource               := ds_UIDSTM,
+   lbl_City.DataField                := 'ORT',
+   lbl_City.UseDefaultCaption        := true,
+   lbl_Street.DataSource             := ds_UIDSTM,
+   lbl_Street.DataField              := 'STRASSE',
+   lbl_Street.UseDefaultCaption      := true,
+   lbl_Country.DataSource            := ds_UIDSTM,
+   lbl_Country.DataField             := 'LANDNR',
+   lbl_Country.UseDefaultCaption     := true,
+
+   // Controls: Bereich "Letzte Prüfung"
+   cmb_LastVerification_Mode.DataSource := ds_LastVerification,
+   cmb_LastVerification_Mode.DataField  := 'PRUEF_MODE',
+   chk_LastVerification_Simple.DataSource := ds_LastVerification,
+   chk_LastVerification_Simple.DataField  := 'S_PRUEF_OK',
+   chk_LastVerification_Qualified.DataSource := ds_LastVerification,
+   chk_LastVerification_Qualified.DataField  := 'Q_PRUEF_OK',
+
+   lbl_LastVerification_Mode.DataSource        := ds_LastVerification,
+   lbl_LastVerification_Mode.DataField         := 'PRUEF_MODE',
+   lbl_LastVerification_Mode.UseDefaultCaption := true,
+   lbl_LastVerification_Simple.DataSource := ds_LastVerification,
+   lbl_LastVerification_Simple.DataField  := 'S_PRUEF_OK',
+   lbl_LastVerification_Simple.UseDefaultCaption := true,
+   lbl_LastVerification_Qualified.DataSource := ds_LastVerification,
+   lbl_LastVerification_Qualified.DataField  := 'Q_PRUEF_OK',
+   lbl_LastVerification_Qualified.UseDefaultCaption := true,
+
+   SynchronizeAllTables(),
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

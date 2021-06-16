@@ -1,0 +1,519 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm dient zur Einsicht/Überwachung/Live-Auswertung
+//               von Projekt-Zeitbuchungen.
+//               Es ermöglicht dem Benutzer eine Filterung der Buchungsdaten
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2,
+   m_aSettings:P5,
+   m_bStarting, m_cSettingsKey, m_cUserFilter,
+
+   // Tabellen
+   m_oSumQuery, m_oDetailQuery,
+
+   // Query-Texte
+   m_cSumQueryText, m_cDetailQueryText,
+
+   // Browser
+   m_cSumBrowser, m_cDetailBrowser,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_GoToProject, A_GoToTask, A_Refresh, ActionListDetail, ActionListSum, bipnl_DetailHeadline, bipnl_SumHeadline,
+  btn_GoToProject, btn_Refresh, chk_OnlyDaysWithProjectTime, cmb_Users, ds_Details, ds_Sums, dtp_DateFrom, dtp_DateTo,
+  grd_DetailBrowser, grd_SumBrowser, lbl_DateFrom, lbl_DateTo, lbl_User, pnl_DetailPanel, pnl_FilterPanel, pnl_GoToPanel,
+  pnl_SumPanel
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+// Browser
+m_cSumBrowser      := '@SUMPPSTBE',
+m_cDetailBrowser   := '@DETEPSTBE',
+m_cSettingsKey     := '@BBE' + c_usr,
+
+// Master-Statement
+m_cSumQueryText    := LoadSQLScriptByName('Projektmanagement\SQL\Übersicht Projekt-Buchungen nach Mitarbeiter'),
+
+// Detail-Statement
+m_cDetailQueryText := LoadSQLScriptByName('Projektmanagement\SQL\Übersicht Projekt-Detailbuchungen nach Mitarbeiter'),
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuert die Button-Stati
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   btn_GoToProject.Enabled := not (BOF(m_oDetailQuery) and EOF(m_oDetailQuery)) and
+                              m_oDetailQuery:PRJ_ID > 0,
+end,
+
+//******************************************************************************
+// Speichern der letzten Einstellungen
+//******************************************************************************
+function SaveSettings()
+| aArr |
+   aArr := {},
+
+   AAdd(aArr, ProjMgmtGUI_CalculateComboValueString(cmb_Users)), // zuletzt gewählte Mitarbeiter merken,
+   AAdd(aArr, chk_OnlyDaysWithProjectTime.Checked),              // nur Tage mit Projektbuchungen
+
+   // Speichern des Arrays
+   SetBeParam(m_cSettingsKey, ArrToStr(aArr)),
+end,
+
+//******************************************************************************
+// Laden der letzten Einstellungen
+//******************************************************************************
+function LoadSettings()
+| cSettings, aArr |
+   if Empty(m_cUserFilter) then
+      // User-Combo füllen
+      ProjMgmtGUI_RefreshUserComboItems(dtp_DateFrom.Date, dtp_DateTo.Date, cmb_Users, m_cUserFilter),
+
+      // Laden des Arrays
+      cSettings := GetBeParam(m_cSettingsKey),
+      if not empty(cSettings) then
+         aArr := StrToArr(cSettings),
+      endif,
+
+      // Übersicht für die letzten Mitarbeiter wieder herstellen
+      if ALen(aArr) > 0 then
+         ProjMgmtGUI_CheckUsers(cmb_Users, aArr[1]),
+         // nur Tage mit Projektbuchungen
+         if ALen(aArr) > 1 then
+            chk_OnlyDaysWithProjectTime.Checked := aArr[2],
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Passt das Summen-Query mit den ausgewählten Filtern an und gibt dieses zurück
+// @Result: null
+//******************************************************************************
+function GetMasterSQlScript()
+| cUsers, cToken, cCustomFilter, cDateFrom, cDateTo, i, cTest |
+   startseq
+      Result := m_cSumQueryText,
+
+      //************************************************************************
+      // Einfügen des User-Filters
+      //************************************************************************
+      cUsers := ProjMgmtGUI_CalculateComboValueString(cmb_Users), // Auswahl aus dem Control holen
+      if not empty(cUsers) then
+         cCustomFilter := '',
+         for i := 1 to TokenCount(cUsers, '/') do
+            cToken := StrToken(cUsers, '/', i),
+            if not empty(cToken) then
+               if not empty(cCustomFilter) then
+                  cCustomFilter += ' OR' + crlf + '      ',
+               endif,
+               cCustomFilter += '(@RESFIELD@ = ' + cToken + ')',
+            endif,
+         end,
+
+         // Wenn ein Filter eingetragen wurde dann klammern und mit AND-Verknüpfen
+         if not empty(cCustomFilter) then
+            cCustomFilter := crlf + 'AND ( ' + cCustomFilter + ' )',
+         endif,
+
+         // In das Basis-Statement einfügen
+         Result := StrTran(Result, '@@PERSNR020FILT@@',      StrTran(cCustomFilter, '@RESFIELD@', 'PERSNR')),        // DAB020 Filter
+         Result := StrTran(Result, '@@PERSNRPOSTINGSFILT@@', StrTran(cCustomFilter, '@RESFIELD@', 'DABPVL.RES_ID')), // Buchungs-Filter (NOCH UMZUBAUEN!!!),
+      else
+         Result := StrTran(Result, '@@PERSNR020FILT@@', ''), // Ohne DAB020-Filter
+         Result := StrTran(Result, '@@PERSNRPOSTINGSFILT@@', ''), // Ohne Buchungs-Filter (NOCH UMZUBAUEN!!!),
+      endif,
+
+      //************************************************************************
+      // Einfügen des Datum-Filters
+      //************************************************************************
+      cCustomFilter := '',
+      cDateFrom     := iif(empty(dtp_DateFrom.Date), '', FormatDateTime('YYYY-MM-DD', dtp_DateFrom.Date)),
+      cDateTo       := iif(empty(dtp_DateTo.Date),   '', FormatDateTime('YYYY-MM-DD', dtp_DateTo.Date)),
+
+      // Datumsfilter VON
+      if not empty(cDateFrom) then
+         cDateFrom := "(DATUM >= '" + cDateFrom + "')",
+      endif,
+
+      // Datumsfilter BIS
+      if not empty(cDateTo) then
+         cDateTo := "(DATUM <= '" + cDateTo + "')",
+      endif,
+
+      cCustomFilter += cDateFrom,
+      cCustomFilter += iif(empty(cDateFrom) or empty(cDateTo), '', ' AND '),
+      cCustomFilter += cDateTo,
+
+      // Wenn ein Filter eingetragen wurde dann klammern und mit AND-Verknüpfen
+      if not empty(cCustomFilter) then
+         cCustomFilter := crlf + 'AND ( ' + cCustomFilter + ' )',
+      endif,
+
+      // In das Basis-Statement einfügen
+      if empty(cCustomFilter) then
+         Result := StrTran(Result, '@@DATEFILTER@@', ''), // Nichts eintragen
+      else
+         Result := StrTran(Result, '@@DATEFILTER@@', cCustomFilter), // Filter eintragen
+      endif,
+
+      //************************************************************************
+      // Nur Datensätze mit Projektbuchungen?
+      //************************************************************************
+      Result := iif(chk_OnlyDaysWithProjectTime.Checked,
+                    StrTran(Result, '@@ONLYPRJDAYS@@', ''),
+                    StrTran(Result, '@@ONLYPRJDAYS@@', '//')),
+   onerror
+      SetError('Fehler beim Erstellen des SQL-Statements' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Passt das Detail-Query mit den aktuell im Browser positionierten Daten an und
+// gibt dieses zurück
+// @Result: null
+//******************************************************************************
+function GetDetailSQLScript()
+| cResID, cProjID, cDateFilt |
+   startseq
+      cDateFilt := '',
+      Result    := m_cDetailQueryText,
+
+      if not (BOF(m_oSumQuery) and EOF(m_oSumQuery)) then
+         cResID    := m_oSumQuery:PERSNR,
+         cProjID   := Str(m_oSumQuery:PRJ_ID),
+
+         // Datumsbereich zusammenbauen
+         if not empty(dtp_DateFrom.Date) then
+            cDateFilt := "DATUM >= '" + FormatDateTime('YYYY-MM-DD', dtp_DateFrom.Date) + "'",
+         endif,
+
+         if not empty(dtp_DateTo.Date) then
+            if not empty(cDateFilt) then
+               cDateFilt += ' AND ',
+            endif,
+
+            cDateFilt += "DATUM <= '" + FormatDateTime('YYYY-MM-DD', dtp_DateTo.Date) + "'",
+         endif,
+
+         if not empty(cDateFilt) then
+            cDateFilt := ' AND (' + cDateFilt + ')',
+         endif,
+      else
+         cResID    := '-1000',
+         cProjID   := -1,
+         cDateFilt := '',
+      endif,
+
+      // Filterungen in das SQL-Statement eintragen
+      Result := StrTran(Result, '@@RES_ID@@', cResID),
+      Result := StrTran(Result, '@@PRJ_ID@@', cProjID),
+
+      if empty(cDateFilt) then
+         Result := StrTran(Result, '@@DATEFILT@@', ''),
+      else
+         Result := StrTran(Result, '@@DATEFILT@@', cDateFilt),
+      endif,
+   onerror
+      SetError('Fehler beim Ermittlen der Buchungs-Details' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnen der benötigten SQL-Querys und erste Ausführung der Statements mit
+// absichlich leerer Rückgabe um die Feldstruktur zu erhalten
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+   // Summen-Query öffnen
+   m_oSumQuery                       := CreateObject('TBeADSQuery', 'SUMEMPQUERY', oForm, oForm),
+   m_oSumQuery.AliasName             := 'SUMEMPTABLE',
+   m_oSumQuery.SQL                   := GetMasterSQlScript(),
+   m_oSumQuery.Active                := True,
+   DBGoBottom(m_oSumQuery),
+
+   // Summen-Query dem Browser zuweisen
+   ds_Sums.DataSet                   := m_oSumQuery,
+   grd_SumBrowser.DataSource         := ds_Sums,
+   grd_SumBrowser.RegisterDataSet    := m_oSumQuery,
+   grd_SumBrowser.ID                 := m_cSumBrowser,
+   grd_SumBrowser.ReadWriteProps     := False,
+
+   // Detail-Query öffnen
+   m_oDetailQuery                    := CreateObject('TBeADSQuery', 'DETEMPQUERY', oForm, oForm),
+   m_oDetailQuery.AliasName          := 'DETEMPTABLE',
+   m_oDetailQuery.SQL                := GetDetailSQLScript(),
+   m_oDetailQuery.Active             := True,
+   DBGoTop(m_oDetailQuery),
+
+   // Detail-Query dem Browser zuweisen
+   ds_Details.DataSet                := m_oDetailQuery,
+   grd_DetailBrowser.DataSource      := ds_Details,
+   grd_DetailBrowser.RegisterDataSet := m_oDetailQuery,
+   grd_DetailBrowser.ID              := m_cDetailBrowser,
+   grd_DetailBrowser.ReadWriteProps  := False,
+end,
+
+//******************************************************************************
+// Setzt die Grundeinstellungen für die Controls des Formulars
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   m_cUserFilter := '',
+
+   // Nur für User Anzeigen
+   if ALen(m_aSettings) > 0 and Len(m_aSettings[1]) > 0 then
+      m_cUserFilter := PrjMgmt_CreateUserFilter(m_aSettings[1]),                                                        // einen ADS konformen Filter erstellen
+      ProjMgmtGUI_RefreshUserComboItems(m_aSettings[2, 1], m_aSettings[2, 1], cmb_Users, m_cUserFilter),                // die User-Combo erstellen und mit den übergeben Usern füllen
+      ProjMgmtGUI_CheckUsers(cmb_Users, iif(ValType(m_aSettings[1]) = 'A', ArrToStr(m_aSettings[1]), m_aSettings[1])),  // alle User auswählen
+   endif,
+
+   // Datum Von - Bis
+   if ALen(m_aSettings) > 1 and ALen(m_aSettings[2]) = 2 then
+      dtp_DateFrom.Date := m_aSettings[2, 1],
+      dtp_DateTo.Date   := m_aSettings[2, 2],
+   else
+      dtp_DateFrom.Date := FrKW(KW(Date())) - 4,  // MO der aktuellen Woche
+      dtp_DateTo.Date   := dtp_DateFrom.Date + 6, // bis SO der aktuellen Woche
+   endif,
+
+   // Nur "Tage mit Projekt-Zeit" anzeigen?
+   if ALen(m_aSettings) > 2 then
+     chk_OnlyDaysWithProjectTime.Checked := m_aSettings[3],
+   endif,
+
+   // ComboBox sortieren
+   cmb_Users.Sorted := True,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExDestroy( Sender )
+   if not empty(m_oOwnerForm) then
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Event: Vor Schließen des Formulars die Einstellungen speichern
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   startseq
+      SaveSettings(), // Speichern der letzten Einstellungen
+   onerror
+      MessageDlg('Fehler beim Speichern der Einstellungen von ' +
+                 '"Übersicht Buchungen nach Mitarbeiter":' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars dieses freigeben
+//******************************************************************************
+function FormExClose( Sender, nAction )
+   nAction := caFree,
+end,
+
+//******************************************************************************
+// Beim Scrollen auf der Detail-Tabelle die Buttons ein und ausblenden
+//******************************************************************************
+function ds_DetailsScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen im Summen-Browser müssen die Details aktualisiert werden
+//******************************************************************************
+function ds_SumsScroll_Update( Sender )
+   if not m_bStarting then
+      m_oDetailQuery.Active := False,
+      m_oDetailQuery.SQL    := GetDetailSQLScript(),
+      m_oDetailQuery.Active := True,
+      DBGoTop(m_oDetailQuery),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Nur die User anzeigen, die im angebgenen Zeitraum dem Betrieb
+//        zugehörog waren
+//******************************************************************************
+function dtp_DateFromExit( Sender )
+   ProjMgmtGUI_RefreshUserComboItems(dtp_DateFrom.Date, dtp_DateTo.Date, cmb_Users, m_cUserFilter), // User-Combo anpassen ,
+   ProjMgmtGUI_CalculateComboValueString(cmb_Users),                                                // ausgewählte Mitarbeiter merken
+end,
+
+//******************************************************************************
+// Event: Beim Verlassen der User-Combo müssen die ausgewählten Mitarbeiter
+//        aktualisiert werden
+//******************************************************************************
+function cmb_UsersExit( Sender )
+   ProjMgmtGUI_CalculateComboValueString(Sender),  // ausgewählte Mitarbeiter merken
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Zum passenden Projekt der aktuell positionierten Buchung springen
+//******************************************************************************
+function A_GoToProjectExecute( Sender )
+   startseq
+      ProjMgmtGUI_ShowProjectManagement(Sender, m_oDetailQuery:PRJ_ID),
+      // Fenster (Docking) nur schließen wenn es nicht angedockt ist
+      if not ProjMgmtGUI_IsFormDocked(Sender, oForm) then
+         CloseForm(oForm),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Springen zum Projekt' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Ermitteln aller Buchungen die den gewählten Filterungen entsprechen
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nOldCur |
+   startseq
+      nOldCur := SetCursor(crHourglass),
+      startseq
+         m_oSumQuery.Active := False,
+         m_oSumQuery.SQL    := GetMasterSQLScript(),
+         m_oSumQuery.Active := True,
+         DBGoBottom(m_oSumQuery),
+      always
+         SetCursor(nOldCur),
+      stopseq,
+   onerror
+      MessageDlg('Fehler beim Aktualisieren' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm( "@PRJPSTEMP", Application ),
+   else
+      oForm := LoadForm( "@PRJPSTEMP", m_oOwnerForm),
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Übersicht Buchungen nach Mitarbeiter',
+   oForm.BorderStyle    := bsSizeToolWin,
+   oForm.PositionSaveID := '@PRJPSTE',
+   oForm.ImageIndex     := 200,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_GoToProject               := FindObject( oForm, "A_GoToProject" ),
+      A_GoToTask                  := FindObject( oForm, "A_GoToTask" ),
+      A_Refresh                   := FindObject( oForm, "A_Refresh" ),
+      ActionListDetail            := FindObject( oForm, "ActionListDetail" ),
+      ActionListSum               := FindObject( oForm, "ActionListSum" ),
+      bipnl_DetailHeadline        := FindObject( oForm, "bipnl_DetailHeadline" ),
+      bipnl_SumHeadline           := FindObject( oForm, "bipnl_SumHeadline" ),
+      btn_GoToProject             := FindObject( oForm, "btn_GoToProject" ),
+      btn_Refresh                 := FindObject( oForm, "btn_Refresh" ),
+      chk_OnlyDaysWithProjectTime := FindObject( oForm, "chk_OnlyDaysWithProjectTime" ),
+      cmb_Users                   := FindObject( oForm, "cmb_Users" ),
+      ds_Details                  := FindObject( oForm, "ds_Details" ),
+      ds_Sums                     := FindObject( oForm, "ds_Sums" ),
+      dtp_DateFrom                := FindObject( oForm, "dtp_DateFrom" ),
+      dtp_DateTo                  := FindObject( oForm, "dtp_DateTo" ),
+      grd_DetailBrowser           := FindObject( oForm, "grd_DetailBrowser" ),
+      grd_SumBrowser              := FindObject( oForm, "grd_SumBrowser" ),
+      lbl_DateFrom                := FindObject( oForm, "lbl_DateFrom" ),
+      lbl_DateTo                  := FindObject( oForm, "lbl_DateTo" ),
+      lbl_User                    := FindObject( oForm, "lbl_User" ),
+      pnl_DetailPanel             := FindObject( oForm, "pnl_DetailPanel" ),
+      pnl_FilterPanel             := FindObject( oForm, "pnl_FilterPanel" ),
+      pnl_GoToPanel               := FindObject( oForm, "pnl_GoToPanel" ),
+      pnl_SumPanel                := FindObject( oForm, "pnl_SumPanel" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_bStarting := True,
+   startseq
+      InitForm(),
+      LoadGUI(),
+      SetDefaults(),
+      LoadSettings(),
+      OpenDataBase(),
+   always
+      m_bStarting := False,
+   stopseq,
+
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm
+

@@ -1,0 +1,159 @@
+//##############################################################################
+// package-manager Funktionen für die Interaktion mit dem NPM Repository
+//##############################################################################
+
+//##############################################################################
+// Includes
+//##############################################################################
+
+//#p Tools\package-manager\utils-http
+
+//******************************************************************************
+// Lädt das Tool "7ZIP" vom Dontenwill Repo-Server herunter und legt es
+//     unter 'cDestinationFileName' ab
+//  Result = Batch-File Content als String
+//******************************************************************************
+function BPM_7Zip_DownloadZipTool(aRepositoryData, cVersion, cDestinationFileName)
+| oHttp, cUrl, cRepositoryUrl, cUserName, cPassword, cBuffer, oFile |
+   ForceDirectories(ExtractFilePath(cDestinationFileName)),                     // ShellExecute(ExtractFilePath(cDestinationFileName)),
+
+   cRepositoryUrl := KVU_GetAssert(aRepositoryData, 'REPOSITORY_URL'),
+   cUserName      := KVU_GetAssert(aRepositoryData, 'USERNAME'), // Auth verpflichtend
+   cPassword      := KVU_GetAssert(aRepositoryData, 'PASSWORD'),
+
+   cUrl  := cRepositoryUrl + '/' + '7zip_' + cVersion + '/7za.exe',
+   oHttp := CreateObject('TBeCbHTTP'),
+   startseq
+     oHTTP.CbAuthentificationMode      := BPM_DetermineAuthentificationMode(),
+     oHTTP.CbAuthentificationUserName  := cUserName,
+     oHTTP.CbAuthentificationPassword  := cPassword,
+     oHTTP.CbConnectTimeout            := 2000,
+     oHTTP.CbReadTimeout               := 2000,
+     startseq
+        oHTTP.CbGetURL(cUrl),
+        cBuffer := oHTTP.CbHTTPBody,
+
+        oFile := FOpen(cDestinationFileName, fo_Create),
+        startseq
+          FWrite(oFile, cBuffer),
+        always
+          FClose(oFile),
+        stopseq,
+     onerror
+        SetError(
+           'Error downloading 7-ZIP'                                     + crlf +
+           '  ' + GetErrorText()                                         + crlf +
+           '  ErrorHTTPStatusCode = ' + Str(oHTTP.CbErrorHTTPStatusCode) + crlf +
+           '  ErrorHTTPStatusText = ' +     oHTTP.CbErrorHTTPStatusText  + crlf +
+           '  ErrorHTTPBody       = ' +     oHTTP.CbErrorHTTPBody),
+     stopseq,
+   always
+      DestroyObject(oHttp),
+   stopseq,
+end,
+
+//******************************************************************************
+// Erzeugt den Batch Script Inhalt für das Entpacken eines Pakets per 7Zip
+//  Result = Batch-File Content als String
+//******************************************************************************
+function BPM_UnZip_Package_build_CommandLine(c7ZipExeFileName, cTarballFilePath)
+| cUnPackCommandLine, cOutputPath |
+
+  Result        := {},
+  cOutputPath   := ExtractFilePath(cTarballFilePath),
+
+  // Die Commandline ist so geschrieben damit unzip und untar direkt nacheinander erfolgen ohne Zwischenprodukte auf die Platte zu schreiben.
+  cUnPackCommandLine := c7ZipExeFileName + ' x -tgzip -so "' + cTarballFilePath + '" | ' + c7ZipExeFileName + ' x -si -ttar -o"' + cOutputPath + '"',
+
+  KVU_Set(Result, 'UNPACK_COMMAND_LINE', cUnPackCommandLine),
+end,
+
+//******************************************************************************
+// Entpackt ein *.tgz Paket im gleichen Ordner
+//  Result = KVU-Array mit "Pfad zum entpackten Paket-Inhalt"
+//******************************************************************************
+function BPM_UnZip_Package(cDownloadedFile, c7ZipToolFileName)
+| cBatchFile, nScriptErrorCode, oFile, cPath, cUnPackCommandLine,
+  aCommandlineResult |
+
+   cPath              := ExtractFilePath(cDownloadedFile),
+
+   aCommandlineResult := BPM_UnZip_Package_build_CommandLine(c7ZipToolFileName, cDownloadedFile),
+   cUnPackCommandLine := KVU_GetAssert(aCommandlineResult, 'UNPACK_COMMAND_LINE'),                                                    // WriteLn(cUnPackCommandLine),
+
+   // Batch-File mit dem Unzip-Befehl anlegen (direktes ausführen per ShellExecute() geht nicht so easy
+   cBatchFile := cPath + '\unzip.bat',                                                                                 // WriteLn(cBatchFile),
+   SetErrorIf(File(cBatchFile), 'file "' + cBatchFile + '" already exists in temporary download folder - something wrong!'),
+   oFile      := FOpen(cBatchFile, fo_Create),
+   startseq
+     FWrite(oFile, cUnPackCommandLine),
+   always
+     FClose(oFile),
+   stopseq,
+
+   // *.tgz Archiv entpacken (per Aufruf des Batch-Files)
+   nScriptErrorCode := ShellExecute(, 'open', cBatchFile, '', '', SW_HIDE, true),
+
+   if nScriptErrorCode <> 0 then
+      ShellExecute(cPath),
+      Meld('Das *.tgz Archiv konnte nicht automatisiert entpackt werden. Offenbar blockiert die ' +
+           'Systemumgebung die Ausführung des dafür notwendigen Batch-Scripts. -> (Temporäre) Lösung: Bitte das Paket selber entpacken. ' +
+           'Hierzu für das heruntergeladene .tgz File sowie für das im Anschluss enpackte .tar File per 7-Zip die Option "hier entpacken" wählen. ' +
+           'Danach diese Meldung bestätigen, dann geht es weiter.'),
+   endif,
+
+   // Hilfs-Batch-File löschen
+   DeleteFile(cBatchFile),
+
+   Result := {},
+   KVU_Set(Result, 'UNZIPPED_PACKAGE_FOLDER', cPath + '\package\'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Test-Code
+//##############################################################################
+//##############################################################################
+
+function TestEnsure7Zip()
+| c7ZipFileName, aRepositoryData, aCmdLineResult, aDialogResult, cUsername, cPassword, cBaseTestPath, cOfflinePackage, aUnZipResult |
+
+   aDialogResult := DU_InputDialog(
+      '7Zip Test',
+      '',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, '', True),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '', True)
+      },
+      {mrOK, mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      KVU_Set(aRepositoryData, 'REPOSITORY_URL', 'https://nexus.dontenwill.de/repository/be_packages_raw'),
+      KVU_Set(aRepositoryData, 'USERNAME',       cUsername),
+      KVU_Set(aRepositoryData, 'PASSWORD',       cPassword),
+
+
+      cBaseTestPath   := 'C:\temp\package-manager-test\',
+      cOfflinePackage := cBaseTestPath + 'code-cleaner-0.0.2.tgz',
+      c7ZipFileName   := cBaseTestPath + '7za-test.exe',
+
+      ForceDirectories(cBaseTestPath),
+
+      // Download 7 ZIP     
+      BPM_7Zip_DownloadZipTool(aRepositoryData, '1900', c7ZipFileName),
+
+      // build a unzip commandline
+      aCmdLineResult := BPM_UnZip_Package_build_CommandLine(c7ZipFileName, cOfflinePackage),
+      Writeln(DebugArr(aCmdLineResult)),
+
+      // Unzip a package
+      aUnZipResult := BPM_UnZip_Package(cOfflinePackage, c7ZipFileName),
+      Writeln(DebugArr(aUnZipResult)),
+   endif,
+end,
+
+// TestEnsure7Zip()

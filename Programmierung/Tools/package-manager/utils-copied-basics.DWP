@@ -1,0 +1,48 @@
+//##############################################################################
+//   Aus dem basic-package kopierte Funktionen, damit der package-manager mit
+//     möglichst wenig Abhängigkeiten auskommt und auch dann installierbar
+//     ist, wenn das basic-package nicht up-to-date ist
+//##############################################################################
+
+function Copied_ConcatTrenner(a, b, cTrenner)
+   if (not empty(a)) and (not empty(b)) then
+      Result := a + cTrenner + b,
+   else
+      Result := e2v(a, b),
+   endif,
+end,
+
+function Copied_ShowStdErrorMessage(cErrorMessage:C, oException:O, bQuietMode:B:=false)
+| aErrorStack, cErrorStack, i |
+
+   function Copied_DebugArr(aArr:A)
+   | i |
+      Result := '',
+      for i := 1 to ALen(aArr) do
+         Result := Copied_ConcatTrenner(Result, ToString(aArr[i]), crlf),
+      next,
+   end,
+
+   aErrorStack := GetErrorStack(True),
+   cErrorStack := '',
+
+   startseq
+      for i := 1 to ALen(aErrorStack) do
+           cErrorStack += '- '     + aErrorStack[i, 1] + '(): ',
+           cErrorStack += 'Zeile ' + Str(aErrorStack[i, 2]) + ': ',
+           cErrorStack += StrTran(aErrorStack[i, 4], crlf, ' '),
+           cErrorStack += ' (' + aErrorStack[i, 3] + ')' + crlf,
+      next,
+   onerror
+     cErrorStack := Copied_DebugArr(aErrorStack),
+   stopseq,
+
+   cErrormessage += crlf + GetErrorText(oException) + crlf +
+           'Typ: ' + ClassName(oException) + crlf + crlf +
+           'Error stack: ' + crlf + cErrorStack,
+
+   if not bQuietmode then
+      messagedlg(cerrorMessage,mterror),
+   endif,
+   result := cErrorMessage,
+end,

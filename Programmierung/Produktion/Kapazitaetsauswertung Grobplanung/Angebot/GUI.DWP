@@ -1,0 +1,318 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung:
+//  Oberfläche zur Administration der "Kapazitätsauswertung Grobplanung - Angebot"
+//
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM_GUI,
+   m_cFormID, m_cWinPosSaveId,
+
+   m_oPGKANGQuery, m_cKapaAngebotBrowserID,
+
+   m_dDatumFrom, m_dDatumTo,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CalcKapaAngebotAndSaveToDataBase, A_RefreshGui, A_ShowIndiHelp,
+   actions, BeBarButton1, BeBarButton2, BeBarButton3, BeBarDockControl,
+   BeBarManager, BeBarManagerBar1, BeLabel1, BePanel1, ds_GroupedAngebot,
+   edt_KWFrom, edt_KWTo, grid_GroupedAngebot, lbl_KWFrom, lbl_KwTo,
+   pnl_AngebotOptions
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                    := "@PGKUTG",
+m_cWinPosSaveId              := "@PGKUTG",
+m_cKapaAngebotBrowserID      := '@PGKU_A',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadGroupedAngebot(nStandort, dDatumFrom, dDatumTo)
+| cSQL |
+   cSQL :=  PGKU_SQL_Angebot_LoadAndReplaceSQLPlaceholder('Produktion\Kapazitaetsauswertung Grobplanung\SQL\angebot_verdichtet', nStandort, dDatumFrom, dDatumFrom, dDatumTo, {}, false),
+   
+   m_oPGKANGQuery.SQL    := cSQL,
+   m_oPGKANGQuery.Active := true,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM_GUI := CreateObject('TBeDbGet', '', oForm),
+
+   // notwendige Tabelle(n) öffnen
+
+   // Kapazitätsangebot
+   m_oPGKANGQuery                := CreateObject('TBeAdsQuery', 'QUERY_PGKANG', oForm),
+   m_oPGKANGQuery.AliasName      := 'QUERY_PGKANG',
+   m_oPGKANGQuery.ProtocolActive := false,
+   LoadGroupedAngebot(-1, Date(), Date()),
+
+   ds_GroupedAngebot.DataSet                     := m_oPGKANGQuery,
+   grid_GroupedAngebot.UseOnlyRegisteredDatasets := true,
+   GU_LinkTableToGUI(m_oPGKANGQuery, ds_GroupedAngebot, grid_GroupedAngebot, m_cKapaAngebotBrowserID, false),
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FillParamsFromGui()
+   m_dDatumFrom := WToD('KW.' + AllTrim(edt_KWFrom.Text)),
+   m_dDatumFrom := iif(empty(m_dDatumFrom), null, PGKU_FirstDayOfWeek(m_dDatumFrom)),
+
+   m_dDatumTo   := WToD('KW.' + AllTrim(edt_KWTo.Text)),
+   m_dDatumTo   := iif(empty(m_dDatumTo),   null, PGKU_LastDayOfWeek(m_dDatumTo)),
+end,
+
+//******************************************************************************
+// Funktion validiert die eingegebenen Datum von / Datum bis Informationen
+// @Result: valide ja/nein
+//******************************************************************************
+function ValidateParams()
+| cMessage |
+
+   cMessage := '',
+
+   if empty(m_dDatumFrom) then
+      cMessage := 'Leeres <Datum von> ist nicht zulässig.',
+      MyFocusControl(oForm, edt_KWFrom),
+   else
+      if empty(m_dDatumTo) then
+         cMessage := 'Leeres <Datum bis> ist nicht zulässig.',
+         MyFocusControl(oForm, edt_KWTo),
+      else
+         if m_dDatumTo < m_dDatumFrom then
+            cMessage := '<Datum bis> darf nicht kleiner <Datum von> sein.',
+            MyFocusControl(oForm, edt_KWTo),
+         endif,
+      endif,
+   endif,
+
+   if not empty(cMessage) then
+      Result := false,
+      MessageDlg(cMessage, mtInformation),
+   else
+      Result := true,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Vor dem Schließen
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_RefreshGuiExecute( Sender )
+| nOldCursor |
+   FillParamsFromGui(),
+   if ValidateParams() then
+      nOldCursor := SetCursor(crHourglass),
+      startseq
+         LoadGroupedAngebot(mStandort, m_dDatumFrom, m_dDatumTo)
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_PGKU_IndiOnlineHelp_SQLWhere),
+end,
+
+//******************************************************************************
+// Action: Berechnet das Kapazitätsangebot neu und speichert das
+//         Ergebnis in der Datenbank
+//******************************************************************************
+function A_CalcKapaAngebotAndSaveToDataBaseExecute( Sender )
+| nOldCursor, aResult, cMessage |
+   startseq
+      nOldCursor := SetCursor(crHourGlass),
+      startseq
+         FillParamsFromGui(),
+         if ValidateParams() then
+            aResult := PGKU_GUI_CalcAndSaveKapaAngebot_WithTransaction(mStandort, m_dDatumFrom, m_dDatumTo, true),
+
+            cMessage := 'Dauer (mSec) Aufbau des "TBeCbPCData" Objekts: '       + FloatToStr(aResult[1], 2) + ' mSec' + crlf +
+                        'Dauer (mSec) Berechnung des Kapazitäts-Angebots: '     + FloatToStr(aResult[2], 2) + ' mSec' + crlf +
+                        'Dauer (mSec) Speicherung des Kapazitäts-Angebots: '    + FloatToStr(aResult[3], 2) + ' mSec' + crlf +
+                        'Anzahl neu angelete Datensätze in Angebots-Tabelle: '  + FloatToStr(aResult[4], 0) + crlf +
+                        'Anzahl aktualisierte Datensätze in Angebots-Tabelle: ' + FloatToStr(aResult[5], 0) + crlf +
+                        'Anzahl gelöschte Datensätze in Angebots-Tabelle: '     + FloatToStr(aResult[6], 0),
+
+            WriteLn(cMessage),
+            MessageDlg('Das Kapazitätsangebot wurde für den Bereich "' + DToC(m_dDatumFrom) + '" bis "' + DToC(m_dDatumTo) + '" aktualisiert.'),
+
+            ActionExecute(A_RefreshGui),
+         endif,
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Berechnen des Kapazitätsangebots.', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CalcKapaAngebotAndSaveToDataBase := FindObject(oForm, "A_CalcKapaAngebotAndSaveToDataBase"),
+   A_RefreshGui                       := FindObject(oForm, "A_RefreshGui"),
+   A_ShowIndiHelp                     := FindObject(oForm, "A_ShowIndiHelp"),
+   actions                            := FindObject(oForm, "actions"),
+   BeBarButton1                       := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                       := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                       := FindObject(oForm, "BeBarButton3"),
+   BeBarDockControl                   := FindObject(oForm, "BeBarDockControl"),
+   BeBarManager                       := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1                   := FindObject(oForm, "BeBarManagerBar1"),
+   BeLabel1                           := FindObject(oForm, "BeLabel1"),
+   BePanel1                           := FindObject(oForm, "BePanel1"),
+   ds_GroupedAngebot                  := FindObject(oForm, "ds_GroupedAngebot"),
+   edt_KWFrom                         := FindObject(oForm, "edt_KWFrom"),
+   edt_KWTo                           := FindObject(oForm, "edt_KWTo"),
+   grid_GroupedAngebot                := FindObject(oForm, "grid_GroupedAngebot"),
+   lbl_KWFrom                         := FindObject(oForm, "lbl_KWFrom"),
+   lbl_KwTo                           := FindObject(oForm, "lbl_KwTo"),
+   pnl_AngebotOptions                 := FindObject(oForm, "pnl_AngebotOptions"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Funktion initialisiert die Oberfläche
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt        := 'Kapazitätsauswertung Grobplanung - Angebot',
+   oForm.ImageIndex      := 217,
+
+   edt_KWFrom.Text       := KW(PGKU_FirstDayOfWeek(Date())),
+   edt_KWTo.Text         := KW(PGKU_FirstDayOfWeek(Date() + (4*7))),
+
+   oForm.ActiveControl   := edt_KWFrom,
+   ActionExecute(A_RefreshGui),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText()  + crlf + crlf +
+               'error stack: ' + crlf +
+               DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

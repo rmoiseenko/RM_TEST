@@ -1,0 +1,376 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzeroberfläche für Status des Schedulers und Tasks
+//##############################################################################
+//##############################################################################
+
+|
+   m_nSchedulerID:P1:=0,
+   m_cPositionSaveID, m_cBrowserID_Logs,
+   m_oDM, m_oTSKPLSCHED, m_oTSKPLTASKS, m_oTSKPLLOGS,
+
+   m_bShowForm, m_bSchedulerHasToRun, m_bForceClose, m_cSqlStringSchedulerRun,
+   m_nRunningTasks, m_cSqlStringRunningTasks, m_bExecutingSchedulerInterval,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, btn_Execute, bvl_Log, bvl_Tasks, ds_TSKPLLOGS, ds_TSKPLSCHED,
+   ds_TSKPLTASKS, edt_SchedulerID, edt_SchedulerName, grd_Logs, grd_Tasks,
+   ipnl_Header, ipnl_Status, lbl_Log, lbl_SchedulerID, lbl_SchedulerName,
+   lbl_Tasks, pnl_Logs, pnl_Main, pnl_Scheduler, pnl_SchedulerInfo, pnl_Tasks,
+   pnl_Toolbar, t_SchedulTimer
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveID := '@TSSTATPOS',
+m_cBrowserID_Logs := '@TSKPLALOG',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function RefreshGUIForServiceMode()
+   ipnl_Status.ColorMode := ipcmWarning,
+   ipnl_Status.Caption   := 'Das System befindet sich im Wartungsmodus!',
+end,
+
+//******************************************************************************
+// Synchronizierung des Tasks-Liste abhängig von dem Scheduler_ID
+// @Result: null
+//******************************************************************************
+function SynchronizeTasks()
+   m_oTSKPLTASKS.CbSetRangeEx({m_oTSKPLSCHED:ID}),
+end,
+
+//******************************************************************************
+// Synchronizierung des Logs-Liste abhängig von dem Scheduler_ID
+// @Result: null
+//******************************************************************************
+function SynchronizeLogs()
+   //m_oTSKPLLOGS.CbSetRangeEx({m_oTSKPLSCHED:ID}),
+   DbFilter('SCHEDUL_ID = ' + Str(m_oTSKPLSCHED:ID), m_oTSKPLLOGS),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ShowSchedulerStatus(nSchedulerStatus:N)
+| cSchedulerStatus |
+
+   cSchedulerStatus    := Str(nSchedulerStatus),
+   ipnl_Status.Color   := AttribColor(gl_TSKPL_Config_AttributeTableID_SchedulerStatusGUI,   cSchedulerStatus),
+   ipnl_Status.Caption := AttribDispVal(gl_TSKPL_Config_AttributeTableID_SchedulerStatusGUI, cSchedulerStatus),
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| nSchedulerStatus |
+
+   m_bForceClose        := False,
+   m_bShowForm          := True,
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Scheduler Ausführung',
+
+   edt_SchedulerName.DataSource := ds_TSKPLSCHED,
+   edt_SchedulerName.DataField  := 'NAME',
+   edt_SchedulerID.DataSource   := ds_TSKPLSCHED,
+   edt_SchedulerID.DataField    := 'ID',
+   nSchedulerStatus             := TSKPL_GetSchedulerStatus(m_oTSKPLSCHED:ID),
+
+   ipnl_Header.ColorMode := ipcmError,
+   ipnl_Status.ColorMode := ipcmError,
+   ipnl_Header.ColorMode := ipcmInfo,
+   ipnl_Status.ColorMode := ipcmInfo,
+
+   ShowSchedulerStatus(TSKPL_GetSchedulerStatusGui(m_oTSKPLSCHED:ID, nSchedulerStatus)),
+   SynchronizeTasks(),
+   SynchronizeLogs(),
+
+   if m_oTSKPLSCHED:HASTORUN then
+      t_SchedulTimer.Enabled := True,
+      TSKPL_WriteLog_Scheduler(m_oTSKPLSCHED:ID, GL_TSKPL_EVENTCODE_SCHEDULERSTARTED, 'Scheduler gestartet.'),
+   else
+      m_bShowForm := False,
+      MessageDlg('Der Scheduler <' + Trim(m_oTSKPLSCHED:NAME) + '> darf nicht ausgeführt werden!', mtError),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function getCountRunningTasks()
+   Result := 0,
+   while not m_oTSKPLTASKS.CbEof do
+      if TSKPL_GetTaskStatus(m_oTSKPLTASKS:ID) == GL_TSKPL_TASKSTATUS_RUNNING then
+         Result += 1,
+      endif,
+      m_oTSKPLTASKS.CbNext(),
+      ProcessMsg(),
+   end,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+| oQuery |
+
+   t_SchedulTimer.Enabled := False,
+   if not m_bForceClose then
+      m_bSchedulerHasToRun     := False,
+      m_nRunningTasks          := 0,
+      m_cSqlStringSchedulerRun := 'SELECT HASTORUN FROM  ' + DbSqlTableName(waTSKPLSCHED) + CRLF +
+                                  'WHERE ID = ' + Str(m_oTSKPLSCHED:ID),
+      m_cSqlStringRunningTasks := 'SELECT COUNT(*) FROM ' + DbSqlTableName(waTSKPLTASK) + CRLF +
+                                  'WHERE STATUS = ' + Str(gl_TSKPL_TaskStatus_Running) + CRLF +
+                                  ' AND SCHEDUL_ID = ' + Str(m_oTSKPLSCHED:ID),
+      if m_Service then
+         bCanClose := Jn('Wenn der Scheduler jetzt beendet wird, dann wird kein Log-Eintrag erstellt.' + CRLF +
+                         'Wollen Sie das Fenster wirklich schließen?', False),
+      else
+         bCanClose := Jn('Wenn das Monitoring-Fenster geschlossen wird, wird der Scheduler beendet.' + CRLF +
+                         'Fenster wirklich schließen?', False),
+      endif,
+
+      if bCanClose and not m_Service then
+
+         oQuery := CreateObject('TBeAdsQuery'),
+         startseq
+            startseq
+               oQuery.SQL    := m_cSqlStringSchedulerRun,
+               oQuery.Active := True,
+               m_bSchedulerHasToRun := oQuery:HASTORUN,
+
+               m_nRunningTasks := getCountRunningTasks(),
+            always
+               DestroyObject(oQuery),
+            stopseq,
+         onerror
+            GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+         stopseq,
+         if m_bSchedulerHasToRun = True and m_nRunningTasks > 0 then
+            TSKPL_CHANGESCHEDULERSTATETERMINATED(m_oTSKPLSCHED:ID),
+            TSKPL_WriteLog_Scheduler(m_oTSKPLSCHED:ID, gl_TSKPL_EventCode_SchedulerStopped, 'Scheduler terminiert.'),
+         else
+            TSKPL_CHANGESCHEDULERSTATEINACTIVE(m_oTSKPLSCHED:ID),
+            TSKPL_WriteLog_Scheduler(m_oTSKPLSCHED:ID, gl_TSKPL_EventCode_SchedulerStopped, 'Scheduler beendet.'),
+         endif,
+
+      else
+         t_SchedulTimer.Enabled := True,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_TSKPLLOGSDataChange( Sender )
+| nSchedulerStatus |
+
+   nSchedulerStatus := TSKPL_GetSchedulerStatus(m_oTSKPLSCHED:ID),
+   // TODO: Aktualisierung für Scheduler-Status ist nicht 100% getestet,
+   //       scheint aber zu funktionieren.
+   m_oTSKPLSCHED.CbRefresh(),
+   ShowSchedulerStatus(TSKPL_GetSchedulerStatusGui(m_oTSKPLSCHED:ID, nSchedulerStatus)),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExClose( Sender )
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function t_SchedulTimerTimer( Sender )
+| nInterval, nSchedulerStatus |
+
+   if not m_Service then
+
+      // Verhindern, dass sich mehrere Scheduler-Ausführungsintervalle
+      // überschneiden
+      if not m_bExecutingSchedulerInterval then
+         startseq
+            m_oTSKPLSCHED.CbRefresh(),
+            if m_oTSKPLSCHED:HASTORUN then
+               m_bExecutingSchedulerInterval := True,
+               startseq
+                  nInterval       := TSKPL_ExecuteScheduler(m_oTSKPLSCHED:ID),
+                  Sender.Interval := nInterval,
+               always
+                  m_bExecutingSchedulerInterval := False,
+               stopseq,
+
+               m_oTSKPLSCHED.CbRefresh(),
+
+               nSchedulerStatus := TSKPL_GetSchedulerStatus(m_oTSKPLSCHED:ID),
+               ShowSchedulerStatus(TSKPL_GetSchedulerStatusGui(m_oTSKPLSCHED:ID, nSchedulerStatus)),
+
+               m_oTSKPLTASKS.CbRefresh(),
+               m_oTSKPLLOGS.CbRefresh(),
+               m_oTSKPLLOGS.CbFirst(),
+            else
+               Sender.Enabled   := False,
+               m_bForceClose    := True,
+               nSchedulerStatus := TSKPL_GetSchedulerStatus(m_oTSKPLSCHED:ID),
+               ShowSchedulerStatus(TSKPL_GetSchedulerStatusGui(m_oTSKPLSCHED:ID, nSchedulerStatus)),
+               BeAutoCloseMessage('Der Scheduler wurde gesperrt und darf nicht mehr ausgeführt werden!' + CRLF +
+                                  'Schedulerausführung wird beendet.', '', 30),
+               CloseForm(oForm),
+            endif,
+         onerror
+            Sender.Enabled := False,
+            GU_ShowStdErrorMessage('Fehler beim Ausführen des Schedulers', GetErrorObj()),
+         stopseq,
+      endif,
+   else
+      Sender.Enabled  := False,
+      Sender.Interval := 10000,
+      Sender.Enabled  := True,
+      RefreshGUIForServiceMode(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function btn_ExecuteClick( Sender )
+| aTaskDefinition |
+
+   if m_Service then
+      RefreshGUIForServiceMode(),
+      MessageDlg('Das System befindet sich im Wartungsmodus. ' + crlf + 'Der Task kann nicht gestartet werden.', mtWarning),
+   else
+      aTaskDefinition := TSKPL_TaskDefinition_Create(
+         m_oTSKPLTASKS:ID,
+         m_oTSKPLTASKS:NAME,
+         m_oTSKPLTASKS:INFO,
+         m_oTSKPLTASKS:START_PROG,
+         m_oTSKPLTASKS:START_KIND,
+         m_oTSKPLTASKS:STARTPARAM,
+         m_oTSKPLTASKS:START_TYPE,
+         m_oTSKPLTASKS:START_OPT,
+         Today(),//m_oTSKPLTASK:STARTFIRST,
+         GetDayEnd(Today()),//m_oTSKPLTASK:START_LAST,
+         m_oTSKPLTASKS:START_NEXT,
+         m_oTSKPLTASKS:ACTIVE,
+         m_oTSKPLTASKS:LOCATION,
+         m_oTSKPLTASKS:DEPARTMENT,
+         m_oTSKPLTASKS:USER),
+         
+      TSKPL_TaskDefinition_Execute(aTaskDefinition),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
+   // muss
+   m_oDM := CreateObject('TBeDbGet', 'DM_TSKPL_SchedulerStatus', oForm),
+
+   // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
+   m_oTSKPLSCHED           := DbGetTable(m_oDM, waTSKPLSCHED, 'TSKPLSCHED'),
+   m_oTSKPLSCHED.IndexName := 'ID',
+   SetErrorIf(not m_oTSKPLSCHED.CbFindKey({m_nSchedulerID}),
+              'Scheduler mit ID <' + Str(m_nSchedulerID) + '> existiert nicht'),
+   ds_TSKPLSCHED.Dataset   := m_oTSKPLSCHED,
+
+   // TSKPLTASK_List
+   m_oTSKPLTASKS           := DbGetTable(m_oDM, waTSKPLTASK, 'TSKPLTASKS'),
+   m_oTSKPLTASKS.IndexName := 'SCHEDUL_ID_ID',
+   GU_LinkTableToGUI(m_oTSKPLTASKS, ds_TSKPLTASKS, grd_Tasks, '@TSSTLISTB', True),
+
+   // TSKPLLOG
+   m_oTSKPLLOGS           := DbGetTable(m_oDM, waTSKPLLOG, 'TSKPLLOGS'),
+   m_oTSKPLLOGS.IndexName := 'ERSTELLT_DESC', 
+   GU_LinkTableToGUI(m_oTSKPLLOGS, ds_TSKPLLOGS, grd_Logs, m_cBrowserID_Logs, True),
+end,
+
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm             := LoadForm("@TSSTATGUI", Application),
+   btn_Execute       := FindObject(oForm, "btn_Execute"),
+   bvl_Log           := FindObject(oForm, "bvl_Log"),
+   bvl_Tasks         := FindObject(oForm, "bvl_Tasks"),
+   ds_TSKPLLOGS      := FindObject(oForm, "ds_TSKPLLOGS"),
+   ds_TSKPLSCHED     := FindObject(oForm, "ds_TSKPLSCHED"),
+   ds_TSKPLTASKS     := FindObject(oForm, "ds_TSKPLTASKS"),
+   edt_SchedulerID   := FindObject(oForm, "edt_SchedulerID"),
+   edt_SchedulerName := FindObject(oForm, "edt_SchedulerName"),
+   grd_Logs          := FindObject(oForm, "grd_Logs"),
+   grd_Tasks         := FindObject(oForm, "grd_Tasks"),
+   ipnl_Header       := FindObject(oForm, "ipnl_Header"),
+   ipnl_Status       := FindObject(oForm, "ipnl_Status"),
+   lbl_Log           := FindObject(oForm, "lbl_Log"),
+   lbl_SchedulerID   := FindObject(oForm, "lbl_SchedulerID"),
+   lbl_SchedulerName := FindObject(oForm, "lbl_SchedulerName"),
+   lbl_Tasks         := FindObject(oForm, "lbl_Tasks"),
+   pnl_Logs          := FindObject(oForm, "pnl_Logs"),
+   pnl_Main          := FindObject(oForm, "pnl_Main"),
+   pnl_Scheduler     := FindObject(oForm, "pnl_Scheduler"),
+   pnl_SchedulerInfo := FindObject(oForm, "pnl_SchedulerInfo"),
+   pnl_Tasks         := FindObject(oForm, "pnl_Tasks"),
+   pnl_Toolbar       := FindObject(oForm, "pnl_Toolbar"),
+   t_SchedulTimer    := FindObject(oForm, "t_SchedulTimer"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   if m_bShowForm then
+      ShowModal(oForm),
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+

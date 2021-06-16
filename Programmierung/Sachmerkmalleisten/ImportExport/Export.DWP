@@ -1,0 +1,140 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Programm zum Exportieren einer bestimmten Sachmerkamlleiste.
+//##############################################################################
+//##############################################################################
+
+|
+   m_nSMLID:P1:=12,
+   m_cExportFileName:P2:='C:\dowi\export\sml-12.xlsx'
+|
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Sachmerkmalleistenzuordnungen in eine bereits initialisierte TBeMemTable
+// exportieren.
+//
+// @Result: null
+//******************************************************************************
+function SML_ExportAssignmentsToMemory(nSMLID:N, oMemory:O)
+| oSMLZUO |
+
+   //***************************************************************************
+   // Eine einzige Sachmerkmalleistenzuordnung in eine TBeMemTable exportieren
+   // @Result: null
+   //***************************************************************************
+   function ExportAssignmentToMemory(nSMLID:N, nWorkarea:N, nID:N, cArticleNo:C, oMemTable:O)
+   | oSMLWRT, cIndexName, aKeys, cSourceFieldName, cTargetFieldName, oField |
+
+      oMemTable.CbAppend(),
+
+      if nWorkarea = waDab010 then
+         oMemTable:ARTNR := cArticleNo,
+         cIndexName      := 'ARTNR_SML_ID_V_INDEX',
+         aKeys           := {cArticleNo, nSMLID},
+      else
+         oMemTable:ARTNR := SML_GetMasterRecordKey(nWorkarea, nID),
+         cIndexName      := 'VERWEND_WA_VERWEND_ID_SML_ID_V_INDEX',
+         aKeys           := {nWorkarea, nID, nSMLID},
+      endif,
+
+      oSMLWRT := BeOpen(waSMLWRT, cIndexName, True),
+      startseq
+         oSMLWRT.CbSetRangeEx(aKeys),
+         oSMLWRT.CbFirst(),
+         while not oSMLWRT.CbEOF do
+            // Nur Eingabe-Zeilen exportieren
+            if oSMLWRT:ZEILEN_TYP = gl_SML_RowTypeInput then
+               cTargetFieldName := SML_DetermineAttributeFieldName(oSMLWRT:V_INDEX),
+               oField           := oMemTable.CbFieldByName(cTargetFieldName),
+               SetErrorIf(Empty(oField),
+                          'Feld mit Feldname <' + cTargetFieldName + '> existiert nicht'),
+               cSourceFieldName := SML_AttributeTargetFieldName(oSMLWRT:MERKM_TYP),
+               DbReplace(oField, AsVariant(cSourceFieldName, oSMLWRT)),
+            endif,
+            oSMLWRT.CbNext(),
+         end,
+      always
+         BeClose(oSMLWRT),
+      stopseq,
+
+      oMemTable.CbPost(),
+   end,
+
+
+   oSMLZUO := BeOpen(waSMLZUO, 'SML_ID', True),
+   startseq
+      oSMLZUO.CbSetRangeEx({nSMLID}),
+      oSMLZUO.CbFirst(),
+      while not oSMLZUO.CbEOF do
+         ExportAssignmentToMemory(nSMLID, oSMLZUO:VERWEND_WA, oSMLZUO:VERWEND_ID, oSMLZUO:ARTNR, oMemory),
+         oSMLZUO.CbNext(),
+      end,
+   always
+      BeClose(oSMLZUO),
+   stopseq,
+end,
+
+//******************************************************************************
+// Exportieren einer Sachmerkmalleiste als TBeMemTable.
+// ACHTUNG: Die durch diese Funktion erzeugte MemTable muss nach benutzung
+//          manuell mit DestroyObject() wieder freigegeben werden!
+//
+// @Result: object, TBeMemTable
+//******************************************************************************
+function SML_ExportToMemory(nSMLID:N)
+| oSMLSTM |
+
+   // Validieren der Sachmerkmalleiste
+   oSMLSTM := BeOpen(waSMLSTM, 'ID', True),
+   startseq
+      SetErrorIf(not oSMLSTM.CbFindKey({nSMLID}),
+                 'Sachmerkmalleiste mit ID <' + Str(nSMLID) + '> existiert nicht'),
+      SetErrorIf(oSMLSTM:VERWEND_WA <> waDab010,
+                 'SML-Export unterstützt aktuell nur Sachmerkmalleisten für den Artikelstamm'),
+   always
+      BeClose(oSMLSTM),
+   stopseq,
+
+   // Erzeugen/Initialisieren der MemTable
+   Result := SML_CreateImportExportMemTable(nSMLID),
+
+   // Sachmerkmalleistenzuordnungen in die MemTable exportieren
+   SML_ExportAssignmentsToMemory(nSMLID, Result),
+end,
+
+//******************************************************************************
+// Exportiert eine Sachmerkmalleiste in eine Excel-Datei.
+//
+// @Result: null
+//******************************************************************************
+function SML_Export(nSMLID:N, cExportFileName:C)
+| oMem |
+   oMem := SML_ExportToMemory(nSMLID),
+   startseq
+      ExportExcelFile(cExportFileName, oMem, True),
+   always
+      if not Empty(oMem) then
+         DestroyObject(oMem),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   SML_Export(m_nSMLID, m_cExportFileName),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

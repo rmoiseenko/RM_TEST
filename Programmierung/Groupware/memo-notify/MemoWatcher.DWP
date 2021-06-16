@@ -1,0 +1,610 @@
+//##############################################################################
+//##############################################################################
+//
+// Programm, welches im Hintergrund zu einer be-client-Instanz läuft und
+//   periodisch prüft, ob Benachrichtigungen zu neuen Memos vorliegen
+//
+//##############################################################################
+//##############################################################################
+
+| bCallMode:P1:='DEBUG', m_oChangedTimer, m_oReminderTimer, m_oInfoArea,
+   m_oCreateInfoPanel, m_oChangedInfoPanel, m_oReminderInfoPanel |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Container-Panel für Info-Panels
+// @Result: Panel-Objekt
+//******************************************************************************
+function CreateInfoAreaPanel()
+  Result                  := CreateObject('TPanel', 'MEMO_NOTIFY_PANEL_AREA', GetAppMainForm(), GetAppMainForm()),
+  Result.Font.Name        := 'Segoe UI',
+  Result.AutoSize         := false,
+  Result.BevelOuter       := bvNone,
+  Result.Height           := 21,
+  Result.Caption          := '',
+  Result.Visible          := true,
+  Result.Align            := alBottom,
+  Result.AlignWithMargins := true,
+  Result.Margins.Top      := 2,
+  Result.Margins.Bottom   := 3,
+
+  AssignEvent(Result, 'OnResize', 'AreaInfoPanelResize'),
+end,
+
+//******************************************************************************
+// Info-Panel-Objekt erzeugen
+// geändert AR 18.3.14 Aufteilung Change und Create
+// @Result: Info-Panel-Objekt
+//******************************************************************************
+function CreateInfoPanel()
+| oCloseButton |
+   Result                  := CreateObject('TBeInfoPanel', 'MEMO_NOTIFY_CREATE_PANEL', GetAppMainForm(), m_oInfoArea),
+   Result.AlignWithMargins := true,
+   Result.Margins.Left     := 0,
+   Result.Margins.Top      := 0,
+   Result.Margins.Bottom   := 0,
+   Result.Margins.Right    := 3,
+   Result.AutoSize         := false,
+   Result.Height           := 21,
+   Result.Caption          := 'Info',
+   Result.Hint             := 'Hint',
+   Result.ShowHint         := true,
+   Result.Visible          := true,
+   Result.Align            := alClient,
+   Result.ColorMode        := ipcmWarning,
+   AssignEvent(Result, 'OnClick', 'ChangedInfoPanelClick'),
+
+   // Schließen-Button im Info-Panel
+   oCloseButton                        := CreateObject('TBeSpeedButton', 'MEMO_NOTIFY_CREATE_PANEL_CLOSE_BUTTON', GetAppMainForm(), Result),
+   oCloseButton.Caption                := '',
+   oCloseButton.Align                  := alRight,
+   oCloseButton.Width                  := 13,
+   oCloseButton.Width                  := 70,
+   oCloseButton.Caption                := 'Schließen',
+   oCloseButton.TransparentButton      := true,
+   AssignEvent(oCloseButton, 'OnClick', 'CreateCloseButtonClick'),
+end,
+
+//******************************************************************************
+// Info-Panel-Objekt wieder-finden
+// geändert AR 18.3.14 Aufteilung Change und Create
+// @Result: Info-Panel-Objekt
+//******************************************************************************
+function ChangedInfoPanel()
+| oCloseButton |
+   Result                  := CreateObject('TBeInfoPanel', 'MEMO_NOTIFY_CHANGE_PANEL', GetAppMainForm(), m_oInfoArea),
+   Result.AlignWithMargins := true,
+   Result.Margins.Left     := 0,
+   Result.Margins.Top      := 0,
+   Result.Margins.Bottom   := 0,
+   Result.Margins.Right    := 3,
+   Result.AutoSize         := false,
+   Result.Height           := 21,
+   Result.Caption          := 'Info',
+   Result.Hint             := 'Hint',
+   Result.ShowHint         := true,
+   Result.Visible          := true,
+   Result.Align            := alLeft,
+   Result.ColorMode        := ipcmOk,
+   AssignEvent(Result, 'OnClick', 'ChangedInfoPanelClick'),
+
+   // Schließen-Button im Info-Panel
+   oCloseButton                        := CreateObject('TBeSpeedButton', 'MEMO_NOTIFY_CHANGE_PANEL_CLOSE_BUTTON', GetAppMainForm(), Result),
+   oCloseButton.Caption                := '',
+   oCloseButton.Align                  := alRight,
+   oCloseButton.Width                  := 13,
+   oCloseButton.Width                  := 70,
+   oCloseButton.Caption                := 'Schließen',
+   oCloseButton.TransparentButton      := true,
+   AssignEvent(oCloseButton, 'OnClick', 'ChangedCloseButtonClick'),
+end,
+
+//******************************************************************************
+// "WVDatum"-Info-Panel-Objekt wieder-finden oder erzeugen
+// @Result: Info-Panel-Objekt
+//******************************************************************************
+function ReminderInfoPanel()
+| oCloseButton |
+   Result                  := CreateObject('TBeInfoPanel', 'MEMO_NOTIFY_REMINDER_PANEL', GetAppMainForm(), m_oInfoArea),
+   Result.AlignWithMargins := true,
+   Result.Margins.Left     := 0,
+   Result.Margins.Top      := 0,
+   Result.Margins.Bottom   := 0,
+   Result.Margins.Right    := 3,
+   Result.AutoSize         := false,
+   Result.Height           := 21,
+   Result.Width            := 250,
+   Result.Caption          := 'Reminder Info',
+   Result.Hint             := 'Hint',
+   Result.ShowHint         := true,
+   Result.Visible          := true,
+   Result.Align            := alLeft,
+   Result.ColorMode        := ipcmInfo,
+   AssignEvent(Result, 'OnClick', 'ReminderInfoPanelClick'),
+
+   // Schließen-Button im Info-Panel
+   oCloseButton                        := CreateObject('TBeSpeedButton', 'MEMO_NOTIFY_REMINDER_PANEL_CLOSE_BUTTON', GetAppMainForm(), Result),
+   oCloseButton.Caption                := '',
+   oCloseButton.Align                  := alRight,
+   oCloseButton.Width                  := 13,
+   oCloseButton.Width                  := 70,
+   oCloseButton.Caption                := 'Schließen',
+   oCloseButton.TransparentButton      := true,
+   AssignEvent(oCloseButton, 'OnClick', 'ReminderCloseButtonClick'),
+end,
+
+//******************************************************************************
+// Layout (Größe, Alignment) -Anpassungen für die Info-Panels vornehmen
+//  => notwendig z.B. dann, wenn eines gerade ein / ausgeblendet wurde
+// @Result: null
+//******************************************************************************
+function AdjustInfoAreaPanel()
+   if empty(m_oInfoArea) or empty(m_oCreateInfoPanel) or empty(m_oChangedInfoPanel) or empty(m_oReminderInfoPanel) then
+      exit,
+   endif,
+   // Wenn 3 Panels sichtbar sind, dann aufteilen
+   if m_oCreateInfoPanel.Visible and m_oChangedInfoPanel.Visible and m_oReminderInfoPanel.Visible then     //1
+      m_oInfoArea.Visible                := true,
+      m_oReminderInfoPanel.Align         := alLeft,
+      m_oReminderInfoPanel.Width         := Trunc(m_oInfoArea.Width / 3),
+      m_oReminderInfoPanel.Margins.Right := 3,
+      m_oChangedInfoPanel.Align          := alLeft,
+      m_oChangedInfoPanel.Width          := Trunc(m_oInfoArea.Width / 3),
+      m_oChangedInfoPanel.Margins.Right  := 3,
+      m_oCreateInfoPanel.Align           := alClient,
+   else //1
+      // Wenn 2 Panels sichtbar sind, dann aufteilen
+      if not m_oCreateInfoPanel.Visible and m_oChangedInfoPanel.Visible and m_oReminderInfoPanel.Visible then //2
+         m_oInfoArea.Visible                := true,
+         m_oReminderInfoPanel.Align         := alLeft,
+         m_oReminderInfoPanel.Width         := Trunc(m_oInfoArea.Width / 2),
+         m_oReminderInfoPanel.Margins.Right := 3,
+         m_oChangedInfoPanel.Align          := alClient,
+      else //2
+         if m_oCreateInfoPanel.Visible and not m_oChangedInfoPanel.Visible and m_oReminderInfoPanel.Visible then //2
+            m_oInfoArea.Visible                := true,
+            m_oReminderInfoPanel.Align         := alLeft,
+            m_oReminderInfoPanel.Width         := Trunc(m_oInfoArea.Width / 2),
+            m_oReminderInfoPanel.Margins.Right := 3,
+            m_oCreateInfoPanel.Align           := alClient,
+         else //3
+            if m_oCreateInfoPanel.Visible and  m_oChangedInfoPanel.Visible and not m_oReminderInfoPanel.Visible then //4
+               m_oInfoArea.Visible                := true,
+               m_oChangedInfoPanel.Align          := alLeft,
+               m_oChangedInfoPanel.Width          := Trunc(m_oInfoArea.Width / 2),
+               m_oChangedInfoPanel.Margins.Right  := 3,
+               m_oCreateInfoPanel.Align           := alClient,
+            else //4
+           // alle nicht sichtbar
+               if not m_oCreateInfoPanel.Visible and  not m_oChangedInfoPanel.Visible and not m_oReminderInfoPanel.Visible then //5
+                  m_oInfoArea.Visible             := false,
+               else // 5
+              // genau eines sichtbar
+                 m_oInfoArea.Visible                := true,
+                 m_oReminderInfoPanel.Align         := alClient,
+                 m_oChangedInfoPanel.Align          := alClient,
+                 m_oCreateInfoPanel.Align           := alClient,
+                 m_oReminderInfoPanel.Margins.Right := 0,
+              endif //5
+           endif //4
+        endif //3
+     endif //2
+  endif //1
+end,
+
+//******************************************************************************
+// Funktion, um ein Info-Panel geordnet auszublenden
+// @Result: null
+//******************************************************************************
+function HideInfoPanel(oPanel)
+   oPanel.Visible := false,
+   oPanel.Caption := '',
+   oPanel.Hint    := '',
+   AdjustInfoAreaPanel(),
+end,
+
+//******************************************************************************
+// Funktion erstellt die GUI-Objekte, falls diese noch nicht vorhanden sind
+// @Result: null
+//******************************************************************************
+function CreateGUIObjects()
+  if empty(m_oInfoArea) then
+     m_oInfoArea          := CreateInfoAreaPanel(),
+  endif,
+
+  if empty(m_oCreateInfoPanel) then
+     m_oCreateInfoPanel  := CreateInfoPanel(),
+     HideInfoPanel(m_oCreateInfoPanel), // Erstmal wieder ausblenden, da sonst die Ausrichtungen, Margins etc. spinnen
+  endif,
+
+  if empty(m_oChangedInfoPanel) then
+     m_oChangedInfoPanel  := ChangedInfoPanel(),
+     HideInfoPanel(m_oChangedInfoPanel), // Erstmal wieder ausblenden, da sonst die Ausrichtungen, Margins etc. spinnen
+  endif,
+
+  if empty(m_oReminderInfoPanel) then
+     m_oReminderInfoPanel := ReminderInfoPanel(),
+     HideInfoPanel(m_oReminderInfoPanel), // Erstmal wieder ausblenden, da sonst die Ausrichtungen, Margins etc. spinnen
+  endif,
+end,
+
+//******************************************************************************
+// Berechnet die Anzeige-Texte für die "fälligen Wiedervorlagen"
+// @Result: Array of String
+//******************************************************************************
+function CalcMemosComingViaReminderDayInfoText(nMemoCount)
+| cShortText, cLongText |
+   Result := '',
+   if nMemoCount > 0 then
+
+      cShortText := '',
+      cLongText  := '',
+
+         if nMemoCount = 1 then
+            cShortText += '1 fällige Wiedervorlage',
+            cLongText  += '1 Wiedervorlage ist seit der letzten Prüfung fällig geworden.',
+         else
+            cShortText += Str(nMemoCount) + ' fällige Wiedervorlagen',
+            cLongText  += Str(nMemoCount) + ' Wiedervorlagen sind seit der letzten Prüfung fällig geworden.',
+         endif,
+
+      Result := {cShortText, cLongText},
+   else
+      Result := {'keine neuen / geänderten Memos', 'keine neuen / geänderten Memos'},
+   endif,
+end,
+
+//******************************************************************************
+// Berechnet die Anzeige-Texte für die "neuen Memos"
+// @Result: Array of String
+//******************************************************************************
+function CalcMemosCreateInfoText(aMemosInfo, dLastChangedDateTime)
+| nCount, nNewCount, cShortText, cLongText |
+   nCount        := aMemosInfo[1],
+   nNewCount     := aMemosInfo[2],
+
+   Result := {'', ''},
+
+   if nCount > 0 then
+
+      cShortText := '',
+      cLongText  := '',
+      if nNewCount > 0 then
+         if nNewCount = 1 then
+            cShortText += '1 neues Memo',
+            cLongText  += 'Es befindet sich 1 neues Memo',
+         else
+            cShortText += Str(nNewCount) + ' neue Memos',
+            cLongText  += 'Es befinden sich ' + Str(nNewCount) + ' neue Memos',
+         endif,
+      endif,
+
+      cLongText  := cLongText + ' in Ihrer Aufgabenliste.',
+      cLongText  := cLongText + crlf + '(Es werden Änderungen seit ' + DateTimeToStr(dLastChangedDateTime) + ' angezeigt)',
+
+      Result := {cShortText, cLongText},
+
+   else
+      Result := {'keine neuen Memos', 'keine neuen Memos'},
+   endif,
+end,
+
+//******************************************************************************
+// Berechnet die Anzeige-Texte für die "geänderten Memos"
+// @Result: Array of String
+//******************************************************************************
+function CalcMemosChangedInfoText(aMemosInfo, dLastChangedDateTime)
+| nCount, nChangedCount, cShortText, cLongText |
+   nCount        := aMemosInfo[1],
+   nChangedCount := aMemosInfo[3],
+
+   Result := {'', ''},
+
+   if nCount > 0 then
+
+      cShortText := '',
+      cLongText  := '',
+
+      if nChangedCount > 0 then
+         if nChangedCount = 1 then
+            cShortText += '1 geändertes Memo',
+            cLongText  += '1 geändertes Memo',
+         else
+            cShortText += Str(nChangedCount) + ' geänderte Memos',
+            cLongText  += Str(nChangedCount) + ' geänderte Memos',
+         endif,
+      endif,
+
+      cLongText  := cLongText + ' in Ihrer Aufgabenliste.',
+      cLongText  := cLongText + crlf + '(Es werden Änderungen seit ' + DateTimeToStr(dLastChangedDateTime) + ' angezeigt)',
+
+      Result := {cShortText, cLongText},
+
+   else
+      Result := {'keine geänderten Memos', 'keine geänderten Memos'},
+   endif,
+end,
+
+//******************************************************************************
+// Berechnet die Anzahl der Memos, die zu einem bestimmten Datum "fällig werden",
+//   weil deren WV-Datum an diesem Tag liegt
+// @Result: Integer
+//******************************************************************************
+function CalcMemosComingViaReminderDay(cUser, dReminderDay)
+| cSQL, oQuery, cChangedBeforeDateTime |
+
+  Result                 := 0,
+  cChangedBeforeDateTime := DateTimeToSql(Trunc(dReminderDay), true),
+
+  // TODO: Standard-Einschränkungen, Rechte, etc. berücksichtigen (mit TBeMemoBusinessController.CalcSQLFor... umsetzbar)
+  cSQL   := 'SELECT '                                                    + crlf +
+            '       SUM(1) AS ANZAHL        ' + crlf +
+            '   FROM ' + DbSqlTableName(waDab065) + ' DAB065 '           + crlf +
+            '   WHERE '                                                  + crlf +
+            '          CONTAINS(N_AKTION, ''' + cUser + ''') '           + crlf +
+            '      AND WVDATUM     = '   + DateToSql(dReminderDay, true) + crlf +
+            '      AND GEAENDERT   < '   + cChangedBeforeDateTime,
+
+  // Info:
+  //    Hier erfolgt keine Cursor-Umschaltung per "SetCursor(crSQLWait)", denn
+  //    diese kann mit Umschaltungen der GUI interagieren und zu einem scheinbaren
+  //    "ewigen" SQL-Cursor führen
+
+  oQuery := CreateObject('TBeAdsQuery'),
+  startseq
+     oQuery.SQL    := cSQL,
+     oQuery.Active := true,
+     Result        := oQuery:ANZAHL,
+  always
+     DestroyObject(oQuery),
+  stopseq,
+end,
+
+//******************************************************************************
+// Berechnet die Anzahl der "neuen / geänderten Memos", die seit einem bestimmten
+// Zeitpunkt erstellt oder geändert wurden und in der JobListe von "cUser" sind
+// @Result: Array of Integer
+//******************************************************************************
+function CalcMemosChangedInJobList(cUser, dSinceDateTime)
+| cSQL, oQuery, cSqlSinceDateTime |
+
+  Result            := {0, 0},
+  cSqlSinceDateTime := DateTimeToSql(dSinceDateTime, true),
+
+  // TODO: Standard-Einschränkungen, Rechte, etc. berücksichtigen (mit TBeMemoBusinessController.CalcSQLFor... umsetzbar)
+  cSQL   := 'SELECT    SUM(1) AS ANZAHL,                                 ' + crlf +
+            '      SUM(iif(KDNGMN.TYP = ''N'', 1, 0)) AS ANZAHL_NEU,     ' + crlf +
+            '      SUM(iif(KDNGMN.TYP = ''G'', 1, 0)) AS ANZAHL_GEAEND   ' + crlf +
+            '   FROM '      + DbSqlTableName(waDab065) + ' DAB065        ' + crlf +
+            '   LEFT JOIN ' + DbSqlTableName(waKdnGMN) + ' KDNGMN        ' + crlf +   // TODO: Warum wird hier nicht "nur" auf die KDNGMN geschaut, für was braucht es die DAB065 hier noch?
+            '   ON KDNGMN.MEMO_ID = DAB065.MEMO_ID                       ' + crlf +
+            '      AND KDNGMN.USER_ID = ''' + cUser  + '''                  ' + crlf +
+            '   WHERE                                                       ' + crlf +
+            '          CONTAINS(DAB065.N_AKTION, ''' + cUser + ''')             ' + crlf +
+            '      AND DAB065.WVDATUM    <= '   + DateToSql(Date(), true)         + crlf +
+            '      AND DAB065.GEAENDERT   > '   + cSqlSinceDateTime               + crlf +
+            '      AND DAB065.GEAEND_USR <> ''' + cUser  + '''                  ',
+
+  // Prs('CalcMemosChangedInJobList(cUser, dSinceDateTime)', cSQL),
+
+  // Info:
+  //    Hier erfolgt keine Cursor-Umschaltung per "SetCursor(crSQLWait)", denn
+  //    diese kann mit Umschaltungen der GUI interagieren und zu einem scheinbaren
+  //    "ewigen" SQL-Cursor führen
+
+  oQuery := CreateObject('TBeAdsQuery'),
+  startseq
+     oQuery.SQL    := cSQL,
+     oQuery.Active := true,
+     Result        := {oQuery:ANZAHL, oQuery:ANZAHL_NEU, oQuery:ANZAHL_GEAEND},
+  always
+     DestroyObject(oQuery),
+  stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Klick auf das Info-Panel für die "neuen / geänderten Memos"
+//******************************************************************************
+function ChangedInfoPanelClick( Sender )
+  m_oChangedTimer.Enabled := false,
+  GWU_ShowSearchView(gl_GMNU_Search_ViewId, ''),
+  m_oChangedTimer.Enabled := true,
+end,
+
+//******************************************************************************
+// Event: Beim Klick auf den Schließen-Button für die "geänderten Memos"
+//******************************************************************************
+function ChangedCloseButtonClick( Sender )
+   m_oChangedTimer.Enabled := false,
+   HideInfoPanel(m_oChangedInfoPanel),
+   GMNU_SetLastMemoChangedDateTimeToNow(),
+   m_oChangedTimer.Enabled := true,
+
+   GMNU_DeleteAllNotifyRecords(c_usr, 'G'), // Alle Notify-Einträge des Typs 'G'eändert löschen
+end,
+
+//******************************************************************************
+// Event: Beim Klick auf den Schließen-Button für die "neuen Memos"
+//******************************************************************************
+function CreateCloseButtonClick( Sender )
+   m_oChangedTimer.Enabled := false,
+   HideInfoPanel(m_oCreateInfoPanel),
+   GMNU_SetLastMemoCreatedDateTimeToNow(),
+   m_oChangedTimer.Enabled := true,
+
+   GMNU_DeleteAllNotifyRecords(c_usr, 'N'), // Alle Notify-Einträge des Typs 'N'eu löschen
+end,
+
+//******************************************************************************
+// Event: Beim Klick auf das Info-Panel für die "fälligen Wiedervorlagen"
+//******************************************************************************
+function ReminderInfoPanelClick( Sender )
+  GWU_ShowSearchView(gl_GMNU_Search_ViewId, ''),
+end,
+
+//******************************************************************************
+// Event: Beim Klick auf den Schließen-Button für die "fälligen Wiedervorlagen"
+//******************************************************************************
+function ReminderCloseButtonClick( Sender )
+  HideInfoPanel(m_oReminderInfoPanel),
+end,
+
+//******************************************************************************
+// Event: Resize des Containers-Panel
+//******************************************************************************
+function AreaInfoPanelResize( Sender )
+  AdjustInfoAreaPanel(),
+end,
+
+//******************************************************************************
+// Event: OnTimer für "fällige Wiedervorlagen"
+//******************************************************************************
+function ReminderOnTimer(Sender)
+| nMemosCount, aInfoText |
+
+  m_oReminderTimer.Enabled := false, // ACHTUNG: wird nicht wieder aktiviert!
+
+  // Kein DD vorhanden => dann können keine DB-Zugriffe gemacht werden
+  // (kann passieren, wenn z.B. über die Datenbankverwaltung das DD gelöscht wird)
+  if not DataDictionaryAvailable() then
+     exit,
+  endif,
+
+  // Anzeige-Panels erzeugen (falls noch nicht vorhanden)
+  CreateGUIObjects(),
+
+  //****************************************************************************
+  // Berechnung per SQL: Anzahl Memos, die heute per WV-Datum "hochkommen"
+  //****************************************************************************
+  nMemosCount := CalcMemosComingViaReminderDay(c_usr, Trunc(GetAdsServerTime())),
+
+  //****************************************************************************
+  // 4. "Wiedervorlagen fällig" Notify einblenden?
+  //****************************************************************************
+  if nMemosCount > 0 then
+     aInfoText                    := CalcMemosComingViaReminderDayInfoText(nMemosCount),
+     m_oReminderInfoPanel.Caption := aInfoText[1],
+     m_oReminderInfoPanel.Hint    := aInfoText[2] + crlf + crlf + 'Klicken Sie hier um die Groupware-Ansicht zu öffnen.',
+     m_oReminderInfoPanel.Visible := true,
+     AdjustInfoAreaPanel(),
+  else
+     HideInfoPanel(m_oReminderInfoPanel),
+  endif,
+end,
+
+//******************************************************************************
+// Event: OnTimer für "geänderte / erstellte Memos"
+//******************************************************************************
+function ChangedOnTimer(Sender)
+| aMemosCountInfo, aInfoText,
+  bOldCreateInfoPanelVisible, bOldChangedInfoPanelVisible,
+  dLastChangedDateTime |
+
+  m_oChangedTimer.Enabled  := false,
+
+  // Kein DD vorhanden => dann können keine DB-Zugriffe gemacht werden
+  // (kann passieren, wenn z.B. über die Datenbankverwaltung das DD gelöscht wird)
+  if not DataDictionaryAvailable() then
+     exit, // => Timer wird nicht wieder aktiviert!
+  endif,
+
+  // Anzeige-Panels erzeugen (falls noch nicht vorhanden)
+  CreateGUIObjects(),
+
+  //****************************************************************************
+  // Berechnung per SQL: Anzahl Memos, die geändert / erstellt wurden
+  //****************************************************************************
+  dLastChangedDateTime := GMNU_GetLastMemoChangedDateTime(),
+  aMemosCountInfo      := CalcMemosChangedInJobList(c_usr, dLastChangedDateTime),
+
+  //****************************************************************************
+  // "Memos geändert / erstellt" Notify einblenden?
+  //****************************************************************************
+  if aMemosCountInfo[2] > 0 then
+     aInfoText                  := CalcMemosCreateInfoText(aMemosCountInfo, dLastChangedDateTime),
+     m_oCreateInfoPanel.Caption := aInfoText[1],
+     m_oCreateInfoPanel.Hint    := aInfoText[2] + crlf + crlf + 'Klicken Sie hier um die Groupware-Ansicht zu öffnen.',
+
+     bOldCreateInfoPanelVisible := m_oCreateInfoPanel.Visible,
+     m_oCreateInfoPanel.Visible := true,
+     AdjustInfoAreaPanel(),
+     if not bOldCreateInfoPanelVisible then
+        FlashTaskBar(1),
+     endif,
+  else
+     HideInfoPanel(m_oCreateInfoPanel),
+  endif,
+
+  if aMemosCountInfo[3] > 0 then
+     aInfoText                   := CalcMemosChangedInfoText(aMemosCountInfo, dLastChangedDateTime),
+     m_oChangedInfoPanel.Caption := aInfoText[1],
+     m_oChangedInfoPanel.Hint    := aInfoText[2] + crlf + crlf + 'Klicken Sie hier um die Groupware-Ansicht zu öffnen.',
+
+     bOldChangedInfoPanelVisible := m_oChangedInfoPanel.Visible,
+     m_oChangedInfoPanel.Visible := true,
+     AdjustInfoAreaPanel(),
+     if not bOldChangedInfoPanelVisible then
+        FlashTaskBar(1),
+     endif,
+  else
+     HideInfoPanel(m_oChangedInfoPanel),
+  endif,
+
+  m_oChangedTimer.Enabled  := true,
+end,
+
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+
+if not empty(FindObject(Application, 'MEMO_NOTIFY_REMINDER_TIMER')) then
+   MessageDlg('Konfigurations-Problem: Der "memo-notify" Hintergrund-Prozess wurde bereits gestartet.' + crlf + crlf +
+              'Prüfen Sie bitte, ob die Initialisierung aus dem Event "beim Start von be32" entfernt wurde. ' + crlf +
+              'Der Start erfolgt ab memo-notify version 2.0.0 direkt über den "_PackageLoader."',
+              mtError),
+else
+   // Hiermit wir das CB-Programm als "nach Ende nicht zerstören" markiert
+   if bCallMode = 'PERSIST' then
+      SetPersistent(True),
+   endif,
+
+   startseq
+      m_oInfoArea          := nil,
+      m_oChangedInfoPanel  := nil,
+      m_oReminderInfoPanel := nil,
+
+      m_oReminderTimer          := CreateObject('TTimer', 'MEMO_NOTIFY_REMINDER_TIMER', Application),
+      m_oReminderTimer.Interval := 25000,  // Milli-Sekunden (einmalig)
+
+      m_oChangedTimer           := CreateObject('TTimer', 'MEMO_NOTIFY_CHANGED_TIMER', Application),
+      m_oChangedTimer.Interval  := 30000,  // Milli-Sekunden (wiederkehrend)
+
+      // 1. Reminder-Timer starten
+      m_oReminderTimer.Enabled := false,
+      AssignEvent(m_oReminderTimer, 'OnTimer', 'ReminderOnTimer'),
+      m_oReminderTimer.Enabled := true,
+
+      // 2. Erstellt / geändert Timer starten
+      m_oChangedTimer.Enabled  := false,
+      AssignEvent(m_oChangedTimer, 'OnTimer', 'ChangedOnTimer'),
+      m_oChangedTimer.Enabled  := true,
+   always
+      if bCallMode <> 'PERSIST' then
+         DestroyObject(m_oReminderTimer),
+         DestroyObject(m_oChangedTimer),
+
+         WriteLn('Timer-Objekte wurden wieder zerstört, da der Aufruf-Modus nicht "PERSIST" ist.'),
+      endif,
+   stopseq,
+endif,

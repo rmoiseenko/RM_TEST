@@ -1,0 +1,167 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: GUI zur Pflege der Eigenschaften einer Qualifikation:
+//  Standardressource
+//  Zeitabstand zum Vorgänger mit Zeiteinheit anlog zur Stückliste
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cBrowserID,
+
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, a_Abbrechen, A_Close, a_Speichern, BeBarButton1, BeBarButton2,
+   BeBarDockControl1, BeBarManager1, BeBarManager1Bar1, BePanel1,
+   cmb_abstandEinheit, cmb_ress, ds_DABVTM, edt_zeitabstand, grd_Ressourcen,
+   lbl_AbstandEinheit, lbl_standardress, lbl_zeitabstand, Panel1,
+   pnl_Stamm_Info, Splitter1, tbl_DABVTM
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cBrowserID := '@RESSOUR',
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode|
+   bInEditMode       := EditModes(tbl_DABVTM),
+   // Buttons in der Toolbar En-/Disablen
+   a_Speichern.Enabled   := bInEditMode,
+   a_Abbrechen.Enabled := bInEditMode,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_DABVTMStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function a_AbbrechenExecute( Sender )
+   dbcancel(tbl_DABVTM),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function a_SpeichernExecute( Sender )
+   MyPost(tbl_DABVTM),
+end,
+
+//******************************************************************************
+//Schließt das Formular
+//******************************************************************************
+function A_CloseExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      oForm              := LoadForm("@STDRES", Application),
+      a_Abbrechen        := FindObject(oForm, "a_Abbrechen"),
+      A_Close            := FindObject(oForm, "A_Close"),
+      a_Speichern        := FindObject(oForm, "a_Speichern"),
+      BeBarButton1       := FindObject(oForm, "BeBarButton1"),
+      BeBarButton2       := FindObject(oForm, "BeBarButton2"),
+      BeBarDockControl1  := FindObject(oForm, "BeBarDockControl1"),
+      BeBarManager1      := FindObject(oForm, "BeBarManager1"),
+      BeBarManager1Bar1  := FindObject(oForm, "BeBarManager1Bar1"),
+      BePanel1           := FindObject(oForm, "BePanel1"),
+      cmb_abstandEinheit := FindObject(oForm, "cmb_abstandEinheit"),
+      cmb_ress           := FindObject(oForm, "cmb_ress"),
+      ds_DABVTM          := FindObject(oForm, "ds_DABVTM"),
+      edt_zeitabstand    := FindObject(oForm, "edt_zeitabstand"),
+      grd_Ressourcen     := FindObject(oForm, "grd_Ressourcen"),
+      lbl_AbstandEinheit := FindObject(oForm, "lbl_AbstandEinheit"),
+      lbl_standardress   := FindObject(oForm, "lbl_standardress"),
+      lbl_zeitabstand    := FindObject(oForm, "lbl_zeitabstand"),
+      Panel1             := FindObject(oForm, "Panel1"),
+      pnl_Stamm_Info     := FindObject(oForm, "pnl_Stamm_Info"),
+      Splitter1          := FindObject(oForm, "Splitter1"),
+      tbl_DABVTM         := FindObject(oForm, "tbl_DABVTM"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      tbl_DABVTM.IndexName := 'I_TYP_BEZ',
+      tbl_DABVTM.Active    := true,
+      dbfilter("FLAG = 1", tbl_DABVTM),
+
+
+      GU_LinktableToGUI(tbl_DABVTM, ds_DABVTM, grd_Ressourcen, m_cBrowserID, true),
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   oForm.OrigCapt       := '',
+   oForm.PositionSaveID := '@STDRES',
+   if empty(oOwner) then
+      ShowModal(oForm),
+      destroyObject(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,
+
+

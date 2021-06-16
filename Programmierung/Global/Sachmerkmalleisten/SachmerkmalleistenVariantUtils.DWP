@@ -1,0 +1,154 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: API-Funktionen für die Nutzung in Varianten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-177
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SMLV_VIndex()       - Verwendet im Fehlerfall einen Defaultwert
+//    * SMLV_VIndexAssert() - Löst im Fehlerfall Exceptions aus
+//
+//******************************************************************************
+// Ermittelt den V-Index eines Merkmals anhand des Merkmal-Schlüssels.
+//
+// @Result: array, ErrorResult
+//   Fehlercodes:
+//    * 0: Erfolgreich (Kein Fehler)
+//    * 1: Leerer Merkmal-Schlüssel nicht erlaubt
+//    * 2: Merkmal-Schlüssel kann keinem Merkmal zugeordnet werden
+//******************************************************************************
+function _SMLV_VIndex_Internal(cAttributeKey:C, nResult:R)
+   Result := SML_ERR_ErrorResultInit(),
+   if not Empty(cAttributeKey) then // Parameter validieren
+      // V-Index ermitteln
+      nResult := Lookup(waSmlMKM, 'SCHLUESSEL', {{cAttributeKey}}, 'V_INDEX', -1),
+      // V-Index validieren
+      if nResult = -1 then
+         Result := SML_ERR_ErrorResult(gl_SML_ERRC_NoAttributeForAttributeKey,
+                                       {cAttributeKey}),
+      endif,
+   else
+      Result := SML_ERR_ErrorResult(gl_SML_ERRC_EmptyAttributeKeyNotAllowed, {}),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-177
+//******************************************************************************
+// Ermittelt den V-Index eines Merkmals anhand des Merkmal-Schlüssels.
+// Fehlerbehandlung: Löst im Fehlerfall Exceptions aus.
+//
+// @Result: numeric, V-Index des Merkmals
+//******************************************************************************
+function _SMLV_VIndexAssert(cAttributeKey:C)
+| aErrorResult |
+   Result       := -1,
+   aErrorResult := SMLV_VIndex_Internal(cAttributeKey, Result),
+   // Im Fehlerfall eine entsprechende Exception auslösen
+   SML_ERR_RaiseError(aErrorResult),
+end,
+
+//******************************************************************************
+// REQ-177
+//******************************************************************************
+// Ermittelt den V-Index eines Merkmals anhand des Merkmal-Schlüssels.
+// Wenn das Merkmal nicht existiert, wird -1 zurück gegeben.
+//
+// @Result: numeric, V-Index des Merkmals, -1 wenn das Merkmal nicht existiert
+//******************************************************************************
+function _SMLV_VIndex(cAttributeKey:C)
+| aErrorResult, nErrorCode |
+
+   aErrorResult := SMLV_VIndex_Internal(cAttributeKey, Result),
+   nErrorCode   := SML_ERR_ErrorResultCode(aErrorResult),
+   if SML_ERR_IsError(aErrorResult) then
+      SML_ERR_RaiseErrorIf(nErrorCode = gl_SML_ERRC_EmptyAttributeKeyNotAllowed,
+                           aErrorResult),
+      Result := -1,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-157
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SMLV_VVal()       - Verwendet im Fehlerfall einen Defaultwert
+//    * SMLV_VValAssert() - Löst im Fehlerfall Exceptions aus
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand des Merkmal-Schlüssels.
+//
+// @Result: array, ErrorResult
+//   Fehlercodes:
+//    * 0: Erfolgreich (Kein Fehler)
+//    * 1: Leerer Merkmal-Schlüssel nicht erlaubt
+//    * 2: Merkmal-Schlüssel kann keinem Merkmal zugeordnet werden
+//    * 3: V-Array ist leer (nil, oder ist kein Array)
+//******************************************************************************
+function _SMLV_VVal_Internal(aVArray:R, cAttributeKey:C, uResult:R)
+| nVIndex |
+   Result := SML_ERR_ErrorResultInit(),
+   // Parameter validieren
+   if not Empty(aVArray) and (ValType(aVArray) == 'A') then
+      Result := SMLV_VIndex_Internal(cAttributeKey, nVIndex),
+      if not SML_ERR_IsError(Result) then
+         // Rückgabe des Merkmal-Wertes
+         uResult := aVArray[nVIndex],
+      endif,
+   else
+      Result := SML_ERR_ErrorResult(gl_SML_ERRC_InvalidVArray, {}),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-157
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand des Merkmal-Schlüssels.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SMLV_VValAssert(aVArray:R, cAttributeKey:C)
+| aErrorResult |
+   aErrorResult := SMLV_VVal_Internal(aVArray, cAttributeKey, Result),
+   // Im Fehlerfall eine entsprechende Exception auslösen
+   SML_ERR_RaiseError(aErrorResult),
+end,
+
+//******************************************************************************
+// REQ-157
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand des Merkmal-Schlüssels.
+//
+// Diese Funktion dient hauptsächlich zur Nutzung in Prüf- und Berechnungs-
+// Codeblöcken von Merkmalen im Varianten-Definitionsdialog und ersetzt den
+// direkten Zugriff auf das V-Array.
+// Stattdessen wird der Wert eines Merkmals anhand des Merkmal-Schlüssels er-
+// mittelt.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SMLV_VVal(aVArray:R, cAttributeKey:C, uDefaultValue)
+| aErrorResult, nErrorCode |
+
+   aErrorResult := SMLV_VVal_Internal(aVArray, cAttributeKey, Result),
+   nErrorCode   := SML_ERR_ErrorResultCode(aErrorResult),
+   if SML_ERR_IsError(aErrorResult) then
+      SML_ERR_RaiseErrorIf((nErrorCode = gl_SML_ERRC_EmptyAttributeKeyNotAllowed) or
+                           (nErrorCode = gl_SML_ERRC_InvalidVArray),
+                           aErrorResult),
+      Result := uDefaultValue,
+   endif,
+end,

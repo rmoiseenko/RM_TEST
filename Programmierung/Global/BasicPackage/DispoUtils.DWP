@@ -1,0 +1,631 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die Disposition(s-Planung)
+//      (Produktion / Einkauf)
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'DPU' steht für 'DisPositions-Utils'
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ist Tagesgenaue Bedarfsplanung für Artikel aktivert?
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_ProdPlanUtils.pas => IsDayPlan
+//   ---------------------------------------------------------------------------
+//
+//******************************************************************************
+function _DPU_IsDayPlan(oDab010)
+   Result := (DABPAR:TRMR_MOD = 'J') and
+             (oDab010:BEST_PLG = 1 or oDab010:BEST_PLG = 2),
+end,
+
+//******************************************************************************
+// Rückgabe eines Arrays mit Arbeitstagen je Wochentag und Unternehmensbereich
+//   im Format: { { Tag:N:=[1-7], Admin:L, WE:L, Prod:L }, { ... }, ... }
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_ProdPlanUtils.pas => PlanGetWorkDays
+//   ---------------------------------------------------------------------------
+//
+// @Result: null
+//******************************************************************************
+function _DPU_PlanGetWorkDays()
+   Result := StrToArr(DABPAR:WO_TAGE_UB),
+   if empty(Result) or ALen(Result) = 0 then
+      //              VK    WE    Prod
+      Result := { {2, True, True, True},
+                  {3, True, True, True},
+                  {4, True, True, True},
+                  {5, True, True, True},
+                  {6, True, True, True} },
+   endif,
+end,
+
+//******************************************************************************
+// Anzahl Werktage je Unternehmensbereich (aDivision) im Zeitraum (nDayCount) in Tagen
+//
+// aDivision   : Unternehmensbereich (s. DABPAR, DPar_WDxxx)
+//               2 = Warenausgang, 3 = Wareneingang, 4 = Produktion
+//
+// Rückgabe: Anzahl Werktage (hochgerechnet)
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_ProdPlanUtils.pas => PlanCountWorkDays
+//   ---------------------------------------------------------------------------
+//******************************************************************************
+function _DPU_PlanCountWorkDays(aDivision, nDayCount)
+| aWorkDays, i |
+   aWorkdays := DPU_PlanGetWorkDays(),
+
+   Result := 0,
+   // Werktage pro Woche zählen
+   for i := 1 to ALen(aWorkDays) do
+       if aWorkDays[i, aDivision] then
+          Result++,
+       endif,
+   end,
+   // und auf Zeitraum hochrechnen
+   Result := Trunc(Round(Result * (nDayCount / 7), 0)) ,
+end,
+
+//******************************************************************************
+// Prüfung, ob Tag ein Arbeitstag für WE/Fertigung ist.
+// Falls nicht, Bestelltzeitpunkt (Result) auf den nächst-früheren
+// Arbeitstag rückterminieren - max. bis Buchungsdatum
+// aDivision   : Unternehmensbereich (s. DABPAR, DPar_WDxxx)
+//               2 = Warenausgang, 3 = Wareneingang, 4 = Produktion
+// aAccDateMin : TRUE = Buchungsdatum ist untere Datumsgrenze
+// aDayCount   : Anzahl rückzuterminierender Werktage (Default = 0 = nächster)
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_ProdPlanUtils.pas => PlanGetPriorWorkDate
+//   ---------------------------------------------------------------------------
+//
+// @Result: terminierter Bestellzeitpunkt (TDateTime)
+//******************************************************************************
+function _DPU_PlanGetPriorWorkDate(aStartDate, aDab272, aDivision, aAccDateMin, aDayCount)
+  | aIsWorkDay, i, aForward, aAccDate, aCurWorkDay, cDivisionSaveChar, aWorkDays |
+
+  //****************************************************************************
+  // Zeichen ermitteln, unter dem ein Unternehmensbereich in der Feiertagstabelle gespeichert wird.
+  // @Result: String
+  //****************************************************************************
+  function D272_DivisionToSaveChar(aDivision)
+     case aDivision
+        of 2 :: Result := 'A', // 2 = Warenausgang
+        of 3 :: Result := 'W', // 3 = Wareneingang
+        of 4 :: Result := 'P', // 4 = Produktion
+     endcase,
+  end,
+
+  aWorkDays := DPU_PlanGetWorkDays(),
+
+
+  // Tagesgenaue Bedarfsplanung
+  if aAccDateMin then
+     aAccDate := mBDatum
+  else
+     aAccDate := 0,
+  endif,
+
+  Result     := Max(aAccDate, aStartDate),
+  aIsWorkDay := False,
+  // Falls Start-Datum <= Buchungsdatum den nachfolgenden(!) Arbeitstag suchen
+  aForward := aStartDate <= aAccDate,
+
+  while not aIsWorkDay do
+     // Prüfung Arbeitstag
+     aIsWorkDay := False,
+     if not Empty(aWorkDays) then
+        // Falls gefundenes Datum <= Buchungsdatum den nachfolgenden(!) Arbeitstag suchen
+        if not aForward and (Result <= aAccDate) then
+           aForward  := True,
+           aDayCount := 0,
+        // sonst Arbeitstag prüfen
+        else
+           for i := 1 to ALen(aWorkDays) do
+              aCurWorkDay := aWorkDays[i],
+              if aCurWorkDay[1] = DoW(Result) then
+                 if aCurWorkDay[aDivision] then
+                    aIsWorkDay := True,
+                    // break, // kein 'break', auch wenn hier die Schleifenausführung beendet werden könnte.
+                              // -> Warum? Weil ein 'break' im Codeblock ziemlich langsam ist. Die Schleife
+                              //    einfach durchgehen ist bei weitem schneller.
+                 endif,
+              endif,
+           next,
+        endif,
+        // Kein Arbeitstag?
+        if not aIsWorkDay then
+           if aForward then
+              Result := Result + 1
+           else
+              Result := Result - 1,
+           endif,
+        endif,
+     endif,
+     // Prüfung Feiertag (falls bisher noch ein Arbeitstag)
+     if aIsWorkDay then
+        aIsWorkDay := False,
+        // Falls gefundenes Datum <= Buchungsdatum den nachfolgenden(!) Arbeitstag suchen
+        if not aForward and (Result <= aAccDate) then
+           aForward  := True,
+           aDayCount := 0,
+        // sonst Arbeitstag prüfen
+        else
+           cDivisionSaveChar := D272_DivisionToSaveChar(aDivision),
+           if not (     DbSeek({0, Result}, aDab272)
+                    and ( Empty(aDab272:STAND_ORTE) or (StrZero(mStandort, 3) $ aDab272:STAND_ORTE))    // Feiertag für den <Standort>            gültig ?
+                    and ( Empty(aDab272:U_BEREICHE) or (cDivisionSaveChar     $ aDab272:U_BEREICHE)) )  // Feiertag für den <Unternehmensbereich> gültig ?
+              then
+              aIsWorkDay := True,
+           endif,
+        endif,
+        // Kein Arbeitstag?
+        if not aIsWorkDay then
+           if aForward then
+              Result := Result + 1
+           else
+              Result := Result - 1,
+           endif,
+        endif,
+     endif,
+     // Arbeitstag?
+     if aIsWorkDay then
+        aDayCount := aDayCount - 1,  // Tages-Count runter
+        if aDayCount >= 0 then
+           Result     := Result - 1,
+           aIsWorkDay := False,
+        endif,
+     endif,
+  end,
+end,
+
+//******************************************************************************
+// Funktion berechnet für einen potentiallen Fertigungsauftrag / eine potentielle Einkaufs-Bestellung (z.B. eine Dispo-Planungseintrag)
+//   einen (groben) Start-Termin der Fertigung / "Bestell-Auslöse-Termin" des Einkaufs
+//   ausgehend von einem übergebenen End-Termin (Fertigstellungstermin bzw. Liefer-Termin).
+//
+// Parameter:
+//    cArtNr:         Artikelnummer der Fertigungsbaugruppe / des Einkaufs-Teils
+//    cFertigTermin:  Termin im Format  "KW.xx.xx" oder "dd.mm.yy"
+//
+//   Hinweis: - Die Funktion ist dafür gedacht, in der Primär- und Sekundärbedarfs-Planung
+//              der Produktion oder in der Dispo-Planung des Einkaufs (Dab315)
+//              einen Starttermin ausgeben zu können, der mit der Termin-Logik des
+//              be Standards konform ist.
+//              Hinweis: Im Standard gibt es nur eine Termin-Logik für die
+//                       Produktions-Planung, für den Einkauf gibt es keine "Vorlage".
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Die Funktion ist abgeleitet(!) von der Standard-Funktion
+//            U_TimeLimitUtils.pas -> TimeLimitIndexStr(). Warum? Weil diese Funktion
+//            die "Rückterminierung Produktions-Abgänge im Terminraster" macht
+//            und somit eine gute Vorlage für eine Start-Termin-Logik nach
+//            Standard-Dispo-Logik bietet.
+//   ---------------------------------------------------------------------------
+//
+// @Result: Start-Tagestermin
+//******************************************************************************
+function _DPU_Internal_CalcStartTerminForEndTermin(cArtNr, cFertigTermin, nDivision)
+| nWBZ, oCache010, bIsDayPlan,
+  CalWeekStr, CalMaxWeek, CalNullWeek, CalNullWeekStr, CalMaxWeekStr, bIsKwTermin,
+  dProdFertigDate, dProdStartDate |
+
+
+   //***************************************************************************
+   // ACHTUNG: U_GlobalConvert.pas => BeStrToDateEx()
+   function BeStrToDateEx(aValue)
+      Result := 0,
+      if     (Trim(aValue) <> '')
+         and (Trim(aValue) <> '.  .')
+         and (Trim(aValue) <> '. .')
+         and (Trim(aValue) <> '..') then
+         Result := CToD(aValue),
+      endif,
+   end,
+
+   //****************************************************************************
+   // Falls Artikel tagesgenau geplant -> Werktage rückterminieren
+   //****************************************************************************
+   function CalcProdDate(aDate,  // DateTime
+                         aDays)  // Integer
+     | oCache272 |
+      oCache272 := BeOpen(waDab272, 'DAB273'),
+      startseq
+         Result := DPU_PlanGetPriorWorkDate(aDate, oCache272,
+                                            nDivision, False, aDays)
+      always
+         BeClose(oCache272),
+      stopseq,
+   end,
+
+   dProdStartDate   := 0,
+   Result           := '',
+
+   CalWeekStr       := 'KW',
+   CalMaxWeek       := '99.99',
+   CalNullWeek      := '00.00',
+   CalNullWeekStr   := CalWeekStr + '.' + CalNullWeek,
+   CalMaxWeekStr    := CalWeekStr + '.' + CalMaxWeek,
+
+   cArtNr    := PadR(cArtNr, mbeArtNoLen),
+
+   oCache010 := BeOpen(waDab010, 'DAB011'),
+   startseq
+      MySeek({cArtNr}, oCache010),
+      bIsDayPlan := DPU_IsDayPlan(oCache010),
+
+      nWBZ := oCache010:WBZ, // CM, 09.12.2013_-> unabhängig vom Status des allg. Parameters DABPAR:TRMR_PRWBZ liegt der Prod-Auf-Start-Termin immer vor dem Ende
+                             // CM, 09.12.2013_-> Feste Rückterminierung DABPAR:TRMR_PRTAG aus allg. Param. soll Einfluss auf die Warenabgänge haben, aber nicht auf den Start-Termin
+
+      // weder KW.00.00 (Nulldatum) noch KW.99.99 (Abrufauftrag) dürfen
+      // verändert werden
+      if (cFertigTermin = CalNullWeekStr) or (cFertigTermin = CalMaxWeekStr) then
+         Result := cFertigTermin
+      else
+         bIsKwTermin := SubStr(cFertigTermin, 1, 2) = CalWeekStr,
+
+         // Aus dem übergebenen Termin-String ein Typ "Date" machen
+         if bIsKwTermin then
+            dProdFertigDate := FridayOfWeek(SubStr(cFertigTermin, 4, 5)),
+         else
+            dProdFertigDate := BeStrToDateEx(cFertigTermin),
+         endif,
+         // "Leerer" Termin gegeben ? (nur bei Tagestermin möglich) -> dann keine Rückterminierung, sondern ebenfalls leeren Termin liefern
+         if dProdFertigDate = 0 then
+            dProdStartDate := 0,
+         else
+            if bIsDayPlan then
+               dProdStartDate := CalcProdDate(dProdFertigDate, nWbz),
+            else
+               if bIsKwTermin then
+                  dProdStartDate := dProdFertigDate - 4 - nWbz,  // Bei wochengenau geplanten Artikeln wird ein Wochentermin-Fertigstellungstermin als Montag der Woche interpretiert! Das führt bei z.B. 8 Tagen WBZ zu 2 KWs Differenz.
+               else
+                  dProdStartDate := dProdFertigDate     - nWbz,
+               endif,
+            endif,
+         endif,
+
+         // Tages-Termin oder Wochen-Termin als Ergebnis liefern ?
+         if bIsDayPlan or (DABPAR:TRMR_MOD = 'J' and not bIsKwTermin) then
+            Result := DToC(dProdStartDate),
+         else
+            Result := CalWeekStr + '.' + KW(dProdStartDate),
+         endif,
+      endif,
+
+   always
+      BeClose(oCache010),
+   stopseq,
+
+   if false then // fürs Debugging...
+      WriteLn(PadR('Artikel', 20) + cArtNr                         + crlf +
+              PadR('  WBZ', 20)   + Str(nWBZ)                      + crlf +
+              PadR('  Start (date)', 20)   + DToC(dProdStartDate)  + crlf +
+              PadR('  Start (string)', 20) + Result                + crlf +
+              PadR('  Fertigstellung', 20) + cFertigTermin),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet für einen potentiellen Fertigungsauftrag (z.B. eine Dispo-Planungseintrag der Dab220 / Dab215)
+//   einen (groben) Start-Termin der Fertigung ausgehend von einem übergebenen Fertigstellungstermin
+//   zur Unterscheidung derselben Funktionalität im Einkauf
+// Parameter:
+//    cBaugruppenArtNr:   Artikelnummer der Fertigungsbaugruppe
+//    cProdFertigTermin:  Termin im Format  "KW.xx.xx" oder "dd.mm.yy"
+//
+// @Result: Start-Tagestermin
+//******************************************************************************
+function _DPU_CalcFertigungPlanungsStartTermin(cBaugruppenArtNr, cProdFertigTermin)
+| nDivision |
+   nDivision := 4,  // Unternehmensbereich "Produktion"
+   Result    := DPU_Internal_CalcStartTerminForEndTermin(cBaugruppenArtNr, cProdFertigTermin, nDivision)
+end,
+
+//******************************************************************************
+// Funktion ist identisch mit "DPU_CalcFertigungPlanungsStartTermin()"
+// -> veraltet, nur für Rückwärts-Kompatibilität
+//******************************************************************************
+function _DPU_CalcPlanungsStartTermin(cBaugruppenArtNr, cProdFertigTermin)
+   Result := DPU_CalcFertigungPlanungsStartTermin(cBaugruppenArtNr, cProdFertigTermin),
+end,
+
+//******************************************************************************
+// Funktion  berechnet für eine potentiellen Bestellung (z.B. eine Dispo-Planungseintrag der Dab315)
+//   einen (groben) Start-Termin (spät. "Bestell-Auslöse-Termin") ausgehend von
+//   einem übergebenen Bestell-Termin (= "Wunsch-Liefertermin")
+// Parameter:
+//    cArtNr:          Artikelnummer
+//    cBestellTermin:  Termin im Format  "KW.xx.xx" oder "dd.mm.yy"
+//
+// @Result: "Bestell-Auslöse-Termin"
+//******************************************************************************
+function _DPU_CalcEinkaufPlanungsBestellAusloeseTermin(cArtNr, cBestellTermin)
+| nDivision |
+   // Wir nutzen für die Abbilund der Funktionalität die gleiche Logik wie für die
+   //   Fertigung. Per heute (CM, 20.03.2014) ist kein Unterschied in der notwendigen Logik
+   //   erkennbar
+   nDivision := 3, // Unternehmensbereich "Wareneingang"
+   Result    := DPU_Internal_CalcStartTerminForEndTermin(cArtNr, cBestellTermin, nDivision)
+end,
+
+//******************************************************************************
+// Funktion ermittelt für einen Termin den entspr. Terminraster-Termin
+//   Sofern eine Kompatibilität mit dem Standard-Terminraster gewährleistet werden
+//   soll, muss die Funktion genutzt werden für
+//     - Kunden-Auftragspositions-Termine
+//     - Zugänge (Produktion, Einkauf)
+//   NICHT nutzen für Produktions-Bedarfe (Abgänge + Grobplanung), hierfür steht
+//     die Funktoin _DPU_CalcPlanungsStartTermin() bereit.
+//
+// Parameter:
+//    cArtNr             : Art.Nr. (Kaufteil / Baugruppe)
+//    cOrigZugangsTermin : Ausgangstermin als be-Termin-String
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Die Funktion ist abgeleitet(!) von der Standard-Funktion
+//            U_TimeLimitUtils.pas -> TimeLimitIndexStr().
+//            Die Logik für den Typen "gtProduction" wurde entfernt, siehe
+//              _DPU_CalcPlanungsStartTermin()
+//   ---------------------------------------------------------------------------
+//
+// @Result: Start-Tagestermin (aDate)
+//******************************************************************************
+function _DPU_CalcTermRasterTermin(cOrigTermin)
+| CalWeekStr, CalMaxWeek, CalNullWeek, CalNullWeekStr, CalMaxWeekStr,
+  bIsKwTermin |
+
+   //***************************************************************************
+   // ACHTUNG: U_GlobalConvert.pas => BeStrToDateEx()
+   function BeStrToDateEx(aValue)
+      Result := 0,
+      if     (Trim(aValue) <> '')
+         and (Trim(aValue) <> '.  .')
+         and (Trim(aValue) <> '. .')
+         and (Trim(aValue) <> '..') then
+         Result := CToD(aValue),
+      endif,
+   end,
+
+   Result           := '',
+
+   CalWeekStr       := 'KW',
+   CalMaxWeek       := '99.99',
+   CalNullWeek      := '00.00',
+   CalNullWeekStr   := CalWeekStr + '.' + CalNullWeek,
+   CalMaxWeekStr    := CalWeekStr + '.' + CalMaxWeek,
+
+   // weder KW.00.00 (Nulldatum) noch KW.99.99 (Abrufauftrag) dürfen
+   // verändert werden
+   if (cOrigTermin = CalNullWeekStr) or (cOrigTermin = CalMaxWeekStr) then
+      Result      := cOrigTermin,
+   else
+      bIsKwTermin := SubStr(cOrigTermin, 1, 2) = CalWeekStr,
+
+      if DABPAR:TRMR_MOD = 'J' then // -> tagesgenaues Terminraster
+         if bIsKwTermin then        //    KW-String übergeben
+            Result := CalWeekStr + '.' + KW(FridayOfWeek(SubStr(cOrigTermin, 4, 5))),
+         else                       //    Tages-Terminstring übergeben
+            Result := DToC(BeStrToDateEx(cOrigTermin)),
+         endif,
+      else                          // -> wochengenaues Terminraster
+         if bIsKwTermin then        //    KW-String übergeben
+            Result := cOrigTermin,
+         else                       //    Tages-Terminstring übergeben
+            Result := CalWeekStr + '.' + KW(BeStrToDateEx(cOrigTermin)),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Prüfung, ob die Stückliste zu irgendeinem Zeitpunkt vollständig
+//   ungültig (= "Stückliste leer") werden kann
+//
+//   TODO: Hierfür sollte es eine Standard-Funktion auf Ebene eines
+//         DispositionControllers oder ArticleControllers geben.
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_PartListUtils.pas => D210_CouldBeInvalid()
+//   ---------------------------------------------------------------------------
+//
+// @Result: Boolean
+//           true  = Stückliste könnte nach dem angegebenen Zeitpunkt ungültig (leer) werden
+//           false = Stückliste bleibt ab dem angegebenen Zeitpunkt für immer gültig
+//******************************************************************************
+function _DPU_D210_CouldBeInvalid(oDM, cArtNr, dGueltigPerDatum)
+| bBreak, oDab210 |
+   Result := True, // per Default Result auf TRUE (= Baugruppe als Kaufteil betrachten)
+
+   cArtNr            := PadR(cArtNr, mbeArtNoLen),
+   oDab210           := DbGetTable(oDM, waDab210),
+   oDab210.IndexName := 'DAB211',
+   DbSeek({cArtNr}, oDab210),
+
+   bBreak := false,
+   while not bBreak and not Eof(oDab210) and (oDab210:ARTNR1 == cArtNr) do
+      // Sobald die erste immer gültige -> Result FALSE und EXIT!
+      if    (    oDab210:GUELTIGVON <= dGueltigPerDatum or Empty(oDab210:GUELTIGVON) )
+         and Empty(oDab210:GUELTIGBIS)
+         and oDab210:MENGE <> 0
+         and not oDab210:R_S $ '/C' then   // keine "Info-" oder "Kalkulations-"-Position
+
+         Result := False,
+         bBreak := true,
+      else
+         DbSkip(1, oDab210),
+      endif,
+   end,
+end,
+
+//******************************************************************************
+// Ermitteln, ob der Artikel "cArtnr" per heute als Kaufteil oder als Baugruppe
+// gilt.
+//
+//   TODO: Hierfür sollte es eine Standard-Funktion auf Ebene eines
+//         DispositionControllers oder ArticleControllers geben.
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Übersetzung" von U_ArtDates.pas => GetPlanningMode()
+//   ---------------------------------------------------------------------------
+//
+// @Result: String, Planungsmodus
+//           'F' - Planung in der Fertigung
+//           'E' - Einkauf im Einkauf
+//******************************************************************************
+function _DPU_GetPlanungsModusForArtikel(oDM, cArtnr, dGueltigPerDatum)
+| oDab010 |
+
+   Result := '',
+
+   cArtNr            := PadR(cArtNr, mbeArtNoLen),
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   MySeek({cArtnr}, oDab010),
+
+   if oDab010:ARTTYP $ '/B/M/U/V/' then
+      // Hat der Artikel eine aktuell gültige Stückliste und ist nicht für die Produktion gesperrt?
+      if    oDab010:PROD_ABT == 'Z/Z'
+         or DPU_D210_CouldBeInvalid(oDM, cArtNr, dGueltigPerDatum) then
+         Result := 'E',  // -> als Kaufteil betrachten
+      else
+         Result := 'F',  // -> als Fertigungs-Baugruppe betrachten
+      endif,
+   else
+      Result := 'E',     // -> als Kaufteil betrachten
+   endif,
+end,
+
+
+//******************************************************************************
+// Rekursive Suche in einer Stückliste
+//    Ergebnis sind alle Artikel mit ARTTYP in (B,M) verpackt in einem
+//    ADS-Filter-String der Form "ARTNR ='xxx' OR ARTNR='yyy' ..."
+//
+// Parameter: cBaugruppenArtikel - Artikel-Nr. der Baugruppe, deren Stückliste als Basis für den Filter dient.
+//
+// @Result: Filter-String in der Form "ARTNR ='xxx' OR ARTNR='yyy' ..."
+//******************************************************************************
+function _DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerStammStueckliste_Internal(cBaugruppenArtikel)
+| m_aArray, m_oDab210, m_oDab010, i |
+
+   //***************************************************************************
+   // Rekursive Stücklisten-Analyse von oben nach unten
+   // @Result: null
+   //***************************************************************************
+   function filterSubStuecklisten(cArtnr)
+      | nRecNo |
+      cArtnr := PadR(cArtnr, mbeArtNoLen),
+      // nur wenn es für diesen Artikel eine Stückliste gibt... (könnte eine "leere" Baugruppe sein)
+      if m_oDab210.CbFindkey({cArtnr}) then
+         while m_oDab210:ARTNR1 == cArtnr and not m_oDab210.CbEoF do
+         // Suche alle Einträge in Stückliste, bei denen ARTNR1= artnr
+            if m_oDab010.CbFindKey({m_oDab210:ARTNR2}) then
+               // schau in Artikeltabelle, ob ARTNR2 B, M, U ist
+               if m_oDab010:ARTTYP $ '/B/M/U/' then
+                  if SeekInArray(m_oDab210:ARTNR2, m_aArray) < 0 then
+                     AAdd(m_aArray, m_oDab210:ARTNR2),
+                  endif,
+                  nRecNo := m_oDab210.CbRecNo,
+                  filterSubStuecklisten(m_oDab210:ARTNR2),
+                  m_oDab210.CbGoTo(nRecNo),
+               endif,
+            endif,
+            m_oDab210.CbNext(),
+         end,
+      endif,
+   end,
+
+
+   m_oDab210 := BeOpen(waDab210, 'DAB211'),
+   setcursor(crhourglass),
+   startseq
+      m_oDab010 := BeOpen(waDab010, 'DAB011'),
+      startseq
+
+         // Erstmal muß man checken, ob der Artikel selbst
+         // den passenden ARTTYP hat, also B, E,...
+         // falls nicht Warnmeldung und Exit
+         cBaugruppenArtikel := PadR(cBaugruppenArtikel, mBeArtNoLen),
+         if not m_oDab010.CbFindKey({cBaugruppenArtikel}) then
+            SetError('Der Artikel <' + cBaugruppenArtikel + '> wurde nicht gefunden.'),
+         endif,
+         if m_oDab010:ARTTYP $ '/B/M/U/' then
+            m_aArray  := Dim(0),
+            AAdd(m_aArray, cBaugruppenArtikel),
+            filterSubStuecklisten(cBaugruppenArtikel),
+         else
+            SetError("Dieser Artikel " + m_oDAB010:ARTNR + "ist keine Baugruppe oder Endprodukte. Bitte wählen Sie einen anderen Artikel!"),
+         endif,
+
+      always
+         BeClose(m_oDab010),
+      stopseq,
+   always
+      BeClose(m_oDab210),
+      setcursor(crdefault),
+   stopseq,
+
+
+   Result := '',
+
+   for i := 1 to Len(m_aArray) do
+       Result += iif(empty(result), '', ' OR ') + 'ARTNR = "' + PadR(Trim(m_aArray[i]), mBeArtNoLen) + '"',
+   next,
+end,
+
+//******************************************************************************
+// sucht sich die erste Stücklistenebene für eine Variante
+// und löst alle gefundenen Baugruppen mit bestehender Dispohilfe rekusirv auf
+// @Result: Filter-String in der Form "ARTNR ='xxx' OR ARTNR='yyy' ..."
+//******************************************************************************
+function _DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerVariantenStueckliste_Internal(cBaugruppenArtikel,cBestPosNr)
+   | oDab240 |
+   result:= '',
+   startseq
+      oDAB240 := BeOpen(waDAB240, 'DAB241'),                                    //Index: B_POS_LFD
+      oDAB240.CbSetRange({cBestposnr + '001'}, {cBestposnr + '999'}),
+      oDAB240.CbFirst(),
+      while not oDAB240.CbEoF do
+         if oDAB240:ARTTYP $ '/B/M/U/' then
+            result:= ConcatTrenner(result, DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerStammStueckliste_Internal(oDAB240:ARTNR_E)," OR "),
+         endif,
+         oDAB240.CbNext(),
+      end,
+      // Auftag der Variante immer mitnehmen
+      result := concatTrenner(result, 'BESTPOSNR = "' + cBestposnr + '"', ' or '),
+   always
+      BeClose(oDAB240),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Funktion wird aus Individualfilter der DAB035 übergeben
+// je nach Artikeltyp wird die relevante Stückliste rekursiv aufgelöst
+// @Result: char - Filterstring in der Form "ARTNR ='xxx' OR ARTNR='yyy' ..."
+//******************************************************************************
+function _DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerStueckliste(cARTNR:C, cBestPosNr:C:='')
+   | cFilter, oDAB010 |
+   cFilter := '',
+   startseq
+      oDAB010 := BeOpen(waDAB010, 'DAB011'),                                    //Index: ARTNR
+      if oDAB010.CbFindKey({cARTNR}) then
+         if oDAB010:ARTTYP = 'V' then
+            //seterrorif(empty(cBestPosnr),"Keine Produktionsrückstand gefunden"),
+            cFilter := DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerVariantenStueckliste_Internal(cARTNR, cBestPosNr),
+         else
+            cFilter := DPU_DispoHilfe_ErzeugeDispoVorschlagsFilterFuerStammStueckliste_Internal(cARTNR),
+         endif,
+      endif,
+   always
+      BeClose(oDAB010),
+   stopseq,
+   result := cFilter,
+end,

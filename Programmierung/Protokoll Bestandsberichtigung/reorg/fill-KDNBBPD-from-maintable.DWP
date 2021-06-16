@@ -1,0 +1,40 @@
+| m_oDM, m_oKDNBBP, m_oKDNBBPDetail |
+
+startseq
+   m_oDM := CreateObject('TBeDbGet'),
+   Startseq
+      m_oKDNBBP                 := MyGetTable(m_oDM, waKDNBBP,  ),
+      m_oKDNBBPDetail           := MyGetTable(m_oDM, waKDNBBPD, ),
+      m_oKDNBBPDetail.IndexName := 'KDNBBP_ID',
+
+      DbGoTop(m_oKDNBBP),
+      while not eof(m_oKDNBBP) do
+         // Für alle (Teil-)Fertigmeldungen
+         if m_oKDNBBP:LIEFNR = -1 and not Empty(AllTrim(m_oKDNBBP:WERT_A)) and not Empty(AllTrim(m_oKDNBBP:D240_REC_N)) then
+            // Detail-Tabelle noch nicht gefüllt für diesen Datensatz?
+            if not DbSeek({m_oKDNBBP:ID}, m_oKDNBBPDetail) then
+
+               DBStartTrans(m_oDM.ADSConnection),
+               startseq
+
+                  BBPU_Fill_KDNBBPD(m_oDM, m_oKDNBBP),
+
+                  DbCommit(m_oDM.ADSConnection),
+               always
+                  if dbInTrans(m_oDM.ADSConnection) then
+                     dbRollback(m_oDM.ADSConnection),
+                     DbResetDM(m_oDM),
+                  endif,
+               stopseq,
+
+            endif,
+         endif,
+         DbSkip(1, m_oKDNBBP),
+      end,
+
+   always
+      Destroyobject(m_oDM),
+   Stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler in ' + ProgName(), GetErrorObj()),
+stopseq,

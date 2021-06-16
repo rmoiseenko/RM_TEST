@@ -1,0 +1,485 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Programm exportiert alle Tabellen/Index/Feld Definitionen
+//##############################################################################
+//##############################################################################
+
+|
+   m_oTableInfo, m_nWorkArea, m_nIndent, m_oFile,
+
+   m_nPreviousCursor,
+
+   // Programm-Optionen
+   m_cFileName:C           := '',
+   m_bWithIndiTables:L     := True,  // Individual-Tabellen auflisten
+   m_bWithIndiFields:L     := True,  // Individual-Felder auflisten
+   m_bWithStandardFields:L := True,  // Standardfelder (alle Felder, die nicht mit X_ beginnen) auflisten
+   m_bWithIndiIndices:L    := True,  // Individual-Indices auflisten
+   m_bSimpleIndices:L      := True,  // unnötige Index-Informationen nicht auflisten (z.b. FTS-Infos bei nicht FTS-Indices)
+   m_bSimpleConverts:L     := True,  // einfache Konvertierungen durchführen, damit weniger Änderungen beim Diff auftauchen (z.b. MASK_OPTIONS aus "A0" wird "{""A0,"",""""}")
+   m_bWithFieldCounter:L   := False, // Feld-Nummern mit aufzählen
+   m_bWithFieldTypeInfo:L  := True,  // Feldtyp mit exportieren, ACHTUNG: Dies kann die Performance deutlich verschlechtern
+   m_bShowFinishMessage:L  := True   // Meldung anzeigen, wenn der Export beendet wurde
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Export-Datei erstellen
+//******************************************************************************
+function InitExport(cFileName:C)
+| cFilePath |
+
+   // Ggf. Dateipfad erstellen
+   cFilePath := ExtractFilePath(cFileName),
+   if not DirectoryExists(cFilePath) then
+      ForceDirectories(cFilePath),
+   endif,
+
+   // Datei öffnen
+   m_oFile := nil,
+   if cFileName <> '' then
+      m_oFile := FOpen(cFileName, FO_Create),
+   endif,
+end,
+
+//******************************************************************************
+// Export abschließen
+//******************************************************************************
+function FinalizeExport()
+| cFilePath |
+
+   if not Empty(m_oFile) then
+      if m_bShowFinishMessage then
+         cFilePath := ExtractFilePath(m_cFileName),
+         if Jn('Export-Datei <' + ExtractFileName(m_cFileName) + '> erstellt ' +
+               'unter <' + cFilePath + '>' + CRLF +
+               'Export-Verzeichnis öffnen?', True) then
+            ShellExecute(cFilePath),
+         endif,
+      endif,
+
+      DestroyObject(m_oFile),
+   else
+      if m_bShowFinishMessage then
+         MessageDlg('Fehler beim Export der Tabellen-Definitionen!', mtError),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Text schreiben
+//******************************************************************************
+function WriteText(cText:C)
+   if not Empty(m_oFile) then
+      FWriteLn(m_oFile, cText),
+   else
+      WriteLn(cText),
+   endif,
+end,
+
+//******************************************************************************
+// Info exportieren
+//******************************************************************************
+function WriteInfo(cDescription:C, cValue:C)
+   WriteText(StringOfChar(' ', m_nIndent * 3) + cDescription + ': "' + StrTran(cValue, '"', '""') + '"'),
+end,
+
+//******************************************************************************
+// Info exportieren
+//******************************************************************************
+function WriteHeader(cDescription, cValue)
+   WriteText(StringOfChar(' ', m_nIndent * 3) + '#' + cDescription + '#: ' + cValue),
+end,
+
+//******************************************************************************
+// Boolean in String umwandeln
+//******************************************************************************
+function BoolToStr(lValue)
+   Result := iif(lValue, 'J', 'N'),
+end,
+
+//******************************************************************************
+// Prüfen ob ein Feld ein Indi-Feld ist
+//******************************************************************************
+function IsIndiField(cFieldName)
+   Result := (SubStr(cFieldName, 1, 7) = 'NONSTD_') or
+             (SubStr(cFieldName, 1, 2) = 'X_'),
+end,
+
+//******************************************************************************
+// Prüfen ob ein Index ein Indi-Index ist
+//******************************************************************************
+function IsIndiIndex(cIndexName)
+  cIndexName := Upper(cIndexName),
+
+  Result := (SubStr(cIndexName, 1, 2) = 'I_') or
+            (SubStr(cIndexName, 1, 3) = 'DAX') or
+            (SubStr(cIndexName, 1, 2) = 'DX') or
+            (SubStr(cIndexName, 1, 3) = 'DIX'),
+end,
+
+//******************************************************************************
+// TableInfo schreiben
+//******************************************************************************
+function WriteTableInfo(oTableInfo)
+   WriteInfo('TableWorkArea',  Str(oTableInfo.TableWorkArea)),
+   WriteInfo('TableLabel',     oTableInfo.TableLabel),
+   WriteInfo('IndexInfo',      oTableInfo.IndexInfo),
+   WriteInfo('IndiTName',      oTableInfo.IndiTName),
+   WriteInfo('IsADT',          BoolToStr(oTableInfo.IsADT)),
+   WriteInfo('IsUserTable',    BoolToStr(oTableInfo.IsUserTable)),
+   WriteInfo('Right_Delete',   oTableInfo.Right_Delete),
+   WriteInfo('Right_Edit',     oTableInfo.Right_Edit),
+   WriteInfo('Right_Insert',   oTableInfo.Right_Insert),
+   WriteInfo('Right_Read',     oTableInfo.Right_Read),
+   WriteInfo('Right_UpdDel',   oTableInfo.Right_UpdDel),
+   WriteInfo('Right_UpdNew',   oTableInfo.Right_UpdNew),
+   WriteInfo('Right_UpdUpd',   oTableInfo.Right_UpdUpd),
+   WriteInfo('Right_Validate', oTableInfo.Right_Validate),
+   WriteInfo('UserAlias',      oTableInfo.UserAlias),
+   WriteInfo('UserProtocol',   BoolToStr(oTableInfo.UserProtocol)),
+   WriteInfo('UserSubsidComm', BoolToStr(oTableInfo.UserSubsidComm)),,
+end,
+
+//******************************************************************************
+// Einfache Konvertierung der MASK_OPTIONS
+//******************************************************************************
+function TryConvertMask_Options(aMaskOptions)
+  Result := aMaskOptions,
+  if m_bSimpleConverts then
+     if (aMaskOptions == 'A0') or (aMaskOptions == '') then
+        Result := '{"A0,",""}',
+     else
+        if (Len(aMaskOptions) > 0) then
+           if SubStr(aMaskOptions, 1, 1) <> '{' then
+              if Right(aMaskOptions, 1) = ',' then
+                 aMaskOptions := SubStr(aMaskOptions, 1, Len(aMaskOptions) - 1),
+              endif,
+              Result := '{"' + aMaskOptions + ',",""}',
+           else
+              if SubStr(aMaskOptions, 5, 1) = '"' then
+                 Result := SubStr(aMaskOptions, 1, 4) + ',' + SubStr(aMaskOptions, 5, 999999),
+              endif,
+           endif,
+        endif,
+     endif,
+  endif,
+end,
+
+//******************************************************************************
+// FieldInfo schreiben
+//******************************************************************************
+function WriteFieldInfo(oFieldInfo, nIndex, oTable)
+| aFieldTypeInfo |
+
+   //***************************************************************************
+   function GetFieldTypeInfo(oTable:O, cFieldName:C)
+   | oItem, i |
+
+      Result := {'<unknown>', 0, 0},
+      for i := 1 to CollCount(oTable.FieldDefs) do
+         oItem := CollItem(oTable.FieldDefs, i),
+         if oItem.Name == cFieldName then
+            case oItem.DataType
+               of ftBlob           :: Result[1] := 'blob',
+               of ftBoolean        :: Result[1] := 'logical',
+               of gl_PCKGU_ftShort :: Result[1] := 'short',
+               of ftInteger        :: Result[1] := 'integer',
+               of ftFloat          :: Result[1] := 'double',
+               of ftString         :: Result[1] := 'char',
+               of ftMemo           :: Result[1] := 'memo',
+               of ftDateTime       :: Result[1] := 'timestamp',
+               of ftDate           :: Result[1] := 'date',
+               of ftTime           :: Result[1] := 'time',
+            endcase,
+            Result[2] := oItem.Precision,
+            Result[3] := oItem.Size,
+
+            break,
+         endif,
+      next,
+   end,
+
+   if m_bWithFieldCounter then
+      WriteHeader('FELD', Str(nIndex)),
+   else
+      WriteHeader('FELD', ''),
+   endif,
+   m_nIndent++,
+   WriteInfo('FieldName',           oFieldInfo.FieldName),
+   if m_bWithFieldTypeInfo then
+      aFieldTypeInfo := GetFieldTypeInfo(oTable, oFieldInfo.FieldName),
+      WriteInfo('DataType',         aFieldTypeInfo[1]),
+      WriteInfo('Precision',        aFieldTypeInfo[2]),
+      WriteInfo('Size',             aFieldTypeInfo[3]),
+   endif,
+   WriteInfo('AttribID',            Str(oFieldInfo.AttribID)),
+   WriteInfo('Comment',             oFieldInfo.Comment),
+   WriteInfo('Copyable',            BoolToStr(oFieldInfo.Copyable)),
+   WriteInfo('DefRight_Edit',       oFieldInfo.DefRight_Edit),
+   WriteInfo('DefRight_MaskValid',  oFieldInfo.DefRight_MaskValid),
+   WriteInfo('DefRight_New',        oFieldInfo.DefRight_New),
+   WriteInfo('DefRight_Read',       oFieldInfo.DefRight_Read),
+   WriteInfo('DefRight_Update',     oFieldInfo.DefRight_Update),
+   WriteInfo('DefRight_Validate',   oFieldInfo.DefRight_Validate),
+   WriteInfo('DisplayName',         oFieldInfo.DisplayName),
+   WriteInfo('FieldAlign',          Str(oFieldInfo.FieldAlign)),
+   WriteInfo('FieldIsLocationable', BoolToStr(oFieldInfo.FieldIsLocationable)),
+   WriteInfo('FieldSpec',           Str(oFieldInfo.FieldSpec)),
+   WriteInfo('LocationCopy',        Str(oFieldInfo.LocationCopy)),
+   WriteInfo('LocationType',        Str(oFieldInfo.LocationType)),
+   WriteInfo('MaskAvailable',       BoolToStr(oFieldInfo.MaskAvailable)),
+   WriteInfo('MaskDuplicates',      BoolToStr(oFieldInfo.MaskDuplicates)),
+   WriteInfo('MaskMustExist',       BoolToStr(oFieldInfo.MaskMustExist)),
+   WriteInfo('MaskOptUserDef',      BoolToStr(oFieldInfo.MaskOptUserDef)),
+   WriteInfo('Mask_Content',        oFieldInfo.Mask_Content),
+   WriteInfo('Mask_Control',        oFieldInfo.Mask_Control),
+   WriteInfo('Mask_Options',        TryConvertMask_Options(oFieldInfo.Mask_Options)),
+   WriteInfo('Mask_Picture',        iif(m_bSimpleConverts, Trim(oFieldInfo.Mask_Picture), oFieldInfo.Mask_Picture)),
+   WriteInfo('NotUserDef',          BoolToStr(oFieldInfo.NotUserDef)),
+   WriteInfo('Right_Edit',          oFieldInfo.Right_Edit),
+   WriteInfo('Right_IndiGet',       BoolToStr(oFieldInfo.Right_IndiGet)),
+   WriteInfo('Right_MaskValid',     oFieldInfo.Right_MaskValid),
+   WriteInfo('Right_New',           oFieldInfo.Right_New),
+   WriteInfo('Right_Read',          oFieldInfo.Right_Read),
+   WriteInfo('Right_Update',        oFieldInfo.Right_Update),
+   WriteInfo('Right_Validate',      oFieldInfo.Right_Validate),
+   WriteInfo('SemaphorLock',        BoolToStr(oFieldInfo.SemaphorLock)),
+   WriteInfo('SemaphorSign',        oFieldInfo.SemaphorSign),
+   m_nIndent--,
+end,
+
+//******************************************************************************
+// TableDef schreiben
+//******************************************************************************
+function WriteTableDef(oTableDef)
+| i, oItem, bIsADT |
+
+   bIsADT := Upper(ExtractFileExt(oTableDef.TableName)) = '.ADT',
+
+   WriteInfo('WorkArea',         Str(oTableDef.WorkArea)),
+   WriteInfo('TableName',        oTableDef.TableName),
+   WriteInfo('TableDescription', oTableDef.TableDescription),
+   WriteInfo('AliasName',        oTableDef.AliasName),
+   WriteInfo('AutoCreate',       BoolToStr(oTableDef.AutoCreate)),
+   WriteInfo('CheckOnOpen',      BoolToStr(oTableDef.CheckOnOpen)),
+   WriteInfo('OrgTableName',     oTableDef.OrgTableName),
+   WriteInfo('ProtIDFld',        oTableDef.ProtIDFld),
+   WriteInfo('Structure',        oTableDef.Structure),
+   WriteInfo('UserProtocol',     BoolToStr(oTableDef.UserProtocol)),
+   WriteInfo('UserSubsidComm',   BoolToStr(oTableDef.UserSubsidComm)),
+
+   //***************************************************************************
+   // TableInfo.TableDef.BeIndexDefs
+   WriteHeader('BeIndexDefs', Str(CollCount(oTableDef.BeIndexDefs))),
+   m_nIndent++,
+   for i := 1 to CollCount(oTableDef.BeIndexDefs) do
+      oItem := CollItem(oTableDef.BeIndexDefs, i),
+      if m_bWithIndiIndices or not IsIndiIndex(oItem.IndexName) then
+         WriteHeader('BeIndexDef', Str(i)),
+         m_nIndent++,
+         WriteInfo('IndexName',              oItem.IndexName),
+         WriteInfo('OrderName',              oItem.OrderName),
+         if not m_bSimpleIndices or not bIsADT then
+            WriteInfo('Compound',            BoolToStr(oItem.Compound)),
+         endif,
+         WriteInfo('Condition',              oItem.Condition),
+         WriteInfo('Descend',                BoolToStr(oItem.Descend)),
+         WriteInfo('Description',            oItem.Description),
+         WriteInfo('Expression',             oItem.Expression),
+         if not m_bSimpleIndices or oItem.FullText then
+            WriteInfo('FullText',               BoolToStr(oItem.FullText)),
+            WriteInfo('FTSConditionalChars',    oItem.FTSConditionalChars),
+            WriteInfo('FTSConditionalCharsDef', BoolToStr(oItem.FTSConditionalCharsDef)),
+            WriteInfo('FTSDelimiters',          oItem.FTSDelimiters),
+            WriteInfo('FTSDelimitersDef',       BoolToStr(oItem.FTSDelimitersDef)),
+            WriteInfo('FTSDropChars',           oItem.FTSDropChars),
+            WriteInfo('FTSDropCharsDef',        BoolToStr(oItem.FTSDropCharsDef)),
+            WriteInfo('FTSField',               oItem.FTSField),
+            WriteInfo('FTSMaxWordLen',          Str(oItem.FTSMaxWordLen)),
+            WriteInfo('FTSMinWordLen',          Str(oItem.FTSMinWordLen)),
+            WriteInfo('FTSNoiseWords',          oItem.FTSNoiseWords),
+            WriteInfo('FTSNoiseWordsDef',       BoolToStr(oItem.FTSNoiseWordsDef)),
+            WriteInfo('FTSOptions',             Str(oItem.FTSOptions)),
+         endif,
+         WriteInfo('PageSize',               Str(oItem.PageSize)),
+         WriteInfo('Unique',                 BoolToStr(oItem.Unique)),
+         m_nIndent--,
+      endif,
+   next,
+   m_nIndent--,
+
+   //***************************************************************************
+   // TableInfo.TableDef.BeRelationDefs
+   WriteHeader('BeRelationDefs', Str(CollCount(oTableDef.BeRelationDefs))),
+   m_nIndent++,
+   for i := 1 to CollCount(oTableDef.BeRelationDefs) do
+      oItem := CollItem(oTableDef.BeRelationDefs, i),
+      WriteHeader('BeRelationDef', Str(i)),
+
+      m_nIndent++,
+      WriteInfo('AliasName',    oItem.AliasName),
+      WriteInfo('Expression',   oItem.Expression),
+      WriteInfo('RelationName', oItem.RelationName),
+      WriteInfo('WorkArea',     Str(oItem.WorkArea)),
+      m_nIndent--,
+   next,
+   m_nIndent--,
+
+   //***************************************************************************
+   // TableInfo.TableDef.IndexFiles
+   WriteHeader('IndexFiles', Str(CollCount(oTableDef.IndexFiles))),
+   m_nIndent++,
+   for i := 1 to CollCount(oTableDef.IndexFiles) do
+      WriteHeader('IndexFile',  + Str(i)),
+
+      m_nIndent++,
+      WriteInfo('IndexFile', CollItem(oTableDef.IndexFiles, i)),
+      m_nIndent--,
+   next,
+end,
+
+//******************************************************************************
+// FieldInfo anhand des FeldNamens sortieren
+//******************************************************************************
+function SortFieldArrayByFieldName(aFieldInfoArray)
+   | i, j, iPos, aResult, oField1, oField2 |
+
+   aResult := {},
+   for i := 1 to ALen(aFieldInfoArray) do
+       iPos := 0,
+       for j := 1 to ALen(aResult) do
+          oField1 := aFieldInfoArray[i],
+          oField2 := aResult[j],
+          if oField1.FieldName < oField2.FieldName then
+             iPos := j,
+             Break,
+          endif,
+       next,
+
+       if iPos > 0 then
+          AInsert(aResult, iPos, aFieldInfoArray[i]),
+       else
+          AAdd(aResult, aFieldInfoArray[i]),
+       endif,
+   next,
+
+   Result := aResult,
+end,
+
+//******************************************************************************
+// Alle Tabellen Informationen exportieren
+//******************************************************************************
+function WriteTable(oTableInfo, nWorkarea)
+| oFieldInfo, i, aFieldInfoArray, oTable |
+
+   m_nIndent := 0,
+   WriteHeader('TABELLE', Str(nWorkarea)),
+
+   //***************************************************************************
+   // TableInfo
+   m_nIndent++,
+   WriteTableInfo(oTableInfo),
+
+   //***************************************************************************
+   // TableInfo.FieldInfo
+   aFieldInfoArray := {},
+   WriteHeader('FELDER', Str(oTableInfo.FieldRightList.CbCount)),
+   m_nIndent++,
+   for i := 0 to oTableInfo.FieldRightList.CbCount - 1 do
+      oFieldInfo := oTableInfo.FieldRightList.CbFieldInfoByIndex(i),
+
+      // das für jede Tabelle vorhandene undefinierte FIELD_NOT_FOUND ignorieren
+      if i = 0 then
+         if oFieldInfo.FieldName <> 'FIELD_NOT_FOUND' then
+            SetError('FeldDefintion enhält nicht das Dummy-Feld "FIELD_NOT_FOUND", bitte bei SI nachfragen!'),
+         endif,
+      else
+         if (IsIndiField(oFieldInfo.FieldName)     and m_bWithIndiFields) or
+            (not IsIndiField(oFieldInfo.FieldName) and m_bWithStandardFields) then
+            AAdd(aFieldInfoArray, oFieldInfo),
+         endif,
+      endif,
+   next,
+
+   aFieldInfoArray := SortFieldArrayByFieldName(aFieldInfoArray),
+   if ALen(aFieldInfoArray) > 0 then
+      oTable := iif(m_bWithFieldTypeInfo, CreateObject('TBeRightsTable'), nil),
+      startseq
+         if m_bWithFieldTypeInfo then
+            oTable.Workarea := nWorkarea,
+            oTable.Active   := True,
+         endif,
+         for i := 1 to ALen(aFieldInfoArray) do
+            WriteFieldInfo(aFieldInfoArray[i], i, oTable),
+         next,
+      always
+         if m_bWithFieldTypeInfo then
+            DestroyObject(oTable),
+         endif,
+      stopseq,
+   endif,
+
+   //***************************************************************************
+   // TableInfo.TableDef
+   WriteHeader('TABLEDEFINITION', ''),
+   m_nIndent++,
+   WriteTableDef(oTableInfo.TableDef),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Export-Dateinamen anhand des Datenbestands-Pfad
+// @Result: string
+//******************************************************************************
+function DetermineExportFileName(cDBPath:C)
+| aDirectories, i |
+
+   Result       := '',
+   aDirectories := StrArray(StrTran(Lower(mbedefault), '\', CRLF)),
+   for i := 1 to ALen(aDirectories) do
+      if not Empty(Trim(aDirectories[i])) then
+         Result += iif(not Empty(Result), '_', '') + StrTran(aDirectories[i], ':', ''),
+      endif,
+   next,
+
+   Result += '__' + FormatDateTime('YYYY_MM_DD__hh_nn', Now()) + '.txt'
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Pfad und Dateinamen für Export-Datei ermitteln
+   m_cFileName := 'C:\be_customizingdiffer\' + DetermineExportFileName(mBeDefault),
+   InitExport(m_cFileName),
+   startseq,
+      m_nPreviousCursor := SetCursor(crHourglass),
+      startseq,
+         for m_nWorkArea := 0 to 999 do
+            m_oTableInfo := GetTableInfo(m_nWorkArea),
+            if not Empty(m_oTableInfo) then
+               if m_bWithIndiTables or
+                  (m_nWorkArea < 700) or
+                  (m_nWorkArea > 799) then
+                  WriteTable(m_oTableInfo, m_nWorkArea),
+               endif,
+            endif,
+         next,
+      always
+         SetCursor(m_nPreviousCursor),
+      stopseq,
+   always
+      FinalizeExport(),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

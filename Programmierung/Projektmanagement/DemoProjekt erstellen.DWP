@@ -1,0 +1,265 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm dient zur Erstellung eines Demo-Projekts.
+//               Es erstellt ein Projekt mit mehreren Vorgängen und Leistungen.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM, m_nProjectId,
+   m_oProjectController,
+   m_dStartDt,
+   m_SortCounter,
+   m_nEL1:N, m_nEL2:N, m_nPG1:N
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_dStartDt := Date() + 2, // Start-Datum der Vorgänge
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt die Personen/Ressourcen die für die Erstellung der
+// Demo-Vorgangs-Leistungen verwendet werden
+// @Result: Boolean - Ausreichend BDE-Personen in der DAB262?
+//******************************************************************************
+function GetRessources(oDM)
+| oDAB262, oDAB330 |
+
+   //***************************************************************************
+   // Diese Funktion gibt einfach immer die nächste Person in der DAB262 zurück
+   // ist das Ende der Tabelle erreicht fängt sie wieder beim 1. Datensatz an
+   // @Result: Integer - Personen-/Ressourcen-ID
+   //***************************************************************************
+   function GetNextPerson()
+      // Gibt die nächste Person aus dem Personalstamm zurück
+      DBSkip(1, oDAB262),
+      // Wenn das Ende erreicht wurde fängt die Auswahl von vorne an
+      Result := 0,
+      if not EOF(oDAB262) then
+         Result := oDAB262:PERSNR,
+      endif,
+   end,
+
+   oDAB262 := DBGetTable(oDM, waDAB262, 'Calc262'),
+   DBGoTop(oDAB262),
+//   oDAB330 := DBGetTable(oDM, waDAB330, 'Calc330'), // Für Maschinen benötigt
+//   DBGoTop(oDAB330),
+
+   m_nEL1 := oDAB262:PERSNR,  // Entwicklungsleitung 1
+   m_nEL2 := GetNextPerson(), // Entwicklungsleitung 2
+   m_nPG1 := GetNextPerson(), // Programmentwicklung 1
+
+   // Sicherstellen, dass für jede benötigte Variable eine eigene PERSNR vergeben
+   // werden konnte
+   Result := not empty(m_nEL1) and
+             not empty(m_nEL2) and
+             not empty(m_nPG1),
+end,
+
+//******************************************************************************
+// Projektstammsatz anlegen
+// @Result: Integer, Projekt-ID des neuen Projekts
+//******************************************************************************
+function CreateDemoProject(oDM)
+| oProjectBo |
+   Result := -1,
+   oProjectBo := CreateObject('TBeProjectBo'),
+   startseq
+      oProjectBo.CBDataModule := oDM,
+      oProjectBo.CbInsert(),
+      oProjectBo.CbDescription := 'Entwicklung Standard-Softwaretool',
+      oProjectBo.CbAuthority   := c_usr, // Hauptverwantwortung
+      oProjectBo.CbType        := 200,   // "Entwicklungsprojekt (intern)"
+      oProjectBo.CbStatus      := 100,   // "wird geplant"
+      oProjectBo.CbStartDate   := m_dStartDt,
+      oProjectBo.CbEndDate     := m_dStartDt + 22,
+      oProjectBo.CbPost(),
+      Result := oProjectBo.CbID,
+   always
+      DestroyObject(oProjectBo),
+   stopseq,
+end,
+
+//******************************************************************************
+// Hilfs-Funktion zum Anlegen eines Projektvorgangs
+// @Result: Vorgangs-ID
+//******************************************************************************
+function CreDmTask(oProjectController, oProjectBO, nLevel, nType, nGroupTaskID, cDescription, dStartAfterDays, dDays)
+| dStart, oDabPRV, oProjectTaskBo, nTaskID |
+   startseq,
+      oProjectTaskBo := CreateObject('TBeProjectTaskBO', 'DemoTask'),
+      startseq
+         oProjectTaskBo.CbDataModule := oProjectController.CBDataModule,
+         oProjectTaskBo.CbGotoID(-1),
+
+         nTaskID := oProjectController.CbInsertTaskAtEnd(oProjectBO, oProjectTaskBo),
+         // Diverse Felder per Tabelle setzen, diese sind per BO nicht setzbar
+         // => später entsprechende Controller-Funktion nutzen
+         oDabPRV          := DbGetTable(oProjectTaskBo.CbDataModule, waDabPRV),
+         oDabPRV:SORT     := m_SortCounter,
+         m_SortCounter++,
+         oDabPRV:EBENE    := nLevel,
+         oDabPRV:VORG_SAM := nGroupTaskID,
+
+         oProjectTaskBo.CbType         := nType,
+         oProjectTaskBo.CbDescription  := cDescription,
+
+         dStart                        := m_dStartDt + dStartAfterDays,
+         oProjectTaskBo.CbStart        := dStart,
+         oProjectTaskBo.CbEnd          := dStart + dDays,
+         oProjectTaskBo.CbPost(),
+
+         Result := oProjectTaskBo.CbID,
+      always
+         DestroyObject(oProjectTaskBo),
+      stopseq,
+   onerror,
+      SetError( 'Fehler in CreDmTask(): ' + crlf + crlf + GetErrorText() ),
+   stopseq,
+end,
+
+//******************************************************************************
+// Hilfs-Funktion zum Anlegen einer Projektvorgangs-Leistung
+// @Result: Vorgangsleistungs-ID
+//******************************************************************************
+function CreDmTaskEffort(oProjectTaskEffortBO, nTaskID, cPosNr, cResTyp, nResID, cDesc, nMenge, nEKP)
+   startseq
+      // "Standard-Stundensatz" berechnen
+      if nEKP = 0 then
+         case nResID
+            of m_nEL1 :: nEKP := 65,
+            of m_nEL2 :: nEKP := 75,
+            of m_nPG1 :: nEKP := 40,
+         endcase,
+      endif,
+
+      oProjectTaskEffortBO.CbInsertTaskEffort(nTaskID),
+      oProjectTaskEffortBO.CbPositionNo           := cPosNr,
+      oProjectTaskEffortBO.CbResourceType         := cResTyp,
+      oProjectTaskEffortBO.CbResourceID           := nResID,
+      oProjectTaskEffortBO.CbResourceUsageRate    := 100,
+      oProjectTaskEffortBO.CbDescription          := cDesc,
+      oProjectTaskEffortBO.CbQuantityPlanned      := nMenge,
+      oProjectTaskEffortBO.CbAcquisitionPrice     := nEKP,
+      oProjectTaskEffortBO.CbAcquisitionPriceUnit := 60,
+      oProjectTaskEffortBO.CbPost(),
+
+      Result := oProjectTaskEffortBO.CbID,
+   onerror
+      SetError('Fehler in CreDmTaskEffort():' + crlf + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Vorgänge anlegen
+// @Result: null
+//******************************************************************************
+function CreateDemoTasks(oDM, nProjID, oProjectController)
+|
+   oProjTaskEffortBO, oProjectBO,
+   nTskID, nTskAA, nTskEP, nTskEW, nTskTS, nTskDK, nTskPT
+|
+   oProjTaskEffortBO := CreateObject('TBeProjectTaskEffortBO', 'CalcTaskEffortBO'),
+   startseq
+      oProjTaskEffortBO.CBDataModule := oDM,
+      oProjectBO                     := CreateObject('TBeProjectBO', 'TempDemoProjBO'),
+      startseq
+         oProjectBO.CBDataModule := oDM,
+         oProjectBO.CbGoToID(nProjID),
+         //                                                    Lvl Type            GroupID       Desc                          Start         Dauer
+         //                                                                                                                    nach # Tagen  in # Tagen
+         nTskID := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_Task, 0,           'Vorbereitung',                  0,          1 ),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '001', 'M', m_nEL2, '', 480,  0),
+
+         nTskAA := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_GroupTask, 0,      'Anforderungsanalyse',           1,          4 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskAA,      'Bedarfsanalyse',                1,          1 ),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '001', 'M', m_nEL2, '', 480,  0),
+
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskAA,      'Vorl. Spezifikation',           1,          2 ),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '001', 'M', m_nEL2, '', 960, 0),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '002', 'M', m_nEL1, '', 960, 0),
+
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskAA,      'Budgetentwurf',                 3,          1 ),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '001', 'M', m_nEL2, '', 240,  0),
+
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskAA,      'Spezifikation im Team prüfen',  4,          1 ),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '001', 'M', m_nEL1, '', 240,  0),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '002', 'M', m_nEL2, '', 240,  0),
+            CreDmTaskEffort(oProjTaskEffortBO, nTskID, '003', 'M', m_nPG1, '', 240,  0),
+
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Milestone, nTskAA, 'Analyse abgeschlossen',         5,          0 ),
+         nTskEP := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_GroupTask, 0,      'Entwurf',                       5,          4 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskEP,      'Funktionale Spezifikation',     5,          1 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskEP,      'Technische Spezifikation',      5,          1 ),
+         nTskPT := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_GroupTask, nTskEP, 'Prototyp entwickeln',           7,          2 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   2, bcPRV_Type_Task, nTskPT,      'Benutzeroberfläche',            7,          1 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   2, bcPRV_Type_Task, nTskPT,      'Funktionalität',                8,          1 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Milestone, nTskEP, 'Entwurf abgeschlossen',         9,          0 ),
+         nTskEW := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_GroupTask, 0,      'Entwicklung',                  10,         10 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskEW,      'Architektur umsetzen',         10,          5 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskEW,      'Code entwickeln',              13,          7 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Milestone, nTskEW, 'Entwicklung abgeschlossen',    20,          0 ),
+         nTskTS := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_GroupTask, 0,      'Test',                         15,          7 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskTS,      'Modul- / Unit-Test',           15,          7 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskTS,      'Integrations-Test',            15,          7 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Milestone, nTskTS, 'Test abgeschlossen',           22,          0 ),
+         nTskDK := CreDmTask(oProjectController, oProjectBO,   0, bcPRV_Type_GroupTask, 0,      'Dokumentation',                18,          4 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskDK,      'Onlinehilfe erstellen',        18,          3 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Task, nTskDK,      'Feedback zur Hilfe aufnehmen', 20,          2 ),
+         nTskID := CreDmTask(oProjectController, oProjectBO,   1, bcPRV_Type_Milestone, nTskDK, 'Dokumentation abgeschlossen',  22,          0 ),
+      always
+         DestroyObject(oProjectBO),
+      stopseq,
+   always
+      DestroyObject(oProjTaskEffortBO),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_oProjectController := CreateObject('TBeProjectBusinessController', 'DemoProjController'),
+   startseq
+      m_oProjectController.CbDataModule := m_oDM,
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         m_nProjectId  := CreateDemoProject(m_oDM),
+         m_SortCounter := 0,
+
+         // Ressourcen für die Demo-Anlage ermitteln
+         if GetRessources(m_oDM) then
+            CreateDemoTasks(m_oDM, m_nProjectId, m_oProjectController),
+            DbCommit(m_oDM.AdsConnection),
+         else
+            m_nProjectId := 0,
+            MessageDlg('Für die Anlage eines Demo-Projekts werden mindestens drei BDE-Personen benötigt.'),
+         endif,
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollback(m_oDM.AdsConnection),
+            DbResetDm(m_oDM),
+         endif,
+      stopseq,
+   always
+      DestroyObject(m_oProjectController),
+   stopseq,
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_nProjectID

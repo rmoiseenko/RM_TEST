@@ -1,0 +1,292 @@
+function _TSKPL_CalculateStart_Periodically(aTaskExecutionOptions)
+| m_aRequirements,
+  m_nDays, m_nHours, m_nMinutes,
+  m_bWasHittingTimeBound
+|
+
+   //***************************************************************************
+   // Gibt die untere Zeitgrene zurück, falls gesperrt wurde
+   // @Param: /
+   // @Result: Time
+   //***************************************************************************
+   function GetTimeLowerBounds(aTimeBound)
+      result := EncodeTime(aTimeBound[1, 1], aTimeBound[1, 2], 0, 0),
+   end,
+
+   //***************************************************************************
+   // Gibt die obere Zeitgrene zurück, falls gesperrt wurde
+   // @Param: /
+   // @Result: Time
+   //***************************************************************************
+   function GetTimeUpperBounds(aTimeBound)
+      result := EncodeTime(aTimeBound[2, 1], aTimeBound[2, 2], 0, 0),
+   end,
+
+   //***************************************************************************
+   // Durchläuft das Sperr-Array (nicht zu berücksichtigende Wochentage) und
+   // vergleicht jede Position mit nWeekday auf Übereinstimmung.
+   // Falls übereinstimmend wird FALSE zurückgegeben und der Durchlauf abge-
+   // brochen
+   // @Param: Numeric [1..7], Array of Integer
+   // @Result: Boolean, Sperre auf nWeekday
+   //***************************************************************************
+   function WeekdayIsNotAnException(nWeekday, aExceptDays)
+   | i, bNoExceptionFound |
+      result := False,
+      bNoExceptionFound := True,
+      for i := 1 to ALen(aExceptDays) do
+         if (aExceptDays[i] = nWeekday) then
+            bNoExceptionFound := False,
+            break,
+         endif
+      end,
+      result := bNoExceptionFound,
+   end,
+
+   //***************************************************************************
+   // Addiert die mit nDistance übergebenen Tage auf nWeekday, um Wochentage
+   // voranzuschieben. Beim Überlauf wird eine Woche abgezogen, um wieder bei
+   // 1 (Sonntag) mit der Zählung zu starten
+   // @Param: Numeric [1..7], Numeric
+   // @Result: Numeric [1..7], Wert des Wochentages nach addierter Distanz
+   //***************************************************************************
+   function matchItToApossibleWeekday(nWeekday, nDistance)
+      nWeekday += nDistance,
+      result := nWeekday,
+      // Bei Überlauf ziehen wir eine Woche ab und starten wieder bei 1 (Sonntag)
+      // Beispiel
+      // Start Freitag (6) + 2 (Tage) = 8 (ungültig) - 7 = 1 (Sonntag)
+      // Start Freitag (6) + 3 (Tage) = 9 (ungültig) - 7 = 2 (Montag)
+      if (nWeekday > 7) then
+         result := nWeekday - 7,
+      endif,
+   end,
+
+   //******************************************************************************
+   // Berechnet die Distanz zum nächstmöglichen Wochentag unter Berücksichtigung
+   // "gesperrter" Tage, da bsp.weise am Wochenende keine Ausführung stattfinden
+   // soll/darf.
+   // @Param: DateTime, Array of Integer [1..7]
+   // @Result: Numeric, Distanz bis zum nächsten Ausführdatum
+   //******************************************************************************
+   function GetDistanceToNextPossibleWeekday(nStartWeekday, aExceptDays)
+   | nPseudoNextDay, nAbortAfterMaxIteration, bNextDayFound, i |
+
+      // Restriktieren auf 7, 1 Woche = 7 Tage, kein Überlauf, somit kann
+      // er nur wieder auf sich selbst kommen
+      nAbortAfterMaxIteration := 7,
+      bNextDayFound := False,
+      for i:= 1 to nAbortAfterMaxIteration do
+         nPseudoNextDay := matchItToApossibleWeekday(nStartWeekday, i),
+         bNextDayFound := weekdayIsNotAnException(nPseudoNextDay, aExceptDays),
+         if bNextDayFound then
+            break,
+         endif,
+      end,
+
+      // Falls alle Wochentage "gesperrt" wurden..
+      // Rechnen wir 999999 Tage drauf
+      if ( i > nAbortAfterMaxIteration) then
+         i := 999999,
+      endif,
+
+      result := i,
+   end,
+
+   //***************************************************************************
+   // Wandelt die "Grenze" in ein Datum um
+   // @Param: Array[Integer, Integer]
+   // @Result: DateTime
+   //***************************************************************************
+   function GetTimeFromTimeBound(aTimeBound)
+      result := EncodeTime(aTimeBound[1], aTimeBound[2], 0, 0),
+   end,
+
+   //***************************************************************************
+   function IsInnerBound(aDateTime, aTimeBound)
+   | tLowerBound, tUpperBound |
+     tLowerBound := GetTimeLowerBounds(aTimeBound),
+     tUpperBound := GetTimeUpperBounds(aTimeBound),
+     result := (Frac(aDateTime) >= tLowerBound) and (Frac(aDateTime) <= tUpperBound),
+   end,
+
+   //***************************************************************************
+   function IsOuterBound(aDateTime, aTimeBound)
+   | tLowerBound, tUpperBound |
+     tLowerBound := GetTimeLowerBounds(aTimeBound),
+     tUpperBound := GetTimeUpperBounds(aTimeBound),
+     result := (Frac(aDateTime) <= tLowerBound) or (Frac(aDateTime) >= tUpperBound),
+   end,
+
+   //***************************************************************************
+   function IsOverOuterBound(aDateTime, aTimeBound)
+   | tUpperBound |
+     tUpperBound := GetTimeUpperBounds(aTimeBound),
+     result := (Frac(aDateTime) >= tUpperBound),
+   end,
+
+   //***************************************************************************
+   function IsUnderOuterBound(aDateTime, aTimeBound)
+   | tLowerBound |
+     tLowerBound := GetTimeLowerBounds(aTimeBound),
+     result := (Frac(aDateTime) <= tLowerBound),
+   end
+
+   //***************************************************************************
+   function ValidateAllowedDayOfWeek(dtStartDate, aExceptDays)
+   | nDistanceToNextPossibleWeekday |
+      if (not weekdayIsNotAnException(DoW(dtStartDate), aExceptDays)) then
+
+         nDistanceToNextPossibleWeekday := GetDistanceToNextPossibleWeekday(DoW(dtStartDate),
+                                                                               aExceptDays),
+         result := Int(dtStartDate) + nDistanceToNextPossibleWeekday,
+      else
+         result := dtStartDate,
+      endif,
+   end,
+
+
+   //***************************************************************************
+   // Berechnet den Startzeitpunkt für zyklische Ausführung
+   // @Param: DateTime, Numeric, Char
+   // @Result: DateTime
+   //***************************************************************************
+   function CalculateNextStartDate(dtStartDate, nInterval, cUnit, aExceptDays, bBlockInner, aTimeBound)
+   | 
+      nDistanceToNextPossibleWeekday, dtNewDateTime, bHasTimeBound, aTemp,
+      bTimeBoundSwitch
+   |
+
+      bTimeBoundSwitch := False,
+      bHasTimeBound := ALen(aTimeBound) > 0,
+      if not bHasTimeBound then
+          aTimeBound := {{00, 00}, {00, 00}},
+      else
+         //Linke Grenze größer rechter?
+         if GetTimeFromTimeBound(aTimeBound[1]) > GetTimeFromTimeBound(aTimeBound[2]) then
+            //Switch them
+            bTimeBoundSwitch := true,
+            aTemp := aTimeBound[2],
+            aTimeBound[2] := aTimeBound[1],
+            aTimeBound[1] := aTemp,
+            bBlockInner := not bBlockInner,
+         endif,
+      endif,
+
+      if bHasTimeBound then
+         result := TSKPL_RoundStartDate(aTaskExecutionOptions, dtStartDate),
+         result := ValidateAllowedDayOfWeek(result, aExceptDays),
+         if bBlockInner then
+            if IsInnerBound(result, aTimeBound) then
+               result := Int(result) + GetTimeUpperBounds(aTimeBound),
+               result := TSKPL_RoundStartDate(aTaskExecutionOptions, result),
+            endif,
+         else
+            if IsOuterBound(result, aTimeBound) then
+               if IsUnderOuterBound(result, aTimeBound) then
+                  result := Int(result) + GetTimeLowerBounds(aTimeBound) - EncodeTime(0, 0, 0, 1),
+                  result := TSKPL_RoundStartDate(aTaskExecutionOptions, result),
+               else
+                  if IsOverOuterBound(result, aTimeBound) then
+                     result := Int(result) + 1,
+                     result := ValidateAllowedDayOfWeek(result , aExceptDays),
+                     result := result + GetTimeLowerBounds(aTimeBound) - EncodeTime(0, 0, 0, 1),
+                     result := TSKPL_RoundStartDate(aTaskExecutionOptions, result),
+                  endif,
+               endif,
+            endif,
+         endif,
+      else
+         result := ValidateAllowedDayOfWeek(dtStartDate, aExceptDays),
+         if dtStartDate <> result then
+            result := TSKPL_RoundStartDate(aTaskExecutionOptions, result),
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Prüft, ob alle Anforderungen für den Auführzeitplan übergeben wurden
+   // @Param: Array mit Ausführoptionen
+   // @Result: boolean, findet aber keine Verwendung, da SetError abbricht
+   //***************************************************************************
+   function CheckRequirements(aTaskExecutionOptions, aRequirements:R)
+   | i, cOutput, localReq, cKey |
+      //Wir gehen davon aus, dass alles passt und missbrauchen result dafür
+      result := True,
+      cOutput := '',
+      if (ALen(aTaskExecutionOptions) < 1) then
+         SetError('Keine Zeitplan-Optionen!'),
+      endif,
+      localReq := aRequirements,
+      for i := 1 to ALen(localReq) do
+         cKey := localReq[i],
+         if KVU_FIND(aTaskExecutionOptions, cKey) < 0 then
+            cOutput := cOutput + ' ' + cKey,
+            result := False,
+         endif,
+      end,
+      if not result then
+         SetError('Anforderungen fehlen: ' + cOutput),
+      endif,
+   end,
+
+   //***************************************************************************
+   // Von außen einzig aufrufbare Funktion (PSEUDO), da default
+   // @Param: Array mit Ausführoptionen
+   // @Result: DateTime
+   //***************************************************************************
+   function GetNextStartForTask(aTaskExecutionOptions)
+   |
+      dtStartDate, nInterval, nIntervalUnit, aExceptDays, bBlockInnerTimeBound,
+      aTimeBound, dtNow, aStartDate
+   |
+
+      dtNow       := KVU_GET(aTaskExecutionOptions, 'execution.StartFirst', GetAdsServerTime()),
+      aStartDate  := KVU_GETAssert(aTaskExecutionOptions, 'execution.LastStart'),
+      dtStartDate := ConvertArrayToDateTime(aStartDate),
+      dtStartDate := iif(Empty(dtStartDate), dtNow, dtStartDate),
+
+      nInterval            := KVU_GET(aTaskExecutionOptions, 'execution.Interval', 2),
+      nIntervalUnit        := KVU_GET(aTaskExecutionOptions, 'execution.IntervalUnit', 'h'),
+      aExceptDays          := KVU_GET(aTaskExecutionOptions, 'execution.ExceptDays', {}),
+      bBlockInnerTimeBound := KVU_GET(aTaskExecutionOptions, 'execution.BlockInner', true),
+      aTimeBound           := KVU_GET(aTaskExecutionOptions, 'execution.TimeBound', {}),
+      if (ALen(aTimeBound) > 0) then
+          if (ALen(aTimeBound) <> 2) then
+              SetError('Zeitgrenzen sind nicht korrekt definiert. {{hh:mm}, {hh:mm}}'),
+          else
+              if ( (ALen(aTimeBound[1]) <> 2) or
+                   (ALen(aTimeBound[2]) <> 2)) then
+                        SetError('Zeitgrenzen sind nicht korrekt definiert. {{hh:mm}, {hh:mm}}'),
+              endif,
+          endif
+      endif,
+
+      if (ALen(aExceptDays) > 6) then
+         result := EncodeDateTime(2121, 12, 31, 23, 59, 59, 999),
+//         SetError('Keinen Ausführungs Tag gewählt!'),
+      else
+         result := CalculateNextStartDate(dtStartDate, nInterval, nIntervalUnit,
+                   aExceptDays, bBlockInnerTimeBound, aTimeBound),
+      endif,
+   end,
+
+   //Init
+   m_nDays := 0,
+   m_nHours := 0,
+   m_nMinutes := 0,
+   m_bWasHittingTimeBound := false,
+
+
+   //Requirements definieren
+   m_aRequirements := Dim(0),
+   m_aRequirements := {'execution.Interval', 'execution.IntervalUnit',
+                      'execution.ExceptDays', 'execution.BlockInner',
+                      'execution.TimeBound'},
+
+   //Requirements prüfen
+   CheckRequirements(aTaskExecutionOptions, m_aRequirements),
+
+   result := GetNextStartForTask(aTaskExecutionOptions),
+end,
+

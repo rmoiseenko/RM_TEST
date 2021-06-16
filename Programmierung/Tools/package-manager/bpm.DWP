@@ -1,0 +1,772 @@
+//##############################################################################
+// Beschreibung: package manager GUI
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormID, m_cBrowserPackagesID,
+
+   m_oInstalledPackagesMem,
+
+   m_bPreChecksOk,
+   m_aPackages,
+
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CheckForUpdates, A_InstallFromOfflineSource, A_InstallNewPackage,
+   A_OpenPackageRepoWebGUI, A_ReloadInstalledPackages, A_SelectOfflineSource,
+   A_UpdateToLatest, actions, BeBarButton1, BeBarButton2, BeBarButton3,
+   BeBarDockControl1, BeBarManager, BeBarManagerBar1, BeBitBtn1, BeBitBtn2,
+   beinpl_installed_packages, beipnl_InstallNewPackage, beipnl_log,
+   beipnl_OfflineSource, beipnl_RepoData, btn_InstallFromOfflineSource,
+   btn_SelectOfflineSource, ds_InstalledPackages, edt_Error,
+   edt_NameOfNewPackage, edt_OfflinePackageSource, edt_Password, edt_RepoUrl,
+   edt_UserName, grid_InstalledPackages, lbl_NameOfNewPackage,
+   lbl_OfflinePackageSource, lbl_Password, lbl_RepoUrl, lbl_UserName,
+   pnl_InstalledPackages, pnl_InstallNewPackage, pnl_log, pnl_OfflineSource,
+   pnl_RepoData, richedit_log
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID            := '@BPMANAGER',
+m_cBrowserPackagesID := '@BPMANAGER',
+
+//##############################################################################
+// Includes
+//##############################################################################
+
+//#p Tools\package-manager\utils-copied-basics
+//#p Tools\package-manager\utils-main
+
+//##############################################################################
+
+function Style65InfoPanel(oInfoPanel)
+   if not IsBeDBVersion7() then
+     oInfoPanel.Height           := 30,
+     oInfoPanel.Color            := 12089600,
+     oInfoPanel.BorderColor      := 12089600,
+     oInfoPanel.Font.Size        := 10,
+     oInfoPanel.Font.Style       := 0,
+     oInfoPanel.Font.Color       := clWhite,
+   else
+     oInfoPanel.ColorMode := oInfoPanel.ColorMode,
+   endif,
+end,
+
+//******************************************************************************
+function ActionsEnabled()
+| bRepoDataGiven |
+   edt_Error.Visible         := not empty(m_oInstalledPackagesMem:error), // Fehler-Panel nur einblenden, wenn Fehler vorliegt
+
+
+   A_ReloadInstalledPackages.Enabled := true,
+
+   bRepoDataGiven                    := not empty(edt_RepoUrl.Text) and not empty(edt_UserName.Text) and not empty(edt_Password.Text),
+   A_CheckForUpdates.Enabled         := m_bPreChecksOk and bRepoDataGiven,
+
+   A_UpdateToLatest.Enabled          := m_bPreChecksOk and bRepoDataGiven and not empty(m_oInstalledPackagesMem:package_name),
+
+   edt_NameOfNewPackage.Enabled      := m_bPreChecksOk,
+   A_InstallNewPackage.Enabled       := m_bPreChecksOk and bRepoDataGiven and not empty(edt_NameOfNewPackage.Text),
+
+   if IsBeDBVersion7() then
+      lbl_RepoUrl.ShowRequiredIcon   := empty(edt_RepoUrl.Text),
+      lbl_UserName.ShowRequiredIcon  := empty(edt_UserName.Text),
+      lbl_Password.ShowRequiredIcon  := empty(edt_Password.Text),
+   endif,
+
+   A_InstallFromOfflineSource.Enabled := not empty(edt_OfflinePackageSource.Text),
+   A_SelectOfflineSource.Enabled      := true,
+end,
+
+//******************************************************************************
+function FormattedLogText(cMessage, cMode)
+| r, g, b |
+
+   r := 0,
+   g := 0,
+   b := 0,
+
+   case cMode
+     of 'INFO'    :: r := 0,   g := 0,   b := 0,     // schwarz
+     of 'WARNING' :: r := 255, g := 97,  b := 0,     // orange
+     of 'ERROR'   :: r := 255, g := 0,   b := 0,     // rot
+     of 'OK'      :: r := 10,  g := 127, b := 0,     // grün
+   endcase,
+
+   Result :=
+      '{\rtf1\fbidis\ansi\ansicpg0\uc1\deff0\deflang0\deflangfe0{\fonttbl{\f0\fnil Segoe UI;}' +
+      '{\f1\fnil Arial;}' +
+      '{\f2\fnil Consolas;}}' +
+      '{\colortbl;' +
+         '\red' + Str(r) + '\green' + Str(g) + '\blue' + Str(b) + ';' +    // Farb-Code #1 => 'cf1'
+      '}' +
+      '\pard\fi0\li0\ql\ri0\sb0\sa0\itap0 \plain \f2\fs20\cf1 @TEXT@\par}',
+
+   cMessage := StrTran(cMessage, '\', '\\'),         // escape characters
+   cMessage := StrTran(cMessage, crlf, '\par '),     // convert line breaks
+   Result   := StrTran(Result, '@TEXT@', cMessage),  // insert text into template
+end,
+
+//******************************************************************************
+function ClearRichLog()
+  richedit_log.Text := '',
+end,
+
+//******************************************************************************
+function WriteRichLog(cLogMessage, cMode:C:='INFO', nIndent:N:=0)
+| cPreviousText, cIndent |
+
+  if nIndent > 0 then
+     cIndent     := Replicate('  ', nIndent),
+     cLogMessage := cIndent + cLogMessage,
+     cLogMessage := StrTran(cLogMessage, crlf, crlf + cIndent),
+  endif,
+
+  cLogMessage := FormattedLogText(cLogMessage, cMode),
+
+
+  cPreviousText         := iif( empty(RtfToText(richedit_log.Text)), '', richedit_log.Text ),
+  richedit_log.Text     := ConcatRtf(cPreviousText, cLogMessage, 'Consolas'),
+  richedit_log.SelStart := Len(richedit_log.Text), // Ganz ans Ende scrollen
+end,
+
+//******************************************************************************
+// Vor-Ab-Prüfungen - Voraussetzungen für das Funktionieren des package managers prüfen
+//******************************************************************************
+function BPM_GUI_PreChecks()
+| cErrorMsg  |
+
+  Result := true,
+
+
+  cErrorMsg := BPM_CheckImportToolCanBeUsedWithCommandLine(),
+  if not empty(cErrorMsg) then
+     Result := false,
+     WriteRichLog(cErrorMsg, 'ERROR'),
+  endif,
+
+
+  cErrorMsg := BPM_CheckSslDllsAvailable(),
+  if not empty(cErrorMsg) then
+     Result := false,
+     WriteRichLog(cErrorMsg, 'ERROR'),
+  endif,
+
+  cErrorMsg := BPM_CheckMinBeVersionWarning(),
+  if not empty(cErrorMsg) then
+     // Result := false, // Da nicht genau klar ist, welche Mindestversion für den package manager notwendig ist => hier nicht den Abruf blockieren sondern nur warnen
+     WriteRichLog(cErrorMsg, 'WARNING'),
+  endif,
+
+  if not BPM_CheckPackageImportExportToolAvailableAtNewLocation() then
+     WriteRichLog('Bitte zuerst das Paket "package-import-export" installieren... (aktuelle Version des Import-Export-Tools)', 'WARNING'),
+  endif,
+
+  // Fehler-Meldung oder "OK" ausgeben
+  if not Result then
+     WriteRichLog('Umgebungs-Voraussetzungen nicht erfüllt.', 'ERROR'),
+  else
+     WriteRichLog('Bereit...', 'OK'),
+  endif,
+end,
+
+
+
+//******************************************************************************
+// Installierte Pakete ermitteln (GUI-Version)
+//******************************************************************************
+function BPM_GUI_LoadInstalledPackagesToMemtable(oInstalledPackagesMem)
+| nOldCursor |
+
+   WriteRichLog('Ermittle installierte Pakete...'),
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq
+
+      oInstalledPackagesMem.CbDisableControls(),
+      startseq
+         BPM_LoadInstalledPackagesToMemtable(oInstalledPackagesMem),
+      always
+         oInstalledPackagesMem.CbEnableControls(),
+      stopseq,
+
+      WriteRichLog(Str(oInstalledPackagesMem.CbRecordCount) + ' Pakete ermittelt', 'INFO', 1),
+
+   always
+     SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// Repo-Login-Daten aus GUI in KVU-Array holen
+//******************************************************************************
+function BPM_GUI_GetRepositoryDataFromGui()
+   Result := {},
+   KVU_Set(Result, 'REPOSITORY_URL', edt_RepoUrl.Text),
+   KVU_Set(Result, 'USERNAME',       edt_UserName.Text),
+   KVU_Set(Result, 'PASSWORD',       edt_Password.Text),
+end,
+
+function BPM_GUI_RenewUpdateAvailableStatusForPackageInMemTable(oInstalledPackagesMem, cLatestVersion, cErrorText)
+| nSemVerCompareResult |
+
+   oInstalledPackagesMem:latest_version   := cLatestVersion,
+
+   if not empty(cLatestVersion) then
+      nSemVerCompareResult                   := BPU_CompareSemVer(cLatestVersion, RTrim(oInstalledPackagesMem:installed_version)),
+      oInstalledPackagesMem:update_available := iif(nSemVerCompareResult = 0,
+                                                    'U',     // up-to-date
+                                                    iif(nSemVerCompareResult = 1,
+                                                        'Y', // yes, newer version available
+                                                        'O') // older version is 'latest' => ???
+                                                   ),
+   else
+      oInstalledPackagesMem:update_available := '',
+   endif,                                          
+   oInstalledPackagesMem:error            := cErrorText,
+end,
+
+//******************************************************************************
+// GUI-Memtable mit Informationen über verfügbare Updates füllen
+//******************************************************************************
+function BPM_GUI_CheckUpdatesAvailableAndSaveResultToMemtable(oInstalledPackagesMem)
+| nOldCursor, aRepositoryData, oRec, aPackageInFileSystemData, cPackageFolderPath,
+  aDownloadedPackageData, aNPMMetaDataResult, cLatestVersion, cErrorText, bErrorOccured |
+
+   WriteRichLog('Prüfe verfügbare Updates...'),
+   bErrorOccured := false,
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq
+      oInstalledPackagesMem.CbDisableControls(),
+      startseq
+         aRepositoryData := BPM_GUI_GetRepositoryDataFromGui(),
+
+         foreach oRec in oInstalledPackagesMem do
+
+            cErrorText     := '',
+            cLatestVersion := '',
+
+            if BPM_IsNPMRepo(KVU_GetAssert(aRepositoryData, 'REPOSITORY_URL')) then
+
+
+               startseq
+                  // Welches ist die "Latest" Version des Pakets?
+                  aNPMMetaDataResult     := BPM_npm_GetPackageMetaData(aRepositoryData, RTrim(oInstalledPackagesMem:package_name)),
+                  cLatestVersion         := KVU_GetAssert(aNPMMetaDataResult, 'LATEST_VERSION'),
+               onerror
+                  cErrorText := GU_ShowStdErrorMessage('Fehler beim Abruf der neuesten Paket-Version', GetErrorObj(), true),
+                  WriteRichLog('   Fehler bei paket <' + RTrim(oInstalledPackagesMem:package_name) + '> -> Fehlerlog prüfen', 'ERROR'),
+                  bErrorOccured := true,
+               stopseq,
+
+            else
+
+               // Paket runterladen und entpacken
+               aPackageInFileSystemData := BPM_DownloadAndUnZipPackage(aRepositoryData, RTrim(oInstalledPackagesMem:package_name)),
+               cPackageFolderPath       := KVU_GetAssert(aPackageInFileSystemData, 'EXTRACTED_PACKAGE_FOLDER_PATH'),
+
+               // Paket-Metadaten lesen
+               aDownloadedPackageData := BPM_ReadPackageDefinitionData(aPackageInFileSystemData),
+               cLatestVersion         := KVU_GetAssert(aDownloadedPackageData, 'VERSION'),
+
+               // Ordner mit geladenem Paket löschen
+               BPM_RemoveDirWithContent(cPackageFolderPath),
+
+            endif,
+
+            WriteLn(RTrim(oInstalledPackagesMem:package_name), AllTrim(oInstalledPackagesMem:installed_version), cLatestVersion),
+
+            // "Latest"
+            oInstalledPackagesMem.CbEdit(),
+            BPM_GUI_RenewUpdateAvailableStatusForPackageInMemTable(oInstalledPackagesMem, cLatestVersion, cErrorText),
+            oInstalledPackagesMem.CbPost(),
+
+            // Wenn ein Fehler aufgetreten ist, dann die Schleife abbrechen.
+            // Grund: Wenn das falsche Passwort eingegeben wurde und alle Einträge mit dem
+            //        falschen Passwort geprüft werden, dann kann das zu einer Sperre des
+            //        Domänen-Accounts führen (zu viele Anmeldungen mit falschem Passwort).
+            if bErrorOccured then
+               WriteRichLog('Die Aktualisierung wurde wegen eines Fehlers abgebrochen.', 'WARNING'),
+               break,
+            endif,
+
+         next,
+
+      always
+         oInstalledPackagesMem.CbEnableControls(),
+      stopseq,
+   always
+     SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// Haupt-Funktion
+//    - Paket herunterladen,
+//      ... entpacken
+//      ... mit installierter Version vergleichen
+//      ... Rückfrage auslösen                                                  // TODO: GUI raus lösen
+//      ... installieren / updaten / abbrechen
+//******************************************************************************
+function BPM_GUI_InstallOrUpdatePackage(oInstalledPackagesMem, cPackageName, aPackageInFileSystemData:A:=nil)
+| nOldCursor, bPackageIsCurrentlyInstalled,
+  aFileSystemPackageMetaData, cBaseInstallFolder, cBcpFile,
+  cDownloadedVersion, cInstalledVersion, aCompareResult, cUserMessage, bCanInstall,
+  aInstallResult, bInstallSuccess, bTriedToInstall, cLog,
+  aPreConditionsCheckRes, aPreConditionCheckProblems, cProblem |
+
+  cPackageName := AllTrim(cPackageName),
+
+  // Paket schon installiert?
+  bPackageIsCurrentlyInstalled := oInstalledPackagesMem.CbLocate('package_name', {cPackageName}, 0),
+  if bPackageIsCurrentlyInstalled then
+     WriteRichLog('Aktualisiere Paket <' + cPackageName + '> ...'),
+  else
+     WriteRichLog('Installiere Paket <' + cPackageName + '> ...'),
+  endif,
+
+  nOldCursor := SetCursor(crHourGlass),
+  startseq
+
+     // Paket runterladen und entpacken
+     // -> Wenn Paket-Daten-Array von außen mitgegeben wurden, dann handelt es sich
+     //    um ein bereits lokal vorhandenes offline-Paket
+     if empty(aPackageInFileSystemData) then
+        aPackageInFileSystemData   := BPM_DownloadAndUnZipPackage(BPM_GUI_GetRepositoryDataFromGui(), cPackageName),
+     endif,
+
+     // Paket-Metadaten des entpackten Pakets lesen
+     aFileSystemPackageMetaData := BPM_ReadPackageDefinitionData(aPackageInFileSystemData),
+     cBaseInstallFolder         := KVU_GetAssert(aFileSystemPackageMetaData, 'BE_BASE_FOLDER'),
+     cBcpFile                   := KVU_GetAssert(aFileSystemPackageMetaData, 'BCP_FILE_NAME' ),
+     cDownloadedVersion         := KVU_GetAssert(aFileSystemPackageMetaData, 'VERSION'       ),
+
+     // Validierung: Passt der übergebene Paket-Name zum Paket-Name entsprechend der Paket-Meta-Daten?
+     SetErrorif(cPackageName <> KVU_GetAssert(aFileSystemPackageMetaData, 'NAME'), 'Internal Error: package names do not match'),
+
+     // Dependencies (Installations-Voraussetzungen) prüfen
+     aPreConditionsCheckRes := BPM_CheckPackageInstallPreConditions(aFileSystemPackageMetaData),
+     if not KVU_GetAssert(aPreConditionsCheckRes, 'ALL_CONDITIONS_FULLFILLED' ) then
+
+        aPreConditionCheckProblems := KVU_GetAssert(aPreConditionsCheckRes, 'PROBLEMS'),
+        foreach cProblem in aPreConditionCheckProblems do
+           WriteRichLog(cProblem, 'ERROR', 1),
+        next,
+
+        WriteRichLog("Das Paket wurde NICHT installiert. Die Voraussetzungen zur Installation des Pakets sind nicht gegeben.", 'WARNING', 1),
+        exit,
+     endif,
+
+     // Aktuellen Installations-Status auslesen (sofern installiert)
+     if bPackageIsCurrentlyInstalled then
+
+        // Ist der Installations-Pfad des aktuell installierten Pakets und des heruntergeladenen Pakets identisch?
+        SetErrorIf(AllTrim(oInstalledPackagesMem:be_base_folder) <> cBaseInstallFolder,
+                   'Der Installations-Pfad im heruntergeladenen Paket (' + cBaseInstallFolder + ') weicht vom Pfad des aktuell ' +
+                   'installierten Pakets (' + AllTrim(oInstalledPackagesMem:be_base_folder) + ') ab.'),
+
+        cInstalledVersion      := oInstalledPackagesMem:installed_version,
+     else
+        cInstalledVersion      := '',
+     endif,
+
+  always
+    SetCursor(nOldCursor),
+  stopseq,
+
+  // (ggf.) <installierte> und <heruntergeladene> Versionen vergleichen
+  aCompareResult         := BPM_CompareDownloadedVsInstalledVersion(cDownloadedVersion, cInstalledVersion),
+  bCanInstall            := KVU_GetAssert(aCompareResult, 'CAN_INSTALL'),
+  cUserMessage           := KVU_GetAssert(aCompareResult, 'USER_MESSAGE'),
+
+  cUserMessage := 'Package File: ' + ExtractFileName(cBcpFile) + crlf + crlf +
+                  cUserMessage,
+
+  // Paket installieren/updaten, sofern möglich und vom User gewünscht
+  cLog              := 'Installiert:     ' + iif(empty(cInstalledVersion), 'keine/unbekannt', 'v' + cInstalledVersion) + crlf +
+                       'Heruntergeladen: v' + cDownloadedVersion,
+  bInstallSuccess   := false,
+  bTriedToInstall   := false,
+  if bCanInstall then
+     if Jn(cUserMessage) then
+        nOldCursor := SetCursor(crHourGlass),
+        startseq
+          bTriedToInstall := true,
+          aInstallResult  := BPM_InstallPackage(aPackageInFileSystemData, aFileSystemPackageMetaData),
+        always
+          SetCursor(nOldCursor),
+        stopseq,
+
+        bInstallSuccess   := KVU_GetAssert(aInstallResult, 'SUCCESS'),
+        cLog              += crlf +
+                             KVU_GetAssert(aInstallResult, 'LOG'),
+     endif,
+  else
+    MessageDlg(cUserMessage),
+  endif,
+
+
+  WriteRichLog(cLog, iif(bInstallSuccess, 'OK', iif(bTriedToInstall, 'ERROR', 'INFO')), 1),
+
+  // Wenn User "Ja" gewählt hat, dann...
+  if bTriedToInstall then
+     // Version in GUI-Memtable aktualisieren
+     if bPackageIsCurrentlyInstalled then
+        SetErrorIf(RTrim(oInstalledPackagesMem:package_name) <> cPackageName, 'memtable-package-name weicht ab - interner Fehler - memtable Positionierung falsch?'),
+        oInstalledPackagesMem.CbEdit(),
+     else
+        oInstalledPackagesMem.CbAppend(),
+     endif,
+
+     BPM_WriteInstalledPackageDataToMemTable(oInstalledPackagesMem, cBaseInstallFolder),
+     BPM_GUI_RenewUpdateAvailableStatusForPackageInMemTable(oInstalledPackagesMem, cDownloadedVersion, ''),
+     oInstalledPackagesMem.CbPost(),
+
+     // Damit der Cursor für neu installierte Pakete anschließend auf dem neuen Datensatz steht...
+     if not bPackageIsCurrentlyInstalled then
+        oInstalledPackagesMem.CbLocate('package_name', {cPackageName}, 0),
+     endif,
+  endif,
+
+  Result := {},
+  KVU_Set(Result, 'TRIED_TO_INSTALL', bTriedToInstall),
+  KVU_Set(Result, 'SUCCESS',          bInstallSuccess),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+//
+//******************************************************************************
+function grid_InstalledPackagesDblClick( Sender )
+  ActionExecute(A_UpdateToLatest),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_InputEditsChange( Sender )
+  ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_InstalledPackagesScroll_Update( Sender )
+  ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Offline Paket-Quelle auswählen
+//******************************************************************************
+function A_SelectOfflineSourceExecute( Sender )
+| oOpenDlg |
+
+   oOpenDlg := OpenDlg('Offline Paket-Quelle auswählen', 'Pakete|*.tgz'),
+   startseq,
+      oOpenDlg.Active := true,
+      if oOpenDlg.Selected then
+         edt_OfflinePackageSource.Text := oOpenDlg.FileName,
+      endif,
+      ActionsEnabled(),
+   always,
+      DestroyObject(oOpenDlg),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aus Offline-Quelle installieren / aktualisieren
+//******************************************************************************
+function A_InstallFromOfflineSourceExecute( Sender )
+| cPackageFileName, cCopiedPackageFileName, a7ZipDefaults, c7ZipFileName,
+  cUnPackFolder, aUnZipResult, cExtractedFolderPath, aPackageInFileSystemData,
+  aPackageMetaData, cPackageName, aInstallRes |
+   startseq
+      cPackageFileName := AllTrim(edt_OfflinePackageSource.Text),
+      if File(cPackageFileName) then
+
+         // Prüfen, ob 7Zip vorhanden ist
+         a7ZipDefaults := BPM_Default_7zip_Data(),
+         c7ZipFileName := KVU_GetAssert(a7ZipDefaults, 'FILENAME'),
+         if not File(c7ZipFileName) then
+            MessageDlg('Zum Entpacken des Pakets wird die "standalone console" Version von "7-Zip" benötigt.' + crlf + crlf +
+                       'Die Datei "' + ExtractFileName(c7ZipFileName) + '" wurde nicht im Verzeichnis ' + '"' + ExtractFilePath(c7ZipFileName) + '" gefunden. ' + crlf + crlf +
+                       'Bitte kopieren Sie die Datei manuell in das Verzeichnis. ' + crlf +
+                       '' + crlf +
+                       'WICHTIG: Es wird die "7-Zip Extra / standalone console" Version benötigt - siehe Confluence Seite "package-manager".' + crlf +
+                       '' + crlf +
+                       '(Der Ziel-Speicherort wird nach Bestätigen dieser Nachricht im Explorer geöffnet)',
+                       mtInformation),
+            ForceDirectories(ExtractFilePath(c7ZipFileName)),
+            ShellExecute(ExtractFilePath(c7ZipFileName)),
+
+            c7ZipFileName := '',
+         endif,
+
+         // Paket in neuen Unterordner kopieren, wo es dann entpackt wird
+         cUnPackFolder            := ExtractFilePath(cPackageFileName) + '\be-package-manager-temp\' + FormatDateTime('YYYYMMDD-HHMMSS-ZZZ', Now()),
+         cCopiedPackageFileName   := cUnPackFolder + '\' + ExtractFileName(cPackageFileName),
+         ForceDirectories(cUnPackFolder),
+         BPM_CopyFile(cPackageFileName, cCopiedPackageFileName),
+
+         // Paket entpacken
+         if not empty(c7ZipFileName) then
+
+            aUnZipResult         := BPM_UnZip_Package(cCopiedPackageFileName, c7ZipFileName),
+            cExtractedFolderPath := KVU_GetAssert(aUnZipResult, 'UNZIPPED_PACKAGE_FOLDER'),
+
+            // kopiertes *.tgz Archiv löschen
+            DeleteFile(cCopiedPackageFileName),
+
+            // Package Meta-Daten auslesen, um den Package-Namen zu ermitteln
+            aPackageInFileSystemData := {},
+            KVU_Set(aPackageInFileSystemData, 'EXTRACTED_PACKAGE_FOLDER_PATH',   cExtractedFolderPath),
+            aPackageMetaData := BPM_ReadPackageDefinitionData(aPackageInFileSystemData),
+            cPackageName     := KVU_GetAssert(aPackageMetaData, 'NAME'),
+
+            // Paket installieren bzw. aktualisieren
+            aInstallRes := BPM_GUI_InstallOrUpdatePackage(m_oInstalledPackagesMem, cPackageName, aPackageInFileSystemData),
+
+            // Eingabe-Feld wieder leeren, wenn Paket erfolgreich installiert
+            if KVU_GetAssert(aInstallRes, 'SUCCESS') then
+               edt_OfflinePackageSource.Text := '',
+            endif,
+         endif,
+
+      else
+         MessageDlg('Die Paket-Datei "' + cPackageFileName + '" wurde nicht gefunden.', mtWarning),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('', GetErrorObj()),
+   stopseq,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Action: Repo Web GUI öffnen
+//******************************************************************************
+function A_OpenPackageRepoWebGUIExecute( Sender )
+  ShellExecute('http://be-packages.lan.dontenwill.de:4873/'),
+end,
+
+//******************************************************************************
+// Action: Installierte Pakete erneut ermitteln
+//******************************************************************************
+function A_ReloadInstalledPackagesExecute( Sender )
+   startseq
+      BPM_GUI_LoadInstalledPackagesToMemtable(m_oInstalledPackagesMem),
+   onerror
+      GU_ShowStdErrorMessage('', GetErrorObj()),
+   stopseq,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Action: Prüfen, ob Updates für installierte Pakete verfügbar sind
+//******************************************************************************
+function A_CheckForUpdatesExecute( Sender )
+   startseq
+      BPM_GUI_CheckUpdatesAvailableAndSaveResultToMemtable(m_oInstalledPackagesMem),
+   onerror
+      GU_ShowStdErrorMessage('', GetErrorObj()),
+   stopseq,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Action: Neues Paket installieren
+//******************************************************************************
+function A_InstallNewPackageExecute( Sender )
+   startseq
+      BPM_GUI_InstallOrUpdatePackage(m_oInstalledPackagesMem, edt_NameOfNewPackage.Text)
+   onerror
+      GU_ShowStdErrorMessage('', GetErrorObj()),
+   stopseq,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Action: Paket aktualisieren
+//******************************************************************************
+function A_UpdateToLatestExecute( Sender )
+   startseq
+      BPM_GUI_InstallOrUpdatePackage(m_oInstalledPackagesMem, RTrim(m_oInstalledPackagesMem:package_name))
+   onerror
+      GU_ShowStdErrorMessage('', GetErrorObj()),
+   stopseq,
+   ActionsEnabled(),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.Position       := poMainFormCenter,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'package manager',
+end,
+
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CheckForUpdates            := FindObject(oForm, "A_CheckForUpdates"),
+   A_InstallFromOfflineSource   := FindObject(oForm, "A_InstallFromOfflineSource"),
+   A_InstallNewPackage          := FindObject(oForm, "A_InstallNewPackage"),
+   A_OpenPackageRepoWebGUI      := FindObject(oForm, "A_OpenPackageRepoWebGUI"),
+   A_ReloadInstalledPackages    := FindObject(oForm, "A_ReloadInstalledPackages"),
+   A_SelectOfflineSource        := FindObject(oForm, "A_SelectOfflineSource"),
+   A_UpdateToLatest             := FindObject(oForm, "A_UpdateToLatest"),
+   actions                      := FindObject(oForm, "actions"),
+   BeBarButton1                 := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                 := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                 := FindObject(oForm, "BeBarButton3"),
+   BeBarDockControl1            := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager                 := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1             := FindObject(oForm, "BeBarManagerBar1"),
+   BeBitBtn1                    := FindObject(oForm, "BeBitBtn1"),
+   BeBitBtn2                    := FindObject(oForm, "BeBitBtn2"),
+   beinpl_installed_packages    := FindObject(oForm, "beinpl_installed_packages"),
+   beipnl_InstallNewPackage     := FindObject(oForm, "beipnl_InstallNewPackage"),
+   beipnl_log                   := FindObject(oForm, "beipnl_log"),
+   beipnl_OfflineSource         := FindObject(oForm, "beipnl_OfflineSource"),
+   beipnl_RepoData              := FindObject(oForm, "beipnl_RepoData"),
+   btn_InstallFromOfflineSource := FindObject(oForm, "btn_InstallFromOfflineSource"),
+   btn_SelectOfflineSource      := FindObject(oForm, "btn_SelectOfflineSource"),
+   ds_InstalledPackages         := FindObject(oForm, "ds_InstalledPackages"),
+   edt_Error                    := FindObject(oForm, "edt_Error"),
+   edt_NameOfNewPackage         := FindObject(oForm, "edt_NameOfNewPackage"),
+   edt_OfflinePackageSource     := FindObject(oForm, "edt_OfflinePackageSource"),
+   edt_Password                 := FindObject(oForm, "edt_Password"),
+   edt_RepoUrl                  := FindObject(oForm, "edt_RepoUrl"),
+   edt_UserName                 := FindObject(oForm, "edt_UserName"),
+   grid_InstalledPackages       := FindObject(oForm, "grid_InstalledPackages"),
+   lbl_NameOfNewPackage         := FindObject(oForm, "lbl_NameOfNewPackage"),
+   lbl_OfflinePackageSource     := FindObject(oForm, "lbl_OfflinePackageSource"),
+   lbl_Password                 := FindObject(oForm, "lbl_Password"),
+   lbl_RepoUrl                  := FindObject(oForm, "lbl_RepoUrl"),
+   lbl_UserName                 := FindObject(oForm, "lbl_UserName"),
+   pnl_InstalledPackages        := FindObject(oForm, "pnl_InstalledPackages"),
+   pnl_InstallNewPackage        := FindObject(oForm, "pnl_InstallNewPackage"),
+   pnl_log                      := FindObject(oForm, "pnl_log"),
+   pnl_OfflineSource            := FindObject(oForm, "pnl_OfflineSource"),
+   pnl_RepoData                 := FindObject(oForm, "pnl_RepoData"),
+   richedit_log                 := FindObject(oForm, "richedit_log"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oInstalledPackagesMem := BPM_CreateInstalledPackagesMemTable('MEM_PACKAGES', oForm, oForm),
+   GU_LinkTableToGUI(m_oInstalledPackagesMem, ds_InstalledPackages, grid_InstalledPackages, m_cBrowserPackagesID, False),
+end,
+
+//******************************************************************************
+function SetDefaults()
+  // ActionsEnabled(),
+
+  A_CheckForUpdates.ImageIndex := iif(IsBeDBVersion7(), 398, 580),
+  BeBarButton1.ImageIndex      := A_CheckForUpdates.ImageIndex,
+
+  Style65InfoPanel(beipnl_RepoData),
+  Style65InfoPanel(beipnl_InstallNewPackage),
+  Style65InfoPanel(beinpl_installed_packages),
+  Style65InfoPanel(beipnl_log),
+  Style65InfoPanel(beipnl_OfflineSource),
+
+  edt_Error.Font.Color := clWhite,
+  edt_Error.Color      := 8929,     // entspricht be 7 = beSkinColor(clarRed, clarAccent2)
+
+  edt_RepoUrl.Text          := 'https://nexus.dontenwill.de/repository/be_packages_npm_proxy/',
+  edt_UserName.Text         := GetBeParam('BPM_USER'),
+  edt_Password.Text         := '',
+
+  edt_NameOfNewPackage.Text := '',
+
+  A_OpenPackageRepoWebGUI.Caption := 'web gui',
+
+  if empty(edt_UserName.Text) then
+     MyFocusControl(oForm, edt_UserName),
+  else
+     MyFocusControl(oForm, edt_Password),
+  endif,
+
+  ClearRichLog(),
+  m_bPreChecksOk := BPM_GUI_PreChecks(),
+
+  BPM_GUI_LoadInstalledPackagesToMemtable(m_oInstalledPackagesMem),
+
+  oForm.Height := 1000,
+  btn_SelectOfflineSource.Caption := '',
+  edt_OfflinePackageSource.Text   := '',
+
+  ActionsEnabled(),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+
+   SetBeParam('BPM_USER', edt_UserName.Text),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

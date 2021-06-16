@@ -1,0 +1,241 @@
+//******************************************************************************
+// Inhalt eines Postleitzahl-Feldes auseinander nehmen, so dass er in die
+// Funktionen zur Entfernungs-Ermittlung übergeben werden kann.
+// MM: identisch zu Funktion EVS_SeparatePLZORT
+// @Result: null
+//******************************************************************************
+function _Dubl_ExplodePLZOrtValue(cPLZORT, nLandNr:=0)
+| oMem, i, nPosPLZ, cOrt, cPLZ, oRec |
+   //******************************************************************************
+   // Vergibt das Scoring für die PLZ/Ort-Trennung
+   // @Result: Rückgabe ist eine ganze Zahl
+   //******************************************************************************
+   function SeparatePLZORT_SC(cPLZOrt, nLandNr)
+   | cNummern, nNummern, nLen |
+      nLen := len(cPLZORT),
+      if nLen < 4 then  //Definitiv zu kurz
+         result := 100,
+         exit,
+      endif,
+
+      cNummern := charonly('0123456789', cPLZOrt),
+      nNummern := len(cNummern),
+
+      if nLandNr=4 then  //Deutschland
+         if nNummern=5 and nLen<=7 then
+            result := 0,
+            exit,
+         endif,
+      endif,
+      result := abs(5-nNummern) + abs(5-nLen),  //Standard-Formel
+   end,
+
+
+   Result := {},
+   oMem   := CreateObject("TMemCalcTable"), //Memtable über enthaltene Wörter mit Scoring, je niedriger das Scoring desto warscheinlicher ist es eine PLZ
+   startseq
+      cOrt := '',
+      cPLZ := '',
+      AddMemField(oMem, "WORT",    "C", 35,0),
+      AddMemField(oMem, "SCORING", "N",  3,0),
+      AddMemField(oMem, "STELLE",  "N",  3,0),
+      oMem.Active:=true,
+
+      // Füllen der Worttabelle
+      for i:=1 to TokenCount(cPLZOrt, " ") do
+         if !empty(StrToken(cPLZOrt,' ', i)) then
+            MyAppend(oMem),
+            oMem:WORT    := StrToken(cPLZOrt,' ', i),
+            oMem:STELLE  := i,
+            oMem:SCORING := SeparatePLZORT_SC(Trim(oMem:WORT), nLandNr),
+            MyPost(oMem),
+         endif,
+      next,
+
+      // Ermittlung der PLZ
+      oMem.OrderBy := "SCORING",
+      DBGoTop(oMem),
+      nPosPLZ := oMem:STELLE,
+      cPLZ    := Trim(oMem:WORT),
+
+      // Ermittlung des Orts
+      oMem.OrderBy := "STELLE",
+      foreach oRec in oMem do
+         if oMem:STELLE <> nPosPLZ then
+            cOrt += Trim(oMem:WORT) + ' ',
+         endif,
+      end,
+
+      // Rückgabewert
+      KVU_Set(Result, 'PLZ',             cPLZ),
+      KVU_Set(Result, 'Ort',             cOrt),
+
+   always
+      DestroyObject(oMem),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// SoundEx-String (und Einzel-Teile) für die Ähnlichkeits-Suche im Kundenstamm berechnen
+// @Result: Array
+//****************************************************************************** // TODO: 3x Einzel-Funktion
+function _Dubl_CalcSoundExInfoArrayForDab000(oDab000)
+| aPlzArray, cName, cOrt, cStrasse |
+
+   function AddWithSeparator(cCurrentValue:R, cNewElem, cSeparator)
+     if not empty(cNewElem) then
+        cCurrentValue += iif(empty(cCurrentValue), '', cSeparator),
+        cCurrentValue += cNewElem,
+     endif,
+   end,
+
+   aPlzArray        := Dubl_ExplodePLZOrtValue(oDab000:PLZORT),
+
+   case gl_Dubl_Count_Name
+      of 1 :: cName := SoundEx( AllTrim(oDab000:NAME1) ),
+      of 2 :: cName := SoundEx( AllTrim(oDab000:NAME1) + ' ' + AllTrim(oDAB000:NAME2) ),
+      of 3 :: cName := SoundEx( AllTrim(oDab000:NAME1) + ' ' + AllTrim(oDAB000:NAME2) + ' ' + AllTrim(oDAB000:NAME3) ),
+      otherwise
+         cName := SoundEx( AllTrim(oDab000:NAME1) ),
+   endcase,
+
+   cName           := AllTrim(cName),
+
+   cOrt             := SoundEx( AllTrim( KVU_Get(aPlzArray, 'Ort', '') )),
+   cOrt             := AllTrim(cOrt),
+
+   // ToDo: Strasse 'normalisieren', damit Strasse = Str und keine Hausnummern usw.
+   cStrasse         := SoundEx( AllTrim(oDab000:STRASSE) ),
+   cStrasse         := AllTrim(cStrasse),
+
+   Result := {},
+   KVU_Set(Result, 'Name',                       cName),
+   KVU_Set(Result, 'Ort',                         cOrt),
+   KVU_Set(Result, 'Strasse',                 cStrasse),
+end,
+
+
+
+//******************************************************************************
+// Telefon-Nummer aus Dab000 für die Suchbegriffstabelle normieren
+// @Result: String, normierte Telefon-Nr.
+//******************************************************************************
+function _Dubl_NormalizeDab000Telefon(cTELEFON_FieldValue)
+  | nPos |
+  Result := CharOnly('0123456789-', cTELEFON_FieldValue),
+
+  // so lange mehr als ein '-' enthalten ist => jeweils das erste Vorkommen rauslöschen
+  nPos   := 1,
+  while Len(CharOnly('-', Result)) > 1 do
+     Result := StrTran(Result, '-', '', nPos, nPos),
+  end,
+
+  // Sofern jetzt noch eine Zentralen-Durchwahl vorhanden ist => abschneiden
+  if '-' $ Result then
+     Result := AllTrim(Token(Result, '-', 1)),
+  endif,
+
+  // keine '0', also keine Vorwahl ? => 089-München annehmen
+  if not empty(Result) and Left(Result, 1) <> '0' then
+     Result := '089' + Result,
+  endif,
+end,
+
+
+
+//******************************************************************************
+// MailHost / Domain aus einer E-Mail-Adresse bzw. WebPage extrahieren
+// => für die Suche normalisieren
+// @Result: String, normierter Host
+//******************************************************************************
+function _Dubl_NormalizeMailOrWebpageToHost(cMailorWebPageField)
+   // mögliche Inputs:
+   // 'www.abc-def.com'
+   // 'info@abc-def.com'
+   // '@abc-def.com'
+   // 'abc-def.com'
+   Result := Upper(AllTrim(cMailorWebPageField)),
+   // Handelt es sich um eine E-Mail-Adresse?
+   if At('@', Result) > 0 then
+      Result := AllTrim(Token(Result, '@', 2)),
+   else
+      // ansonsten: WebSeite ?
+      if (At('WWW.', Result) > 0) or (At('HTTP', Result) > 0) then
+         Result := StrTran(Result, 'WWW.', ''),
+         Result := StrTran(Result, 'HTTP://', ''),
+         Result := StrTran(Result, 'HTTP', ''),
+         Result := StrTran(Result, '//', ''),
+         Result := AllTrim(Result),
+         // '/' am Ende entfernen
+         Result := iif(Right(Result, 1) = '/', Left(Result, Len(Result) - 1), Result),
+         // Wenn jetzt immer noch ein '/' enthalten ist, dann ist der Input
+         // vmtl. eine Unter-Website gewesen => daraus leiten wir keinen MailHost ab!
+         Result := iif(At('/', Result) > 0, '', Result),
+      else
+         // sonstiges Format (wenn nicht mind. ein Punkt enthalten ist, dann kann es keine Domain sein)
+         if At('.', Result) = 0 then
+            Result := '',
+         endif,
+      endif,
+   endif,
+end,
+
+
+//******************************************************************************
+// Eine "Strasse"-Angabe normalisieren
+// => Ziel: Vergleichbarkeit
+// @Result: string
+//******************************************************************************
+function _Dubl_NormalizeStrasse(cStrasseValue)
+| cBuf, i, cToken |
+   Result := Upper(AllTrim(cStrasseValue)),
+
+   // Sofern zwischen einer "Str." und der Hausnummer kein Leerzeichen existiert
+   // => eines einfügen. Wenn hierdurch doppelte entstehen, dann werden diese
+   //    unten wieder entfernt
+   Result := StrTran(Result, '.', '. '),
+
+   // Bindestriche raus
+   Result := StrTran(Result, '-', ' '),
+
+   Result := CharOnly(' ./ABCDEFGHIJKLMNOPQRSTUVWXYZßÄÖÜ', Result),
+
+   // Doppel-Leerzeichen raus
+   while At('  ', Result) > 0 do
+      Result := StrTran(Result, '  ', ' '),
+   end,
+
+   // "Strasse" durch "Str" ersetzen
+   Result := StrTran(Result, 'STR. ',    'STR '),
+   Result := StrTran(Result, 'STRASSE ', 'STR '),
+   Result := StrTran(Result, 'STRASSE',  'STR' ),
+   Result := StrTran(Result, 'STRAßE ',  'STR '),
+   Result := StrTran(Result, 'STRAßE',   'STR' ),
+
+   // Sofern ein '/' im Ergebnis enthalten ist, handelt es sich vmtl. um eine
+   // Angabe der Form 'BAHNHOFSTR. 181/4' => hinteren Teil weg schneiden
+   if At('/', Result) > 0 then
+      Result := AllTrim(Token(Result, '/', 1)),
+   endif,
+
+   // ß durch ss ersetzen
+   Result := StrTran(Result, 'ß', 'SS'),
+
+   // Umlaute raus
+   Result := StrTran(Result, 'Ä', 'AE'),
+   Result := StrTran(Result, 'Ö', 'OE'),
+   Result := StrTran(Result, 'Ü', 'UE'),
+
+   // Alle Tokens löschen, die weniger als 3 Zeichen haben
+   // => das erwischt z.B. die Haus-Nummer-Buchstaben wie 'BUEHLWEG 12 ->A<- '
+   cBuf   := Result,
+   Result := '',
+   for i := 1 to TokenCount(cBuf, ' ') do
+      cToken := AllTrim(Token(cBuf, ' ', i)),
+      if Len(cToken) >= 3 then
+         Result += ' ' + cToken,
+      endif,
+   next,
+   Result := AllTrim(Result),
+end,

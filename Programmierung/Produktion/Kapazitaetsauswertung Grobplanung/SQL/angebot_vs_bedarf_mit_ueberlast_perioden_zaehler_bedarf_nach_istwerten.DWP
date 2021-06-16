@@ -1,0 +1,73 @@
+// << Dieses SQL-Script ist ein Teil des Scriptes "...\angebot_vs_bedarf_mit_ueberlast_perioden_zaehler" >>
+
+TRY DROP TABLE #kapa_bedarf_per_periode; CATCH ALL END TRY;
+
+SELECT
+     INNER_RESULT_ACTUALDEMAND.*,
+     Round(INNER_RESULT_ACTUALDEMAND.KAPA_MIN / 60, 2) AS KAPA_STUNDEN_BEDARF
+   into #kapa_bedarf_per_periode
+   FROM
+      (
+
+      SELECT
+         INNER_RESULT.RESTYP,
+         @GROUP_BY_QUALI@ INNER_RESULT.QUALI,
+         @GROUP_BY_RES@   INNER_RESULT.D270_RESID AS RES_ID,
+         INNER_RESULT.PP_JAHR AS JAHR,
+         INNER_RESULT.PP_KW   AS KW,
+         SUM( INNER_RESULT.KAPA_MINUTEN  ) AS KAPA_MIN
+
+         FROM
+            (
+               SELECT
+
+                  DAB340.STANDORT         AS STANDORT,
+                  iif( MONTH(DAB340.S_DATUM) = 12 AND ISOWEEK(DAB340.S_DATUM) < 3,      // Leider gibt es keine Funktion "IsoWeekYear()", die das passende Jahr für "IsoWeek()" ermittelt... daher hier selbst berechnet!
+                       Year(DAB340.S_DATUM) + 1,
+                       iif( Month(DAB340.S_DATUM) = 1 AND IsoWeek(DAB340.S_DATUM) > 50,
+                            Year(DAB340.S_DATUM) - 1,
+                            Year(DAB340.S_DATUM) ) ) AS PP_JAHR,
+                  ISOWEEK(DAB340.S_DATUM) AS PP_KW,
+
+                  DAB340.MINUTEN           AS KAPA_MINUTEN,
+                  PGKBDP_RUEST.ID          AS PGKBDP_RUEST_ID,
+                  PGKBDP_STUECK.ID         AS PGKBDP_STUECK_ID,
+
+                  IfNull(PGKBDP_RUEST.QUALI,      PGKBDP_STUECK.QUALI)      AS QUALI,
+                  IfNull(PGKBDP_RUEST.D270_RESID, PGKBDP_STUECK.D270_RESID) AS D270_RESID,
+                  IfNull(PGKBDP_RUEST.RESTYP,     PGKBDP_STUECK.RESTYP)     AS RESTYP,
+                  IfNull(PGKBDP_RUEST.KAP_SPERRE, PGKBDP_STUECK.KAP_SPERRE) AS KAP_SPERRE
+
+               FROM "DAB340.ADT" DAB340
+
+               LEFT JOIN "PGKBDP.ADT" PGKBDP_RUEST  ON (PGKBDP_RUEST.D240R_ID  = DAB340.DAB240_ID)
+               LEFT JOIN "PGKBDP.ADT" PGKBDP_STUECK ON (PGKBDP_STUECK.D240S_ID = DAB340.DAB240_ID)
+
+               WHERE
+                      DAB340.STANDORT = @STANDORT@
+                  AND DAB340.BUCH_TYP IN (200, 210)  // nur Rüst- und Stückzeit
+                  AND DAB340.DAB240_ID > 0
+                  AND DAB340.MINUTEN   > 0 // Buchungen, die nur Gutmenge oder Ausschuss enthalten, sind für die Kumulierung nicht relevant
+
+                  AND DAB340.START >= @DATUM_ZEIT_VON@  // Ist-Buchung = Woche des Buchungs-Starts
+                  AND DAB340.START <  @DATUM_ZEIT_BIS@
+
+             ) AS INNER_RESULT
+
+             WHERE
+                (   INNER_RESULT.PGKBDP_RUEST_ID  is not null
+                 OR INNER_RESULT.PGKBDP_STUECK_ID is not null)
+
+                AND INNER_RESULT.KAP_SPERRE = false // Macht das Sinn bei der Betrachtung von Ist-Werten?
+                @GROUP_BY_QUALI@ AND INNER_RESULT.QUALI > 0
+                // AND INNER_RESULT.D270_RESID > 0
+
+
+             GROUP BY
+                INNER_RESULT.RESTYP
+                @GROUP_BY_QUALI@, INNER_RESULT.QUALI
+                @GROUP_BY_RES@  , INNER_RESULT.D270_RESID
+                , INNER_RESULT.PP_JAHR
+                , INNER_RESULT.PP_KW
+
+       ) AS INNER_RESULT_ACTUALDEMAND;

@@ -1,0 +1,79 @@
+//##############################################################################
+//##############################################################################
+//
+// Dieses Hilfsprogramm listet alle individuell definierten Indices in
+// STANDARD-Tabellen auf.
+//
+//##############################################################################
+//##############################################################################
+
+| i, nWorkarea, nIdx, nMandIdx, cMandNr, aIndexDef, aIndexMandElem,
+  aIndexName, oTableInfo, aIndexInfoArray, cTableDebugText,
+  aMandIndexInfoArray, cTableMandDebugText |
+
+//******************************************************************************
+// Prüft, ob der Indexname ein Individual-Index ist
+//******************************************************************************
+function IsIndiIndexName(cIndexName)
+   cIndexName := Upper(cIndexName),
+
+   Result     := (At('I_', cIndexName)  = 1) or
+                 (At('DAX', cIndexName) = 1) or
+                 (At('DX', cIndexName)  = 1) or
+                 (At('DIX', cIndexName) = 1),
+end,
+
+// Alle Standard-Tabellen durchgehen
+for i := 1 to 699 do
+   cTableDebugText := '',
+   nWorkarea       := i,
+   oTableInfo      := GetTableInfo(nWorkarea),  // Liefern eine Instanz von TBeTableInfo oder nil
+   if not empty(oTableInfo) then
+      aIndexInfoArray := StrToArr(oTableInfo.IndexInfo),
+
+      // Sind die Index-Infos mandantenspezifisch gespeichert?
+      // => Dann gibt es einen Eintrag für alle Standard-Indices unter dem
+      //    Mandantenkenner '*' und dann jeweils einen je Mandant (hier sind
+      //    dann NUR die individuellen Indices enthalten)
+      if ALen(aIndexInfoArray) > 0 and ValType(aIndexInfoArray[1, 2]) = 'A' then
+         for nMandIdx := 1 to ALen(aIndexInfoArray) do        // jede Mandanten-Info durchgehen
+            cTableMandDebugText := '',
+            aIndexMandElem      := aIndexInfoArray[nMandIdx],
+            cMandNr             := aIndexMandElem[1],
+            aMandIndexInfoArray := aIndexMandElem[2],
+            if cMandNr <> '*' then                            // im übergreifenden Element sind nur Standard-Indices => überspringen
+               for nIdx := 1 to ALen(aMandIndexInfoArray) do  // jede Index-Info des aktuellen Mandenten durchgehen
+                  aIndexDef  := aMandIndexInfoArray[nIdx],
+                  aIndexName := aIndexDef[1],
+                  if IsIndiIndexName(aIndexName) then
+                     cTableMandDebugText := ConcatTrenner(cTableMandDebugText, '  -> ' + ArrToStr(aIndexDef), crlf),
+                  endif,
+               next,
+               if not empty(cTableMandDebugText) then
+                  cTableMandDebugText := '  Mandant ' + cMandNr + crlf + cTableMandDebugText,
+               endif,
+            endif,
+            cTableDebugText := ConcatTrenner(cTableDebugText, cTableMandDebugText, crlf),
+         next,
+      else
+         // nicht FiBu-mandantenspezifisch...
+         for nIdx := 1 to ALen(aIndexInfoArray) do
+            aIndexDef  := aIndexInfoArray[nIdx],
+            aIndexName := aIndexDef[1],
+            if IsIndiIndexName(aIndexName) then
+               cTableDebugText := ConcatTrenner(cTableDebugText, ' -> ' + ArrToStr(aIndexDef), crlf),
+            endif,
+         next,
+      endif,
+
+      if not empty(cTableDebugText) then
+         WriteLn(Replicate('=', 80)),
+         WriteLn('Individual Index-Info für Workarea ' + Str(oTableInfo.TableWorkArea ) + ' (' + oTableInfo.TableLabel + ')'),
+         WriteLn(Replicate('=', 80)),
+         WriteLn(cTableDebugText),
+         Writeln(),
+      endif,
+   endif,
+
+   // break,
+next,

@@ -1,0 +1,787 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: API-Funktionen für Sachmerkmalleisten-Zuordnungen
+//##############################################################################
+//##############################################################################
+
+|
+   gl_SML_cDefaultAliasSMLZUO:_C:='SMLZUO'
+|
+
+//##############################################################################
+//##############################################################################
+// API-Funktionen zum Lesen und Schreiben von Merkmalswerten in
+// Sachmerkmalleistenzuordnungen anhand der Tabelle SMLZUO.
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-303
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_ZUO_Add()
+//    * SML_ZUO_Edit()
+//    * SML_ZUO_SetAV()
+//    * SML_ZUO_SetAVValuesBySLMemo()
+//    * SML_ZUO_Post()
+//
+//******************************************************************************
+// Standard-Parameter oDM und oSMLZUO validieren
+// Prüfungen:
+//   * prüft auf aktive Transaktion
+//   * prüft, ob oSMLZUO mit dem Default-Alias übergeben wurde, sonst Fehler
+//   * prüft, ob oSMLZUO eine Tabelle des Datenmoduls oDM ist (Owner)
+//
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_ValidateParameters_Internal(oDM:O, oSMLZUO:O)
+   SetErrorIf(Empty(oDM),     'No data module available!'),
+   SetErrorIf(Empty(oSMLZUO), 'No instance of table SMLZUO available!'),
+
+   SetErrorIf(not DbInTrans(oDM.AdsConnection),
+              'Datenmodul muss sich in einer aktiven Transaktion befinden!'),
+   SetErrorIf(oSMLZUO.AliasName <> gl_SML_cDefaultAliasSMLZUO,
+              'Ungültiger AliasName <' + oSMLZUO.AliasName + '> für Tabelleninstanz, erwarte <' + gl_SML_cDefaultAliasSMLZUO + '>'),
+   SetErrorIf(GetOwner(oSMLZUO) <> oDM,
+              'Tabelleninstanz SMLZUO ist keine Tabelle des Datenmoduls!'),
+end,
+
+//******************************************************************************
+// Prüfen ob ein bestimmter Datensatz/Artikel einer bestimmten Sachmerkmalleiste
+// zugeordnet ist.
+//
+// @Result: boolean
+//******************************************************************************
+function _SML_ZUO_IsAssigned_Internal(oDM:O, nUsageWorkarea:N, nUsageID:N, cArticleNo:C, nSMLID:N)
+| oSMLZUO, cIndexName, aKeys |
+
+   if nUsageWorkarea = waDab010 then
+      cIndexName := 'ARTNR_SML_ID',
+      aKeys      := {cArticleNo, nSMLID},
+   else
+      cIndexName := 'VERWEND_WA_VERWEND_ID_SML_ID',
+      aKeys      := {nUsageWorkarea, nUsageID, nSMLID},
+   endif,
+
+   oSMLZUO           := DbGetTable(oDM, waSMLZUO, 'SML_ZUO_SMLZUO'),
+   oSMLZUO.IndexName := cIndexName,
+   Result            := oSMLZUO.CbFindKey(aKeys),
+end,
+
+//******************************************************************************
+// REQ-414
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_ZUO_Add_Internal()
+//    * Sachmerkmalleisten\Zuordnung\Docking: A_SaveExecute()
+//
+//******************************************************************************
+// Diese Funktion validiert die zu verwendende Sachmerkmalleiste.
+// Folgende Validierungen werden durchgeführt:
+//  * Es dürfen keine keine Duplikate der Sachmerkmalleistenzuordnung existieren
+//  * Sachmerkmalleiste mit der ID nSMLID muss existieren
+//  * Die Sachmerkmalleiste muss für die Verwendung in Workarea nUsageWorkarea
+//     vorgesehen sein
+//
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_ValidateAssigningSMLID_Internal(oDM:O, nUsageWorkarea:N, nUsageID:N, cArticleNo:C, nSMLID:N)
+| oSMLSTM, bIsAssigned |
+
+   bIsAssigned := SML_ZUO_IsAssigned_Internal(oDM, nUsageWorkarea, nUsageID, cArticleNo, nSMLID),
+   // Sicherstellen, dass für den Datensatz (WA + ID oder Artikelnummer) noch
+   // keine Zuordnung mit der gleichen Sachmerkmalleisten-ID existiert
+   if nUsageWorkarea = waDab010 then
+      SetErrorIf(bIsAssigned,
+                 'Zuordnung nicht möglich: Die Sachmerkmalleiste mit der ID <' + Str(nSMLID) + '> wurde dem Artikel <' + cArticleNo + '> bereits zugeordnet!'),
+   else
+      SetErrorIf(bIsAssigned,
+                 'Zuordnung nicht möglich: Die Sachmerkmalleiste mit der ID <' + Str(nSMLID) + '> wurde dem Datensatz <' + Str(nUsageID) + '> bereits zugeordnet!'),
+   endif,
+
+   oSMLSTM           := DbGetTable(oDM, waSMLSTM, 'SML_ZUO_SMLSTM'),
+   oSMLSTM.IndexName := 'ID',
+   // Verwendungs-Workarea der Sachmerkmalleiste validieren
+   SetErrorIf(not oSMLSTM.CbFindKey({nSMLID}), 'Sachmerkmalleiste mit ID <' + Str(nSMLID) + '> existiert nicht'),
+   SetErrorIf(oSMLSTM:VERWEND_WA <> nUsageWorkarea, 'Die Sachmerkmalleiste ist für die Verwendung der Workarea <' + Str(nUsageWorkarea) + '> nicht zulässig'),
+end,
+
+//******************************************************************************
+// REQ-302
+//******************************************************************************
+// Sachmerkmalleisten-Zuordnung speichern
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_Post(oDM:O, oSMLZUO:O)
+   // Validieren der Standard-Parameter
+   SML_ZUO_ValidateParameters_Internal(oDM, oSMLZUO),
+   // SMLZUO muss sich im Edit- oder Insert-Modus befinden!
+   SetErrorIf(not EditModes(oSMLZUO), 'Tabelleninstanz der SMLZUO muss sich im Edit- oder Insert-Modus befinden!'),
+
+   MyPost(oSMLZUO),
+   SML_StoreAttributesTable(oDM, oSMLZUO:ID, oSMLZUO:SL_MEMO, oSMLZUO:VERWEND_WA, oSMLZUO:VERWEND_ID, oSMLZUO:ARTNR, oSMLZUO:SML_ID),
+   SML_Event_AfterSaveAssignment_Trigger(oDM, oSMLZUO),
+end,
+
+//******************************************************************************
+// REQ-415
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * SML_ZUO_Add()      [REQ-297]
+//    * SML_ZUO_Add_D010() [REQ-298]
+//
+//******************************************************************************
+// Interne Funktion zum Anlegen einer neuen Sachmerkmalleistenzuordnung.
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_Add_Internal(oDM:O, oSMLZUO:O, nUsageWorkarea:N, nUsageID:N, cArticleNo:C, uSMLIDOrKey:U, bKeepEditMode:L)
+| nSMLID, cSMLIDType, oSMLSTM |
+
+   //***************************************************************************
+   // Ermittelt den Tabellenbezeichnung anhand der Workarea
+   // @Result: string, Bezeichnung der Tabelle
+   //***************************************************************************
+   function DetermineTableDescription(nWorkarea:N)
+   | oTableInfo |
+
+      oTableInfo := GetTableInfo(nWorkarea),
+      SetErrorIf(Empty(oTableInfo), 'Workarea mit Nummer <' + Str(nWorkarea) + '> existiert nicht!'),
+      Result := oTableInfo.TableDef.TableDescription,
+   end,
+
+   //***************************************************************************
+   // Prüfen ob ein Datensatz mit einer bestimmten ID in einer Tabelle existiert
+   // @Result: null
+   //***************************************************************************
+   function AssertRecordExists(oDM:O, nWA:N, nID:N, cArticleNo:C)
+   | oTable |
+
+      oTable := DbGetTable(oDM, nWA, 'SML_ZUO_' + Str(nWA)),
+      if nWA = waDab010 then
+         oTable.IndexName := 'DAB011',
+         SetErrorIf(not oTable.CbFindKey({cArticleNo}),
+                    'Artikel mit Artikelnummer <' + cArticleNo + '> existiert nicht!'),
+      else
+         SetErrorIf(not oTable.CbLocate('ID', {nID}, 0),
+                    'Datensatz mit ID <' + Str(nUsageID) + '> in Tabelle <' + DetermineTableDescription(nUsageWorkarea) + '> existiert nicht!'),
+      endif,
+   end,
+
+   // Validieren der Standard-Parameter
+   SML_ZUO_ValidateParameters_Internal(oDM, oSMLZUO),
+   // Tabelle validieren
+   SetErrorIf(EditModes(oSMLZUO), 'Tabelleninstanz der SMLZUO darf sich nicht im Edit- oder Insert-Modus befinden!'),
+
+   // Sachmerkmalleisten-ID ermitteln
+   cSMLIDType := ValType(uSMLIDOrKey),
+   case cSMLIDType
+      of 'N' :: nSMLID := uSMLIDOrKey,
+      of 'C' :: nSMLID := SML_GetSMLIDByKey_DM(oDM, uSMLIDOrKey),
+      otherwise
+         SML_ERR_RaiseError({gl_SML_ERRC_InvalidParameterType,
+                             {cSMLIDType, 'uSMLIDOrKey', 'N> oder <C'}}),
+   endcase,
+
+   AssertRecordExists(oDM, nUsageWorkarea, nUsageID, cArticleNo),
+   SML_ZUO_ValidateAssigningSMLID_Internal(oDM, nUsageWorkarea, nUsageID, cArticleNo, nSMLID),
+
+   oSMLSTM           := DbGetTable(oDM, waSMLSTM, 'SML_ZUO_SMLSTM'),
+   oSMLSTM.IndexName := 'ID',
+   // TODO: Validierung der SML-ID an dieser Stelle nicht mehr notwendig, wird
+   //       bereits in SML_ZUO_ValidateAssigningSMLID_Internal() erledigt!
+   SetErrorIf(not oSMLSTM.CbFindKey({nSMLID}), 'Sachmerkmalleiste mit ID <' + Str(nSMLID) + '> existiert nicht'),
+
+   MyAppend(oSMLZUO),
+
+   oSMLZUO:VERWEND_WA := nUsageWorkarea,
+   oSMLZUO:VERWEND_ID := nUsageID,
+   oSMLZUO:ARTNR      := cArticleNo,
+   oSMLZUO:SML_ID     := nSMLID,
+   oSMLZUO:SL_MEMO    := oSMLSTM:SL_MEMO,
+
+   // Datensatz ggf. gleich posten
+   if not bKeepEditMode then
+      SML_ZUO_Post(oDM, oSMLZUO),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-297
+//******************************************************************************
+// Sachmerkmalleisten-Zuordnung hinzufügen
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_Add(oDM:O, oSMLZUO:O, nUsageWorkarea:N, nUsageID:N, uSMLIDOrKey, bKeepEditMode:L)
+   SetErrorIf(nUsageWorkarea = waDab010,
+              'Die Funktion SML_ZUO_Add() darf zum anlegen einer '             +
+              'Sachmerkmalleistenzuordnung mit einem Artikel nicht verwendet ' +
+              'werden. Benutzen Sie daher die Funktion SML_ZUO_Add_D010()!'),
+   SML_ZUO_Add_Internal(oDM, oSMLZUO, nUsageWorkarea, nUsageID, '', uSMLIDOrKey, bKeepEditMode),
+end,
+
+//******************************************************************************
+// REQ-298
+//******************************************************************************
+// Sachmerkmalleisten-Zuordnung für einen Artikel hinzufügen
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_Add_D010(oDM:O, oSMLZUO:O, cArtNo:C, uSMLIDOrKey, bKeepEditMode:L)
+| oDab010 |
+
+   // Validieren der Artikelnummer
+   oDab010           := DbGetTable(oDM, waDab010, 'SML_ZUO_DAB010'),
+   oDab010.IndexName := 'DAB011',
+   SetErrorIf(not oDab010.CbFindKey({cArtNo}), 'Artikel mit Artikelnummer <' + cArtNo + '> existiert nicht'),
+
+   SML_ZUO_Add_Internal(oDM, oSMLZUO, waDab010, oDab010:ID, cArtNo, uSMLIDOrKey, bKeepEditMode),
+end,
+
+//******************************************************************************
+// REQ-299
+//******************************************************************************
+// Sachmerkmalleisten-Zuordnung editieren
+// @Result: null
+//******************************************************************************
+function _SML_ZUO_Edit(oDM:O, oSMLZUO:O)
+   // Validieren der Standard-Parameter
+   SML_ZUO_ValidateParameters_Internal(oDM, oSMLZUO),
+
+   MyEdit(oSMLZUO),
+end,
+
+//******************************************************************************
+// REQ-300
+//******************************************************************************
+// Merkmalswert in einer Sachmerkmalleisten-Zuordnung setzen
+// @Result: array, {<boolean>, <boolean>}
+//            * 1. Wert: Zeigt an, ob ein Merkmal mit dem V-Index existiert
+//            * 2. Wert: Zeigt an, ob das gefundene Merkmal verändert wurde
+//******************************************************************************
+function _SML_ZUO_SetAV(oDM:O, oSMLZUO:O, cAttributeKey:C, uValue)
+| aSLMemo |
+
+   // Validieren der Standard-Parameter
+   SML_ZUO_ValidateParameters_Internal(oDM, oSMLZUO),
+   // Tabelle zusätzlich validieren
+   SetErrorIf(not EditModes(oSMLZUO), 'Tabelleninstanz der SMLZUO muss sich im Edit- oder Insert-Modus befinden!'),
+   aSLMemo := StrToArr(oSMLZUO:SL_MEMO),
+   Result  := SML_SLMEMO_SetAV(aSLMemo, cAttributeKey, uValue),
+   // Prüfen, ob der Wert in das Merkmal geschrieben wurde
+   if Result[1] and Result[2] then
+      // Neues SL_MEMO zurückschreiben
+      oSMLZUO:SL_MEMO := ArrToStr(aSLMemo),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-301
+//******************************************************************************
+// Mehrere Merkmalswerte in einer Sachmerkmalleisten-Zuordnung mithilfe eines
+// SL_MEMOs setzen
+// @Result: integer, Anzahl der geänderten Merkmale
+//******************************************************************************
+function _SML_ZUO_SetAVValuesBySLMemo(oDM:O, oSMLZUO:O, uSLMemo)
+| aSLMemo, cSLMemoType, aAssignmentSLMemo, i, aResult |
+
+   Result := 0,
+   // Validieren der Standard-Parameter
+   SML_ZUO_ValidateParameters_Internal(oDM, oSMLZUO),
+   // Tabelle validieren
+   SetErrorIf(not EditModes(oSMLZUO), 'Tabelleninstanz der SMLZUO muss sich im Edit- oder Insert-Modus befinden!'),
+
+   cSLMemoType := ValType(uSLMemo),
+   case cSLMemoType
+      of 'A' :: aSLMemo := uSLMemo,
+      of 'C' :: aSLMemo := StrToArr(uSLMemo),
+      otherwise
+         SML_ERR_RaiseError({gl_SML_ERRC_InvalidParameterType,
+                             {cSLMemoType, 'uSLMemo', 'A> oder <C'}}),
+   endcase,
+
+   aAssignmentSLMemo := StrToArr(oSMLZUO:SL_MEMO),
+   SetErrorIf(Empty(aSLMemo) or Empty(aAssignmentSLMemo), 'Empty SLMemo not allowed!'),
+
+   for i := 1 to ALen(aSLMemo) do
+      aResult := SML_SLMEMO_SetAV(
+         aAssignmentSLMemo,
+         aSLMemo[i, gl_SML_SLMemoVIndex],
+         SML_SLMEMO_ConvertToExternalFormat_Internal(aSLMemo[i, gl_SML_SLMemoValue],
+                                                     aSLMemo[i, gl_SML_SLMemoDataType])
+      ),
+      if aResult[1] and aResult[2] then
+         Result++,
+      endif,
+   next,
+
+   if Result > 0 then
+      // Neues SL_MEMO nur zurückschreiben sofern Änderungen vorhanden sind
+      oSMLZUO:SL_MEMO := ArrToStr(aAssignmentSLMemo),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// API-Funktionen zum ermitteln von Merkmalswerten anhand der Tabelle SMLWRT.
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AttribValue()
+//    * SML_AttribValueAssert_Internal()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+//
+// Parameter:
+//  * nWorkarea:     (Sachmerkmalleistenzuordnung) Workarea
+//  * nID:           (Sachmerkmalleistenzuordnung) Datensatz-ID
+//  * nSML_ID:       (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cArticleNo:    (Sachmerkmalleistenzuordnung) Artikelnummer
+//  * cAttributeKey: Merkmal-Schlüssel
+//  * uResult:       (out) Ergebnis, Wert des Merkmals
+//
+// Die ersten vier Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: array, {<Fehlercode>, <Fehlerkontext>}
+//******************************************************************************
+function _SML_AttribValue_Internal(nWorkarea:N, nID:N, cArticleNo:C, nSML_ID:N, cAttributeKey:C, uResult:R)
+| nVIndex, cFieldName, oSmlWRT, bIsD010Assignment |
+
+   Result := SMLV_VIndex_Internal(cAttributeKey, nVIndex),
+   if not SML_ERR_IsError(Result) then
+      bIsD010Assignment := nWorkarea = waDab010,
+      if bIsD010Assignment then
+         oSmlWRT := BeOpen(waSmlWRT, 'ARTNR_SML_ID_V_INDEX'),
+      else
+         oSmlWRT := BeOpen(waSmlWRT, 'VERWEND_WA_VERWEND_ID_SML_ID_V_INDEX'),
+      endif,
+      startseq
+         // Zuordnung finden
+         if (bIsD010Assignment     and DbSeek({cArticleNo, nSML_ID, nVIndex}, oSmlWRT)) or
+            (not bIsD010Assignment and DbSeek({nWorkarea, nID, nSML_ID, nVIndex}, oSmlWRT)) then
+            cFieldName := SML_AttributeTargetFieldName(oSmlWRT:MERKM_TYP),
+            uResult    := AsVariant(cFieldName, oSmlWRT),
+         else
+            Result := SML_ERR_ErrorResult(gl_SML_ERRC_AssignmentDoesNotExist, {nVIndex}),
+         endif,
+      always
+         BeClose(oSmlWRT),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AttribValueAssert()
+//    * SML_AttribValueAssert_D010()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Diese Funktion löst im Fehlerfall eine Exception aus.
+//
+// Parameter:
+//  * nWorkarea:     (Sachmerkmalleistenzuordnung) Workarea
+//  * nID:           (Sachmerkmalleistenzuordnung) Datensatz-ID
+//  * cArticleNo:    (Sachmerkmalleistenzuordnung) Artikelnummer
+//  * nSML_ID:       (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmal-Schlüssel
+//
+// Die ersten vier Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AttribValueAssert_Internal(nWorkarea:N, nID:N, cArticleNo:C, nSML_ID:N, cAttributeKey:C)
+| aErrorResult |
+   aErrorResult := SML_AttribValue_Internal(nWorkarea, nID, cArticleNo, nSML_ID, cAttributeKey, Result),
+   // Im Fehlerfall Exception auslösen
+   SML_ERR_RaiseError(aErrorResult),
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Diese Funktion löst im Fehlerfall eine Exception aus.
+//
+// Parameter:
+//  * nWorkarea:     (Sachmerkmalleistenzuordnung) Workarea
+//  * nID:           (Sachmerkmalleistenzuordnung) Datensatz-ID
+//  * nSML_ID:       (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmal-Schlüssel
+//
+// Die ersten drei Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AttribValueAssert(nWorkarea:N, nID:N, nSML_ID:N, cAttributeKey:C)
+   // TODO: Fehler bei Workarea = waDab010 auslösen
+   Result := SML_AttribValueAssert_Internal(nWorkarea, nID, '', nSML_ID, cAttributeKey),
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Diese Funktion löst im Fehlerfall eine Exception aus.
+//
+// Parameter:
+//  * cArticleNo:    (Sachmerkmalleistenzuordnung) Artikelnummer
+//  * nSMLID:        (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmalsschlüssel
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AttribValueAssert_D010(cArticleNo:C, nSMLID:N, cAttributeKey:C)
+   Result := SML_AttribValueAssert_Internal(waDab010, 0, cArticleNo, nSMLID, cAttributeKey),
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AttribValue()
+//    * SML_AttribValue_D010()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Im Fehlerfall wird ein Default-Wert zurückgegeben.
+//
+// Parameter:
+//  * nWorkarea:     (Sachmerkmalleistenzuordnung) Workarea
+//  * nID:           (Sachmerkmalleistenzuordnung) Datensatz-ID
+//  * cArticleNo:    (Sachmerkmalleistenzuordnung) Artikelnummer
+//  * nSML_ID:       (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmal-Schlüssel
+//  * uDefaultValue: Default-Wert
+//
+// Die ersten drei Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: Wert des Merkmals, Im Fehlerfall: Default-Wert
+//******************************************************************************
+function _SML_AttribValueDefault_Internal(nWorkarea:N, nID:N, cArticleNo:C, nSML_ID:N, cAttributeKey:C, uDefaultValue)
+| aErrorResult, nErrorCode |
+   aErrorResult := SML_AttribValue_Internal(nWorkarea, nID, cArticleNo, nSML_ID, cAttributeKey, Result),
+   nErrorCode   := SML_ERR_ErrorResultCode(aErrorResult),
+   if SML_ERR_IsError(aErrorResult) then
+      SML_ERR_RaiseErrorIf(nErrorCode = gl_SML_ERRC_EmptyAttributeKeyNotAllowed,
+                           aErrorResult),
+      Result := uDefaultValue,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Im Fehlerfall wird ein Default-Wert zurückgegeben.
+//
+// Parameter:
+//  * nWorkarea:     (Sachmerkmalleistenzuordnung) Workarea
+//  * nID:           (Sachmerkmalleistenzuordnung) Datensatz-ID
+//  * nSML_ID:       (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmal-Schlüssel
+//  * uDefaultValue: Default-Wert
+//
+// Die ersten drei Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: Wert des Merkmals, Im Fehlerfall: Default-Wert
+//******************************************************************************
+function _SML_AttribValue(nWorkarea:N, nID:N, nSML_ID:N, cAttributeKey:C, uDefaultValue:U)
+   // TODO: Fehler bei Workarea = waDab010 auslösen
+   Result := SML_AttribValueDefault_Internal(nWorkarea, nID, '', nSML_ID, cAttributeKey, uDefaultValue),
+end,
+
+//******************************************************************************
+// REQ-178
+//******************************************************************************
+// Ermittelt den Merkmals-Wert anhand einer Sachmerkmalleistenzuordnung.
+// Im Fehlerfall wird ein Default-Wert zurückgegeben.
+//
+// Parameter:
+//  * cArticleNo:    (Sachmerkmalleistenzuordnung) Artikelnummer
+//  * nSMLID:        (Sachmerkmalleistenzuordnung) ID der Sachmerkmalleiste
+//  * cAttributeKey: Merkmalsschlüssel
+//  * uDefaultValue: Default-Wert
+//
+// Die ersten zwei Parameter repräsentieren eine Zuordnung/Klassifizierung.
+//
+// @Result: Wert des Merkmals, Im Fehlerfall: Default-Wert
+//******************************************************************************
+function _SML_AttribValue_D010(cArticleNo:C, nSMLID:N, cAttributeKey:C, uDefaultValue:U)
+   Result := SML_AttribValueDefault_Internal(waDab010, 0, cArticleNo, nSMLID, cAttributeKey, uDefaultValue),
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AVDefault_Internal()
+//    * SML_AVAssert_Internal()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert aus den Sachmerkmalleistenzuordnungen eines
+// Objekts (Artikel, Kunde, etc.) anhand des Merkmal-Schlüssels und den
+// Zuordnungsparametern Workarea und Datensatz-ID.
+//
+// Für diese Funktion ist es nicht notwendig die ID der zugeordneten
+//   Sachmerkmalleiste zu übergeben, da das Merkmal einfach aus der Menge aller
+//   Zugeordneten Sachmerkmalleisten ermittelt wird.
+// Sofern das Objekt (Artikel, Kunde, etc.) über mehrere verschiedene
+//   Sachmerkmalleistenzuordnungen einen Wert für das Merkmal cAttributeKey
+//   besitzt, kann dessen Wert ermittelt werden.
+//
+// @Result: array, ErrorResult-Objekt
+//   Fehlercodes:
+//    * 0: Erfolgreich (Kein Fehler)
+//    * 1: Leerer Merkmal-Schlüssel nicht erlaubt
+//    * 2: Merkmal-Schlüssel kann keinem Merkmal zugeordnet werden
+//    * 4: Sachmerkmalleistenzuordnung existiert nicht
+//    * 5: Wert für Merkmal ist nicht eindeutig in allen Zuordnungen
+//******************************************************************************
+function _SML_AV_Internal(nWorkarea:N, nID:N, cArticleNo:C, cAttributeKey:C, uResult:R)
+|
+   nVIndex, oSmlWRT, nLastDataType, uLastValue, nDataType, uValue,
+   bIsD010Assignment, aErrorInfo
+|
+
+   //***************************************************************************
+   // Ermittelt den Merkmalswert anhand des Datentyps
+   // @Result: variant, Wert des Merkmals
+   //***************************************************************************
+   function AttribValueByDataType(oTable:O, nLastDataType:N)
+   | cFieldName |
+      cFieldName := SML_AttributeTargetFieldName(nLastDataType),
+      // Tabellenfeld validieren
+      SetErrorIf(Empty(DbField(cFieldName, oTable)),
+                 'Tabellenfeld SMLWRT:' + cFieldName + ' existiert nicht'),
+
+      Result := AsVariant(cFieldName, oTable),
+   end,
+
+   Result            := SMLV_VIndex_Internal(cAttributeKey, nVIndex),
+   bIsD010Assignment := nWorkarea = waDab010,
+   if not SML_ERR_IsError(Result) then
+      if bIsD010Assignment then
+         oSmlWRT := BeOpen(waSmlWRT, 'ARTNR_V_INDEX'),
+      else
+         oSmlWRT := BeOpen(waSmlWRT, 'VERWEND_WA_VERWEND_ID_V_INDEX'),
+      endif,
+      startseq
+         if bIsD010Assignment then
+            DbScope({cArticleNo, nVIndex}, {cArticleNo, nVIndex}, oSmlWRT),
+         else
+            DbScope({nWorkarea, nID, nVIndex}, {nWorkarea, nID, nVIndex}, oSmlWRT),
+         endif,
+         startseq
+            if Bof(oSmlWRT) and Eof(oSmlWRT) then
+               if bIsD010Assignment then
+                  aErrorInfo := {'Artikel <' + cArticleNo + '>'},
+               else
+                  aErrorInfo := {'Datensatz <' + Str(nID) + '> der Tabelle <' + Str(nWorkarea) + '>'},
+               endif,
+               // Sachmerkmalleistenzuordnung existiert nicht
+               Result := SML_ERR_ErrorResult(gl_SML_ERRC_AssignmentDoesNotExist,
+                                             aErrorInfo),
+            else
+               DbGoTop(oSmlWRT),
+               while not Eof(oSmlWRT) do
+                  // Merkmalswert ermitteln
+                  nDataType := oSmlWRT:MERKM_TYP,
+                  uValue    := AttribValueByDataType(oSmlWRT, nDataType),
+
+                  if Bof(oSmlWRT) then // Prüfen, ob ein Vergelichswert existiert
+                     // Initialen Vergleichswert merken
+                     nLastDataType := nDataType,
+                     uLastValue    := uValue,
+                  else
+                     // Es existiert bereits ein Vergleichswert
+                     if (nLastDataType <> nDataType) or
+                         not VarEqual(uLastValue, uValue) then
+                        // -> Fehler auslösen, wenn Werte nicht eindeutig sind
+                        Result := SML_ERR_ErrorResult(gl_SML_ERRC_ValueNotUniqueForAllAssignments,
+                                                      {cAttributeKey, uLastValue, uValue}),
+                        break, // Schleife verlassen
+                     endif,
+                  endif,
+
+                  DbSkip(1, oSmlWRT),
+               end,
+
+               if not SML_ERR_IsError(Result) then
+                  // Wert zurückgeben, wenn kein Fehler aufgetreten ist
+                  uResult := uLastValue,
+               endif,
+            endif,
+         always
+            DbScope(nil, oSmlWRT),
+         stopseq,
+      always
+         BeClose(oSmlWRT),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AVAssert()
+//    * SML_AV_D010Assert()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert aus den Sachmerkmalleistenzuordnungen eines
+// Objekts (Artikel, Kunde, etc.) anhand des Merkmal-Schlüssels und den
+// Zuordnungsparametern Workarea und Datensatz-ID.
+//
+// Für diese Funktion ist es nicht notwendig die ID der zugeordneten
+//   Sachmerkmalleiste zu übergeben, da das Merkmal einfach aus der Menge aller
+//   Zugeordneten Sachmerkmalleisten ermittelt wird.
+// Sofern das Objekt (Artikel, Kunde, etc.) über mehrere verschiedene
+//   Sachmerkmalleistenzuordnungen einen Wert für das Merkmal cAttributeKey
+//   besitzt, kann dessen Wert ermittelt werden.
+// Ist der Merkmals-Wert nicht eindeutig wird eine Exeception ausgelöst.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AVAssert_Internal(nWorkarea:N, nID:N, cArticleNo:C, cAttributeKey:C)
+| aErrorResult |
+   aErrorResult := SML_AV_Internal(nWorkarea, nID, cArticleNo, cAttributeKey, Result),
+   // Im Fehlerfall Exception auslösen
+   SML_ERR_RaiseError(aErrorResult),
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+// Ermittelt den Merkmals-Wert aus den Sachmerkmalleistenzuordnungen eines
+// Objekts (Artikel, Kunde, etc.) anhand des Merkmal-Schlüssels und den
+// Zuordnungsparametern Workarea und Datensatz-ID.
+//
+// Für diese Funktion ist es nicht notwendig die ID der zugeordneten
+//   Sachmerkmalleiste zu übergeben, da das Merkmal einfach aus der Menge aller
+//   Zugeordneten Sachmerkmalleisten ermittelt wird.
+// Sofern das Objekt (Artikel, Kunde, etc.) über mehrere verschiedene
+//   Sachmerkmalleistenzuordnungen einen Wert für das Merkmal cAttributeKey
+//   besitzt, kann dessen Wert ermittelt werden.
+// Ist der Merkmals-Wert nicht eindeutig wird eine Exeception ausgelöst.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AVAssert(nWorkarea:N, nID:N, cAttributeKey:C)
+   // TODO: Fehler bei Workarea = waDab010 auslösen
+   Result := SML_AVAssert_Internal(nWorkarea, nID, '', cAttributeKey),
+end,
+
+//******************************************************************************
+// REQ-179
+//******************************************************************************
+// Ermittelt den Merkmalswert aus den Sachmerkmalleistenzuordnungen eines
+// Artikels anhand des Merkmal-Schlüssels und der Artikelnummer.
+// Kann der Merkmalswert nicht ermittelt werden, wird ein Fehler ausgelöst.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AV_D010Assert(cArticleNo:C, cAttributeKey:C)
+| nArticleID |
+
+   nArticleID := Lookup(waDab010, 'DAB011', {{cArticleNo}}, 'ID', -1),
+   // Exception auslösen, wenn der Artikel nicht existiert
+   SML_ERR_RaiseErrorIf(
+      nArticleID = -1,
+      SML_ERR_ErrorResult(gl_SML_ERRC_ArticleDoesNotExist, {cArticleNo})
+   ),
+
+   Result := SML_AVAssert_Internal(waDab010, nArticleID, cArticleNo, cAttributeKey),
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über:
+//    * SML_AV()
+//    * SML_AV_D010()
+//
+//******************************************************************************
+// Ermittelt den Merkmals-Wert aus den Sachmerkmalleistenzuordnungen eines
+// Objekts (Artikel, Kunde, etc.) anhand des Merkmal-Schlüssels und den
+// Zuordnungsparametern Workarea und Datensatz-ID.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AVDefault_Internal(nWorkarea:N, nID:N, cArticleNo:C, cAttributeKey:C, uDefaultValue:U)
+| aErrorResult, nErrorCode |
+
+   aErrorResult := SML_AV_Internal(nWorkarea, nID, cArticleNo, cAttributeKey, Result),
+   nErrorCode   := SML_ERR_ErrorResultCode(aErrorResult),
+   if SML_ERR_IsError(aErrorResult) then
+      SML_ERR_RaiseErrorIf(nErrorCode = gl_SML_ERRC_EmptyAttributeKeyNotAllowed,
+                           aErrorResult),
+      Result := uDefaultValue,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+// Ermittelt den Merkmals-Wert aus den Sachmerkmalleistenzuordnungen eines
+// Objekts (Artikel, Kunde, etc.) anhand des Merkmal-Schlüssels und den
+// Zuordnungsparametern Workarea und Datensatz-ID.
+//
+// Für diese Funktion ist es nicht notwendig die ID der zugeordneten
+//   Sachmerkmalleiste zu übergeben, da das Merkmal einfach aus der Menge aller
+//   Zugeordneten Sachmerkmalleisten ermittelt wird.
+// Sofern das Objekt (Artikel, Kunde, etc.) über mehrere verschiedene
+//   Sachmerkmalleistenzuordnungen einen Wert für das Merkmal cAttributeKey
+//   besitzt, kann dessen Wert ermittelt werden.
+// Ist der Merkmals-Wert nicht eindeutig wird Default-Wert zurückgegeben.
+//
+// @Result: Wert des Merkmals
+//******************************************************************************
+function _SML_AV(nWorkarea:N, nID:N, cAttributeKey:C, uDefaultValue:U)
+   // TODO: Fehler bei Workarea = waDab010 auslösen
+   Result := SML_AVDefault_Internal(nWorkarea, nID, '', cAttributeKey, uDefaultValue),
+end,
+
+//******************************************************************************
+// REQ-180
+//******************************************************************************
+// Ermittelt den Merkmalswert aus den Sachmerkmalleistenzuordnungen eines
+// Artikels anhand des Merkmal-Schlüssels und der Artikelnummer.
+//
+// @Result: Wert des Merkmals, Falls der Merkmalswert nicht ermittelt werden
+//          konnte, wird ein Default-Wert zurückgegeben.
+//******************************************************************************
+function _SML_AV_D010(cArticleNo:C, cAttributeKey:C, uDefaultValue:U)
+| nArticleID |
+
+   nArticleID := Lookup(waDab010, 'DAB011', {{cArticleNo}}, 'ID', -1),
+   // Artikelnummer validiern
+   if nArticleID = -1 then
+      Result := uDefaultValue,
+   else
+      Result := SML_AVDefault_Internal(waDab010, 0, cArticleNo, cAttributeKey, uDefaultValue),
+   endif,
+end,

@@ -1,0 +1,77 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: be-Init Event
+//
+// WICHTIGE HINWEISE:
+//   * Die Initialisierungsreihenfolge der Packages ist ausschlaggebend, weil
+//     die Packages teilweise voneinander abhängig sind
+//   * Während des Initialisierungsprozesses darf nur temporär auf die Tabelle
+//     DabPAR zugegriffen werden, weil sonst beim Aktivieren der Systemsperre in
+//     die DabPAR nicht exklusiv geöffnet werden kann.
+//     Verbotene Zugriffe auf die DabPAR sind z.B.:
+//       - Lookup(waDabPAR, ...)
+//       - BeOpen(waDabPAR, ...)
+//       - DbGetTable(gl_oDM, waDabPAR, ...)
+//     Erlaubt ist der Zugriff z.B. über eine TBeRightsTable, die mithilfe von
+//     CreateObject() erzeugt wurde.
+//
+//##############################################################################
+//##############################################################################
+
+|
+
+   // Allgemeine Verwendung
+   gl_CbInitBeRunning:_L:=false,
+   gl_oDM:_U
+
+|
+
+//##############################################################################
+// Start der Initialisierung. Diese Variable zeigt an, dass be sich gerade bei
+// der Initialisierung der globalen Codeblock-Variabelen / Funktionen befindet.
+gl_CbInitBeRunning := true,
+//##############################################################################
+
+//******************************************************************************
+// Package Loader
+//******************************************************************************
+Call('Global\BasicPackage\_PackageLoader'),
+Call('Global\Sachmerkmalleisten\_PackageLoader'),
+Call('Global\Taskplaner\_PackageLoader'),
+Call('Global\Historisierung\_PackageLoader'),
+Call('Global\Reporting\_PackageLoader'),
+Call('Global\Dokumentenmanagement\_PackageLoader'),
+Call('Global\VatIdVerification\_PackageLoader'), // Qualifizierte USt.-Id-Prüfung
+Call('Global\CADInterface\_PackageLoader'),
+Call('Global\EDI\_PackageLoader'),
+Call('Suchen\volltext-suche\.globals\_PackageLoader'),
+Call('.admin-tools\uebersetzungen\.globals\_PackageLoader'),
+
+Call('Global\Allgemein'),
+Call('Global\Reports'),
+Call('Global\Projektmanagement'),
+Call('Global\Projektmanagement_InitVars'),
+Call('Global\EinzelTerminrasterUtils'),
+
+Call('Protokoll Bestandsberichtigung\.globals\_PackageLoader'),
+
+Call('Global\Produktion Grobplanung Kapazitaet\_PackageLoader'),
+Call('Global\Produktion Verfuegbarkeitspruefung\_PackageLoader'),
+
+Call('Global\Ausnahmemeldungen\_PackageLoader'),
+Call('Disposition\Dispositionabteilungen\.globals\_PackageLoader'),
+Call('Groupware\memo-notify\.globals\_PackageLoader'),
+Call('mro\.globals\_PackageLoader'),
+
+//******************************************************************************
+// Individuelle Includes
+//******************************************************************************
+
+// Global verfügbares Datenmodul für den schnellen Zugriff auf "LookUp"-Tabellen
+if Empty(gl_oDM) then
+  gl_oDM := CreateObject('TBeDBGet', 'gl_oDM', Application),
+endif,
+
+//##############################################################################
+gl_CbInitBeRunning := false,                     // Ende der Initialisierung ...
+//##############################################################################

@@ -1,0 +1,378 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Produktions Grobplanung Kapatitäts-Auswertung / Betrachtung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PGKU' steht für 'P'roduktions 'G'robplanung 'K'apatitäts 'U'tils
+// Teilsammlung für das Kapazitäts-Angebot
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erzeugt eine MemTable zur Aufnahme von
+// Kapazitätsangebots-Detail-Informationen
+// => Je Periode (Woche) und Ressource / Mitarbeiter wird die verfügbare
+//    Kapazität angegeben.
+// @Result: MemTable
+//******************************************************************************
+function _PGKU_CreateKapaAngebotDetailMem(oOwner)
+
+   Result := Createobject('TBeMemTable', , oOwner),
+
+   Result.CbAddField('STANDORT',           ftInteger,  0), //                      Standort
+   Result.CbAddField('RESTYP',             ftString,   1), //                      'R'essource oder 'M'itarbeiter
+   Result.CbAddField('RES_ID',             ftInteger,  0), //                      ID der Ressource / PERSNR des Mitarbeiters
+   Result.CbAddField('RES_BEZ',            ftString,  40), // * nur in MemTable *  Bezeichung / Name ID der Ressource / des Mitarbeiters
+
+   Result.CbAddField("QUALI",              ftInteger,  0), //                      ID der detailliertesten Qualifikation der Ressource / des Mitabreiters
+   Result.CbAddField("QUALI_BEZ",          ftString,  40), // * nur in MemTable *  Bezeichnung zu QUALI_DETAIL aus DABVTM:BEZ
+
+   Result.CbAddField("DATUM",              ftDate,     0), //                      Datum des Kapazitätsangebots
+   Result.CbAddField('TERM_INDEX',         ftString,   9), //                      Termin-Index, z.B. '20150424W' für die KW.17.15
+   Result.CbAddField('JAHR',               ftInteger,  0), //                      Jahr
+   Result.CbAddField('KW',                 ftInteger,  0), //                      Kalenderwoche
+
+   Result.CbAddField('KAPA_MIN',           ftInteger,  0), //                      Kapazitätsangebot in Minuten
+
+   Result.Active := True,
+
+   Result.CbAddIndex('STANDORT_DATUM_RESTYP_RES_ID', 'STANDORT;DATUM;RESTYP;RES_ID', ixPrimary),
+end,
+
+//******************************************************************************
+// Funktion füllt eine zuvor erstellte MemTable mit dem Kapazitätsangebot
+//    an Ressourcen und Mitarbeitern im Zeitbereich @dDateFrom - @dDateTo
+//
+// @Result: null
+//******************************************************************************
+function _PGKU_FillKapaAngebotDetailMem(oDM, oPCData, nStandort, oAngebotMem, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType:C:='', nOnlyResourceID:N:=0)
+| oResource, oResourceList, nCurResourceIndex, nCount, oCurTimeLine,
+  dtFirstStartOfDay:DT, dtLastEndOfDay:DT,
+  dtCurStartOfDay:DT, dtCurEndOfDay:DT,
+  dParamsPlanningStart:DT, dParamsPlanningEnd:DT,
+  drDayWorkTime:DR,
+  cRessourcenDetailQualiID, cRessourcenDetailQualiBez,
+  cQualiFuncStr, aMostDetailedQuali, oDab330, oDab262, bResourceForStandort,
+  cProgressBarUpdateResBez, bResourceIsRelevant |
+
+   oResourceList := oPCData.ResourceList,  // Klasse 'TBeCbPCResourceList'
+
+   nCount        := oResourceList.Count,                                        // WriteLn('oResourceList.Count', nCount),
+
+   // Memtable muss leer übergeben werden
+   SetErrorIf(Empty(oAngebotMem),            'memtable is empty'),
+   SetErrorIf(not oAngebotMem.Active,        'memtable not active'),
+   SetErrorIf(oAngebotMem.CbRecordCount > 0, 'memtable.CbRecordCount > 0. memtable must be empty.'),
+
+   SetErrorIf(not empty(cOnlyResourceType) and not cOnlyResourceType $ 'MR', 'cOnlyResourceType must be empty, "R" or "M"'),
+   SetErrorIf(    empty(cOnlyResourceType) and nOnlyResourceID > 0,  'nOnlyResourceID must not be set when cOnlyResourceType is empty'),
+   SetErrorIf(not empty(cOnlyResourceType) and nOnlyResourceID <= 0, 'nOnlyResourceID must be set when cOnlyResourceType is defined'),
+   SetErrorIf(nOnlyResourceID < 0, 'nOnlyResourceID must be >= 0'),
+
+   // Ermittlung für einen abweichenden Standort aktuell nicht möglich, da für
+   // TBeCbPCData() der Standort nicht per Codeblock definiert werden kann
+   SetErrorIf(nStandort <> mStandort, 'nStandort <> mStandort. only current standort is allowed.'),
+
+   // zu betrachtender Zeitraum:
+   dtCurStartOfDay.Precision   := precDays,
+   dtFirstStartOfDay.Precision := precDays,
+   dtCurEndOfDay.Precision     := precDays,
+   dtLastEndOfDay.Precision    := precDays,
+
+   dtFirstStartOfDay.DateTime  := dDateFrom,                                    // WriteLn('dtFirstStartOfDay', dtFirstStartOfDay),
+   dtLastEndOfDay.DateTime     := dDateTo + 1, // Ende = 0 Uhr des folgenden Tages
+                                                                                // WriteLn('dtLastEndOfDay',    dtLastEndOfDay),
+
+   // Sicherstellen, dass oPCData für den gesamten angeforderten Bereich definiert ist
+   // => Sonst kommt es zu Auswertungsfehlern, denn außerhalb dieses Bereichs
+   //    sind alle Ressourcen "permanent" verfügbar.
+   dParamsPlanningStart        := oPCData.Params.PlanningStart,
+   dParamsPlanningEnd          := dParamsPlanningStart,
+   dParamsPlanningEnd.DateTime := dParamsPlanningEnd.DateTime + oPCData.Params.PlanningDays,
+   if dtFirstStartOfDay       < dParamsPlanningStart then
+      SetError('dtFirstStartOfDay (' + dtFirstStartOfDay.AsString + ') < oPCData.Params.PlanningStart (' + dParamsPlanningStart.AsString + ')'),
+   endif,
+   if dtLastEndOfDay > dParamsPlanningEnd then
+      SetError('dtLastEndOfDay  (' + dtLastEndOfDay.AsString + ') > oPCData.Params."PlanningEnd" (' + dParamsPlanningEnd.AsString + ')'),
+   endif,
+
+   oDab330                   := DbGetTable(oDM, waDab330),
+   oDab330.IndexName         := 'ID',
+   oDab330.UseLocationFilter := 2,
+   oDab262                   := DbGetTable(oDM, waDab262),
+   oDab262.IndexName         := 'DAB263', // PERSNR
+   oDab262.UseLocationFilter := 2,
+
+   for nCurResourceIndex := 0 to nCount - 1 do
+
+      oResource := oResourceList.GetResourceByIndex(nCurResourceIndex),         // Klasse 'TBeCbPCResource'
+                                                                                // WriteLn(oResource.ResType, oResource.Description),
+
+      cQualiFuncStr            := '',
+
+      bResourceIsRelevant := empty(cOnlyResourceType),  // Keine Einschränkung auf eine einzelne Ressource?
+
+      case oResource.ResType
+
+         of 0 ::
+                 MySeek({oResource.ResID}, oDab330),
+                 cQualiFuncStr            := oDab330:GRUPPE,
+                 bResourceForStandort     := oDab330:STANDORT = nStandort,      // Info: Ist wichtig, da die oResourceList nicht Standortgefiltert ist. Folglich müssen auch die Tabellen (DAB330 & DAB262) ungefiltert sein
+                 cProgressBarUpdateResBez := oDab330:BEZ,
+                 if cOnlyResourceType = 'R' then
+                    bResourceIsRelevant := oDab330:ID = nOnlyResourceID,
+                 endif,
+         of 1 ::
+                 MySeek({oResource.ResID}, oDab262),
+                 cQualiFuncStr            := oDab262:GRUPPE,
+                 bResourceForStandort     := oDab262:STO_HAUPT = nStandort,
+                 cProgressBarUpdateResBez := oDab262:NAME,
+                 if cOnlyResourceType = 'M' then
+                    bResourceIsRelevant := oDab262:PERSNR = nOnlyResourceID,
+                 endif,
+      endcase,
+
+      if bShowProgress then
+         ProgressBarUpdate(nCurResourceIndex / nCount * 100, 'Kapazitätsangebot wird berechnet für: ' + cProgressBarUpdateResBez, true),
+      endif,
+
+      // Soll das Angebot für diese Ressource berechnet werden?
+      if bResourceIsRelevant then
+         // Gehört die Ressource zum angeforderten Standort?
+         if bResourceForStandort then
+
+            aMostDetailedQuali        := PGKU_GetMostDetailedQualiFromQualiFuncList(oDM, cQualiFuncStr),
+            cRessourcenDetailQualiID  := aMostDetailedQuali[2],
+            cRessourcenDetailQualiBez := aMostDetailedQuali[3],
+
+            oCurTimeLine := oResource.OperationTimeLine,                              // Klasse 'TBeCbOperationTimeLine'
+                                                                                      // WriteLn('BeginOfFirstAvailability', oCurTimeLine.BeginOfFirstAvailability),
+                                                                                      // WriteLn('EndOfLastAvailability',    oCurTimeLine.EndOfLastAvailability),
+            // Start mit der ersten Woche
+            dtCurStartOfDay         := dtFirstStartOfDay,
+            dtCurEndOfDay.DateTime  := dtCurStartOfDay.DateTime + 1,
+
+            while dtCurEndOfDay <= dtLastEndOfDay do                                // Writeln('dtCurEndOfDay', dtCurEndOfDay, 'dtLastEndOfDay', dtLastEndOfDay),
+
+
+               // Arbeitszeit in dieser Woche
+               if oCurTimeLine.HasAvailabilityData then // gesperrte Ressourcen haben keine Kapa-Infos
+                  drDayWorkTime := oCurTimeLine.OperationDurationBetween(dtCurStartOfDay, dtCurEndOfDay),
+               else
+                  drDayWorkTime.Minutes := 0,
+               endif,
+
+               if drDayWorkTime.Minutes <> 0 then
+                  oAngebotMem.CbAppend(),
+
+                  oAngebotMem:STANDORT         := nStandort,
+                  oAngebotMem:RESTYP           := iif(oResource.ResType = 0, 'R', 'M'),
+                  oAngebotMem:RES_ID           := oResource.ResID,
+                  oAngebotMem:RES_BEZ          := oResource.Description,
+
+                  oAngebotMem:QUALI            := cRessourcenDetailQualiID,  // ID der detailliertesten Qualifikation der Ressource/Mitabreiter
+                  oAngebotMem:QUALI_BEZ        := cRessourcenDetailQualiBez, // Bezeichnung zu QUALI_DETAIL
+
+                  oAngebotMem:DATUM            := dtCurStartOfDay.DateTime,
+                  oAngebotMem:TERM_INDEX       := DateStr(oAngebotMem:DATUM),
+                  oAngebotMem:JAHR             := PGKU_GetPlanungsperiodenJahr(oAngebotMem:DATUM),
+                  oAngebotMem:KW               := PGKU_GetPlanungsperiodenKW(oAngebotMem:DATUM),
+
+                  oAngebotMem:KAPA_MIN         := drDayWorkTime.Minutes,
+
+
+                  oAngebotMem.CbPost(),
+               endif,
+
+               // Auf die nächsten Tag wechseln
+               dtCurStartOfDay.DateTime    := dtCurStartOfDay.DateTime + 1,
+               dtCurEndOfDay.DateTime      := dtCurEndOfDay.DateTime  + 1,
+            end,
+         endif,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Die Funktion aktualisiert die Tabelle "Kapazitätsangebot"
+//    (PGKANG.ADT) auf Basis der übergebenen, befüllten MemTable des Kapazitätsangebots.
+//
+//  - Achtung:
+//       Die übergebene MemTable muss immer das gesamte Kapazitätsangebot
+//       für einen Standort und Zeitraum enthalten, damit die Aktualisierung
+//       korrekt erfolgt kann.
+//
+// @Result: Array mit Informationen zum Vorgang
+//           {
+//              Anzahl hinzugefügter Datensätze in Angebots-Tabelle,
+//              Anzahl aktualisierter Datensätze,
+//              Anzahl gelöschter Datensätze
+//           }
+//******************************************************************************
+function _PGKU_TransferKapaAngebotDetailMemToDatabase(oDM, oAngebotMem, nStandort, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType:C:='', nOnlyResourceID:N:=0)
+| oPGKANG, cSQL, oQuery, aCounterArray, dLastProgressBarUpdateDay |
+
+   // Sicherstellen, dass die MemTable "sauber" ist
+   SetErrorIf(Empty(oAngebotMem),     'memtable is empty'),
+   SetErrorIf(not oAngebotMem.Active, 'memtable not active'),
+   SetErrorIf(oAngebotMem.CbFiltered, 'memtable.CbFiltered = true. memtable must not be filtered.'),
+   oAngebotMem.CbIndexName := 'STANDORT_DATUM_RESTYP_RES_ID', // Ausdruck = STANDORT;DATUM;RESTYP;RES_ID
+
+   SetErrorIf(not empty(cOnlyResourceType) and not cOnlyResourceType $ 'MR', 'cOnlyResourceType must be empty, "R" or "M"'),
+   SetErrorIf(    empty(cOnlyResourceType) and nOnlyResourceID > 0,  'nOnlyResourceID must not be set when cOnlyResourceType is empty'),
+   SetErrorIf(not empty(cOnlyResourceType) and nOnlyResourceID <= 0, 'nOnlyResourceID must be set when cOnlyResourceType is defined'),
+   SetErrorIf(nOnlyResourceID < 0, 'nOnlyResourceID must be >= 0'),
+
+   // Einfache Implementierung:                                                 // TODO: Abgleichsmethode implementieren, damit nicht sinnlos gelöscht und neu angelegt wird.
+
+   //   2) diesen Datumsbereich in der Tabelle löschen
+   //   3) Inhalt der MemTable neu in die Tabelle schreiben.
+
+
+
+   iif(bShowProgress, ProgressBarUpdate(, 'Kapazitätsangebot wird in Datenbank gespeichert: ' + DToC(oAngebotMem:DATUM), true),),
+   dLastProgressBarUpdateDay := nil,
+
+   aCounterArray := {0, 0, 0},
+
+   // 2) diesen Datumsbereich in der Tabelle löschen
+   cSQL := 'DELETE FROM ' + DbSqlTableName(waPGKANG) + crlf +
+           '    WHERE     STANDORT = ' + Str(nStandort) + crlf +
+           '          AND DATUM BETWEEN ' + DateToSql(dDateFrom, true) + ' AND ' +  DateToSql(dDateTo, true) + crlf +
+           '',
+   if not empty(cOnlyResourceType) then
+      cSQL +=
+           '          AND RESTYP = ''' + cOnlyResourceType + '''' + crlf +
+           '          AND RES_ID = ' + Str(nOnlyResourceID),
+   endif,
+                                                                                // WriteLn('cSQL', cSQL),
+
+   oQuery := CreateObject('TBeAdsQuery', 'SQL_DELETE_KAPA', oDM),
+   startseq
+      oQuery.ProtocolActive := false,
+      oQuery.SQL            := cSQL,
+      oQuery.CbExecSQL(),
+      aCounterArray[3]  := -999,                                                // TODO: Abgleichsmethode implementieren
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   // 3) Inhalt der MemTable neu in die Tabelle schreiben.
+   oPGKANG          := DbGetTable(oDM, waPGKANG),
+   oAngebotMem.CbFirst(),
+   while not oAngebotMem.CbEoF do
+
+      if bShowProgress then
+         if DoW(oPGKANG:DATUM) = 2 and oAngebotMem:DATUM <> dLastProgressBarUpdateDay then // Update der Gui nur beim Verarbeiten von Montag
+            ProgressBarUpdate(, 'Kapazitätsangebot wird in Datenbank gespeichert: ' + DToC(oAngebotMem:DATUM), true),
+            dLastProgressBarUpdateDay := oAngebotMem:DATUM,
+         endif,
+      endif,
+
+      MyAppend(oPGKANG),
+      oPGKANG:STANDORT    := oAngebotMem:STANDORT,
+      oPGKANG:RESTYP      := oAngebotMem:RESTYP,
+      oPGKANG:RES_ID      := oAngebotMem:RES_ID,
+      oPGKANG:QUALI       := oAngebotMem:QUALI,
+      oPGKANG:DATUM       := oAngebotMem:DATUM,
+      oPGKANG:TERM_INDEX  := oAngebotMem:TERM_INDEX,
+      oPGKANG:JAHR        := oAngebotMem:JAHR,
+      oPGKANG:KW          := oAngebotMem:KW,
+      oPGKANG:KAPA_MIN    := oAngebotMem:KAPA_MIN,
+      MyPost(oPGKANG),
+
+      aCounterArray[1]  += 1,
+
+      oAngebotMem.CbNext(),
+   end,
+
+   Result := aCounterArray,
+end,
+
+//******************************************************************************
+// Funktion ruft die Funktionen zur Berechnung und Speicherung des Kapa.Angebots auf
+//
+// @Result: Array mit Informationen über den Prozess
+//           {
+//             Dauer (mSec) Aufbau des PCData Objekts,
+//             Dauer (mSec) Berechnung des Kapazitäts-Angebots,
+//             Dauer (mSec) Speicherung des Kapazitäts-Angebots,
+//             Anzahl hinzugefügter Datensätze in Angebots-Tabelle,
+//             Anzahl aktualisierter Datensätze,
+//             Anzahl gelöschter Datensätze
+//            }
+//******************************************************************************
+function _PGKU_GUI_CalcAndSaveKapaAngebot(oDM, nStandort, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType:C:='', nOnlyResourceID:N:=0)
+| oPCData, oKapaAngebotMem, nTime, aTransferResult |
+
+   Result := {0, 0, 0, 0, 0, 0},
+
+   SetErrorIf(not DbInTrans(oDM.AdsConnection), 'connection must be active on data module'),
+
+   oKapaAngebotMem       := PGKU_CreateKapaAngebotDetailMem(oDM),
+   startseq
+      // 1. Aufbau des PCData Objekts
+      nTime              := GetExTimer(),
+      iif(bShowProgress, ProgressBarUpdate(, 'Initialisierung des Planungsobjekts (TBeCbPCData)', true),),
+      oPCData            := PGKU_CreatePCData(dDateFrom - 2, dDateTo + 2, '', oDM), // Datumsbereich muss etwas größer sein, damit auf jeden Fall die Grenz-KW's alle Infos haben...
+      startseq
+         nTime           := GetExTimer() - nTime,
+         Result[1]       := nTime * 1000,
+
+         // 2. Berechnung des Kapazitäts-Angebots, Speicherung in MemTable
+         nTime           := GetExTimer(),
+         PGKU_FillKapaAngebotDetailMem(oDM, oPCData, nStandort, oKapaAngebotMem, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType, nOnlyResourceID),       // Browse(, oKapaAngebotMem),
+         nTime           := GetExTimer() - nTime,
+         Result[2]       := nTime * 1000,
+
+         // 3. Speicherung des Kapazitäts-Angebots in Tabelle
+         nTime           := GetExTimer(),
+         aTransferResult := PGKU_TransferKapaAngebotDetailMemToDatabase(oDM, oKapaAngebotMem, nStandort, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType, nOnlyResourceID),
+         nTime           := GetExTimer() - nTime,
+         Result[3]       := nTime * 1000,
+         Result[4]       := aTransferResult[1],
+         Result[5]       := aTransferResult[2],
+         Result[6]       := aTransferResult[3],
+      always
+         DestroyObject(oPCData),
+      stopseq,
+   always
+      DestroyObject(oKapaAngebotMem),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion ruft die Funktionen zur Berechnung und Speicherung des Kapa.Angebots
+//  auf (erzeugt dafür ein Datenmodul und übernimmt das Transaktionshandling)
+//
+// @Result: Rückgabe wird übernommen von Funktion CalcAndSaveKapaAngebot()
+//******************************************************************************
+function _PGKU_GUI_CalcAndSaveKapaAngebot_WithTransaction(nStandort, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType:C:='', nOnlyResourceID:N:=0)
+| oDM |
+   if bShowProgress then
+      ProgressBarShow('Berechnung Kapazitätsangebot', 'Kapazitätsauswertung Grobplanung', true),
+   endif,
+   startseq
+      oDM := CreateObject('TBeDbGet', 'KAPA_ANGEBOT_ADMIN_CALC'),
+      startseq
+         DbStartTrans(oDM.AdsConnection),
+         startseq
+            Result := PGKU_GUI_CalcAndSaveKapaAngebot(oDM, nStandort, dDateFrom, dDateTo, bShowProgress, cOnlyResourceType, nOnlyResourceID),
+            DbCommit(oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen
+         always
+            if DbInTrans(oDM.AdsConnection) then
+               DbRollBack(oDM.AdsConnection),
+               DbCancelAll(oDM),
+            endif,
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   always
+      if bShowProgress then
+         ProgressBarHide(),
+      endif,
+   stopseq,
+end,

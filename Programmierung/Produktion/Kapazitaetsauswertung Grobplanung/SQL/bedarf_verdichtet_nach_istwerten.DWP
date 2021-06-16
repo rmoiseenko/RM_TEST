@@ -1,0 +1,55 @@
+SELECT
+   INNER_RESULT.STANDORT,
+   INNER_RESULT.JAHR,
+   INNER_RESULT.KW,
+   INNER_RESULT.AUF_STATUS,
+
+   SUM(                                Round(INNER_RESULT.KAPA_MINUTEN / 60, 2)     ) AS KAPA_STUNDEN,
+   SUM( iif(INNER_RESULT.RESTYP = 'R', Round(INNER_RESULT.KAPA_MINUTEN / 60, 2), 0) ) AS KAPA_STUNDEN_R,
+   SUM( iif(INNER_RESULT.RESTYP = 'M', Round(INNER_RESULT.KAPA_MINUTEN / 60, 2), 0) ) AS KAPA_STUNDEN_M
+
+   FROM
+      (
+         SELECT
+
+            DAB340.STANDORT         AS STANDORT,
+            iif( MONTH(DAB340.S_DATUM) = 12 AND ISOWEEK(DAB340.S_DATUM) < 3,      // Leider gibt es keine Funktion "IsoWeekYear()", die das passende Jahr für "IsoWeek()" ermittelt... daher hier selbst berechnet!
+                 Year(DAB340.S_DATUM) + 1,
+                 iif( Month(DAB340.S_DATUM) = 1 AND IsoWeek(DAB340.S_DATUM) > 50,
+                      Year(DAB340.S_DATUM) - 1,
+                      Year(DAB340.S_DATUM) ) ) AS JAHR,
+            ISOWEEK(DAB340.S_DATUM) AS KW,
+
+            DAB340.MINUTEN   AS KAPA_MINUTEN,
+            PGKBDP_RUEST.ID  AS PGKBDP_RUEST_ID,
+            PGKBDP_STUECK.ID AS PGKBDP_STUECK_ID,
+
+            IfNull(PGKBDP_RUEST.QUALI,      PGKBDP_STUECK.QUALI)       AS PGKBDP_QUALI,
+            IfNull(PGKBDP_RUEST.D270_RESID, PGKBDP_STUECK.D270_RESID)  AS PGKBDP_D270_RESID,
+            IfNull(PGKBDP_RUEST.RESTYP,     PGKBDP_STUECK.RESTYP)      AS RESTYP,
+            IfNull(PGKBDP_RUEST.AUF_STATUS,  PGKBDP_STUECK.AUF_STATUS) AS AUF_STATUS
+
+         FROM "DAB340.ADT" DAB340
+
+         LEFT JOIN "PGKBDP.ADT" PGKBDP_RUEST  ON (PGKBDP_RUEST.D240R_ID  = DAB340.DAB240_ID)
+         LEFT JOIN "PGKBDP.ADT" PGKBDP_STUECK ON (PGKBDP_STUECK.D240S_ID = DAB340.DAB240_ID)
+
+         WHERE
+                DAB340.STANDORT = @STANDORT@
+            AND DAB340.BUCH_TYP IN (200, 210)  // nur Rüst- und Stückzeit
+            AND DAB340.DAB240_ID > 0
+            AND DAB340.MINUTEN   > 0 // Buchungen, die nur Gutmenge oder Ausschuss enthalten, sind für die Verdichtung nicht relevant            
+
+            AND DAB340.START >= @DATUM_ZEIT_VON@  // Ist-Buchung wird in die Woche des Buchungs-Starts einsortiert
+            AND DAB340.START <  @DATUM_ZEIT_BIS@
+
+       ) AS INNER_RESULT
+
+       WHERE
+          (   INNER_RESULT.PGKBDP_RUEST_ID  is not null
+           OR INNER_RESULT.PGKBDP_STUECK_ID is not null)
+          
+          @QUALI_AND_RES_FILTER@
+
+       GROUP BY
+          INNER_RESULT.STANDORT, INNER_RESULT.JAHR, INNER_RESULT.KW, INNER_RESULT.AUF_STATUS

@@ -1,0 +1,408 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Funktionen für das Debugging
+//
+// ACHTUNG:
+//
+//   Folgende Funktionen wurden entfernt:
+//     26.04.2012  Prt() => ist nicht mehr öffentlich
+//
+//   Folgende Funktionen wurden bzgl. der Schnittstelle geändert:
+//     26.04.2012  Pre() => Parameter 'cFile' ist entfallen
+//
+//##############################################################################
+//##############################################################################
+
+|
+   //---------------------------------------------------------------------------
+   // Globale Variablen nur für interne Verwendung:
+
+   gl_DBG_Logging_Internal_LogMessageBuffer:_C    := '',
+   gl_DBG_Logging_Internal_LastLogTime:_N         := 0,
+   gl_DBG_Logging_Internal_UseLogMessageBuffer:_L := false,
+
+   //---------------------------------------------------------------------------
+   // Logging-Optionen:
+
+   // Dateiname des Log-Pfades
+   gl_DBG_Logging_FileName:_C := '',
+   gl_DBG_Logging_Path:_C     := '',
+
+   // Logging-Steuerung: Dynamische Prüfung
+   gl_DBG_Logging_ActivationMethod_DynamicCheck:_L            := false,
+   gl_DBG_Logging_ActivationMethod_DynamicCheck_ScriptName:_C := '',
+
+   // Logging-Steuerung: Supervisor-Mode Prüfung
+   gl_DBG_Logging_ActivationMethod_CheckSupervisorMode:_L := true,
+
+   // Logging-Steuerung: Explizite Aktivierung/Deaktivierung
+   gl_DBG_Logging_ActivationMethod_Explicit:_N,
+      gl_DBG_Logging_ActivationMethod_Explicit_Active:_N    := 1,
+      gl_DBG_Logging_ActivationMethod_Explicit_Inactive:_N  := 0,
+      gl_DBG_Logging_ActivationMethod_Explicit_Undefined:_N := -1
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Standard Pfad (Verzeichnis + Dateiname) der Log-Datei ermitteln
+// @result: string - Default-Pfad der Log-Datei
+//******************************************************************************
+function _DBG_Logging_DetermineDefaultLogFilePath()
+| cAllowedCharacters, cFileName |
+
+   //***************************************************************************
+   // Standort-/Mandanten-Namen ermitteln
+   //
+   // HINWIES:
+   //   Statt einem Lookup auf das Feld DABPAR:USER wird eine TBeRightsTable
+   //   erzeugt und der Wert von USER abgerufen, weil bei einem Lookup die
+   //   DabPAR im internen Lookup-Pool geöffnet bleibt, was dazu führt, dass
+   //   diese z.B. bei einer Systemsperre nicht mehr exklusiv geöffnet werden
+   //   kann.
+   //
+   // @result: string
+   //***************************************************************************
+
+   cAllowedCharacters := 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.',
+   // Standort-/Mandanten-Namen als Dateinamen verwenden
+   cFileName := DABPAR:USER,
+   // ungültige Zeichen entfernen
+   cFileName := CharOnly(cAllowedCharacters, cFileName),
+   // Fallback-Dateiname: debug
+   cFileName := iif(Empty(cFileName), 'debug', cFileName),
+   // Log-Datei Standardmäßig unter C:\be_debug\ speichern
+   if empty(gl_DBG_Logging_Path) then
+      gl_DBG_Logging_Path := 'C:\be_debug\',
+   endif,
+   result := gl_DBG_Logging_Path + cFileName + '.txt',
+end,
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_DBG_Logging_ActivationMethod_Explicit := gl_DBG_Logging_ActivationMethod_Explicit_Undefined,
+//gl_DBG_Logging_FileName                  := DBG_Logging_DetermineDefaultLogFilePath(),  // das wird jetzt in der _prs gemacht, um im Pfad variabel zu sein.
+
+//##############################################################################
+//##############################################################################
+// Logging-/Protokoll-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-686
+//******************************************************************************
+// Prüfen, ob das Logging aktiv ist.
+// @result: boolean - Logging aktiv/inaktiv
+//******************************************************************************
+function _DBG_Logging_IsActive()
+| uDynamicResult |
+
+   result := false,
+
+   // Prüfen, ob das Logging explizit aktiviert ist
+   case gl_DBG_Logging_ActivationMethod_Explicit
+      of gl_DBG_Logging_ActivationMethod_Explicit_Inactive :: result := false,
+      of gl_DBG_Logging_ActivationMethod_Explicit_Active   :: result := true,
+      otherwise
+         // Falls das Logging nicht explizit aktiviert oder deaktiviert ist,
+         // müssen die anderen Aktivierungsmethoden geprüft werden.
+         if gl_DBG_Logging_ActivationMethod_CheckSupervisorMode then
+            result := mBeSupervisor,
+         else
+            if gl_DBG_Logging_ActivationMethod_DynamicCheck then
+               startseq
+                  uDynamicResult := CallResident(gl_DBG_Logging_ActivationMethod_DynamicCheck_ScriptName),
+                  // Result nur übernehmen, sofern der Result-Typ boolean ist.
+                  if ValType(uDynamicResult) == 'L' then
+                     result := uDynamicResult,
+                  endif,
+               onerror
+                  result := false
+               stopseq,
+            endif,
+         endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Standard Codeblock Logging-Funktion
+// Schreibt bei aktivem Logging alle Log-Nachrichten in die durch
+//  gl_DBG_Logging_FileName definierte Datei (Default: C:\be_debug\debug.txt).
+//
+// @result: null
+//******************************************************************************
+function _Prs(cProcedurePath:C, uComment:U)
+| oFile, aDebugArr, cDebugLine, i, cDebugFileName, nTime, nFOpenMode |
+
+   // Nur fortfahren sofern das Logging aktiv ist
+   if DBG_Logging_IsActive() then
+      nTime        := GetExTimer(),
+      aDebugArr    := Dim(6),
+      aDebugArr[1] := FormatDateTime('DD.MM.YYYY hh:mm:ss', Now()),
+      aDebugArr[2] := Str(Mod(1000 * Frac(nTime), 10000), 4),                       // Millisekunden-Anteil des aktuellen Zeitstempels
+      aDebugArr[3] := Str(1000 * (nTime - gl_DBG_Logging_Internal_LastLogTime), 5), // Millisekunden seit der letzten Debug-Message (4-stellig)
+      aDebugArr[4] := FloatToStr(nTime, 8),                                         // Exakter Zeitpunkt
+      aDebugArr[5] := Pad(cProcedurePath, Max(Len(cProcedurePath), 35)),            // Methoden-Name
+      aDebugArr[6] := ToString(uComment),                                           // Debug-Kommentar für die Ausgabe in String wandeln
+
+      // Für die Ausgabe die Elemente per '|' verbinden
+      cDebugLine := '',
+      for i := 1 to ALen(aDebugArr) do
+         cDebugLine := ConcatTrenner(cDebugLine, aDebugArr[i], ' | '),
+      next,
+
+      // aktuelle Debug-Zeile in den Puffer übernehmen
+      gl_DBG_Logging_Internal_LogMessageBuffer += iif(empty(gl_DBG_Logging_Internal_LogMessageBuffer), '', crlf),
+      gl_DBG_Logging_Internal_LogMessageBuffer += cDebugLine,
+
+      // Debug-Puffer in Datei schreiben sofern 100 mSec verstrichen sind
+      // -> sofern Puffer-Methode überhaupt aktiviert
+      if (not gl_DBG_Logging_Internal_UseLogMessageBuffer) or
+         (nTime - gl_DBG_Logging_Internal_LastLogTime > 0.1) then
+
+         // Debug-Infos auch in der Console ausgeben
+         WriteLn(gl_DBG_Logging_Internal_LogMessageBuffer),
+         cDebugFileName  := DBG_Logging_DetermineDefaultLogFilePath(),
+
+         startseq
+            // Ausgabe-Ordner ggf. erstellen
+            if ForceDirectories(ExtractFilePath(cDebugFileName)) then
+               // Ausgabedatei muss ggf. erstellt werden
+               if File(cDebugFileName) then
+                  nFOpenMode := fo_Write,
+               else
+                  nFOpenMode := fo_Create,
+               endif,
+               // Ausgabedatei öffnen
+               oFile := FOpen(cDebugFileName, nFOpenMode),
+               startseq
+                  FSeek(oFile, 0, fs_End),
+                  FWriteln(oFile, gl_DBG_Logging_Internal_LogMessageBuffer),
+               always
+                  FClose(oFile),
+               stopseq,
+            else
+               SetError('Datei <' + cDebugFileName + '> kann nicht geschrieben werden: Kein Zugriff'),
+            endif,
+         onerror
+            // Fehler beim Schreiben der Log-Datei in der Console ausgeben und
+            // zusätzlich in das Standard be-Fehler-Log schreiben.
+            cDebugLine := 'Fehler beim Schreiben der Log-Datei: ' + GetErrorText(),
+            WriteLn(cDebugLine),
+            BeLogError(cDebugLine),
+            // Anschließend Logging explizit deaktivieren, da der Fehler
+            // vermutlich immer wieder auftreten würde.
+            gl_DBG_Logging_ActivationMethod_Explicit := gl_DBG_Logging_ActivationMethod_Explicit_Inactive,
+         stopseq,
+
+         // Puffer leeren, nachdem er geschrieben wurde.
+         // Puffer auch leeren, wenn dieser nicht geschrieben werden konnte,
+         //  sonst wird dieser beliebig groß und in der Ausgabe-Console kann
+         //  man nichts sinnvolles mehr erkennen.
+         gl_DBG_Logging_Internal_LogMessageBuffer := '',
+      endif,
+      gl_DBG_Logging_Internal_LastLogTime := nTime,
+   endif,
+end,
+
+//******************************************************************************
+// VERALTET => Prs() nutzen
+//******************************************************************************
+// Ausführliche Methode zur Erzeugung einer Log-Message
+// => Die Methode ist veraltet, verwenden Sie statt dessen Prs(),
+// => Die überflüssigen Parameter sind nur noch zur Kompatibilität mit
+//    aufrufenden Stellen vorhanden
+//******************************************************************************
+function _Prc(cProcedurePath:C, nParamNoLongerAvail:N, uComment:U, cParamNoLongerAvail:C)
+   Prs(cProcedurePath, uComment),
+end,
+
+//******************************************************************************
+// Einen Fehler protokollieren (zur Nutzung innerhalb eines onerror-Blocks)
+//******************************************************************************
+function _Pre(cProcedure:C)
+   // Umbrüche im Fehlertext ersetzen, damit die "Struktur des Log-Files" nicht zerstört wird
+   Prs(cProcedure + '.Error', 'Error: ' + StrTran(GetErrorText(), crlf, ' [crlf] ') ),
+end,
+
+//******************************************************************************
+// Debug-Puffer aktivieren
+//******************************************************************************
+function _PrsBufferOn()
+   gl_DBG_Logging_Internal_UseLogMessageBuffer := true,
+end,
+
+//******************************************************************************
+// Debug-Puffer deaktivieren
+//******************************************************************************
+function _PrsBufferOff()
+   gl_DBG_Logging_Internal_UseLogMessageBuffer := false,
+end,
+
+//******************************************************************************
+// Debug-Puffer wegschreiben
+// (nur relevant, sofern gl_bDebugTimegl_DBG_Logging_Internal_UseLogMessageBuffer = true)
+//
+// @Result: null
+//******************************************************************************
+function _PrsBufferFlush()
+   gl_DBG_Logging_Internal_LastLogTime := 0,
+   Prs('Global.DebugFunctions.PrsBufferFlush', ''),
+end,
+
+//##############################################################################
+//##############################################################################
+// Sonstige Debug Hilfs-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ein Array in einzelne Zeilen zerlegen und als Gesamt-String zurück geben
+// => ist für die schnelle Ausgabe eines Arrays in der Konsole hilfreich
+//******************************************************************************
+function _DebugArr(aArr:A)
+| i |
+   Result := '',
+   for i := 1 to ALen(aArr) do
+      Result := ConcatTrenner(Result, ToString(aArr[i]), crlf),
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// StopWatch-Funktionen (STW)
+//   Array
+//     [1] = Gesamtzeit bis zu dieser Runde
+//     [2] = Dauer dieser Runde (Zeit seit letztem Lap() bzw. Start())
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eine Stoppuhr starten
+// @Result: Stopuhr-Array
+//******************************************************************************
+function _STW_Start()
+| aTime |
+   aTime  := GetExTimer(),
+   Result := {aTime, aTime},
+end,
+
+//******************************************************************************
+// Stoppuhr Rundenzeit messen
+// => Es wird ausgegeben, wie viel Zeit bisher verstrichen ist und wieviel seit
+//    der letzten "Runde"
+// @Result: null
+//******************************************************************************
+function _STW_Lap(oSTW:R)
+| aTime |
+   aTime  := GetExTimer(),
+   WriteLn( Str(Round(((aTime - oSTW[1]) * 1000), 0), 5) + ' mSec',
+            Str(Round(((aTime - oSTW[2]) * 1000), 0), 5) + ' mSec' ),
+   oSTW[2] := aTime,
+end,
+
+//******************************************************************************
+// Stoppuhr stoppen
+// @Result: null
+//******************************************************************************
+function _STW_Stop(oSTW:A)
+| aTime |
+   aTime   := GetExTimer(),
+   oSTW[2] := aTime,
+end,
+
+
+//******************************************************************************
+// Diese Funktion erstellt einen individuellen Log-Datensatz in der DABLOG
+//    ohne Prüfung, ob das Logging aktiv ist
+//
+// ACHTUNG: Die Funktion loggt nicht, wenn ein ArrToStr() in den Parametern
+//          benutzt wurde!!
+//
+// @Result: boolean (true = Logging erfolgreich)
+//******************************************************************************
+function _CbLogExplicit(uLogText:U, cKennzeichen:C:='', cFuncName:C:='', cProgName:C:='', nLogLevel:N:=5)
+| aMessage, cLogMessage, oErr |
+   result := false,
+   aMessage := {},
+   KVU_Set(aMessage, 'LOGTEXT',   uLogText),
+   KVU_Set(aMessage, 'KENNZEICH', cKennzeichen),
+   KVU_Set(aMessage, 'FUNCNAME',  cFuncName),
+   KVU_Set(aMessage, 'PROGNAME',  iif(empty(AllTrim(cProgName)), ProgName(), cProgName)),
+
+   result := Log(ArrToStr(aMessage), nLogLevel),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt einen individuellen Log-Datensatz in der DABLOG
+//
+// ACHTUNG: Die Funktion loggt nicht, wenn ein ArrToStr() in den Parametern
+//          benutzt wurde!!
+//
+// @Result: boolean (true = Logging erfolgreich)
+//******************************************************************************
+function _CbLog(uLogText:U, cKennzeichen:C:='', cFuncName:C:='', cProgName:C:='', nLogLevel:N:=2)
+| aMessage, cLogMessage, oErr |
+   result := false,
+   if DBG_Logging_IsActive() then
+      result := CbLogExplicit(uLogText, cKennzeichen, cFuncName, cProgName, nLogLevel)
+   endif,
+end,
+
+//******************************************************************************
+// Schreibt die Namen aller Komponenten auf dem Uebergebenen Owner in die
+// Console
+// Beispiel für einen Aufruf im einem Codeblock-Button auf einer Maske:
+// DBG_FindAllComponentNamesOf('Test',getowner(self))
+// @Result leer
+//******************************************************************************
+function _DBG_FindAllComponentNamesOf(cReferenz,oOwner)
+| i, aCurrentComponent |
+
+   cReferenz := 'PrintAllComponentNamesOf_'+cReferenz,
+   prs(cReferenz,"Start"),
+
+   //***************************************************************************
+   function IsContainerWithSubComponents(aComponent)
+      Result := False,
+      Result := Result or ClassOf(aCurrentComponent, 'TPanel'),
+      Result := Result or ClassOf(aCurrentComponent, 'TFrame'),
+      Result := Result or ClassOf(aCurrentComponent, 'TForm'),
+      Result := Result or ClassOf(aCurrentComponent, 'TFormEx'),
+      Result := Result or ClassOf(aCurrentComponent, 'TGroupBox'),
+   end,
+
+   //***************************************************************************
+   function PrintComponents(oOwner, oOwnerName, nIndentLevel)
+   | i, cIndentSpaces |
+      for i := 0 to ComponentCount(oOwner) - 1 do
+         aCurrentComponent := Components(oOwner, i),
+
+         if not empty(aCurrentComponent) then
+               startseq
+                  writeln(oOwnerName + ' -> "' + aCurrentComponent.Name + '": ' + ClassName(aCurrentComponent)),
+                  prs(cReferenz,"OwnerName => "+rtrim(oOwnerName)+" ComponentName => "+rtrim(aCurrentComponent.Name)+" ClassnameComponent =>"+ ClassName(aCurrentComponent)),
+               onerror
+                  prs(cReferenz,GetErrortext()),
+               stopseq,
+
+            if IsContainerWithSubComponents(aCurrentComponent) then
+               PrintComponents(aCurrentComponent, oOwnerName + ' -> "' + aCurrentComponent.Name + '"', nIndentLevel + 1),
+            endif,
+         endif,
+      next,
+   end,
+
+   PrintComponents(oOwner, oOwner.Name, 1),
+end,
+

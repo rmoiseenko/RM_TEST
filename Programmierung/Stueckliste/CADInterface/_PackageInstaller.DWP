@@ -1,0 +1,384 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Installations-Script für das Standard-Package "VatIdValidation"
+//##############################################################################
+//##############################################################################
+
+|
+   // Workareas
+   nWorkarea_CADPROJ,
+   nWorkarea_CADSRC,
+   nWorkarea_CADART,
+   nWorkarea_CADSTKL,
+
+   // Merkmalstabellen IDs
+   nMMTID_SourceType,
+   nMMTID_DataOperationMode,
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+   i,
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_CADPROJ := 752,
+nWorkarea_CADSRC  := 753,
+nWorkarea_CADART  := 754,
+nWorkarea_CADSTKL := 755,
+
+nMMTID_SourceType        := 8022,
+nMMTID_DataOperationMode := 8023,
+
+//##############################################################################
+//##############################################################################
+// Merkmalstabellen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt eine neue MMT hinzu.
+// @result: null
+//******************************************************************************
+function MMT_Create_Internal(oDM:O, nId:N, cName:C, aValues:A, cFilter:C:='')
+| oDabMTA, oDabMDT, i, cColor |
+
+   oDabMTA := MyGetTable(oDM, waDabMTA, ''),
+
+   oDabMTA.CbAppend(),
+   oDabMTA:TAB_ID     := nId,
+   oDabMTA:BEZ        := cName,
+   oDabMTA:DEFAULT    := 'N', // Default-Merkmalstabelle: false
+   oDabMTA:CHG_DEF    := 'false',
+   oDabMTA:CHG_USR    := 'false',
+   oDabMTA:FILT_DEF   := cFilter,
+   oDabMTA:FILT_USR   := '',
+   oDabMTA:DSREF_DEF  := '',
+   oDabMTA:DSREF_USR  := '',
+   oDabMTA:TAB_DEF    := '',
+   oDabMTA:SORTTYP    := 'S',
+   oDabMTA:DISPVALUE  := 'AllTrim(DABMDT:BEZ1)',
+   oDabMTA:FLD_DATA   := 'WERT',
+   oDabMTA:FLD_VIEW   := 'WERT;BEZ1;BEZ2;BEZ3',
+   oDabMTA:REFRESH    := false,
+   oDabMTA:MASK       := '!!!!!!!!!',
+   oDabMTA:BROWSERID  := 'ATTDEF',
+   oDabMTA:HIERARCHIE := false,
+   oDabMTA:MC_FIXED   := 'N',
+   oDabMTA:MC_SEP     := '/',
+   oDabMTA:USER_ADMIN := false,
+   oDabMTA.CbPost(),
+
+   oDabMDT := MyGetTable(oDM, waDabMDT, ''),
+
+   for i := 1 to ALen(aValues) do
+      if ALen(aValues[i]) > 3 then
+         cColor := aValues[i, 4],
+      else
+         cColor := '',
+      endif,
+
+      oDabMDT.CbAppend(),
+      oDabMDT:TAB_ID    := nId,
+      oDabMDT:DEFAULT   := false,
+      oDabMDT:MASTER_ID := 0,
+      oDabMDT:SORT_ID   := aValues[i, 2],
+      oDabMDT:WERT      := ToString(aValues[i, 1]),
+      oDabMDT:BEZ1      := aValues[i, 3],
+      oDabMDT:BEZ2      := '',
+      oDabMDT:BEZ3      := '',
+      oDabMDT:FARBE     := cColor,
+      oDabMDT:IMG_LISTE := 0,
+      oDabMDT:IMG_INDEX := 0,
+      oDabMDT.CbPost(),
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion löscht die MMT mit der angegeben ID.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_Delete(oDM:O, nId:N)
+| cStatementTemplate |
+
+   cStatementTemplate := 'DELETE FROM @@TABLENAME@@ WHERE TAB_ID = ' + Str(nID),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMTA)), oDM),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMDT)), oDM),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "CAD-Interface: Datenquellen-Typ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_SourceType_Create(oDM:O, nId:N)
+   MMT_Create_Internal(oDM, nId, 'CAD-Interface: Datenquellen-Typ', {
+      {10, 100, 'Datei'},
+      {20, 200, 'Verknüpfung'},
+      {30, 300, 'Hyperlink'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "CAD-Interface: Datenoperations-Modus" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_DataOperationMode_Create(oDM:O, nId:N)
+   MMT_Create_Internal(oDM, nId, 'CAD-Interface: Datenoperations-Modus', {
+      {0, 100, 'Neuanlage'},
+      {1, 200, 'Aktualisierung'},
+      {2, 300, 'Löschung'}
+   }),
+end,
+
+//##############################################################################
+//##############################################################################
+// Felddefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt die Standard-Flag-Felder in der übergebenen
+// Tabellen-Definition hinzu.
+//
+// @result: null
+//******************************************************************************
+function AddStandardFlagFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STATUS_STD', 0,   0, gl_PCKGU_ftShort, 'Status (Standard)',           '', 0, 0, 'TBeCombo',    '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STATUS_IND', 0,   0, gl_PCKGU_ftShort, 'Status (Individuell)',        '', 0, 0, 'TBeCombo',    '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERROR_STD',  0,   0, ftMemo,           'Fehler-Text (Standard)',      '', 0, 0, 'TBeRichEdit', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERROR_IND',  0,   0, ftMemo,           'Fehler-Text (Individuell)',   '', 0, 0, 'TBeRichEdit', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WARN_STD',   0,   0, ftMemo,           'Warnungs-Text (Standard)',    '', 0, 0, 'TBeRichEdit', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WARN_IND',   0,   0, ftMemo,           'Warnungs-Text (Individuell)', '', 0, 0, 'TBeRichEdit', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "CADPROJ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADPROJ_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROJ_KEY',   100, 0, ftString,         'Projektschlüssel', 'Der Projektschlüssel dient zur eindeutigen Identifikation der Projekte. Dieser wird durch das jeweilige CAD-System vorgegeben.',
+                                                                                                                               0, 0, 'TBeEdit',  '''~*255[-,_,#,&]''', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "CADSRC" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADSRC_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'CADPROJ_ID', 0,   0, ftInteger,        'CADPROJ Datensatz-ID', '(Fremdschlüssel) Verweis auf einen CADPROJ-Datensatz',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SRC_TYPE',   0,   0, gl_PCKGU_ftShort, 'Quellen-Typ',          'Quellen-Typ der CAD-Daten',
+                                                                                                                               0, 0, 'TBeCombo', '', nMMTID_SourceType, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SRC_NAME',   255, 0, ftString,         'Quellen-Name', '',                0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SRC_URI',    0,   0, ftMemo,           'Quellen-URI',          'Dieses Feld enthält abhängig von dem Quellen-Typ (SCR_TYPE) folgende Werte:' + CRLF +
+                                                                                                                    '* Datei: Dateiname inklusive Dateipfad' + CRLF +
+                                                                                                                    '* Datei-Link: Dateiname inklusive Dateipfad' + CRLF +
+                                                                                                                    '* Hyperlink: Komplette URI bzw. URL',
+                                                                                                                               0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATA_TYPE',  0,   0, ftMemo,           'Quellen-Datentyp',     'Datentyp der Quelle, abhängig von der Dateinamenserweiterung',
+                                                                                                                               0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "CADART" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADART_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'CADSRC_ID',  0,   0, ftInteger,        'CADSRC Datensatz-ID',   '(Fremdschlüssel) Verweis auf einen CADSRC-Datensatz',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'CADPROJ_ID', 0,   0, ftInteger,        'CADPROJ Datensatz-ID',  '(Fremdschlüssel) Verweis auf einen CADPROJ-Datensatz',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MODE',       0,   0, gl_PCKGU_ftShort, 'Datenoperations-Modus', 'Der Modus gibt an, ob der Artikel neu angelegt, aktualisiert oder gelöscht werden soll.',
+                                                                                                                               0, 0, 'TBeCombo', '', nMMTID_DataOperationMode, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+                                                                                                                            // 1 = fspArtNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR',      mBeArtNoLen, 0, ftString, 'Artikelnummer',         '',       1, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTTYP',     1,   0, ftString,         'Artikeltyp',            '',       0, 0, '', '', 102024, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BEZ1',       40,  0, ftString,         'Bezeichnung 1',         '',       0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BEZ2',       40,  0, ftString,         'Bezeichnung 2',         '',       0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EXTRA_INFO', 0,   0, ftMemo,           'Zusätzliche Felder',    '',       0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "CADSTKL" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADSTKL_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'CADSRC_ID',  0,   0, ftInteger,        'CADSRC Datensatz-ID',   '(Fremdschlüssel) Verweis auf einen CADSRC-Datensatz',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'CADPROJ_ID', 0,   0, ftInteger,        'CADPROJ Datensatz-ID',  '(Fremdschlüssel) Verweis auf einen CADPROJ-Datensatz',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB210_ID',  0,   0, ftInteger,        'DAB210 Datensatz-ID',   '(Fremdschlüssel) Verweis auf eine Stücklisten-Position in der DAB210.' + CRLF +
+                                                                                                                     'Dieses Feld wird bei der Übernahme in die Stammdaten befüllt.',
+                                                                                                                               0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MODE',       0,   0, gl_PCKGU_ftShort, 'Datenoperations-Modus', 'Der Modus gibt an, ob die Stückliste neu angelegt, aktualisiert oder gelöscht werden soll.',
+                                                                                                                               0, 0, 'TBeCombo', '', nMMTID_DataOperationMode, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LEVEL',      0,   0, gl_PCKGU_ftShort, 'Ebene',                 '',       0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'RESOLUTION', 0,   0, ftBoolean,        'Auflösung',             '',       0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'POSNR',      6,   0, ftString,         'Positionsnummer',       '',       0, 0, '',         'Replicate(''!'', 6)',
+                                                                                                                                                     0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'QUANTITY',   8,   8, ftFloat,          'Menge',                 '',       0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+                                                                                                                            // 1 = fspArtNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR1',     mBeArtNoLen, 0, ftString, 'Artikelnummer 1',       '',       1, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR2',     mBeArtNoLen, 0, ftString, 'Artikelnummer 2',       '',       1, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EXTRA_INFO', 0,   0, ftMemo,           'Zusätzliche Felder',    '',       0, 0, '',         '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//##############################################################################
+//##############################################################################
+// Indexdefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "CADPROJ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADPROJ_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'PROJ_KEY', {'PROJ_KEY'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "CADSRC" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADSRC_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADPROJ_ID_SRC_NAME', {'CADPROJ_ID', 'SRC_NAME'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "CADSRC" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADART_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADPROJ_ID_CADSRC_ID_ARTNR', {'CADPROJ_ID', 'CADSRC_ID', 'ARTNR'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADPROJ_ID_ARTNR',           {'CADPROJ_ID', 'ARTNR'},              '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADSRC_ID_ARTNR',            {'CADSRC_ID', 'ARTNR'},               '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "CADSTKL" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function CADSTKL_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADSRC_ID_ARTNR1_ARTNR2_POSNR', {'CADSRC_ID', 'ARTNR1', 'ARTNR2', 'POSNR'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'CADPROJ_ID_CADSRC_ID',          {'CADPROJ_ID', 'CADSRC_ID'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DAB210_ID',                     {'DAB210_ID'},                              '', '', false, false, false, 512),
+end,
+
+//##############################################################################
+//##############################################################################
+// Tabellendefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle CADPROJ.
+// @result: array - TableDefinition der Tabelle CADPROJ
+//******************************************************************************
+function CADPROJ_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('CADPROJ', nWorkarea_CADPROJ, 'CAD-Projekte', '', true, false),
+   CADPROJ_AddFields(result),
+   AddStandardFlagFields(result),
+   CADPROJ_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle CADSRC.
+// @result: array - TableDefinition der Tabelle CADSRC
+//******************************************************************************
+function CADSRC_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('CADSRC', nWorkarea_CADSRC, 'CAD-Datenquellen', '', true, false),
+   CADSRC_AddFields(result),
+   AddStandardFlagFields(result),
+   CADSRC_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle CADART.
+// @result: array - TableDefinition der Tabelle CADART
+//******************************************************************************
+function CADART_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('CADART', nWorkarea_CADART, 'CAD-Artikel', '', true, false),
+   CADART_AddFields(result),
+   AddStandardFlagFields(result),
+   CADART_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle CADSTKL.
+// @result: array - TableDefinition der Tabelle CADSTKL
+//******************************************************************************
+function CADSTKL_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('CADSTKL', nWorkarea_CADSTKL, 'CAD-Stücklistenpositionen', '', true, false),
+   CADSTKL_AddFields(result),
+   AddStandardFlagFields(result),
+   CADSTKL_AddIndexes(result),
+end,
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', true),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOK, 7, true),
+         mrCancel
+      },
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+            //          müssen die folgenden beiden Zeilen einkommentiert werden:
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_CADPROJ, 'CADPROJ', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_CADSRC,  'CADSRC',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_CADART,  'CADART',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_CADSTKL, 'CADSTKL', cUsername, cPassword),
+//            // Merkmalstabellen löschen
+//            MMT_Delete(oDM, nMMTID_SourceType),
+//            MMT_Delete(oDM, nMMTID_DataOperationMode),
+
+            PCKGU_AddTableAndMetaInfo(oDM, CADPROJ_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, CADSRC_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, CADART_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, CADSTKL_CreateTableDefinition(), cUsername, cPassword),
+            // Merkmalstabellen anlegen
+            MMT_SourceType_Create(oDM, nMMTID_SourceType),
+            MMT_DataOperationMode_Create(oDM, nMMTID_DataOperationMode),
+
+            oDM.CbTransaction_Commit(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

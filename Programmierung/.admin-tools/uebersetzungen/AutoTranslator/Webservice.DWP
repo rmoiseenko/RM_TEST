@@ -1,0 +1,428 @@
+|  m_cFileName:P1,
+   m_cTranlateInLanguage:P2,
+   m_bTranslateAll:P3,
+   m_bFileOverwrite:P4,
+   m_cAuthKey:P5,
+
+   memToTranslate, memTranslated, gTranslateCount, gTranslateSkipCount, gTranslateEscapeCount, gTranslateCharacterCount,
+   lDebug:L:=false, nSimultanCount:N:=50, cTagStart, cTagEnd, lUseEscape, cTag, lDone,
+   nKeySize:N:=999,
+   m_aResult, m_cSaveFilePath, m_bExportSuccessfull, m_cMessage
+|  // nSimultanCount max=50
+
+if empty(m_cFileName) or editormode() then
+   m_cFileName           := 'H:\be_tools\Translator\Artikel\Form_000001101.006_EN.xlsx',
+   m_cTranlateInLanguage := 'EN', // 'EN' = englisch; 'FR' = französisch
+   m_bTranslateAll       := false,
+endif,
+
+m_aResult              := {},
+m_cSaveFilePath        := '',
+m_bExportSuccessfull   := false,
+m_cMessage             := '',
+
+cTagStart := '<be_escape>',
+cTagEnd := '</be_escape>',
+cTag := '_BE_ESCAPE_',
+lDone := False,
+
+function EncodeText(cText)
+   Result := cText,
+   if lUseEscape then
+      Result := StrTran(Result, '<', '$$$less$$$'),
+      Result := StrTran(Result, '>', cTagStart + cTag +'greater' + cTag + cTagEnd),
+      Result := StrTran(Result, '%s', cTagStart + cTag + 'string' + cTag + cTagEnd),
+      Result := StrTran(Result, '%d', cTagStart + cTag + 'double' + cTag + cTagEnd),
+      Result := StrTran(Result, '%f', cTagStart + cTag + 'float' + cTag + cTagEnd),
+      Result := StrTran(Result, '%', cTagStart + cTag + 'percent' + cTag + cTagEnd),
+      Result := StrTran(Result, '$$$less$$$', cTagStart + cTag + 'less' + cTag + cTagEnd),
+      Result := StrTran(Result, cTagEnd + ' ' + cTagStart, ' '),
+      Result := StrTran(Result, cTagEnd + cTagStart, ''),
+   else
+      if '%s' $ cText then
+         Result := StrTran(Result, '%s %s', '%s2'),
+         Result := StrTran(Result, '%s2 %s', '%s3'),
+         Result := StrTran(Result, '%s %s2', '%s3'),
+         Result := StrTran(Result, '%s2 %s2', '%s4'),
+         Result := StrTran(Result, '%s2 %s3', '%s5'),
+         Result := StrTran(Result, '%s3 %s2', '%s5'),
+      endif,
+   endif,
+
+//  iif(lDebug, writeln(cText, Result), true),
+
+   Result := UrlEncode('http://test.de/' + Result),
+   Result := SubStr(Result, 16),
+   Result := StrTran(Result, '&', '%26'),
+
+  //iif(lDebug, writeln(cText, Result), true),
+end,
+
+function DecodeText(cText)
+   |nStartPos, nEndPos|
+
+   Result := cText,
+
+   if lUseEscape then
+      Result := StrTran(Result, cTag + 'less' + cTag, '<'),
+      Result := StrTran(Result, cTag + 'greater' + cTag, '>'),
+      Result := StrTran(Result, cTag + 'string' + cTag, '%s'),
+      Result := StrTran(Result, cTag + 'double' + cTag, '%d'),
+      Result := StrTran(Result, cTag + 'float' + cTag, '%f'),
+      Result := StrTran(Result, cTag + 'percent' + cTag, '%'),
+      Result := StrTran(Result, cTagStart, ''),
+      Result := StrTran(Result, cTagEnd, ''),
+   else
+      if '%s' $ cText then
+         Result := StrTran(Result, '%s5', '%s %s %s %s %s'),
+         Result := StrTran(Result, '%s4', '%s %s %s %s'),
+         Result := StrTran(Result, '%s3', '%s %s %s'),
+         Result := StrTran(Result, '%s2', '%s %s'),
+      endif,
+   endif,
+end,
+
+function GetValuesTranslation(aValues, cLang)
+   | cURL, cData, oHTTP, oJSON, oParam, oItem, i, cTrans |
+
+   Result := aValues,
+
+   if lDone then
+      exit,
+   endif,
+
+   //iif(lDebug, writeln(aValues), true),
+
+   cURL  := 'https://api.deepl.com/v2/translate',
+   cData := 'auth_key=' + m_cAuthKey + '&source_lang=DE&target_lang=' + cLang + '&preserve_formatting=1&split_sentences=0',
+   if lUseEscape then
+      cData := cData + '&tag_handling=xml&ignore_tags=be_escape',
+   endif,
+
+   oHTTP := CreateObject('TBeCbHTTP'),
+   startseq
+      for i := 1 to ALen(aValues) do
+         cData := cData + '&text=' + EncodeText(aValues[i,1]),
+         writeln(EncodeText(aValues[i, 2])),
+      next,
+
+     //iif(lDebug, writeln(cURL, cData), true),
+      CollAdd(oHTTP.CbHeaders, 'Content-Type: application/x-www-form-urlencoded'),
+     oHTTP.CbPost(cURL, cData),
+
+     oJSON := CreateObject('TBeasCbServiceOutputParam'),
+     startseq
+       oJSON.InitCbParamFromJSON(oHTTP.CbResponseAsAnsi),
+       //iif(lDebug, writeln(oJSON.CbToJSONString()), true),
+       oParam := oJSON.Param('anonymous'),
+       oParam := oParam.Element('translations'),
+       for i := 1 to Alen(aValues) do
+         oItem := oParam.ElementByIndex(i - 1),
+         cTrans := oItem.ElementValue('text'),
+         cTrans := DecodeText(cTrans),
+         Result[i,2] := cTrans,
+       next,
+     always
+       DestroyObject(oJSON),
+     stopseq,
+   always
+      DestroyObject(oHTTP),
+   stopseq,
+end,
+
+
+function GetTranslation(cText, cLang)
+   | aValues |
+
+   aValues := {{cText, ''}},
+   aValues := GetValuesTranslation(aValues, cLang),
+   Result  := aValues[1,2],
+end,
+
+function PrepareValue(cValue)
+   cValue := StrTran(cValue, crlf, chr(13)),
+   cValue := StrTran(cValue, chr(13), crlf),
+   Result := cValue,
+end,
+
+function GetTranslationFromCacheOrTranslate(cValue, cLang)
+   |i, cValueSeq, cTransSeq|
+   Result := cValue,
+   if not empty(AllTrim(cValue)) then
+      Result := '',
+      cValue := PrepareValue(cValue),
+      for i := 1 to TokenCount(cValue, crlf) do
+         cValueSeq := Token(cValue, crlf, i),
+         if cValueSeq <> '' then
+            if memTranslated.CbFindKey({cValueSeq}) then
+               cTransSeq := memTranslated:translated
+            else
+               cTransSeq := GetTranslation(cValueSeq, cLang),
+            endif,
+         else
+            cTransSeq := '',
+         endif,
+
+         if Result <> '' then
+            Result := Result + crlf,
+         endif,
+         Result := Result + cTransSeq,
+      next,
+      gTranslateCount++,
+      gTranslateCharacterCount += len(alltrim(cValueSeq)),
+   else
+      gTranslateSkipCount++,
+   endif,
+end,
+
+function PrepareFormatCount(cValue)
+   |i, lIsFormat, lWasFormat, cChar|
+   cValue := StrTran(cValue, ' ', ''),
+
+   Result := '',
+   lIsFormat := False,
+   lWasFormat := False,
+   for i := 1 to Len(cValue) do
+      cChar := SubStr(cValue, i, 1),
+      if cChar = '%' then
+         lIsFormat := True,
+         Result := Result + cChar,
+      else
+         if lIsFormat then
+            lIsFormat := false,
+            lWasFormat := true,
+            Result := Result + cChar,
+         else
+            if lWasFormat then
+               lWasFormat := False,
+               Result := Result + 'X',
+            endif,
+         endif,
+      endif,
+   next,
+
+   if SubStr(Result, Len(Result), 1) <> 'X' then
+      Result := Result + 'X',
+   endif,
+end,
+
+function CheckTranslation(cOrgValue, cTransValue)
+   |cOrg|
+   cOrg := cOrgValue,
+   Result := True,
+   if '%s' $ cOrgValue then
+      Result := False,
+
+      cOrgValue := PrepareFormatCount(cOrgValue),
+      cTransValue := PrepareFormatCount(cTransValue),
+
+      Result := cOrgValue == cTransValue,
+      if not Result then
+         writeln('---Mismatch', cOrg, cOrgValue, cTransValue),
+      endif,
+   endif,
+end,
+
+function CheckAndCorrectSentenceEnd()
+   |cEndChar, cTransEndChar|
+   cEndChar := Right(memTranslated:value, 1),
+   cTransEndChar := Right(memTranslated:translated, 1),
+   if (cEndChar $ '!?.:') and (cEndChar <> cTransEndChar) then
+      memTranslated:translated := memTranslated:translated + cEndChar,
+   endif,
+end,
+
+function TranslatePreperation(cLang)
+   |aValues, nLen, i, cKey, lUseEscapeOld, nRound|
+
+   nRound := 0,
+   memTranslated.CbFirst(),
+   while not memTranslated.CbEof do
+      aValues := Dim(nSimultanCount),
+      nLen := 0,
+      while not memTranslated.CbEof and (nLen < nSimultanCount) do
+         nLen++,
+         aValues[nLen] := {memTranslated:value, ''},
+         memTranslated.CbNext(),
+      next,
+
+      if nLen < nSimultanCount then
+         Redim(aValues, nLen),
+      endif,
+
+      cKey := memTranslated:value_key,
+      aValues := GetValuesTranslation(aValues, cLang),
+      for i := 1 to nLen do
+         iif(empty(aValues[i,1]), writeln('empty'), false),
+
+         if memTranslated.CbFindKey({aValues[i,1]}) then
+            memTranslated.CbEdit(),
+            if CheckTranslation(memTranslated:value, aValues[i,2]) then
+               memTranslated:translated := aValues[i,2],
+            else
+               lUseEscapeOld := lUseEscape,
+               lUseEscape    := True,             //writeln(aValues[i, 1]),
+               memTranslated:translated := GetTranslation(aValues[i,1], cLang),
+               lUseEscape := lUseEscapeOld,
+               gTranslateEscapeCount++,
+            endif,
+
+            CheckAndCorrectSentenceEnd(),
+
+            memTranslated.CbPost(),
+         endif,
+      next,
+
+      memTranslated.CbFindKey({cKey}),
+      memTranslated.CbNext(),
+      nRound++,
+ //debug test   lDone := nRound > 2,
+      if lDone then
+         exit,
+      endif,
+   next,
+end,
+
+function AddToTranslation(cValue)
+   if Len(cValue) > nKeySize then
+      SetError('Wert zur Übersetzung ist zu Lang. Das Feld value in der Tabelle memTranslated einfach erweitern...'),
+   endif,
+
+   if not empty(AllTrim(cValue)) and not memTranslated.CbFindKey({cValue}) then
+      memTranslated.CbInsert(),
+      memTranslated:value_key := cValue,
+      memTranslated:value := cValue,
+      memTranslated.CbPost(),
+   endif,
+end,
+
+function PrepareTranslation(cValue)
+   |i|
+   cValue := PrepareValue(cValue),
+   for i := 1 to TokenCount(cValue, crlf) do
+      AddToTranslation(Token(cValue, crlf, i)),
+   next,
+end,
+
+function PrepareTranslations()
+   memToTranslate.CbFirst(),
+   while not memToTranslate.CbEof do
+      PrepareTranslation(memToTranslate:NativeCap),
+      PrepareTranslation(memToTranslate:NativeHin),
+
+      memToTranslate.CbNext(),
+   next,
+end,
+
+function TranslateExcel(cFile, cLang:C:='EN')
+   result := true,
+   ImportExcelFile(memToTranslate, cFile, 1, 2),
+
+//  iif(lDebug, Browse(, memToTranslate, '@trans1'), true),
+
+   writeln('Gesamt: ', memToTranslate.CbRecordCount * 2),
+
+   PrepareTranslations(),
+   TranslatePreperation(cLang),
+
+  //iif(lDebug, Browse(, memTranslated, '@trans2'), true),
+
+   memToTranslate.CbFirst(),
+   while not memToTranslate.CbEof do
+      memToTranslate.CbEdit(),
+      if m_bTranslateAll or Empty(memToTranslate:Caption) then
+          memToTranslate:Caption := GetTranslationFromCacheOrTranslate(memToTranslate:NativeCap, cLang),
+      endif,
+      if m_bTranslateAll or Empty(memToTranslate:Hint) then
+          memToTranslate:Hint := GetTranslationFromCacheOrTranslate(memToTranslate:NativeHin, cLang),
+      endif,
+      memToTranslate.CbPost(),
+
+      memToTranslate.CbNext(),
+
+      if mod(gTranslateCount, 100) = 0 then
+         writeln(gTranslateCount),
+      endif,
+   next,
+   iif(lDebug, Browse(, memToTranslate, '@trans1'), true),
+   ExportExcelFile(m_cSaveFilePath, memToTranslate, true),
+   result := true,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateExportPath(cFile, cLang)
+  | cPath |
+  result := false,
+  cPath  := ExtractFilePath(cFile) + 'deepl\',
+  result := directoryExists(cPath),
+  if not result then
+     result := forcedirectories(cPath),
+  endif,
+  if result then
+     m_cSaveFilePath := cPath +  SubStr(ExtractFilename(cFile), 1, RAt('.', ExtractFilename(cFile)) - 1) + '_' + cLang + '.xlsx',
+     if file(m_cSaveFilePath) then
+        if not m_bFileOverwrite then
+           m_cMessage := "Ausgabedatei "+m_cSaveFilePath+" existiert bereits",
+           result     := false,
+        else,
+           m_cMessage := "Ausgabedatei "+m_cSaveFilePath+" wurde überschrieben",
+        endif,
+     endif,
+  else,
+     m_cMessage      := "Exportpfad "+cPath+" konnte nicht angelegt werden",
+  endif,
+end,
+
+
+//------------------------------------------------------------------------------
+
+Startseq,
+   memToTranslate := CreateObject('TbeMemTable'),
+   memToTranslate.CbAddField('ObjName', ftString, 5),
+   memToTranslate.CbAddField('NativeCap', ftMemo, 0),
+   memToTranslate.CbAddField('Caption', ftMemo, 0),
+   memToTranslate.CbAddField('NativeHin', ftMemo, 0),
+   memToTranslate.CbAddField('Hint', ftMemo, 0),
+   memToTranslate.CbOpen(),
+
+   memTranslated := CreateObject('TbeMemTable'),
+   memTranslated.CbAddField('value_key', ftString, nKeySize),
+   memTranslated.CbAddField('value', ftMemo, 0),
+   memTranslated.CbAddField('translated', ftMemo, 0),
+   memTranslated.CbAddIndex('value_key', 'value_key', 0),
+   memTranslated.CbOpen(),
+   memTranslated.CbIndexName := 'value_key',
+
+   gTranslateCount          := 0,
+   gTranslateSkipCount      := 0,
+   gTranslateEscapeCount    := 0,
+   gTranslateCharacterCount := 0,
+
+   lUseEscape := False,
+
+   if CreateExportPath(m_cFileName, m_cTranlateInLanguage) then
+      m_bExportSuccessfull := TranslateExcel(m_cFileName, m_cTranlateInLanguage),
+   endif,
+
+   writeln(m_aResult),
+OnError
+   m_cMessage := GU_SHOWSTDERRORMESSAGE(, geterrorobj(), true),
+Stopseq,
+
+KVU_SET(m_aResult,'TOTAL',memToTranslate.CbRecordCount * 2),
+KVU_SET(m_aResult,'SEQUENCES',memToTranslate.CbRecordCount),
+KVU_SET(m_aResult,'TRANSLATED',gTranslateCount),
+KVU_SET(m_aResult,'ESCAPED',gTranslateEscapeCount),
+KVU_SET(m_aResult,'SKIPPED',gTranslateSkipCount),
+KVU_SET(m_aResult,'TRANSLATED_CHARACTERS',gTranslateCharacterCount),
+KVU_SET(m_aResult,'EXPORTFILENAME',m_cSaveFilePath),
+KVU_SET(m_aResult,'EXPORTSUCCESSFULL',m_bExportSuccessfull),
+KVU_SET(m_aResult,'MESSAGES',m_cMessage),
+
+m_aResult
+
+
+

@@ -1,0 +1,62 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Konfiguration für die Taskplaner-Services
+//##############################################################################
+//##############################################################################
+
+|
+   gl_TSKPL_ServiceConfig_PagingCount:_N,
+   gl_TSKPL_ServiceConfig_Languages:_U,
+   gl_TSKPL_ServiceConfig_DefaultLanguage:_C,
+   gl_TSKPL_ServiceConfig_RefreshTime:_N
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+/*
+  ANZAHL DER EINTRÄGE
+  *******************
+
+  Der Wert gibt an, wie viele Elemente an Logeinträge zum Task/Scheduler
+  geladen und angezeigt werden soll.
+
+*/
+
+gl_TSKPL_ServiceConfig_PagingCount := 10,
+
+
+/*
+  SPRACHDEFINTION
+  ***************
+
+  Rückgabe erfolgt im Format "cc-CC", wobei gilt
+
+       cc = Sprachcode nach ISO 639-1
+       CC = Ländercode nach ISO 3166-1
+
+  Sollte dem Browser des Users eine nicht unterstützte Sprache zu Grunde liegen
+  wird die DefaultLanguage genutzt.
+  (somit wird in China wohl Deutsch angezeigt, sofern nicht auf Englisch gesetzt)
+
+*/
+
+gl_TSKPL_ServiceConfig_Languages       := {'de-DE', 'en-GB'},
+gl_TSKPL_ServiceConfig_DefaultLanguage := 'DE',
+
+
+/*
+  ZEIT
+  ****
+
+  Diese Zeitangabe definiert die automatische Aktualisierung
+  der Monitoring-Webseite.
+  Taskübersicht und Logeinträge (sofern angezeigt) aktualisieren sich synchron.
+
+*/
+
+gl_TSKPL_ServiceConfig_RefreshTime := 60, //Sekunden
+

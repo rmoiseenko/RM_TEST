@@ -1,0 +1,314 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm ist ein Dock zur Anzeige aller dezeit
+//               bestehenden verknüpfungen zu einem Projekt.
+//               Es kann im Projekt-Stamm aufgerufen werden.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+   m_oProjBO,
+   m_oLinkMem, m_cLinksbrowser, m_nLastProjectID,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_LinkDelete, A_RefreshLinks, A_ShowLinkedWindow, btn_LinkDelete, btn_LinkGoToWindow, btn_LinksRefresh, ds_LinkMem,
+   ds_MasterTable, grd_Links, LinkAktionList, pnl_Links_TopPanel, pnl_LinksBack
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cLinksBrowser := '@LINKSBRW',  // Verknüpfungen
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuert die Action-/Button-Stati
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   A_LinkDelete.Enabled       := not (BOF(m_oLinkMem) and EOF(m_oLinkMem)),
+   A_ShowLinkedWindow.Enabled := not (BOF(m_oLinkMem) and EOF(m_oLinkMem)),
+   A_RefreshLinks.Enabled     := not empty(m_oProjBO) and m_oProjBO.CbID > 0,
+end,
+
+//******************************************************************************
+// Aktualisiert die Tabkarte zum Anzeigen der Verknüpfungen
+//******************************************************************************
+function Links_RefreshPanel()
+| nOldCursor |
+   startseq
+      DBDisableControls(m_oLinkMem),
+      startseq
+         nOldCursor := SetCursor(crHourglass),
+         startseq,
+            DeleteAllData(m_oLinkMem),
+            ProjMgmt_GetLinkData(m_oProjBO, m_oLinkMem),
+            m_nLastProjectID := m_oProjBO.CbID,
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      always
+         DBEnableControls(m_oLinkMem),
+      stopseq,
+   onerror
+      SetError('Fehler beim Aktualisieren der Verknüpfungen' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnen der Tabellen und BO's
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+   // Zuweisung der übergebenen Master-Tabelle um auf Tabellenereignisse reagieren
+   // zu können
+   if empty(m_oMasterTable) then
+      SetError('Das Verknüpfungs-Docking kann nicht ohne MasterDataSet geöffnet werden'),
+   else
+      if m_oMasterTable.WorkArea <> waDABPRJ then
+         SetError('Die übergebene Tabelle ist nicht die Projekt-Stamm-Tabelle'),
+      else
+         ds_MasterTable.DataSet := m_oMasterTable,
+      endif,
+   endif,
+
+   m_oProjBO := CreateObject('TBeProjectBO', 'LINKPROJBO', oForm, oForm),
+   if m_oMasterTable:ID > 0 and not InsertMode(m_oMasterTable) then
+      m_oProjBO.CbGoToID(m_oMasterTable:ID),
+   else
+      m_oProjBO.CbGoToID(-1),
+   endif,
+
+   m_oLinkMem               := ProjMgmt_CreateLinkMemtable(oForm),
+   ds_LinkMem.DataSet       := m_oLinkMem,
+   grd_Links.ID             := m_cLinksBrowser,
+   grd_Links.ReadWriteProps := False,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars dieses freigeben
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExDestroy( Sender )
+   if not empty(m_oOwnerForm) then
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen auf der Haupttabelle muss hier die Verknüpfungstabelle
+//        geleehrt werden
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   startseq
+      // Nur Änderungen am Fenster zulassen, wenn sich das Projekt geändert hat
+      if m_nLastProjectID <> m_oMasterTable:ID then
+
+         // Alte Daten löschen
+         if not empty(m_oLinkMem) then
+            DeleteAllData(m_oLinkMem),
+         endif,
+
+         // Project-BO neu positionieren
+         if not empty(m_oProjBO) then
+            if m_oMasterTable:ID > 0 and
+               LookUp(waDABPRJ, 'ID', {{m_oMasterTable:ID}}, 'ID', 0) > 0 then
+               m_oProjBO.CbGoToID(m_oMasterTable:ID),
+            else
+               m_oProjBO.CbGoToID(-1),
+            endif,
+         endif,
+
+         m_nLastProjectID := m_oMasterTable:ID, // Letzte Projekt-ID merken
+      endif,
+   onerror
+      SetError('Fehler beim Positionieren der Verknüpfungen' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Bei Änderungen in der Verknüpfungstabelle
+//******************************************************************************
+function ds_LinkMemDataChange( Sender )
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Aktuell markierten Link löschen
+//******************************************************************************
+function A_LinkDeleteExecute( Sender )
+| oLink, oDABVKN |
+   startseq
+      if JN('Verknüpfung wirklich entfernen?') then
+         // Berechtigung zum Löschen des Datensatzes in der DABVKN überprüfen
+         oDABVKN := DBOpen(waDABVKN),
+         startseq
+            oDABVKN.CheckUserRights := True, // Rechte anschalten
+            oDABVKN.IndexName       := 'QUELL_WA',
+            // Derzeit werden alle Verknüpfungen mit dem QUELL_STO = -1 angelegt daher hier auch der Seek mit -1
+            if DBSeek({waDABPRJ, m_oProjBO.CbId, -1, m_oLinkMem:LINKEDWA, m_oLinkMem:LINKEDID, m_oLinkMem:ZIEL_STO}, oDABVKN) then
+               if ProjMgmtGUI_CheckProjectManagementRights(oDABVKN, 0, 'D', True) then
+                  oLink := m_oProjBO.CbRelationShips.CbFindRelationShipByDestID(m_oLinkMem:LINKEDWA, m_oLinkMem:LINKEDID, m_oLinkMem:ZIEL_STO, -1, -1),
+                  if empty(oLink) then
+                     SetError('Verknüpfung konnte nicht gefunden werden'),
+                  else
+                     startseq
+                        m_oProjBO.CbRelationShips.CbDeleteRelationShip(oLink.CbID),
+                        Links_RefreshPanel(), // Verknüpfungstabelle aktualisieren
+                     always
+                        DestroyObject(oLink),
+                     stopseq,
+                  endif,
+               endif,
+            else
+               SetError('Verknüpfung konnte nicht gefunden werden'),
+            endif,
+         always
+            BeClose(oDABVKN),
+         stopseq,
+      endif,
+   onerror
+      MessageDlg('Fehler beim Löschen der Projektverknüpfung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Öffnet das zugehörige Fenster einer Verknüpfung (wenn möglich)
+//******************************************************************************
+function A_ShowLinkedWindowExecute( Sender )
+   startseq
+      ProjMgmtGUI_ShowLinkedBeWindow(m_oLinkMem:LINKEDWA, m_oLinkMem:LINKEDID),
+   onerror
+      MessageDlg('Fehler beim Öffnen der Verknüpfung' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aktualisiert die Tabkarte zur Anzeite der Verknüpfungen
+//******************************************************************************
+function A_RefreshLinksExecute( Sender )
+   startseq
+      Links_RefreshPanel(),
+   onerror
+      MessageDlg('Fehler beim Aktualisieren der Verknüpfungen' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm('@PRJLINKS', Application),
+   else
+      oForm := LoadForm('@PRJLINKS', m_oOwnerForm),
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.BorderStyle    := bsSizeToolWin,
+   oForm.PositionSaveID := '@LNKPOS',
+   oForm.OrigCapt       := 'Verknüpfungen',
+   oForm.ImageIndex     := 93,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_LinkDelete       := FindObject( oForm, "A_LinkDelete" ),
+      A_RefreshLinks     := FindObject( oForm, "A_RefreshLinks" ),
+      A_ShowLinkedWindow := FindObject( oForm, "A_ShowLinkedWindow" ),
+      btn_LinkDelete     := FindObject( oForm, "btn_LinkDelete" ),
+      btn_LinkGoToWindow := FindObject( oForm, "btn_LinkGoToWindow" ),
+      btn_LinksRefresh   := FindObject( oForm, "btn_LinksRefresh" ),
+      ds_LinkMem         := FindObject( oForm, "ds_LinkMem" ),
+      ds_MasterTable     := FindObject( oForm, "ds_MasterTable" ),
+      grd_Links          := FindObject( oForm, "grd_Links" ),
+      LinkAktionList     := FindObject( oForm, "LinkAktionList" ),
+      pnl_Links_TopPanel := FindObject( oForm, "pnl_Links_TopPanel" ),
+      pnl_LinksBack      := FindObject( oForm, "pnl_LinksBack" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für Tests in der Cb-Entwicklung
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable := DBOpen(waDABPRJ),
+      DBSeek({2}, m_oMasterTable),
+   endif,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBase(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

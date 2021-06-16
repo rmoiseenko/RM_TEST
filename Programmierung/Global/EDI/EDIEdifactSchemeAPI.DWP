@@ -1,0 +1,103 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Funktion dienen zum Verwalten von EDI-Schemata in der Tabelle
+//   EDISCHM.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion prüft, ob ein Schema für den übergebenen EID-Standard und der
+// übergebenen Vorgangsart bereits existiert.
+// Außerdem wird das übergebene Tabellenobjekt auf den entsprechenden Datensatz
+// positioniert, sofern ein passendes Schema gefunden wurde.
+//
+// @result: boolean - Schema existiert Ja/Nein
+//******************************************************************************
+function _EDI_Edifact_Scheme_Find(oEDISCHM:O, nStandard:N, nMessageType:N)
+| cIndexName_FindScheme |
+
+   cIndexName_FindScheme := 'STANDARD_MSG_TYPE',
+
+   // Validierungen
+   SetErrorIf(
+      oEDISCHM.CbIndexName <> cIndexName_FindScheme,
+      'instance of table EDISCHM must use index ' + cIndexName_FindScheme + ' in order to find the appropriate scheme record'
+   ),
+
+   result := oEDISCHM.CbFindKey({nStandard, nMessageType}),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt ein neues Schema für den übergebenen EDI-Standard und
+// Vorgangsart hinzu.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Scheme_Add(oDM:O,
+                         oEDISCHM:O,
+                         nStandard:N,
+                         nMessageType:N,
+                         cSchemeString:C)
+   // Validierungen
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDISCHM, false),
+   // Falls Schema bereits existiert -> Exception auslösen
+   SetErrorIf(
+      EDI_Edifact_Scheme_Find(oEDISCHM, nStandard, nMessageType),
+      'scheme already exists'
+   ),
+
+   oEDISCHM.CbAppend(),
+   oEDISCHM:STANDARD := nStandard,
+   oEDISCHM:MSG_TYPE := nMessageType,
+   oEDISCHM:SCHEME   := cSchemeString,
+   oEDISCHM.CbPost(),
+end,
+
+//******************************************************************************
+// Diese Funktion lädt das Schema aus der angegebenen Datei und fügt es für den
+// übergebenen EDI-Standard und Vorgangsart hinzu.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Scheme_AddFromFile(oDM:O,
+                                 oEDISCHM:O,
+                                 nStandard:N,
+                                 nMessageType,
+                                 cSchemeFileName:C)
+| cSchemeString |
+
+   cSchemeString := EDI_Core_GetFileContent_Internal(cSchemeFileName),
+   EDI_Edifact_Scheme_Add(oDM, oEDISCHM, nStandard, nMessageType, cSchemeString),
+end,
+
+//******************************************************************************
+// Diese Funktion verarbeitet den EDI-Schema-String aus dem entsprechenden
+// EDISCHM-Datensatz und übersetzt diesen in ein Codeblock-Array.
+//
+// HINWEIS: Über den Parameter wird das übersetzte Schema zurückgegeben.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Scheme_Parse(oDM:O, aSchemeAST:R, nStandard:N, nMessageType:N)
+| oEDISCHM |
+
+   oEDISCHM := MyGetTable(oDM, waEDISCHM, 'EDISCHM_PARSE'),
+   oEDISCHM.CbIndexName := 'STANDARD_MSG_TYPE',
+
+   SetErrorIf(
+      not EDI_Edifact_Scheme_Find(oEDISCHM, nStandard, nMessageType),
+      'no scheme found for standard <' + str(nStandard) + '> and message type <' + str(nMessageType) + '>'
+   ),
+
+   EDI_Edifact_AST_ParseSchemeString(aSchemeAST, oEDISCHM:SCHEME),
+end,
+

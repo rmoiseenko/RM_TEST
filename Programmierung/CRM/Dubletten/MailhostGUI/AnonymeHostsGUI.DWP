@@ -1,0 +1,204 @@
+|
+    calc_Hosts:DB:='waDUBLEHOST',
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_Cancel, A_Delete, A_First, A_Last, A_New, A_Next, A_Prior,
+  A_Save, BeControlBar1, BeLabel1, BeLabel2, BeLabel3, BeLabel4, BeLabel5, BitBtn1,
+  ds_Main, edt_Domain, edt_Host, edt_ID, grd_Main, N11, N21, N31,
+  N41, N51, Panel1, Panel2, Panel3, pm_Main, Splitter1, tbl_Main,
+  ToolBarEx1, ToolButton1, ToolButton10, ToolButton2, ToolButton3, ToolButton4, ToolButton5, ToolButton6,
+  ToolButton7, ToolButton8, ToolButton9
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+
+ |
+
+StartSeq
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm         := LoadForm( "@EEXHOSTS", Application ),
+   A_Cancel      := FindObject( oForm, "A_Cancel" ),
+   A_Delete      := FindObject( oForm, "A_Delete" ),
+   A_First       := FindObject( oForm, "A_First" ),
+   A_Last        := FindObject( oForm, "A_Last" ),
+   A_New         := FindObject( oForm, "A_New" ),
+   A_Next        := FindObject( oForm, "A_Next" ),
+   A_Prior       := FindObject( oForm, "A_Prior" ),
+   A_Save        := FindObject( oForm, "A_Save" ),
+   BeControlBar1 := FindObject( oForm, "BeControlBar1" ),
+   BeLabel1      := FindObject( oForm, "BeLabel1" ),
+   BeLabel2      := FindObject( oForm, "BeLabel2" ),
+   BeLabel3      := FindObject( oForm, "BeLabel3" ),
+   BeLabel4      := FindObject( oForm, "BeLabel4" ),
+   BeLabel5      := FindObject( oForm, "BeLabel5" ),
+   BitBtn1       := FindObject( oForm, "BitBtn1" ),
+   ds_Main       := FindObject( oForm, "ds_Main" ),
+   edt_Domain    := FindObject( oForm, "edt_Domain" ),
+   edt_Host      := FindObject( oForm, "edt_Host" ),
+   edt_ID        := FindObject( oForm, "edt_ID" ),
+   grd_Main      := FindObject( oForm, "grd_Main" ),
+   N11           := FindObject( oForm, "N11" ),
+   N21           := FindObject( oForm, "N21" ),
+   N31           := FindObject( oForm, "N31" ),
+   N41           := FindObject( oForm, "N41" ),
+   N51           := FindObject( oForm, "N51" ),
+   Panel1        := FindObject( oForm, "Panel1" ),
+   Panel2        := FindObject( oForm, "Panel2" ),
+   Panel3        := FindObject( oForm, "Panel3" ),
+   pm_Main       := FindObject( oForm, "pm_Main" ),
+   Splitter1     := FindObject( oForm, "Splitter1" ),
+   tbl_Main      := FindObject( oForm, "tbl_Main" ),
+   ToolBarEx1    := FindObject( oForm, "ToolBarEx1" ),
+   ToolButton1   := FindObject( oForm, "ToolButton1" ),
+   ToolButton10  := FindObject( oForm, "ToolButton10" ),
+   ToolButton2   := FindObject( oForm, "ToolButton2" ),
+   ToolButton3   := FindObject( oForm, "ToolButton3" ),
+   ToolButton4   := FindObject( oForm, "ToolButton4" ),
+   ToolButton5   := FindObject( oForm, "ToolButton5" ),
+   ToolButton6   := FindObject( oForm, "ToolButton6" ),
+   ToolButton7   := FindObject( oForm, "ToolButton7" ),
+   ToolButton8   := FindObject( oForm, "ToolButton8" ),
+   ToolButton9   := FindObject( oForm, "ToolButton9" ),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   oForm.PositionSaveId := '@ANEMHOS',
+OnError
+   DestroyObject( oForm ),
+StopSeq,
+
+
+function DbIsEditState( Table )
+   Result := False,
+   if (DbState(Table) = 2) or (DbState(Table) = 3) then
+      Result := True,
+      endif,
+end,
+
+function IsEmpty( Table )
+   Result := Eof(Table) and Bof(Table),
+end,
+
+function UpdateDbActions()
+|lEmpty, lEof, lBof|
+   lEof := Eof(tbl_Main),
+   lBof := Bof(tbl_Main),
+   lEmpty := lEof and lBof,
+
+   A_First.Enabled := not lEmpty and not lBof,
+   A_Prior.Enabled := not lEmpty and not lBof,
+   A_Next.Enabled  := not lEmpty and not lEof,
+   A_Last.Enabled  := not lEmpty and not lEof,
+end,
+
+function UpdateActions()
+|lIsEdit|
+   lIsEdit := DbIsEditState(tbl_Main),
+
+   A_New.Enabled    := not lIsEdit,
+   A_Delete.Enabled := not lIsEdit and not IsEmpty(tbl_Main),
+   A_Save.Enabled   := lIsEdit,
+   A_Cancel.Enabled := lIsEdit,
+   UpdateDbActions(),
+end,
+
+function FormExCloseQuery( Sender, CanClose )
+   CanClose := False,
+   if DbIsEditState(tbl_Main) then
+      if MessageDlg('Änderungen verwerfen?',3,3) = 6 then
+         DbCancel(tbl_Main),
+         CanClose := True,
+         endif,
+   else
+      CanClose := True,
+      endif,
+end,
+
+function ds_MainStateChange( Sender )
+   UpdateActions(),
+end,
+
+function A_FirstExecute( Sender )
+   DbGoTop(tbl_Main),
+   UpdateDbActions(),
+end,
+
+function A_PriorExecute( Sender )
+   DbSkip(-1, tbl_Main),
+   UpdateDbActions(),
+end,
+
+function A_NextExecute( Sender )
+   DbSkip(1, tbl_Main),
+   UpdateDbActions(),
+end,
+
+function A_LastExecute( Sender )
+   DbGoBottom(tbl_Main),
+   UpdateDbActions(),
+end,
+
+function A_NewExecute( Sender )
+   if not DbIsEditState(tbl_Main) then
+      DbAppend(tbl_Main),
+      UpdateActions(),
+      endif,
+end,
+
+function A_DeleteExecute( Sender )
+   if not DbIsEditState(tbl_Main) and not IsEmpty(tbl_Main) then
+      DbDelete(tbl_Main),
+      UpdateActions(),
+      endif,
+end,
+
+function A_SaveExecute( Sender )
+   if DbIsEditState(tbl_Main) then
+      DbPost(tbl_Main),
+      UpdateActions(),
+      endif,
+end,
+
+function A_CancelExecute( Sender )
+   if DbIsEditState(tbl_Main) then
+      if MessageDlg('Änderungen verwerfen?',3,3) = 6 then
+         DbCancel(tbl_Main),
+         UpdateActions(),
+         endif,
+      endif,
+end,
+
+function FormExClose( Sender )
+   grd_Main.ReadWriteProps := 1,
+end,
+
+function tbl_MainBeforePost( Sender )
+|aID|
+   StartSeq,
+     StartSeq,
+        aID := val(edt_ID.Text),
+     OnError,
+        Abort(),
+     StopSeq,
+     calc_Hosts.IndexName := 'ID',
+     DbGoTop(calc_Hosts),
+     if DbSeek(aID, calc_Hosts) then
+        if RecNo(calc_Hosts) <> RecNo(tbl_Main) then
+           Abort(),
+           endif,
+        endif,
+   OnError
+      oForm.ActiveControl := edt_ID,
+      Meld('ID schon vorhanden!'),
+      Abort(),
+   StopSeq,
+   if empty(edt_Host.Text) then
+      oForm.ActiveControl := edt_Host,
+      Meld('Leerer Host ist ungültig!'),
+      Abort(),
+      endif,
+end,
+
+tbl_Main.Workarea       := waDUBLEHOST,
+tbl_Main.Active         := True,
+grd_Main.ReadWriteProps := 0,
+tbl_Main.IndexName      := 'HOST',
+UpdateActions(),
+
+ShowModal(oForm),

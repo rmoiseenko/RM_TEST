@@ -1,0 +1,41 @@
+| m_oDM, m_cArtnr, i, m_dDatum |
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Reporting_HIS_LAG_CheckConsistency()
+   // TODO:
+   // Prüfen, ob für die letzten x Monate saubere HISLAG vorhanden sind
+   // => auch prüfen, dass keine doppelten da sind
+   // => prüfen, ob immer ein Monatsabschluss da ist
+   // => diese Funktion dann in der Historisierungs-GUI zur Verfügung stellen mit GUI-Ergebnis-Ausgabe
+end,
+
+
+
+m_oDM := CreateObject('TBeDbGet'),
+//m_oDM := gl_oDM,
+startseq
+
+   m_cArtnr := '1.4305/RD45', // STATDATUM bei diesem Artikel ist bereits zurück gesetzt
+   m_cArtnr := 'ALZNMGCU1,5/FL40X20',
+   m_cArtnr := 'MUTTER M4',
+
+   m_dDatum := EoM(CToD('01.08.2015')),
+   // m_dDatum := EoM(Date()),
+
+   for i := 1 to 1 do
+      // Reporting_Lager_Abgaenge_Letzte12Vormonate(m_oDM, m_cArtnr),
+      // Reporting_Lager_Bestand_MonatsEnde(        m_oDM, m_cArtnr, m_dDatum),
+      WriteLn('Ø Lagerbestand',             REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(m_oDM, m_cArtnr)),
+      WriteLn('Umschlagshäufigkeit',        REPLAGU_Kennzahlen_Umschlagshaufigkeit_12Monate(m_oDM, m_cArtnr)),
+      WriteLn('Lagerreichweite in Tagen',   REPLAGU_Kennzahlen_Lagerreichweite_InTagen_12Monate(m_oDM, m_cArtnr)),
+      WriteLn('Lagerreichweite in Monaten', REPLAGU_Kennzahlen_Lagerreichweite_InMonaten_12Monate(m_oDM, m_cArtnr)),
+      WriteLn('Ø Lagerdauer',               REPLAGU_Kennzahlen_DurchschnittlicheLagerdauer_12Monate(m_oDM, m_cArtnr, 90)),
+   next,
+
+always
+   DestroyObject(m_oDM),
+stopseq,
+

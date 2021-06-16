@@ -1,0 +1,99 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält Globals, welche hauptsächlich für Inhouseformat
+//   verwendet werden.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function _EDI_InhouseFormat_Set(aInhouseFormat:R, cKey:C, cValue:C)
+   result := KVU_Set(aInhouseFormat, cKey, cValue),
+end,
+
+//******************************************************************************
+function _EDI_InhouseFormat_Get(aInhouseFormat:A, cKey:C, cDefault:C)
+   result := KVU_Get(aInhouseFormat, cKey, cDefault),
+end,
+
+//******************************************************************************
+function _EDI_InhouseFormat_GetAssert(aInhouseFormat:A, cKey:C)
+   result := KVU_GetAssert(aInhouseFormat, cKey),
+end,
+
+//******************************************************************************
+// Memtable für die Anzeige und Bearbeitung von individuellen Daten eines
+// Artikels oder einer Stücklistenposition erzeugen und öffnen.
+//
+// @result: object - TBeMemTable
+//******************************************************************************
+function _EDI_InhouseFormat_DataMemtable_Create(cAliasName:C, oOwner:O:=nil)
+   result := CreateObject('TBeMemTable', '', oOwner),
+   
+   result.AliasName := cAliasName,
+   // Felder anlegen
+   result.CbAddField('KEY',   ftMemo, 0),
+   result.CbAddField('VALUE', ftMemo, 0),
+
+   // Tabelle öffnen
+   result.CbOpen(),
+end,
+
+//******************************************************************************
+// Memtable für die Anzeige und Bearbeitung von individuellen Daten befüllen.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_InhouseFormat_DataMemtable_Fill(oMemtable:O, cData:C)
+| aData, uValueInfo, cKey, uValue, cDescription, i |
+
+   oMemtable.CbDisableControls(),
+   startseq
+      oMemtable.CbEmptyTable(),
+      aData := StrToArr(cData),
+      for i := 1 to ALen(aData) do
+         cKey   := aData[i, 1],
+         uValue := EDI_InhouseFormat_GetAssert(aData, cKey),
+
+         oMemtable.CbAppend(),
+         oMemtable:KEY   := cKey,
+         oMemtable:VALUE := ToString(uValue),
+         oMemtable.CbPost(),
+      next,
+
+      oMemtable.CbFirst(),
+   always
+      oMemtable.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt aus den in der Memtable enthaltenen Daten einen
+// KVU-Konformen String und gibt diesen zurück.
+//
+// @result: string
+//******************************************************************************
+function _EDI_InhouseFormat_DataMemtable_Stringify(oMemtable:O)
+| aData |
+
+   aData := {},
+   oMemtable.CbDisableControls(),
+   startseq
+      oMemtable.CbFirst(),
+      while not oMemtable.CbEof do
+         EDI_InhouseFormat_Set(aData, oMemtable:KEY, oMemtable:VALUE),
+         oMemtable.CbNext(),
+      end,
+   always
+      oMemtable.CbEnableControls(),
+   stopseq,
+
+   result := ArrToStr(aData),
+end,

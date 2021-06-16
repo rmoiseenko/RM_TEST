@@ -1,0 +1,34 @@
+|
+  cLogFileName, cLogFileDir, oPermissionController,
+  bReset, bPreprocess, bCleanup,
+  bMigrate, bMigrateUsers, bMigrateMasks, bMigratePermissions,
+  bCleanupPermissions, bMigratePlainPasswords, bClearPlainPasswords
+|
+
+//******************************************************************************
+// Log-Funktion
+//******************************************************************************
+function Log(cMessage)
+   ProcessMsg(),
+   WriteLn(cMessage),
+   RABAC_Log(cLogFileName, cMessage),
+   ProcessMsg(),
+end,
+
+cLogFileDir           := 'C:\be_debug',
+cLogFileName          := cLogFileDir + '\rabac_migration_kill_fallback.log',
+oPermissionController := CreateObject('TBeCbPermissionController'),
+startseq
+   // Sicherstellen, dass das Verzeichnis für die Log-Dateien existeiert
+   ForceDirectories(cLogFileDir),
+   // Version des Migrations-Programms in die Log-Datei schreiben
+   Log(Replicate('#', 80)),
+   Log('# Migration, Version: 0.6 (2014-11-12_13:53)'),
+   Log(Replicate('#', 80)),
+   oPermissionController.CbLogFileName := cLogFileName,
+
+   oPermissionController.CbMigration.CbKillFallback(),
+
+always
+   DestroyObject(oPermissionController),
+stopseq,

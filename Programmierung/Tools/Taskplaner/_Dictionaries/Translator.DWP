@@ -1,0 +1,103 @@
+function _TSKPL_setupDictionaries(aLanguages)
+| i, aLang, aDict, aTSKPLDict |
+
+   function setupDictionaryForLang(aLang, aDict:R, oSourceDict:R)
+   | i, aDictCopy, clangField, cToken, oSourceDictCopy |
+
+      aDictCopy := aDict,
+      oSourceDictCopy := oSourceDict,
+      cLangField := 'LANG_' + aLang,
+
+      oSourceDictCopy.CbFirst(),
+      oSourceDictCopy.CbIndexName := 'TOKEN_IDX',
+      for i := 1 to Alen(aDictCopy) do
+         cToken := aDictCopy[i, 1],
+         if (oSourceDictCopy.CbFindKey({cToken})) then
+            oSourceDictCopy.CbEdit(),
+         else
+            oSourceDictCopy.CbAppend(),
+            oSourceDictCopy:LANG_TOKEN := aDictCopy[i, 1],
+         endif,
+
+         DBReplace(oSourceDictCopy.CbFieldByName(cLangField), aDictCopy[i, 2]),
+         oSourceDictCopy.CbPost(),
+         oSourceDictCopy.CbFiltered := False,
+      end,
+
+      oSourceDict := oSourceDictCopy,
+   end,
+
+   aTSKPLDict := CreateObject('TBeMemTable'),
+   aTSKPLDict.CbAddField('LANG_TOKEN', ftString, 50),
+
+   for i := 1 to ALen(aLanguages) do
+      aLang := Token(aLanguages[i], '-', 1),
+      aTSKPLDict.CbAddField('LANG_' + upper(aLang), ftMemo, 0),
+   end,
+
+   aTSKPLDict.CbAddIndex('TOKEN_IDX', 'LANG_TOKEN', 1),
+   aTSKPLDict.Active := True,
+
+   for i:= 1 to ALen(aLanguages) do
+      aLang := Token(aLanguages[i], '-', 1),
+      aDict := Call('Tools\Taskplaner\_Dictionaries\Dict_' + aLang),
+      setupDictionaryForLang(aLang, aDict, aTSKPLDict),
+   end,
+
+   result := aTSKPLDict,
+end,
+
+
+function test()
+
+   function extractToken(cText)
+   | oRegEx, aTokens |
+
+      // PreInit
+      aTokens := {},
+
+      startseq,
+
+         oRegEx := CreateObject('TbeCBRegExpr'),
+         oRegEx.SearchText := cText,
+         // Token like '%token%'
+         oRegEx.SearchExpression := '\%[\w-]+\%',
+
+         if oRegEx.ExecSearch then
+            AAdd(aTokens, StrTran(oRegEx.Matches[1], '%', '')),
+            while oRegEx.ExecSearchNext do
+               AAdd(aTokens, StrTran(oRegEx.Matches[1], '%', '')),
+            end,
+         endif,
+      always
+         DestroyObject(oRegEx),
+      stopseq,
+
+      result := aTokens,
+   end,
+
+   function _TSKPL_translate(cText, aLang, aTokens, oSourceDict:R)
+   | i, cToken, cNewText, oDict |
+
+      function getTranslation(cToken, aLang, oSourceDict:R)
+      | oData, oDict |
+         oDict := oSourceDict,
+         if (oDict.CbFindKey({cToken})) then
+            oData := oDict.CbGetRecAsArray(),
+         endif,
+         result := KVU_GET(oData, 'LANG_' + aLang, '<not found>'),
+      end,
+
+      oDict := oSourceDict,
+
+      cNewText := cText,
+      for i := 1 to ALen(aTokens) do
+         cToken := aTokens[i],
+         cNewText := StrTran(cNewText, '%' + cToken + '%', getTranslation(cToken, aLang, oDict)),
+      end,
+
+      result := cNewText,
+   end,
+
+end,
+

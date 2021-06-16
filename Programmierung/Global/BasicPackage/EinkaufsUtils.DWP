@@ -1,0 +1,365 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für den Einkauf
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'EKU' steht für 'E'in'k'aufs'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Liefert den Feldnamen eines Staffel-Feldes der Dab510
+//     => MSTAF1 (1) bis MSTAF0 (10)
+//     => PSTAF1 (1) bis PSTAF0 (10)
+//     => RSTAF1 (1) bis RSTAF0 (10)
+// @Result: String, Feldname
+//******************************************************************************
+function _EKU_Dab510_StaffelFieldName(cFieldName, nStaffelNo)
+   Result := cFieldName + Str(Mod(nStaffelNo, 10)),
+end,
+
+//******************************************************************************
+// Liefert den Wert eines Staffelfeldes ("MSTAFx", "PSTAFx" oder "RSTAFx") aus der Dab510
+// @Result: Double, Wert des Staffelfeldes
+//******************************************************************************
+function _EKU_Dab510_StaffelFieldValue(oDab510, cFieldName, nStaffelNo)
+| cFullFieldName |
+   cFullFieldName := EKU_Dab510_StaffelFieldName(cFieldName, nStaffelNo),
+   Result         := AsNumber(cFullFieldName, oDab510),
+end,
+
+//******************************************************************************
+// Sind in dem Dab510-Datensatz Staffel-Informationen vorhanden?
+// @Result: boolean (ja = Staffelinfos vorhanden)
+//******************************************************************************
+function _EKU_Dab510_HasStaffelInfos(oDab510)
+   Result := not empty(oDab510:MSTAF1) and (not empty(oDab510:PSTAF1) or not empty(oDab510:RSTAF1)),
+end,
+
+//******************************************************************************
+// Funktion rechnet eine Menge in Lagereinheit in eine Menge in Einkaufseinheit um
+// => In einer Einkaufskonditionszeile DAB510 kann eine abweichende
+//    Mengenumrechnung hinterlegt sein.
+// @Result: Numerisch
+//******************************************************************************
+function _EKU_Dab510_LagermengeToEinkaufsmenge(nLagermenge, oDab010, oDab510)
+| nME_UMR |
+   nME_UMR    := oDab510:ME_UMR,
+   if nME_UMR = 0 then
+      nME_UMR := oDab010:ME_UMR,
+   endif,
+
+   if nME_UMR = 0 then
+      nME_UMR := 1,
+   endif,
+   Result := nLagermenge / nME_UMR,
+end,
+
+//******************************************************************************
+// Funktion gibt den Einzelpreis je Einkaufseinheit für die übergebene Menge
+//   zurück. Die übergebene Menge @nMengeInEKEinheit ist in Einkaufseinheiten.
+//
+// @Result: Staffel-Preis aus Dab510:PSTAFx oder Hauptpreis Dab510:EKPFW wenn
+//          kein Preis über Mengenstaffeln verfügbar
+//          Hinweis: Die Rückgabe ist in der Währung des DAB510 Satzes!
+//******************************************************************************
+function _EKU_Dab510_GetStaffelPreisForMenge(oDab510, nMengeInEKEinheit, bBasisPreisWennKeinStaffelPreisVorhanden)
+| nPreisInEKWaehrung, nStaffelMenge, i|
+
+   nPreisInEKWaehrung := 0,
+   for i := 1 to 10 do
+      nStaffelMenge         := EKU_Dab510_StaffelFieldValue(oDab510, 'MSTAF', i),
+      if nStaffelMenge > 0 then
+         if nMengeInEKEinheit >= nStaffelMenge then
+            nPreisInEKWaehrung := EKU_Dab510_StaffelFieldValue(oDab510, 'PSTAF', i),
+         endif,
+      else
+         break,
+      endif,
+   next,
+
+   if nPreisInEKWaehrung = 0 and bBasisPreisWennKeinStaffelPreisVorhanden then
+      nPreisInEKWaehrung := oDAB510:EKPFW,
+   endif,
+
+   Result := nPreisInEKWaehrung,
+end,
+
+//******************************************************************************
+// Funktion gibt den Staffelrabatt für die übergebene Menge
+//   zurück. Die übergebene Menge @nMengeInEKEinheit ist in Einkaufseinheiten.
+//
+// @Result: Staffel-Rabatt aus Dab510:RSTAFx
+//******************************************************************************
+function _EKU_Dab510_GetStaffelRabattForMenge(oDab510, nMengeInEKEinheit)
+| nStaffelMenge, i |
+
+   Result := 0,
+   for i:=1 to 10 do
+      nStaffelMenge := EKU_Dab510_StaffelFieldValue(oDab510, 'MSTAF', i),
+      if nStaffelMenge > 0 then
+         if nMengeInEKEinheit >= nStaffelMenge then
+            Result     := EKU_Dab510_StaffelFieldValue(oDab510, 'RSTAF', i),
+         endif,
+      else
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Netto-Einzelpreis bzw. Gesamtwert in Eigenwährung für die übergebene
+//    Menge (in Einkaufseinheit) ermitteln
+//
+// Parameter
+//    @cModus             : 'P' = Preis  (Hinweis: Ergebnis wird in Lagerpreiseinheit geliefert)
+//                          'W' = Wert   (ACHTUNG: ohne Beschaffungs- und Zollkosten ZOLLPROZ / ZOLLBETR)
+//
+//    @oDab510            : Positionierte Dab510-Instanz
+//    @oDab010            : Dab010-Instanz, wird von der Funktion positioniert
+//    @nMengeInEKEinheit  : Menge in Einkaufseinheiten.
+//    @cZusatzKostenModes : Zusatzkosten-Modi, die berücksichtigt werden sollen
+//                          z.B. '%MGE' für "alle Modi"
+//                               '%'    für "nur Prozentualer Zuschlag"
+//
+// @Result: Netto-Einzelpreis bzw. Wert in Eigenwährung
+//******************************************************************************
+function _EKU_Dab510_GetNettoEigWaeFuerMenge_Internal(cModus, oDab510, oDab010, nMengeInEKEinheit, cZusatzKostenModes)
+| nBasisPreis, nPE, aZKost, aZMode, i, cZMode, nZKost, nKurs, nWaeKz, nStaffelPreis, nStaffelRabatt, nRab1, nRab2, nRab3 |
+
+   SetErrorIf(Len(cModus) > 1,   'Len(cModus) > 1'),
+   SetErrorIf(not cModus $ 'PW', 'cModus must be "P" or "W"'),
+
+   nStaffelPreis  := EKU_Dab510_GetStaffelPreisForMenge( oDab510, nMengeInEKEinheit, false),
+   nStaffelRabatt := EKU_Dab510_GetStaffelRabattForMenge(oDab510, nMengeInEKEinheit),
+
+   // Wenn ein Staffelpreis für die Menge definiert ist, dann werden
+   // Rabatt 1 und Rabatt 2 ignoriert und nur der Staffel-Rabatt kommt als Rabatt 1
+   // zum Zug.
+   if nStaffelPreis > 0 then
+      nBasisPreis   := nStaffelPreis,
+      nRab1         := nStaffelRabatt,
+      nRab2         := 0,
+      nRab3         := 0,
+   // Wenn für die Menge kein Staffelpreis aber ein Staffel-Rabatt definiert
+   // ist, dann wird der Staffelrabatt als Rabatt 3 genutzt.
+   else
+      nBasisPreis   := oDAB510:EKPFW,
+      nRab1         := oDab510:RABATT1,
+      nRab2         := oDab510:RABATT2,
+      nRab3         := nStaffelRabatt,
+   endif,
+
+   MySeek({oDab510:ARTNR}, oDab010),
+
+   nPE    := e2v(oDab510:PE_EK, oDab010:PE_EK),
+   nPE    := e2v(nPE, oDab010:PE),
+   nPE    := e2v(nPE, 1),
+
+   aZMode := {},
+   aZKost := {},
+   for i := 1 to 3 do
+      cZMode := e2v(AsVariant('Z_MODE' + Str(i), oDab510), ''),
+      if cZMode $ cZusatzKostenModes then
+         AAdd(aZMode, cZMode),
+         AAdd(aZKost, AsVariant('Z_KOST' + Str(i), oDab510)),
+      else
+         AAdd(aZMode, ''),
+         AAdd(aZKost, 0),
+      endif,
+   next,
+
+   nWaeKz := oDab510:WAEKZ,
+   nKurs  := CurrPurchase(nWaeKz, oDAB510.uselocation),
+
+//   WriteLn('nMengeInEKEinheit', nMengeInEKEinheit,
+//           'nBasisPreis', nBasisPreis,
+//           'nPE', nPE,
+//           'Rabatte 1-3', nRab1, nRab2, nRab3,
+//           'Zusatzkosten', aZKost, aZMode,
+//           'nWaeKz', nWaeKz,
+//           'nKurs', nKurs),
+
+   case cModus
+      // Liefert den Einzel-Preis der Menge in Eigenwährung in Lagerpreiseinheit (!)
+      // => der Preis enthält auch die Beschaffungsnebenkosten (Beschaffungs-/Zollkosten)
+      of 'P' :: Result := EkpEW(    nBasisPreis,
+                                    nRab1, nRab2, nRab3,
+                                    true,
+                                    nMengeInEKEinheit,
+                                    aZKost, aZMode,
+                                    true, true,
+                                    oDab010, oDab510),
+
+      // Liefert den Gesamt-Wert der Menge in Eigenwährung
+      // => ohne (!) Beschaffungsnebenkosten (Beschaffungs-/Zollkosten)
+      of 'W' :: Result := EkpEWert( nMengeInEKEinheit, nBasisPreis, nPE,
+                                    nRab1, nRab2, nRab3,
+                                    aZKost, aZMode,
+                                    nKurs, nWaeKz,
+                                    oDab010, oDab510),
+   endcase,
+
+end,
+
+
+//******************************************************************************
+// Netto-Einzelpreis in Eigenwährung für die übergebene Menge (Einkaufseinheit) ermitteln
+//
+// @Result: Netto-Einzelpreis in Eigenwährung (in Lagerpreiseinheit!)
+//******************************************************************************
+function _EKU_Dab510_NettoEW_Preis(oDab510, oDab010, nMengeInEKEinheit)
+   Result := EKU_Dab510_GetNettoEigWaeFuerMenge_Internal('P', oDab510, oDab010, nMengeInEKEinheit, '%MGE')
+end,
+
+//******************************************************************************
+// Netto-Gesamtwert in Eigenwährung für die übergebene
+//    Menge (in Einkaufseinheit) ermitteln
+//
+//    ACHTUNG: ohne Beschaffungs- und Zollkosten ZOLLPROZ / ZOLLBETR
+//
+// @Result: Netto-Gesamtwert in Eigenwährung
+//******************************************************************************
+function _EKU_Dab510_NettoEW_Wert(oDab510, oDab010, nMengeInEKEinheit)
+   Result := EKU_Dab510_GetNettoEigWaeFuerMenge_Internal('W', oDab510, oDab010, nMengeInEKEinheit, '%MGE')
+end,
+
+
+
+
+//******************************************************************************
+// Funktion prüft, ob der übergebene Dab510-datensatz gültig ist per
+//    Datum @dGueltigDate
+// @Result: boolean, ja/nein, Gültig oder nicht
+//******************************************************************************
+function _EKU_Dab510_IsGueltig(oDab510, dGueltigDate)
+   SetErrorIf(empty(dGueltigDate), 'empty(dGueltigDate) not allowed'),
+   Result :=
+         (    empty(oDab510:GUELTIGVON) and     empty(oDab510:GUELTIGBIS) )
+      or (    empty(oDab510:GUELTIGVON) and not empty(oDab510:GUELTIGBIS) and dGueltigDate <= oDab510:GUELTIGBIS)
+      or (not empty(oDab510:GUELTIGVON) and     empty(oDab510:GUELTIGBIS) and dGueltigDate >= oDab510:GUELTIGVON)
+      or (not empty(oDab510:GUELTIGVON) and not empty(oDab510:GUELTIGBIS) and dGueltigDate >= oDab510:GUELTIGVON and dGueltigDate <= oDab510:GUELTIGBIS),
+end,
+
+//******************************************************************************
+// Funktion ist identisch mit EKU_Dab510_IsGueltig() aber nutzt immer "Heute"
+// @Result: boolean, ja/nein, Gültig oder nicht
+//******************************************************************************
+function _EKU_Dab510_IsHeuteGueltig(oDab510)
+   Result := EKU_Dab510_IsGueltig(oDab510, Date()),
+end,
+
+//******************************************************************************
+// Funktion liefert für einen Dab510-Datensatz den Gültigkeitsstatus
+//    zum Datum @dGueltigDate
+//
+// @Result: Integer, Status
+//          -1  = veraltet
+//           0  = gültig
+//           1  = künftig
+//******************************************************************************
+function _EKU_Dab510_GetGueltigStatus(oDab510, dGueltigDate)
+| bIsGueltig |
+   bIsGueltig := EKU_Dab510_IsGueltig(oDab510, dGueltigDate),
+   Result     := iif( bIsGueltig,
+                      0,
+                      iif( empty(oDab510:GUELTIGBIS),
+                           1,
+                           -1) ),
+end,
+
+//******************************************************************************
+// Funktion liefert für einen Dab510-Datensatz den Gültigkeitsstatus
+//    zum Datum @dGueltigDate als Text (deutsch)
+//
+// @Result: String, einer der Werte
+//           "veraltet"
+//           "gültig"
+//           "künftig"
+//******************************************************************************
+function _EKU_Dab510_GetGueltigStatusText(oDab510, dGueltigDate)
+| nGueltigStatus |
+   nGueltigStatus := EKU_Dab510_GetGueltigStatus(oDab510, dGueltigDate),
+
+   case nGueltigStatus
+      of -1 ::  Result  := 'veraltet',
+      of  0 ::  Result  := 'gültig',
+      of  1 ::  Result  := 'künftig',
+      otherwise Result  := '?',
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion liefert für den Artikel @cArtnr die Dab510:ID des aktuell gültigen
+//    Konditions-Satzes ("Hauptlieferant")
+//
+//    Hinweis: Sofern es mehrere gültige Konditionssätze mit identischem
+//             NETTO_EW zu diesem Datum gibt, wird der erste Satz zurück gegeben.
+//
+// @Result: Integer, Dab510:ID bzw. 0 wenn nicht verfügbar
+//******************************************************************************
+function _EKU_Dab510_GetMainSupplierConditionID(cArtNr, dGueltigDate)
+  | oDab510 |
+
+  SetErrorIf(empty(cArtnr), 'empty(cArtnr) not allowed'),
+  cArtNr  := PadR(cArtNr, mbeArtNoLen),
+  Result  := 0,
+
+  oDab510 := BeOpen(waDab510, 'DAB511'), // Ausdruck: "ARTNR;PRIORI;NETTO_EW" => niedrigster Netto-EW innerhalb der niedrigsten Priorität
+  startseq
+
+     if DbSeek({cArtnr}, oDab510) then
+        while not EoF(oDab510) and oDab510:ARTNR == cArtnr do
+           if EKU_Dab510_IsGueltig(oDab510, dGueltigDate) then
+              Result := oDab510:ID,
+              break,
+           endif,
+           DbSkip(1, oDab510),
+        end,
+     endif,
+
+  always
+     BeClose(oDab510),
+  stopseq,
+end,
+
+//******************************************************************************
+// Funktion liefert für den Artikel @cArtnr und den Lieferant @nLiefNr die
+//    Dab510:ID der ersten per @dGueltigDate gültigen Kondition
+//
+//    Hinweis: Die Priorität bzw. der NETTO_EW werden hier nicht berücksichtigt, es
+//             wird der erste Datensatz zurück gegeben.
+//             Mehrere gleichzeitig gülige Datensätze beim gleichen Lieferant
+//             können z.B. dann vorkommen, wenn das Produkt beim Lieferant in
+//             unterschiedlichen Einheiten beschafft wird.
+//
+// @Result: Integer, Dab510:ID bzw. 0 wenn nicht verfügbar
+//******************************************************************************
+function _EKU_Dab510_GetConditionIDForSupplier(cArtNr, nLiefNr, dGueltigDate)
+  | oDab510 |
+
+  SetErrorIf(empty(cArtnr),  'empty(cArtnr) not allowed'),
+  SetErrorIf(empty(nLiefNr), 'empty(nLiefNr) not allowed'),
+  cArtNr  := PadR(cArtNr, mbeArtNoLen),
+  Result  := 0,
+
+  oDab510 := BeOpen(waDab510, 'DAB512'), // Ausdruck: "LINR;ARTNR;GUELTIGVON;GUELTIGBIS"
+  startseq
+
+     if DbSeek({nLiefNr, cArtnr}, oDab510) then
+        while not EoF(oDab510) and oDab510:ARTNR == cArtnr and oDab510:LINR = nLiefNr do
+           if EKU_Dab510_IsGueltig(oDab510, dGueltigDate) then
+              Result := oDab510:ID,
+              break,
+           endif,
+           DbSkip(1, oDab510),
+        end,
+     endif,
+
+  always
+     BeClose(oDab510),
+  stopseq,
+end,

@@ -1,0 +1,948 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+// 28.12.16 - MM: _Dubletten Gesamtprüfung
+// Programm dient dazu alle Dubletten im Kundenstamm zu identifizieren,
+//
+//
+// Mögliche Aufrufe:
+//    Als MDI-Child:       GFU_ShowMDIChild('REFKEY', 'Vorlagen\Standard-F12-Maske mit Tabelle')
+//    Als modales Fenster: GFU_ShowModal('Vorlagen\Standard-F12-Maske mit Tabelle'),
+//##############################################################################                zuletzt geprüft / markiert am
+//##############################################################################
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aCustomInfoArr:P4,
+
+   m_cFormID, m_cPositionSaveID, m_cBrowserIDHeader, m_cBrowserIDDetail,
+   m_oDM, m_oDAB000, m_oMemHeader, m_oMemDetail, m_oMemDetailGUI,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_AnonymeHostsPflegen, A_Aufbereiten, A_CustomDeleteDetail,
+   A_CustomDeleteHeader, A_DeleteMarkDetail, A_DeleteMarkHeader,
+   A_DeletePruefMarkDetail, A_DeletePruefMarkHeader, A_GeprueftDetail,
+   A_GeprueftHeader, actionList, bar_Detail, bar_Main_Top, bar_Master,
+   bardock_Bottom, barmngr_Main, BeBarButton1, BeBarDockControl1,
+   BeBarDockControl2, BeEdit2, BeEdit5, BePanel1, bipnl_Headline,
+   btn_Aufbereiten, btn_CustomDeleteMain, btn_CutomDeleteDetail,
+   btn_DeleteMarkDetail, btn_DeleteMarkerHeader, btn_DeletePruefMarkDetail,
+   btn_DeletePruefMarkHeader, btn_GeprueftDetail, btn_keineDubletteHeader,
+   chk_bZielKDNR, ds_DetailTable, ds_MainTable, edt_bisKDNR, edt_EmailDetail,
+   edt_EmailHeader, edt_HomepageDetail, edt_HomepageHeader, edt_Land,
+   edt_LandBezHeader, edt_MailHostDetail, edt_MailHostHeader, edt_MinimumScore,
+   edt_Name1Detail, edt_Name1Master, edt_Name2Detail, edt_Name2Header,
+   edt_Name3Detail, edt_Name3Header, edt_OrtDetail, edt_PLZDetail,
+   edt_PLZHeader, edt_StrasseDetail, edt_StrasseHeader, edt_Suche,
+   edt_TelefonDetail, edt_TelefonHEader, edt_USTIDDetail, edt_USTIDHeader,
+   edt_vonKDNR, edt_zuletztgeprueft, grd_Detail, grd_MainBrowser, lbl_bisKDNR,
+   lbl_EmailDetail, lbl_EmailHeader, lbl_HomepageDetail, lbl_HomepageHeader,
+   lbl_HostDetail, lbl_HostHeader, lbl_Land, lbl_LandBezDetail,
+   lbl_LandBezHeader, lbl_MinimumScore, lbl_Name1Detail, lbl_Name1Master,
+   lbl_Name2Detail, lbl_Name2Header, lbl_Name3Detail, lbl_Name3Header,
+   lbl_OrtDetail, lbl_OrtHeader, lbl_PLZDetail, lbl_PLZHeader, lbl_Scoring,
+   lbl_StrasseDetail, lbl_StrasseHeader, lbl_Suche, lbl_TelefonDetail,
+   lbl_TelefonHeader, lbl_Text, lbl_UIDDetail, lbl_UIDHeader, lbl_vonKDNR,
+   lbl_zuletztgeprueft, pnl_Bottom, pnl_CustomerDetail, pnl_CustomerHeader,
+   pnl_CustomInfos, pnl_Email, pnl_Filter, pnl_Head, pnl_Host,
+   pnl_InfoMasterKunde, pnl_KundeDetail, pnl_Main, pnl_Name, pnl_Ort,
+   pnl_Strasse, pnl_Telefon, pnl_USTID
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID            := '@DUBLETGES',   // ID der zugewiesenen F12-Maske
+m_cPositionSaveID    := '@DUBLETGES',   // ID zum Speichern der Fenster-Position/-Größe
+m_cBrowserIDHeader   := '@DUBLGESH',    // ID des Browsers im Kopf
+m_cBrowserIDDetail   := '@DUBLGESD',    // ID des Browsers im Kopf  
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bDetailTableIsEmpty,
+  bHeaderTableIsEmpty |
+
+ bHeaderTableIsEmpty := BOF(m_oMemHeader) and EOF(m_oMemHeader),
+ bDetailTableIsEmpty := BOF(m_oMemDetail) and EOF(m_oMemDetail),
+
+ edt_Suche.Enabled  := true,
+
+ // Buttons in der Toolbar En-/Disablen
+ A_AnonymeHostsPflegen.Enabled   := CbUserHasRole(gl_DUBL_Rolle_Admin),
+ A_CustomDeleteHeader.Enabled    := not bHeaderTableIsEmpty and Empty(m_oMemHeader:ZIEL_KDNR) and Empty(m_oMemDetailGUI:ZIEL_KDNR),
+ A_CustomDeleteDetail.Enabled    := not bDetailTableIsEmpty and Empty(m_oMemDetailGUI:ZIEL_KDNR) and Empty(m_oMemHeader:ZIEL_KDNR),
+ A_DeleteMarkHeader.Enabled      := not bHeaderTableIsEmpty and not Empty(m_oMemHeader:ZIEL_KDNR),
+ A_DeleteMarkDetail.Enabled      := not bDetailTableIsEmpty and not Empty(m_oMemDetailGUI:ZIEL_KDNR),
+
+ A_DeletePruefMarkHeader.Enabled := not bHeaderTableIsEmpty and not Empty(m_oMemHeader:GEPRUEFT),
+ A_DeletePruefMarkDetail.Enabled := not bDetailTableIsEmpty and not Empty(m_oMemDetailGUI:GEPRUEFT),
+ A_GeprueftHeader.Enabled        := not bHeaderTableIsEmpty,
+ A_GeprueftDetail.Enabled        := not bDetailTableIsEmpty,
+end,
+
+
+//******************************************************************************
+// Die Funktion errechnet jeweils das Scoring für die Oberflächen-Darstellung in Farbe
+//******************************************************************************
+function CalculateScoring()
+| i |
+
+   function CalculateColorForVariation(nScore)
+      case True
+         of nScore =0                      :: Result := GetBeDesignColor(dcbRed,    dcgLevel1),
+         of nScore >= 1 and nScore <= 2    :: Result := GetBeDesignColor(dcbOrange, dcgLevel3),
+         of nScore >= 3 and nScore <= 4    :: Result := GetBeDesignColor(dcbYellow, dcgLevel2),
+         of nScore >= 5                    :: Result := GetBeDesignColor(dcbGreen,  dcgLevel2),
+         otherwise Result := GetBeDesignColor(dcbWhite, dcgLevel2),
+      endcase,
+   end,
+
+   function CalculateVariation(oInfoPanel, nScore)
+      oInfoPanel.Color   := CalculateColorForVariation(nScore),
+      oInfoPanel.Caption := Str(nScore),
+   end,
+
+   // Info-Captions mit Abweichung berechnen
+   if not Empty(m_oMemDetail) and not Empty(m_oMemHeader) then
+         CalculateVariation(pnl_Name,    iif(m_oMemDetail:NAME_M,    gl_DUBL_Score_Name,      0)),
+         CalculateVariation(pnl_Telefon, iif(m_oMemDetail:TELEFON_M, gl_DUBL_Score_Telefon,   0)),
+         CalculateVariation(pnl_Ort,     iif(m_oMemDetail:ORT_M,     gl_DUBL_Score_Ort,       0)),
+         CalculateVariation(pnl_Strasse, iif(m_oMemDetail:STRASSE_M, gl_DUBL_Score_Strasse,   0)),
+         CalculateVariation(pnl_Email,   iif(m_oMemDetail:EMAIL_M,   gl_DUBL_Score_Email,     0)),
+         CalculateVariation(pnl_HOST,    iif(m_oMemDetail:MAILHOST_M,gl_DUBL_Score_Mailhost,  0)),
+         CalculateVariation(pnl_USTID,   iif(m_oMemDetail:USTID_M,   gl_DUBL_Score_USTID,     0)),
+   endif,
+end,
+
+//******************************************************************************
+// Alle Standard-Einstellungen setzen z. B. Dynamische Captions eines
+// Labels o. ä.
+//******************************************************************************
+function SetDefaults()
+   bipnl_Headline.Caption               := oForm.OrigCapt,
+   edt_MinimumScore.Picture.PictureMask := GU_BuildBeEditPictureMask(2,  0, false),
+   edt_vonKDNR.Picture.PictureMask      := GU_BuildBeEditPictureMask(10, 0, false),
+   edt_bisKDNR.Picture.PictureMask      := GU_BuildBeEditPictureMask(10, 0, false),
+   edt_MinimumScore.Text                := gl_DUBL_MinimumDublScore,
+   edt_Land.BeAttributeID               := gl_DUBL_AttribID_Laender,
+   // notwendig, da die Eigenschaft ReadOnly nicht greift..
+   GU_SetAlLControlColors(edt_Name1Master,     clBtnFace),
+   GU_SetAlLControlColors(edt_EmailDetail,     clBtnFace),
+   GU_SetAlLControlColors(edt_EmailHeader,     clBtnFace),
+   GU_SetAlLControlColors(edt_HomepageDetail,  clBtnFace),
+   GU_SetAlLControlColors(edt_HomepageHeader,  clBtnFace),
+   GU_SetAlLControlColors(edt_MailHostDetail,  clBtnFace),
+   GU_SetAlLControlColors(edt_MailHostHeader,  clBtnFace),
+   GU_SetAlLControlColors(edt_Name1Detail,     clBtnFace),
+   GU_SetAlLControlColors(edt_Name1Master,     clBtnFace),
+   GU_SetAlLControlColors(edt_Name2Detail,     clBtnFace),
+   GU_SetAlLControlColors(edt_Name2Header,     clBtnFace),
+   GU_SetAlLControlColors(edt_Name3Detail,     clBtnFace),
+   GU_SetAlLControlColors(edt_Name3Header,     clBtnFace),
+   GU_SetAlLControlColors(edt_OrtDetail,       clBtnFace),
+   GU_SetAlLControlColors(edt_PLZDetail,       clBtnFace),
+   GU_SetAlLControlColors(edt_PLZHeader,       clBtnFace),
+   GU_SetAlLControlColors(edt_StrasseDetail,   clBtnFace),
+   GU_SetAlLControlColors(edt_StrasseHeader,   clBtnFace),
+   GU_SetAlLControlColors(edt_TelefonDetail,   clBtnFace),
+   GU_SetAlLControlColors(edt_TelefonHEader,   clBtnFace),
+   GU_SetAlLControlColors(edt_USTIDDetail,     clBtnFace),
+   GU_SetAlLControlColors(edt_USTIDHeader,     clBtnFace),
+
+   CalculateScoring(),
+
+   // Höhe des Panels "Name" abhängig von der globalen Variable setzen
+   case gl_DUBL_Count_Name
+      of 1 :: pnl_Name.Height := 21,
+      of 2 :: pnl_Name.Height := 44,
+      of 3 :: pnl_Name.Height := 66,
+      otherwise
+         pnl_Name.Height := 21,
+   endcase,
+
+end,
+
+
+//******************************************************************************
+// Erstellung der MemTable für den Kopf-Bereich
+// @Result: null
+//******************************************************************************
+function CreateMemTableHeader(cAliasName)
+   result           := CreateObject('TBeMemTable'),
+   result.AliasName := cAliasName,
+   result.CbAddField('NAME1',         ftString,  50),
+   result.CbAddField('NAME2',         ftString,  50),
+   result.CbAddField('NAME3',         ftString,  50),
+   result.CbAddField('PLZ',           ftString,  25),
+   result.CbAddField('ORT',           ftString,  25),
+   result.CbAddField('STRASSE',       ftString,  50),
+   result.CbAddField('LANDNR',        ftString,   3),
+   result.CbAddField('LANDBEZ',       ftString,  30),
+   result.CbAddField('USTID',         ftString,  50),
+   result.CbAddField('TELEFON_NR',    ftString,  50),
+   result.CbAddField('HOMEPAGE',      ftString,  50),
+   result.CbAddField('EMAIL',         ftString,  50),
+   result.CbAddField('MAILHOST',      ftString,  50),
+
+   result.CbAddField('MASTER_KDNR',   ftInteger,  0),
+   result.CbAddField('DUBL_COUNT',    ftInteger,  0),
+   result.CbAddField('MAX_SCORE',     ftInteger,  0),
+   result.CbAddField('ZIEL_KDNR',     ftInteger,  0),
+   result.CbAddField('GEPRUEFT',      ftDate,     0),
+   result.CbAddIndex('MASTER_KDNR', 'MASTER_KDNR', ixPrimary),
+   result.CbIndexName := 'MASTER_KDNR',
+   result.Active      := true,
+end,
+
+//******************************************************************************
+// Erstellung der MemTable für den Detail-Bereich
+// @Result: null
+//******************************************************************************
+function CreateMemTablesDetail()
+   m_oMemDetail              := Dubl_Dab000_CreateMemTable(),
+   m_oMemDetail.AliasName    := 'DUBLGES_DETAIL',
+   m_oMemDetail.Active       := true,
+
+   m_oMemDetailGUI           := Dubl_Dab000_CreateMemTable(),
+   m_oMemDetailGUI.AliasName := 'DUBLGES_DETGUI',
+   m_oMemDetailGUI.CbAddIndex('SCORE', 'SCORE;MASTER_KDNR;KDNR', ixDescending),
+   m_oMemDetailGUI.CbIndexName := 'SCORE',
+   m_oMemDetailGUI.Active    := true,
+end,
+
+
+//******************************************************************************
+// Events aktivieren
+// @Result: null
+//******************************************************************************
+function AssignEventFunction()
+   AssignEvent(m_oMemHeader, 'AfterScroll', 'm_oMemHeader_AfterScroll'),
+   AssignEvent(m_oMemDetailGUI, 'AfterScroll', 'm_oMemDetailGUI_AfterScroll'),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'DUBLETGES', oForm),
+   // Tabelle(n) öffnen
+   m_oDAB000              := DBGetTable(m_oDM, waDAB000),
+   m_oDAB000.IndexName    := 'DAB003',
+   m_oMemHeader           := CreateMemTableHeader('DUBLGES_HEAD'),
+   CreateMemTablesDetail(),
+
+
+   AssignEventFunction(),
+
+   // Tabelle mit Browser verbinden
+   GU_LinkTableToGUI(m_oMemHeader, ds_MainTable, grd_MainBrowser, m_cBrowserIDHeader, false),
+   grd_MainBrowser.CbChangeOrder   := true,
+
+   GU_LinkTableToGUI(m_oMemDetailGUI, ds_DetailTable, grd_Detail, m_cBrowserIDDetail, false),
+   grd_Detail.CbChangeOrder        := False,
+end,
+
+//******************************************************************************
+//
+// @Result: cFilter
+//******************************************************************************
+function SetFilter()
+| cContainsFilter, cFilter, cGeprueftFilter, aCheckedLaender, cZielKDNRFilter, cLaender, i, cToken |
+
+cFilter := '',
+   // Filter auf Kunden-Nr. von/bis
+   if not Empty(edt_vonKDNR.Text) then
+      cFilter := 'KDNR >= ' + edt_vonKDNR.Text + ' AND KDNR <= ' +  edt_bisKDNR.Text,
+   endif,
+
+   // Filter für die Volltextsuche ermitteln
+   if not Empty(AllTrim(edt_Suche.Text)) then
+      cContainsFilter := PrepareTextForFTSSearch( waDAB000, 'SUCHE',
+                                                       edt_Suche.Text,  '',
+                                                       false, true,
+                                                       'AND', True  ),
+      if not Empty(cFilter) then
+         cFilter += ' AND ' + cContainsFilter,
+      else,
+         cFilter := cContainsFilter,
+      endif,
+   endif,
+
+   // Filter der zuletzt geprüften Datensätze
+   if not Empty(edt_zuletztgeprueft.Date) then
+      cGeprueftFilter := "dtos("+gl_DUBL_TargetPruef_Field+") <= '"+DtoS(edt_zuletztgeprueft.Date) + "'",
+      if not Empty(cFilter) then
+         cFilter += ' AND ' + cGeprueftFilter,
+      else,
+         cFilter := cGeprueftFilter,
+      endif,
+   endif,
+
+   // Filter für Kunden mit vorhandener Ziel-KDNR
+   if chk_bZielKdnr.Checked then
+      cZielKDNRFilter := 'not Empty(' + gl_DUBL_TargetKDNR_Field + ')',
+      if not Empty(cFilter) then
+         cFilter += ' AND ' + cZielKDNRFilter,
+      else,
+         cFilter := cZielKDNRFilter,
+      endif,
+   endif,
+
+
+ // Filter für Länder
+   aCheckedLaender := edt_Land.Value,
+   cLaender        := '',
+   if not Empty(aCheckedLaender) then
+      for i := 1 to tokencount(aCheckedLaender, "/") do
+         cToken := strtoken(aCheckedLaender, "/", i),
+         if not Empty(cToken) then
+             cLaender += iif(Empty(cLaender),  " AND (" ,  " OR " ) + "LANDNR = '" + cToken + "'",
+         endif,
+     next,
+     if not Empty(cLaender) then
+        cFilter := e2v(cFilter, ' TRUE '),
+        cFilter += cLaender + ")",
+     endif,
+   else,
+      cFilter := iif(empty(cFilter), '', cFilter),
+   endif,
+   Result := cFilter,
+
+end,
+
+
+//******************************************************************************
+// Kopf MemTable mit Daten füllen
+// @Result: null
+//******************************************************************************
+function FillMemTableHeader()
+   | nFoundDublCount, oLocalMemDublResult, nMaxScore, aPLZOrt, nCount, oMemHeader_Local, cFilter |
+
+   nMaxScore    := 1,
+   nCount       := 1,
+   cFilter      := SetFilter(),
+
+
+   nFoundDublCount    := 0,
+   oMemHeader_Local   := CreateMemTableHeader('DUBLGES_HEAD_LOCAL'),
+   startseq
+      // Index setzen um bei einer Neu-Aufbereitung den richtigen Index zu setzen und zu verhindern, dass durch CbChangeOrder keine doppelten Datensätze entstehen
+      oMemHeader_Local.CbIndexName := 'MASTER_KDNR',
+
+       ProgressBarShow("Ermittle Dubletten", "Berechnung...", false),
+       startseq,
+          // lokale MemTable für Befüllung der eigentlichen MemTable (Header) erstellen
+          oLocalMemDublResult := Dubl_Dab000_CreateMemTable(),
+          startseq,
+             oLocalMemDublResult.AliasName := 'DUBL_LOCAL',
+             oLocalMemDublResult.Active    := true,
+             m_oDAB000.CbFilter   := '',
+             m_oDAB000.CbFiltered := false,
+             // Kundenstamm filtern, falls die Volltextsuche verwendet wurde
+             if not Empty(cFilter) then
+                m_oDAB000.CbFilter := cFilter,
+             endif,
+             m_oDAB000.CbFiltered := True,
+             m_oDAB000.CbFirst(),
+             while not m_oDAB000.CbEof do
+                ProgressBarUpdate(0, "Kunden-Nr. " + Str(m_oDAB000:KDNR), true),
+                nMaxScore       := 1,
+                oLocalMemDublResult.CbEmptyTable(),
+                nCount++,
+                //writeln(Str(nCount)),
+                nFoundDublCount := Dubl_Dab000_SearchAll(m_oDM, oLocalMemDublResult, m_oDAB000),
+
+                oLocalMemDublResult.CbFirst(),
+                while not oLocalMemDublResult.CbEof do
+                   if nFoundDublCount > 0 then
+                      nMaxScore               := Max(oLocalMemDublResult:SCORE, nMaxScore),
+                      if nMaxScore >= edt_MinimumScore.Text then
+                         if not oMemHeader_Local.CbFindKey({oLocalMemDublResult:MASTER_KDNR}) then
+                            aPLZOrt                  := Dubl_ExplodePLZOrtValue(m_oDAB000:PLZORT),
+                            oMemHeader_Local.CbAppend(),
+                            oMemHeader_Local:NAME1       := m_oDAB000:NAME1,
+                            oMemHeader_Local:NAME2       := m_oDAB000:NAME2,
+                            oMemHeader_Local:NAME3       := m_oDAB000:NAME3,
+                            oMemHeader_Local:PLZ         := KVU_Get(aPLZOrt, 'PLZ', ''),
+                            oMemHeader_Local:ORT         := KVU_Get(aPLZOrt, 'Ort', ''),
+                            oMemHeader_Local:STRASSE     := m_oDAB000:STRASSE,
+                            oMemHeader_Local:LANDNR      := m_oDAB000:LANDNR,
+                            oMemHeader_Local:LANDBEZ     := LookUp(waDIA020, 'DIA021', {{m_oDAB000:LANDNR}}, "BEZ", ""),
+                            oMemHeader_Local:USTID       := m_oDAB000:UST_IDNR,
+                            oMemHeader_Local:HOMEPAGE    := m_oDAB000:HOMEPAGE,
+                            oMemHeader_Local:EMAIL       := m_oDAB000:EMAIL,
+                            oMemHeader_Local:MAILHOST    := Dubl_NormalizeMailOrWebpageToHost(m_oDAB000:EMAIL),
+                            oMemHeader_Local:TELEFON_NR  := m_oDAB000:TELEFON,
+                            oMemHeader_Local:ZIEL_KDNR   := AsVariant(gl_DUBL_TargetKDNR_Field, m_oDAB000),
+                            oMemHeader_Local:MASTER_KDNR := m_oDAB000:KDNR,
+                            oMemHeader_Local:DUBL_COUNT  := 1,           // Erster Datensatz = Append = Count := 1
+                            oMemHeader_Local:MAX_SCORE   := nMaxScore,
+                            oMemHeader_Local:GEPRUEFT    := AsVariant(gl_DUBL_TargetPruef_Field, m_oDAB000),
+                            oMemHeader_Local.CbPost(),
+                         else,
+                            oMemHeader_Local.CbEdit(),
+                            oMemHeader_Local:MAX_SCORE   := nMaxScore,
+                            oMemHeader_Local:DUBL_COUNT  := oMemHeader_Local:DUBL_COUNT  +1,   // Anzahl der Datensätze hochzählen
+                            oMemHeader_Local.CbPost(),
+                         endif,
+                      endif,
+                   endif,
+                   oLocalMemDublResult.CbNext(),
+                end,
+                m_oDAB000.CbNext(),
+             end,
+             ProgressBarHide(),
+          always,
+             DestroyObject(oLocalMemDublResult),
+          stopseq,
+       onerror,
+          ProgressBarHide(),
+          GU_ShowStdErrorMessage('Fehler in Funktion FillMemTableHeader() ', GetErrorObj()),
+       stopseq,
+       // MemTable trotzdem füllen - falls man in der ProgressBar bewusst auf "Abbrechen" klickt und Ergebnisse haben möchte
+       m_oMemHeader.CbLoadFromDataSet(oMemHeader_Local, true),
+       m_oMemHeader.CbFirst(),
+   always
+      DestroyObject(oMemHeader_Local),
+   stopseq,
+end,
+
+//******************************************************************************
+// Detail MemTable mit Daten füllen
+// @Result: null
+//******************************************************************************
+function FillMemTableDetail()
+   | nMasterKdnr |
+   m_oMemDetail.CbEmptyTable(),
+   nMasterKdnr := m_oMemHeader:MASTER_KDNR,
+   startseq
+      if not Empty(nMasterKDNR) then
+         MySeek({nMasterKdnr}, m_oDAB000),
+         Dubl_Dab000_SearchAll(m_oDM, m_oMemDetail, m_oDAB000),
+      endif,
+   always
+     m_oMemDetailGUI.CbFirst(),
+     m_oMemDetail.CbFiltered := false,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function chk_bZielKDNRClick( Sender )
+
+end,
+
+
+//******************************************************************************
+// Event: Vor dem Schließen prüfen, ob die Haupttabelle noch in Bearbeitung ist
+//        und ggf. rückfragen.
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+  bCanClose := true,
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MainTableStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function m_oMemHeader_AfterScroll()
+   m_oMemDetail.CbDisableControls(),
+   m_oMemDetailGUI.CbDisableControls(),
+   startseq
+      FillMemTableDetail(),
+      // <MemTable Logik> kopieren in <MemTable GUI>
+      m_oMemDetailGUI.CbLoadFromDataSet(m_oMemDetail, True),
+      m_oMemDetailGUI.CbRefresh(),
+      m_oMemDetailGUI.CbFirst(),
+      CalculateScoring(),
+      ActionsEnabled(),
+   always
+      m_oMemDetail.CbEnableControls(),
+      m_oMemDetailGUI.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function m_oMemDetailGUI_AfterScroll()
+   ActionsEnabled(),
+   m_oMemDetail.CbFindKey({m_oMemDetailGUI:MASTER_KDNR, m_oMemDetailGUI:KDNR}),
+   CalculateScoring(),
+end,
+
+
+
+//******************************************************************************
+// Feld GEPRÜFT in Ziel-Memtable und im Kundenstamm schreiben
+// nMemType = 1 in MemHeader schreiben,
+// nMemType = 2 in MemDetail schreiben
+// @Result: null
+//******************************************************************************
+function SetPruefDatum(nMemType, nKDNR)
+| oTargetField |
+   SetErrorIf(empty(gl_DUBL_TargetPruef_Field), "Feld für <zuletzt markiert und geprüft> wurde in den Globals noch nicht definiert!"),
+   // GEPRUEFT-Datum in Memtable schreiben
+   if nMemType = 1 then  // m_oMemHeader
+      m_oMemHeader.CbEdit(),
+      m_oMemHeader:GEPRUEFT  := mbDatum,
+      m_oMemHeader.CbPost(),
+   else,
+      m_oMemDetailGUI.CbEdit(),
+      m_oMemDetailGUI:GEPRUEFT  := mbDatum,
+      m_oMemDetailGUI.CbPost(),
+   endif,
+
+   // GEPRUEFT-Datum in Kundenstamm schreiben
+   MySeek({nKDNR}, m_oDAB000),
+   MyEdit(m_oDAB000),
+   oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetPruef_Field),
+   DBReplace(oTargetField, mbDatum),
+   MyPost(m_oDAB000),
+end,
+
+//******************************************************************************
+// Feld GEPRÜFT in Ziel-Memtable und im Kundenstamm löschen
+// nMemType = 1 in MemHeader schreiben,
+// nMemType = 2 in MemDetail schreiben
+// @Result: null
+//******************************************************************************
+function DeletePruefDatum(nMemType, nKDNR)
+| oTargetField |
+   if nMemType = 1 then
+      m_oMemHeader.CbEdit(),
+      m_oMemHeader:GEPRUEFT := nil,
+      m_oMemHeader.CbPost(),
+   else,
+      m_oMemDetailGUI.CbEdit(),
+      m_oMemDetailGUI:GEPRUEFT := nil,
+      m_oMemDetailGUI.CbPost(),
+   endif,
+   MySeek({nKDNR}, m_oDAB000),
+   MyEdit(m_oDAB000),
+   oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetPruef_Field),
+   DBReplace(oTargetField, nil),
+   MyPost(m_oDAB000)
+end,
+
+
+//******************************************************************************
+// Feld Ziel Kunden-Nr. (ZIEL_KDNR) in Ziel-Memtable und im Kundenstamm schreiben
+// nMemType = 1 in MemHeader schreiben,
+// nMemType = 2 in MemDetail schreiben
+// @Result: null
+//******************************************************************************
+function SetZielKDNR(nMemType, nKDNR)
+   | oTargetField, nReplaceKDNR |
+   SetErrorIf(empty(gl_DUBL_TargetKDNR_Field), "Feld für Ziel Kunden-Nr. wurde in den Globals noch nicht definiert!"),
+   // Ziel-KDNR in Memtable schreiben
+   if nMemType = 1 then
+      m_oMemHeader.CbEdit(),
+      m_oMemHeader:ZIEL_KDNR  := m_oMemDetailGUI:KDNR,
+      m_oMemHeader.CbPost(),
+      nReplaceKDNR := m_oMemDetailGUI:KDNR,
+   else,
+      m_oMemDetailGUI.CbEdit(),
+      m_oMemDetailGUI:ZIEL_KDNR  := m_oMemHeader:MASTER_KDNR,
+      m_oMemDetailGUI.CbPost(),
+      nReplaceKDNR :=  m_oMemHeader:MASTER_KDNR,
+   endif,
+   // Ziel-KDNR in Kundenstamm schreiben
+   MySeek({nKDNR}, m_oDAB000),
+   MyEdit(m_oDAB000),
+   oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetKDNR_Field),
+   DBReplace(oTargetField, nReplaceKDNR),
+   MyPost(m_oDAB000)
+end,
+
+//******************************************************************************
+// Feld Ziel Kunden-Nr. (ZIEL_KDNR) in Ziel-Memtable und im Kundenstamm löschen
+// nMemType = 1 in MemHeader schreiben,
+// nMemType = 2 in MemDetail schreiben
+// @Result: null
+//******************************************************************************
+function DeleteZielKDNR(nMemType, nKDNR)
+| oTargetField |
+   if nMemType = 1 then
+      m_oMemHeader.CbEdit(),
+      m_oMemHeader:ZIEL_KDNR := nil,
+      m_oMemHeader.CbPost(),
+   else,
+      m_oMemDetailGUI.CbEdit(),
+      m_oMemDetailGUI:ZIEL_KDNR := nil,
+      m_oMemDetailGUI.CbPost(),
+   endif,
+   MySeek({nKDNR}, m_oDAB000),
+   MyEdit(m_oDAB000),
+   oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetKDNR_Field),
+   DBReplace(oTargetField, nil),
+   MyPost(m_oDAB000)
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Action für Button "keine Dublette" im Master-Bereich
+//******************************************************************************
+function A_GeprueftHeaderExecute( Sender )
+   startseq
+      SetPruefDatum(1, m_oMemHeader:MASTER_KDNR),
+      ActionsEnabled(),
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action für Button "keine Dublette" im Detail-Bereich
+//******************************************************************************
+function A_GeprueftDetailExecute( Sender )
+   startseq
+      SetPruefDatum(2, m_oMemDetailGUI:KDNR),
+      ActionsEnabled(),
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+//  Öffnen des Programmes "Anonyme Hosts pflegen"
+//******************************************************************************
+function A_AnonymeHostsPflegenExecute( Sender )
+   Call('CRM\Dubletten\MailhostGUI\AnonymeHostsGUI'),
+end,
+
+
+//******************************************************************************
+// Action: Neuen Datensatz anlegen
+//******************************************************************************
+function A_AufbereitenExecute( Sender )
+   if edt_vonKDNR.Text <= edt_bisKDNR.Text
+      and edt_bisKDNR.Text >= edt_vonKDNR.Text then
+      startseq
+         FillMemTableHeader(),
+      onerror
+         MessageDlg('Fehler bei der Neuanlage' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+      stopseq,
+   else,
+      MessageDlg('Filter <Kunden-Nr. bis> darf nicht kleiner als <Kunden-Nr. von> sein!', mtInformation),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen
+//******************************************************************************
+function A_CustomDeleteDetailExecute( Sender )
+   | oTargetField |
+   startseq,
+      SetZielKDNR(2, m_oMemDetailGUI:KDNR),
+      ActionsEnabled(),
+   onerror
+      MessageDlg('Fehler beim Löschen' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_CustomDeleteHeaderExecute( Sender )
+| oTargetField |
+   startseq
+      SetZielKDNR(1, m_oMemHeader:MASTER_KDNR),
+      ActionsEnabled(),
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Markierung "Ziel-KDNR" entfernen für Header
+//******************************************************************************
+function A_DeleteMarkHeaderExecute( Sender )
+   startseq
+      if JN('Markierung löschen und Ziel Kunden-Nr. entfernen?') then
+         DeleteZielKDNR(1, m_oMemHeader:MASTER_KDNR),
+         ActionsEnabled(),
+      endif,
+   onerror
+     MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Markierung "Ziel-KDNR" entfernen für Detail
+//******************************************************************************
+function A_DeleteMarkDetailExecute( Sender )
+   startseq
+      if JN('Markierung löschen und Ziel Kunden-Nr. entfernen?') then
+         DeleteZielKDNR(2, m_oMemDetail:KDNR),
+         ActionsEnabled(),
+      endif,
+   onerror
+     MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Action: Markierung "Geprüft" entfernen für Header
+//******************************************************************************
+function A_DeletePruefMarkHeaderExecute( Sender )
+   startseq
+      if JN('Markierung löschen und <geprüft Datum> entfernen?') then
+         DeletePruefDatum(1, m_oMemHeader:MASTER_KDNR),
+         ActionsEnabled(),
+      endif,
+   onerror
+     MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Markierung "Geprüft" entfernen für Detail
+//******************************************************************************
+function A_DeletePruefMarkDetailExecute( Sender )
+   startseq
+      if JN('Markierung löschen und <geprüft Datum> entfernen?') then
+         DeletePruefDatum(2, m_oMemDetailGUI:KDNR),
+         ActionsEnabled(),
+      endif,
+   onerror
+     MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Dubletten Gesamtprüfung',
+   oForm.ImageIndex     := 1,    // Image-Index für den Window-Navigator setzen
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_AnonymeHostsPflegen     := FindObject(oForm, "A_AnonymeHostsPflegen"),
+   A_Aufbereiten             := FindObject(oForm, "A_Aufbereiten"),
+   A_CustomDeleteDetail      := FindObject(oForm, "A_CustomDeleteDetail"),
+   A_CustomDeleteHeader      := FindObject(oForm, "A_CustomDeleteHeader"),
+   A_DeleteMarkDetail        := FindObject(oForm, "A_DeleteMarkDetail"),
+   A_DeleteMarkHeader        := FindObject(oForm, "A_DeleteMarkHeader"),
+   A_DeletePruefMarkDetail   := FindObject(oForm, "A_DeletePruefMarkDetail"),
+   A_DeletePruefMarkHeader   := FindObject(oForm, "A_DeletePruefMarkHeader"),
+   A_GeprueftDetail          := FindObject(oForm, "A_GeprueftDetail"),
+   A_GeprueftHeader          := FindObject(oForm, "A_GeprueftHeader"),
+   actionList                := FindObject(oForm, "actionList"),
+   bar_Detail                := FindObject(oForm, "bar_Detail"),
+   bar_Main_Top              := FindObject(oForm, "bar_Main_Top"),
+   bar_Master                := FindObject(oForm, "bar_Master"),
+   bardock_Bottom            := FindObject(oForm, "bardock_Bottom"),
+   barmngr_Main              := FindObject(oForm, "barmngr_Main"),
+   BeBarButton1              := FindObject(oForm, "BeBarButton1"),
+   BeBarDockControl1         := FindObject(oForm, "BeBarDockControl1"),
+   BeBarDockControl2         := FindObject(oForm, "BeBarDockControl2"),
+   BeEdit2                   := FindObject(oForm, "BeEdit2"),
+   BeEdit5                   := FindObject(oForm, "BeEdit5"),
+   BePanel1                  := FindObject(oForm, "BePanel1"),
+   bipnl_Headline            := FindObject(oForm, "bipnl_Headline"),
+   btn_Aufbereiten           := FindObject(oForm, "btn_Aufbereiten"),
+   btn_CustomDeleteMain      := FindObject(oForm, "btn_CustomDeleteMain"),
+   btn_CutomDeleteDetail     := FindObject(oForm, "btn_CutomDeleteDetail"),
+   btn_DeleteMarkDetail      := FindObject(oForm, "btn_DeleteMarkDetail"),
+   btn_DeleteMarkerHeader    := FindObject(oForm, "btn_DeleteMarkerHeader"),
+   btn_DeletePruefMarkDetail := FindObject(oForm, "btn_DeletePruefMarkDetail"),
+   btn_DeletePruefMarkHeader := FindObject(oForm, "btn_DeletePruefMarkHeader"),
+   btn_GeprueftDetail        := FindObject(oForm, "btn_GeprueftDetail"),
+   btn_keineDubletteHeader   := FindObject(oForm, "btn_keineDubletteHeader"),
+   chk_bZielKDNR             := FindObject(oForm, "chk_bZielKDNR"),
+   ds_DetailTable            := FindObject(oForm, "ds_DetailTable"),
+   ds_MainTable              := FindObject(oForm, "ds_MainTable"),
+   edt_bisKDNR               := FindObject(oForm, "edt_bisKDNR"),
+   edt_EmailDetail           := FindObject(oForm, "edt_EmailDetail"),
+   edt_EmailHeader           := FindObject(oForm, "edt_EmailHeader"),
+   edt_HomepageDetail        := FindObject(oForm, "edt_HomepageDetail"),
+   edt_HomepageHeader        := FindObject(oForm, "edt_HomepageHeader"),
+   edt_Land                  := FindObject(oForm, "edt_Land"),
+   edt_LandBezHeader         := FindObject(oForm, "edt_LandBezHeader"),
+   edt_MailHostDetail        := FindObject(oForm, "edt_MailHostDetail"),
+   edt_MailHostHeader        := FindObject(oForm, "edt_MailHostHeader"),
+   edt_MinimumScore          := FindObject(oForm, "edt_MinimumScore"),
+   edt_Name1Detail           := FindObject(oForm, "edt_Name1Detail"),
+   edt_Name1Master           := FindObject(oForm, "edt_Name1Master"),
+   edt_Name2Detail           := FindObject(oForm, "edt_Name2Detail"),
+   edt_Name2Header           := FindObject(oForm, "edt_Name2Header"),
+   edt_Name3Detail           := FindObject(oForm, "edt_Name3Detail"),
+   edt_Name3Header           := FindObject(oForm, "edt_Name3Header"),
+   edt_OrtDetail             := FindObject(oForm, "edt_OrtDetail"),
+   edt_PLZDetail             := FindObject(oForm, "edt_PLZDetail"),
+   edt_PLZHeader             := FindObject(oForm, "edt_PLZHeader"),
+   edt_StrasseDetail         := FindObject(oForm, "edt_StrasseDetail"),
+   edt_StrasseHeader         := FindObject(oForm, "edt_StrasseHeader"),
+   edt_Suche                 := FindObject(oForm, "edt_Suche"),
+   edt_TelefonDetail         := FindObject(oForm, "edt_TelefonDetail"),
+   edt_TelefonHEader         := FindObject(oForm, "edt_TelefonHEader"),
+   edt_USTIDDetail           := FindObject(oForm, "edt_USTIDDetail"),
+   edt_USTIDHeader           := FindObject(oForm, "edt_USTIDHeader"),
+   edt_vonKDNR               := FindObject(oForm, "edt_vonKDNR"),
+   edt_zuletztgeprueft       := FindObject(oForm, "edt_zuletztgeprueft"),
+   grd_Detail                := FindObject(oForm, "grd_Detail"),
+   grd_MainBrowser           := FindObject(oForm, "grd_MainBrowser"),
+   lbl_bisKDNR               := FindObject(oForm, "lbl_bisKDNR"),
+   lbl_EmailDetail           := FindObject(oForm, "lbl_EmailDetail"),
+   lbl_EmailHeader           := FindObject(oForm, "lbl_EmailHeader"),
+   lbl_HomepageDetail        := FindObject(oForm, "lbl_HomepageDetail"),
+   lbl_HomepageHeader        := FindObject(oForm, "lbl_HomepageHeader"),
+   lbl_HostDetail            := FindObject(oForm, "lbl_HostDetail"),
+   lbl_HostHeader            := FindObject(oForm, "lbl_HostHeader"),
+   lbl_Land                  := FindObject(oForm, "lbl_Land"),
+   lbl_LandBezDetail         := FindObject(oForm, "lbl_LandBezDetail"),
+   lbl_LandBezHeader         := FindObject(oForm, "lbl_LandBezHeader"),
+   lbl_MinimumScore          := FindObject(oForm, "lbl_MinimumScore"),
+   lbl_Name1Detail           := FindObject(oForm, "lbl_Name1Detail"),
+   lbl_Name1Master           := FindObject(oForm, "lbl_Name1Master"),
+   lbl_Name2Detail           := FindObject(oForm, "lbl_Name2Detail"),
+   lbl_Name2Header           := FindObject(oForm, "lbl_Name2Header"),
+   lbl_Name3Detail           := FindObject(oForm, "lbl_Name3Detail"),
+   lbl_Name3Header           := FindObject(oForm, "lbl_Name3Header"),
+   lbl_OrtDetail             := FindObject(oForm, "lbl_OrtDetail"),
+   lbl_OrtHeader             := FindObject(oForm, "lbl_OrtHeader"),
+   lbl_PLZDetail             := FindObject(oForm, "lbl_PLZDetail"),
+   lbl_PLZHeader             := FindObject(oForm, "lbl_PLZHeader"),
+   lbl_Scoring               := FindObject(oForm, "lbl_Scoring"),
+   lbl_StrasseDetail         := FindObject(oForm, "lbl_StrasseDetail"),
+   lbl_StrasseHeader         := FindObject(oForm, "lbl_StrasseHeader"),
+   lbl_Suche                 := FindObject(oForm, "lbl_Suche"),
+   lbl_TelefonDetail         := FindObject(oForm, "lbl_TelefonDetail"),
+   lbl_TelefonHeader         := FindObject(oForm, "lbl_TelefonHeader"),
+   lbl_Text                  := FindObject(oForm, "lbl_Text"),
+   lbl_UIDDetail             := FindObject(oForm, "lbl_UIDDetail"),
+   lbl_UIDHeader             := FindObject(oForm, "lbl_UIDHeader"),
+   lbl_vonKDNR               := FindObject(oForm, "lbl_vonKDNR"),
+   lbl_zuletztgeprueft       := FindObject(oForm, "lbl_zuletztgeprueft"),
+   pnl_Bottom                := FindObject(oForm, "pnl_Bottom"),
+   pnl_CustomerDetail        := FindObject(oForm, "pnl_CustomerDetail"),
+   pnl_CustomerHeader        := FindObject(oForm, "pnl_CustomerHeader"),
+   pnl_CustomInfos           := FindObject(oForm, "pnl_CustomInfos"),
+   pnl_Email                 := FindObject(oForm, "pnl_Email"),
+   pnl_Filter                := FindObject(oForm, "pnl_Filter"),
+   pnl_Head                  := FindObject(oForm, "pnl_Head"),
+   pnl_Host                  := FindObject(oForm, "pnl_Host"),
+   pnl_InfoMasterKunde       := FindObject(oForm, "pnl_InfoMasterKunde"),
+   pnl_KundeDetail           := FindObject(oForm, "pnl_KundeDetail"),
+   pnl_Main                  := FindObject(oForm, "pnl_Main"),
+   pnl_Name                  := FindObject(oForm, "pnl_Name"),
+   pnl_Ort                   := FindObject(oForm, "pnl_Ort"),
+   pnl_Strasse               := FindObject(oForm, "pnl_Strasse"),
+   pnl_Telefon               := FindObject(oForm, "pnl_Telefon"),
+   pnl_USTID                 := FindObject(oForm, "pnl_USTID"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI() zeigt das GUI an, das vorher mit LoadGUI() geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+oForm

@@ -1,0 +1,367 @@
+|
+
+   gl_VPU_Pruefmodus_FreieEinstellung:_N:=10
+
+|
+
+//******************************************************************************
+// Funktion erstellt eine Memtable für die Darstellung und Pflege der
+//    Prüf-Modi an der GUI (aktuell werden diese Daten noch nicht in einer Tabelle gespeichert, die Definition erfolgt per Code)
+// @Result: Memtable
+//******************************************************************************
+function _VPU_Options_CreateOptionsMem(oOwner)
+
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'OPTIONSMEM',
+
+   Result.CbAddField('MODUS',       ftInteger,  0),
+
+   Result.CbAddField('BEZ',         ftString,  50),
+   Result.CbAddField('MEMO',        ftMemo,     0),
+
+   Result.CbAddField('DEFAULT',     ftBoolean,  0), // Zeigt an, ob es sich um einen Default-Modus handelt (nicht veränderbar)
+   Result.CbAddField('FREECONF',    ftBoolean,  0), // Zeigt an, ob es sich um einen frei veränderbaren Modus handelt (keine feste Einstellung, zum Spielen an der GUI gedacht, nur 1x sinnvoll)
+
+   // Welche Lagerbestände werden berücksichtigt?
+   Result.CbAddField('LAG_VERF',    ftBoolean,  0),
+   Result.CbAddField('LAG_EISB',    ftBoolean,  0),
+
+   // Hinweise zur Abgängen und Zugängen
+   // - Zugänge und Abgänge auf Basis der Dab220 können hier nicht gewählt werden, nicht sinnvoll, da nur ein Planungs-"Hilfsmittel"
+   // - Anonyme Grobplanungsbewegungen können hier nicht gewählt werden. Diese sollten bei einem sinnvoll eingesetzten
+   //   Dispoplanungs-System (Vollplanung mit Horizont-Einschränkgun) so weit
+   //   in der Zukunft liegen, dass sie für eine Verfügbarkeitsprüfung irrelevant sein sollten
+
+   // Welche Zugänge werden berücksichtigt?  (Achtung: können immer nur ZeilenTypen des Einzelterminrasters sein, niemals detaillierter!)
+   Result.CbAddField('ZU_215_P',    ftBoolean,  0), // Prod.    Grobplanung Zugang (Dab215, "Produktion Dispo-Planung")
+   Result.CbAddField('ZU_315_E',    ftBoolean,  0), // Einkauf  Grobplanung Zugang (Dab315, "Einkauf Dispo-Planung")
+   Result.CbAddField('ZU_320_P',    ftBoolean,  0), // Prod.    Grobplanung Zugang (Dab320, "Einkauf/Produkt. Dispositionen")
+   Result.CbAddField('ZU_320_E',    ftBoolean,  0), // Einkauf  Grobplanung Zugang (Dab320, "Einkauf/Produkt. Dispositionen")
+   Result.CbAddField('ZU_035_P_O',  ftBoolean,  0), // Prod.    Zugang (FA = offen)
+   Result.CbAddField('ZU_035_P_K',  ftBoolean,  0), // Prod.    Zugang (FA = kommissioniert)
+   Result.CbAddField('ZU_035_E_O',  ftBoolean,  0), // Einkauf  Zugang (nicht bestätigt)
+   Result.CbAddField('ZU_035_E_B',  ftBoolean,  0), // Einkauf  Zugang (bestätigt)
+
+   // Welche Abgänge werden berücksichtigt?  (Achtung: können immer nur ZeilenTypen des Einzelterminrasters sein, niemals detaillierter!)
+   Result.CbAddField('AB_215_P',    ftBoolean,  0), // Prod.    Grobplanung Abgang (Dab215, "Produktion Dispo-Planung")
+   Result.CbAddField('AB_320_P',    ftBoolean,  0), // Prod.    Grobplanung Abgang (Dab320, "Einkauf/Produkt. Dispositionen")
+   Result.CbAddField('AB_240_O',    ftBoolean,  0), // Prod.    Abgang - Reservierung (Dab240, FA = kommissioniert)
+   Result.CbAddField('AB_240_K',    ftBoolean,  0), // Prod.    Abgang - Reservierung (Dab240, FA = offen)
+   Result.CbAddField('AB_055_O',    ftBoolean,  0), // Verkauf Abgang (aus Dab055) (aktuell noch ohne Unterscheidung "bestätgit / unbestätigt)
+
+   // Sonstige Einstellungen
+   Result.CbAddField('PRUEFHORZ_WBZ',  ftBoolean,  0), // Prüfung nur innerhalb der WBZ durchführen? Alle Bedarfe nach diesem Horizont werden dann ohne Prüfung bestätigt
+
+   Result.Active := True,
+end,
+
+//******************************************************************************
+// Funktion liefert ein Übersetzungs-Array für
+//   "Options-Memtable-Felder <> Einzelterminraster-Zeilen-Typen"
+// @Result: Array
+//******************************************************************************
+function _VPU_Options_GetFieldnameZeilenTypMappingArray()
+   Result :=
+     {
+       // Lagerbestand
+       { 'LAG_VERF',    gl_ETRU_Typ_VerfuegBestand},
+       { 'LAG_EISB',    gl_ETRU_Typ_EisernerBestand},
+
+       // Zugänge
+       {  'ZU_215_P',   gl_ETRU_Typ_GrobPlanProdZugangDab215},
+       {  'ZU_315_E',   gl_ETRU_Typ_GrobPlanEinkaufZugangDab315},
+       {  'ZU_320_P',   gl_ETRU_Typ_GrobPlanProdZugangDab320},
+       {  'ZU_320_E',   gl_ETRU_Typ_GrobPlanEinkaufZugangDab320},
+       {  'ZU_035_P_O', gl_ETRU_Typ_ProdZugangOffen},
+       {  'ZU_035_P_K', gl_ETRU_Typ_ProdZugangKommissioniert},
+       {  'ZU_035_E_O', gl_ETRU_Typ_EinkaufZugangNichtBestaetigt},
+       {  'ZU_035_E_B', gl_ETRU_Typ_EinkaufZugangBestaetigt},
+
+       // Abgänge
+       {  'AB_215_P',   gl_ETRU_Typ_GrobPlanProdAbgangDab215},
+       {  'AB_320_P',   gl_ETRU_Typ_GrobPlanProdAbgangDab320},
+       {  'AB_240_O',   gl_ETRU_Typ_ProdReservOffen},
+       {  'AB_240_K',   gl_ETRU_Typ_ProdReservKommissioniert},
+       {  'AB_055_O',   gl_ETRU_Typ_VerkaufAbgang}
+     },
+end,
+
+//******************************************************************************
+// Funktion übersetzt einen Feldnamen der Options-Memtable in den Einzelterminraster-Zeilentyp
+// @Result: Zeilentyp (Integer), 0 wenn nicht gefunden
+//******************************************************************************
+function _VPU_Options_FieldNameToZeilenTyp(cFieldName)
+| aArr, nPos |
+   Result := 0,
+   aArr   := VPU_Options_GetFieldnameZeilenTypMappingArray(),
+   nPos   := SeekInDimArray(cFieldName, aArr, 1),
+   if nPos > 0 then
+      Result := aArr[nPos, 2],
+   endif,
+end,
+
+//******************************************************************************
+// Funktion übersetzt einen Einzelterminraster-Zeilentyp in den Feldnamen der Options-Memtable
+// @Result: Feldname, Leerstring wenn nicht gefunden
+//******************************************************************************
+function _VPU_Options_ZeilenTypToFieldName(nZeilenTyp)
+| aArr, nPos |
+   Result := '',
+   aArr   := VPU_Options_GetFieldnameZeilenTypMappingArray(),
+   nPos   := SeekInDimArray(nZeilenTyp, aArr, 2),
+   if nPos > 0 then
+      Result := aArr[nPos, 1],
+   endif,
+end,
+
+//******************************************************************************
+// Funktion überträgt die in @aZeilenTypen übergebenen Einzelterminraster-Zeilentypen
+//    in den Options-Memtable-Datensatz
+// @Result: null
+//******************************************************************************
+function _VPU_Options_SetMemOptionsFieldsByZeilenTypen(oMemOptions, aZeilenTypen)
+| i, nCurZeilenTyp, cFieldName |
+  for i := 1 to ALen(aZeilenTypen) do
+     nCurZeilenTyp := aZeilenTypen[i],
+
+     cFieldName := VPU_Options_ZeilenTypToFieldName(nCurZeilenTyp),
+     if not empty(cFieldName) then
+        DbReplace(DbField(cFieldName, oMemOptions), true),
+     else
+        SetError('zeilentyp <' + Str(nCurZeilenTyp) + ', ' + ETRU_GUI_DisplayTextForTyp(nCurZeilenTyp) + '> not handled'),
+     endif,
+  end,
+end,
+
+//******************************************************************************
+// Funktion liefert ein Array von Einzelterminraster-Zeilentypen
+//    auf Basis der Einstellung in des übergebenen Options-Memtable-Datensatz
+// @Result: Array von Einzelterminraster-Zeilentypen
+//******************************************************************************
+function _VPU_Options_GetZeilenTypenFromMemOptions(oOptionsMem)
+| aArr, cCurFieldName, i |
+   SetErrorIf(empty(oOptionsMem), 'empty(oOptionsMem)'),
+   SetErrorIf(NoDs(oOptionsMem),  'NoDs(oOptionsMem)'),
+
+   Result := {},
+
+   aArr := VPU_Options_GetFieldnameZeilenTypMappingArray(),
+   for i := 1 to ALen(aArr) do
+      cCurFieldName := aArr[i, 1],
+      if AsVariant(cCurFieldName, oOptionsMem) then
+         AAdd(Result, aArr[i, 2]),
+      endif,
+   next,
+
+   if ALen(Result) = 0 then
+      AAdd(Result, -1234567890), // da ein leeres Array als "alles berücksichtigen" implementiert ist, immer einen Dummy-Eintrag ins Array. Sonst würde bei Abwahl aller Optionen wieder "alles" zuschlagen
+   endif,
+end,
+
+//******************************************************************************
+// Fügt der Memtable @oMemOptions eine Prüfmodus-Zeile hinzu
+//******************************************************************************
+function _VPU_Options_AddPruefModusToMemTable(oMemOptions, nModusNo, bIsDefaultMode, bIsFreeConfigMode, cShortDesc, cLongDesc, bCheckOnlyInWbzHorizont, aZeilenTypen)
+| aArr, i |
+
+  SetErrorIf(empty(oMemOptions), 'empty(oMemOptions) not allowed'),
+  SetErrorIf(nModusNo = 0,       'nModusNo = 0 not allowed'),
+
+  MyAppend(oMemOptions),
+  oMemOptions:MODUS         := nModusNo,
+  oMemOptions:BEZ           := cShortDesc,
+  oMemOptions:MEMO          := cLongDesc,
+  oMemOptions:DEFAULT       := bIsDefaultMode,
+  oMemOptions:FREECONF      := bIsFreeConfigMode,
+  oMemOptions:PRUEFHORZ_WBZ := bCheckOnlyInWbzHorizont,
+
+  // erst alle Options-Felder auf "false" setzen
+  aArr := VPU_Options_GetFieldnameZeilenTypMappingArray(),
+  for i := 1 to ALen(aArr) do
+     DbReplace(DbField(aArr[i, 1], oMemOptions), false),
+  next,
+
+  // gewählte Zeilentypen in Felder übertragen
+  VPU_Options_SetMemOptionsFieldsByZeilenTypen(oMemOptions, aZeilenTypen),
+  MyPost(oMemOptions),
+end,
+
+//******************************************************************************
+// Funktion fügt der Memtable @oMemOptions die per Default verfügbaren Prüfmodi hinzu
+//******************************************************************************
+function _VPU_Options_AddDefaultPruefModiToMemTable(oMemOptions)
+   VPU_Options_AddPruefModusToMemTable( oMemOptions,
+                                        gl_VPU_Pruefmodus_FreieEinstellung,
+                                        false,
+                                        true,
+                                        '<freie Einstellung>',
+                                        'In diesem Modus können die Einstellungen über die Oberfläche frei gewählt werden.',
+                                        false,
+                                        {  gl_ETRU_Typ_VerfuegBestand
+                                        } ),
+
+   VPU_Options_AddPruefModusToMemTable( oMemOptions,
+                                        20,
+                                        true,
+                                        false,
+                                        '<alle Zeilentypen>',
+                                        'Alle Zeilentypen werden berücksichtigt. Der modus eignet sich zur Nutzung in der "Verfügbarkeitsübersicht"',
+                                        false,
+                                        {
+                                          gl_ETRU_Typ_VerfuegBestand,
+                                          gl_ETRU_Typ_EisernerBestand,
+
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                          gl_ETRU_Typ_ProdZugangOffen,
+                                          gl_ETRU_Typ_ProdZugangKommissioniert,
+                                          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                                          gl_ETRU_Typ_EinkaufZugangBestaetigt,
+
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                                          gl_ETRU_Typ_ProdReservOffen,
+                                          gl_ETRU_Typ_ProdReservKommissioniert,
+                                          gl_ETRU_Typ_VerkaufAbgang
+                                        } ),
+
+   VPU_Options_AddPruefModusToMemTable( oMemOptions,
+                                        100,
+                                        true,
+                                        false,
+                                        'Terminprüfung (ohne Plandaten)',
+                                        'Modus für die Überprüfung der Materialverfügbarkeits-Situation eines Fertigungsauftrags mit dem Ziel, ' +
+                                           'Terminprobleme zu identifizieren und zu lösen. Geplante Zu- und Abgänge werden nicht berücksichtigt.',
+                                        false,
+                                        {
+                                          gl_ETRU_Typ_VerfuegBestand,
+                                          // gl_ETRU_Typ_EisernerBestand,       // häufig soll der "Eiserner Bestand" in diesem Modus "nutzbar" sein, also nicht abziehen
+
+                                          // gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                                          // gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                                          // gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                          // gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                          gl_ETRU_Typ_ProdZugangOffen,
+                                          gl_ETRU_Typ_ProdZugangKommissioniert,
+                                          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                                          gl_ETRU_Typ_EinkaufZugangBestaetigt,
+
+                                          // gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                                          // gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                                          gl_ETRU_Typ_ProdReservOffen,
+                                          gl_ETRU_Typ_ProdReservKommissioniert,
+                                          gl_ETRU_Typ_VerkaufAbgang
+                                        } ),
+
+   VPU_Options_AddPruefModusToMemTable( oMemOptions,
+                                        110,
+                                        true,
+                                        false,
+                                        'Terminprüfung (mit Plandaten)',
+                                        'Modus für die Überprüfung der Materialverfügbarkeits-Situation eines Fertigungsauftrags mit dem Ziel, ' +
+                                           'Terminprobleme zu identifizieren und zu lösen. Geplante Zu- und Abgänge werden berücksichtigt.',
+                                        false,
+                                        {
+                                          gl_ETRU_Typ_VerfuegBestand,
+                                          // gl_ETRU_Typ_EisernerBestand,       // häufig soll der "Eiserner Bestand" in diesem Modus "nutzbar" sein, also nicht abziehen
+
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                          gl_ETRU_Typ_ProdZugangOffen,
+                                          gl_ETRU_Typ_ProdZugangKommissioniert,
+                                          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                                          gl_ETRU_Typ_EinkaufZugangBestaetigt,
+
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                                          gl_ETRU_Typ_ProdReservOffen,
+                                          gl_ETRU_Typ_ProdReservKommissioniert,
+                                          gl_ETRU_Typ_VerkaufAbgang
+                                        } ),
+
+   VPU_Options_AddPruefModusToMemTable( oMemOptions,
+                                        200,
+                                        true,
+                                        false,
+                                        'Freigabe Fertigungsauftrag',
+                                        'Modus für die Prüfung der Materialverfügbarkeit direkt vor einer potentiellen ' +
+                                            'Freigabe (= Start, Druck der Auftragskarte) eines Fertigungsauftrags. Es werden keine Zugänge berücksichtigt, da die ' +
+                                            'Fragestellung ist, ob "sofort" gestartet werden kann. Es werden nur solche Abgänge berücksichtigt, die ' +
+                                            'einen sehr konkreten Charakter haben und durch den Start des Auftrags nicht gefährdet werden sollen.',
+                                        false,
+                                        {
+                                          gl_ETRU_Typ_VerfuegBestand,
+                                          // gl_ETRU_Typ_EisernerBestand,       // häufig soll der "Eiserner Bestand" in diesem Modus "nutzbar" sein, also nicht abziehen
+
+                                          // gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                                          // gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                                          // gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                          // gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                          // gl_ETRU_Typ_ProdZugangOffen,
+                                          // gl_ETRU_Typ_ProdZugangKommissioniert,
+                                          // gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                                          // gl_ETRU_Typ_EinkaufZugangBestaetigt,
+
+                                          // gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                                          // gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                                          // gl_ETRU_Typ_ProdReservOffen,
+                                          gl_ETRU_Typ_ProdReservKommissioniert,
+                                          gl_ETRU_Typ_VerkaufAbgang
+                                        } ),
+end,
+
+//******************************************************************************
+// Die Funktion lädt die Default-Einstellung des @nPruefModus in die
+//    übergebene @oOptionsMem
+// @Result: Die Funktion hat keine Rückgabe
+//******************************************************************************
+function _VPU_Options_LoadOptionsByPruefModus(oOptionsMem, nPruefModus)
+| oOptionsMemDefault |
+   oOptionsMemDefault := VPU_Options_CreateOptionsMem(nil),
+   startseq
+      VPU_Options_AddDefaultPruefModiToMemTable(oOptionsMemDefault),
+
+      if not DbLocate('MODUS', {nPruefModus}, 0, oOptionsMemDefault) then
+         SetError('pruefmodus <' + Str(nPruefModus) + '> not found'),
+      endif,
+
+      if NoDs(oOptionsMem) then
+         MyAppend(oOptionsMem),
+      else
+         MyEdit(oOptionsMem),
+      endif,
+      oOptionsMem.CbSetRecAsArray( oOptionsMemDefault.CbGetRecAsArray() ),
+      MyPost(oOptionsMem),
+   always
+      DestroyObject(oOptionsMemDefault),
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion lädt die verfügbaren Prüfmodi in die übergebene Combobox
+// @Result: Die Funktion hat keine Rückgabe
+//******************************************************************************
+function _VPU_Options_GUI_LoadOptionsToCombo(oCombobox)
+| oOptionsMemDefault, cComboStr |
+
+   oCombobox.MapList       := true,
+   oCombobox.ShowMatchText := true,
+
+   oOptionsMemDefault := VPU_Options_CreateOptionsMem(nil),
+   startseq
+      VPU_Options_AddDefaultPruefModiToMemTable(oOptionsMemDefault),
+      DbGoTop(oOptionsMemDefault),
+      while not EoF(oOptionsMemDefault) do
+         cComboStr := AllTrim(oOptionsMemDefault:BEZ) + Chr(9) + Str(oOptionsMemDefault:MODUS),
+         CollAdd(oCombobox.Items, cComboStr),
+         DbSkip(1, oOptionsMemDefault),
+      end,
+
+   always
+      DestroyObject(oOptionsMemDefault),
+   stopseq,
+end,

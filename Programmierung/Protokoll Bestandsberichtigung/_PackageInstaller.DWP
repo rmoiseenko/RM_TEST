@@ -1,0 +1,191 @@
+//##############################################################################
+//##############################################################################
+//
+//    Dieses Programm dient zur Installation der Tabellenstrukturen für die
+//      Toolbox "Protokoll Bestandsberichtigung"
+//
+//##############################################################################
+//##############################################################################
+|
+   nWorkarea_KDNBBP,       // Protokoll Bestandsberichtigung Kopf
+   cAlias_KDNBBP,
+   nBBPU_ModusMMTabelle,   // ID der Merkmalstabelle "Modus Bestandsberichtigung"
+
+   nWorkarea_KDNBBPDetail, // Protokoll Bestandsberichtigung Detail
+   cAlias_KDNBBPDetail,
+
+   m_oDM,
+   m_aDialogResult,
+   m_cUsername,
+   m_cPassword
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+cAlias_KDNBBP          := 'KDNBBP',
+nWorkarea_KDNBBP       := 703,
+nBBPU_ModusMMTabelle   := 7004,
+
+cAlias_KDNBBPDetail    := 'KDNBBPD',
+nWorkarea_KDNBBPDetail := 718,
+
+//##############################################################################
+//##############################################################################
+// KDNBBP Kopf
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//******************************************************************************
+function KDNBBP_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDORT',    0,  0, gl_PCKGU_ftShort,  'Standort',                        '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABTEILUNG',   0,  0, gl_PCKGU_ftShort,  'Abteilung',                       '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),   
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MODUS',       0,  0, gl_PCKGU_ftShort,  'Modus / Geschäftsprozess',        '',        0, 0, 'TBeCombo', '', nBBPU_ModusMMTabelle, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR',      20,  0, ftString,          'Artikel-Nr.',                     '',        1, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DISPONR',    12,  0, ftString,          'Dab020 DispoNr.',                 '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB020_ID',   0,  0, ftInteger,         'Dab020 ID',                       '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LIEFNR',      0,  0, ftInteger,         'Lieferanten-Nr.',                 '',        3, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LF_NUMMER',  20,  0, ftString,          'Lieferschein-Nr.',                '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BESTPOSNR',   8,  0, ftString,          'Bestellpos.-Nr. / FA-Nr.',        '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MENGE',       0,  0, ftFloat,           'Menge Bestands-Änderung',         '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WERT',        0,  0, ftFloat,           'Wert Bestands-Änderung',          '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WERT_A',      0,  0, ftMemo,            'Wert Bestands-Änderung, Array',   '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WERT_ULF',    0,  0, ftFloat,           'Wert, umlagefähig',               '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WERT_NULF',   0,  0, ftFloat,           'Wert, nicht umlagefähig',         '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGER_V',     0,  0, ftFloat,           'Bestand verfügb. (vor Ber.)',     '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGER_N',     0,  0, ftFloat,           'Bestand verfügb. (nach Ber.)',    '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGERM',      0,  0, ftFloat,           'Bestand in Vermietung',           '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGERP',      0,  0, ftFloat,           'Bestand in Produktion',           '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGERV',      0,  0, ftFloat,           'Bestand in Versand',              '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAGERW',      0,  0, ftFloat,           'Bestand in Wareneingang',         '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D010_LTEKV',  0,  0, ftFloat,           'Ltzt. EKP (vor Ber.)',            '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D010_DSEKV',  0,  0, ftFloat,           'Durchschn. EKP (vor Ber.)',       '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D010_LTEKN',  0,  0, ftFloat,           'Ltzt. EKP (nach Ber.)',           '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D010_DSEKN',  0,  0, ftFloat,           'Durchschn. EKP (nach Ber.)',      '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D235_REC_V',  0,  0, ftMemo,            'Dab035-Record (vor Ber.)',        '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D235_REC_N',  0,  0, ftMemo,            'Dab035-Record (nach Ber.)',       '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D240_REC_V',  0,  0, ftMemo,            'Dab240-Records (vor Ber.)',       '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D240_REC_N',  0,  0, ftMemo,            'Dab240-Records (nach Ber.)',      '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROT_TIME',   0,  0, gl_PCKGU_ftShort,  'Dauer der Protokoll-Erstellung',  'in mSec', 0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MAN_VERBU',   0,  0, ftBoolean,         'manuelle Verbuchung erford.',     '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KOSTENST',    0,  0, ftInteger,         'Kostenstelle',                    '',        0, 0, '',         '', 0                   , true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function KDNBBP_AddIndizes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'MODUS',      {'MODUS'},       '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ARTNR',      {'ARTNR'},       '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DAB020_ID',  {'DAB020_ID'},   '', '', false,  true, false, 512),   
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'WERT',       {'WERT'},        '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'MAN_VERBU',  {'MAN_VERBU'},   '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'STANDORT',   {'STANDORT'},    '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ABTEILUNG',  {'ABTEILUNG'},   '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LIEFNR',     {'LIEFNR'},      '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LF_NUMMER',  {'LF_NUMMER'},   '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'BESTPOSNR',  {'BESTPOSNR'},   '', '', false,  true, false, 512),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle KDNBBP.
+// @Result: Array mit Tabellendefinition
+//******************************************************************************
+function KDNBBP_CreateTableDefinition ()
+   Result := PCKGU_TableDefinition_Create(cAlias_KDNBBP, nWorkarea_KDNBBP, 'Protokoll Bestandsberichtigung Kopf', '', true, false),
+   KDNBBP_AddFields(result),
+   KDNBBP_AddIndizes(result),
+end,
+
+//##############################################################################
+//##############################################################################
+// KDNBBPDetail
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//******************************************************************************
+function KDNBBPDetail_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KDNBBP_ID',   0, 0, ftInteger, 'KDNBBP-ID',  '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR1',     20, 0, ftString,  'ARTNR1',     '', 1, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR_E',    20, 0, ftString,  'ARTNR_E',    '', 1, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'B_POS_LFD',  11, 0, ftString,  'B_POS_LFD',  '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EK_WERT',     0, 0, ftFloat,   'EK-Wert',    '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EK_ZUSCH',    0, 0, ftFloat,   'EK-Zusch',   '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IST_AUSGEB',  0, 0, ftFloat,   'Ist-Menge',  '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IST_EKP',     0, 0, ftFloat,   'Ist-EKP',    '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IST_PE',      0, 0, ftInteger, 'Ist-PE',     '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SOLL_MENGE',  0, 0, ftFloat,   'Soll-Menge', '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SOLL_EKP',    0, 0, ftFloat,   'Soll-EKP',   '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SOLL_PE',     0, 0, ftInteger, 'Soll-PE',    '', 0, 0, '', '', 0, true, false, false, true,  false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function KDNBBPDetail_AddIndizes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'KDNBBP_ID', {'KDNBBP_ID'}, '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ARTNR1',    {'ARTNR1'},    '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ARTNR_E',   {'ARTNR_E'},   '', '', false,  true, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'B_POS_LFD', {'B_POS_LFD'}, '', '', false,  true, false, 512),   
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle KDNBBPD.
+// @Result: Array mit Tabellendefinition
+//******************************************************************************
+function KDNBBPDetail_CreateTableDefinition ()
+   Result := PCKGU_TableDefinition_Create(cAlias_KDNBBPDetail, nWorkarea_KDNBBPDetail, 'Protokoll Bestandsberichtigung Detail', '', true, false),
+   KDNBBPDetail_AddFields(result),
+   KDNBBPDetail_AddIndizes(result),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   m_aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', true),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOK, 7, true),
+         mrCancel
+      },
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(m_aDialogResult) = mrOK then
+      m_cUsername := DU_InputDialogResult_GetInputValue(m_aDialogResult, 'USERNAME'),
+      m_cPassword := DU_InputDialogResult_GetInputValue(m_aDialogResult, 'PASSWORD'),
+
+      m_oDM := CreateObject('TBeDbGet', 'PACKAGEINSTALLER'),
+      startseq
+         m_oDM.CbTransaction_Begin(),
+         startseq
+            PCKGU_RemoveTableAndMetaInfo(m_oDM, nWorkarea_KDNBBP,       cAlias_KDNBBP,       m_cUsername, m_cPassword),
+            PCKGU_RemoveTableAndMetaInfo(m_oDM, nWorkarea_KDNBBPDetail, cAlias_KDNBBPDetail, m_cUsername, m_cPassword),
+
+            // Installieren
+            PCKGU_AddTableAndMetaInfo(m_oDM, KDNBBP_CreateTableDefinition(),       m_cUsername, m_cPassword),
+            PCKGU_AddTableAndMetaInfo(m_oDM, KDNBBPDetail_CreateTableDefinition(), m_cUsername, m_cPassword),
+
+            PCKGU_DeleteAllRightsBerCacheFiles(),
+            m_oDM.CbTransaction_Commit(),
+         always
+            m_oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(m_oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

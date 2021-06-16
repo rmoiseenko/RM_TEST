@@ -1,0 +1,204 @@
+//******************************************************************************
+// Setzt die MerkmalstabellenID für eine bestimmte Spalte
+// @Result: null
+//******************************************************************************
+function _SetBrowserBeAttribID(oGrid, cFieldName, nAttribID)
+| i, oColumn |
+   for i := 1 to CollCount(oGrid.Columns) do
+      oColumn := CollItem(oGrid.Columns, i),
+      if oColumn.FieldName = cFieldname then
+         oColumn.BeAttr.AttribID := nAttribID,
+         break,
+      endif,
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für das mit 6.5 rückwärtskompatible GUI be 7 ReDesign
+//
+// -> Sobald 6.5 irrelevant, kann das ReDesign über GroupPanels in der GUI
+//    gemacht werden.
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Styled ein Array von Edits (TBeEdit, TBeCombo etc.), Checkboxen oder TBeLabels
+// @Result: keine Rückgabe
+//******************************************************************************
+function _EDI_GUI_Style65CompatControls(oControlsArray)
+| oEdit |
+
+   //***************************************************************************
+   function StyleLabel(oLabel)
+      oLabel.Font.Size  := 10,
+      oLabel.Font.Name  := 'Segoe UI Semibold',
+      oLabel.Font.Color := 7566195, // = BeSkinColor(clarNeutralGrey),
+   end,
+
+   if IsBeDBVersion7() then
+      foreach oEdit in oControlsArray do
+         case true
+           of Classof(oEdit, 'TBeCheckBox') ::
+              oEdit.Height        := 25,
+              oEdit.Color         := 15921906,
+
+              oEdit.ParentFont    := false,
+              oEdit.Font.Name     := 'Segoe UI',
+              oEdit.Font.Color    := clBlack,
+              oEdit.Font.Size     := 10,
+           of Classof(oEdit, 'TBeLabel') ::
+              StyleLabel(oEdit),
+           otherwise
+              oEdit.AutoSize      := False,
+              oEdit.Height        := 25,
+              oEdit.BorderStyle   := bsNone,
+              oEdit.Color         := 15921906,
+              oEdit.FocusColor    := clWhite,
+              oEdit.ReadOnlyColor := 15921906,
+
+              oEdit.ParentFont    := false,
+              oEdit.Font.Name     := 'Segoe UI',
+              oEdit.Font.Color    := clBlack,
+              oEdit.Font.Size     := 10,
+
+              if not empty(oEdit.LabelControl) then
+                 StyleLabel(oEdit.LabelControl),
+              endif,
+         endcase,
+      next,
+   endif,
+end,
+
+//******************************************************************************
+// Styled ein Array von HeadLine-Labels
+// @Result: keine Rückgabe
+//******************************************************************************
+function _EDI_GUI_Style65CompatHeadlineLabels(oLabelArray)
+| oLabel |
+   if IsBeDBVersion7() then
+      foreach oLabel in oLabelArray do
+         oLabel.Margins.Top    := 0,
+         oLabel.Margins.Bottom := 2,
+         oLabel.Font.Size      := 12,
+         oLabel.Font.Name      := 'Segoe UI Semibold',
+         oLabel.Font.Color     := 7566195, // = BeSkinColor(clarNeutralGrey),
+      next,
+   endif,
+end,
+
+//******************************************************************************
+// Nachrichteninhalt in einem modalen Dialog anzeigen (sofern EDIFACT-Nachricht inkl. Parsing-Tree)
+//******************************************************************************
+function _EDI_GUI_ShowMessageContentForm(oDM, oEDIMSG)
+|
+   oMessageContentForm, oPanelEdit, oEdit, oButtonCopyMessageContent,
+   cMessageFileName, nMessageId
+|
+
+   //***************************************************************************
+   function VisualiseAbstractSyntaxTree(oDM:O, nEDIMSGId:N, oOwner:O)
+   |
+     oEDIMessage, oAST, aSchemeAST, nMessageStandard,
+     nMessageType, cMessageString, oPanelAST,
+     oFirstNode
+   |
+      oEDIMessage := EDI_Message_Open(oDM, nEDIMSGId),
+      startseq
+            oPanelAST                  := CreateObject('TBePanel', 'pnl_AST', oOwner, oOwner),
+            oPanelAST.Align            := alClient,
+            oPanelAST.AlignWithMargins := true,
+            oPanelAST.Font.Name        := 'Courier New',
+            oAST                       := EDI_Edifact_AST_Create(oOwner),
+            SetParent(oAST, oPanelAST),
+            oAST.Align                 := alClient,
+
+            aSchemeAST       := {},
+            nMessageStandard := EDI_Message_GetMessageStandard(oEDIMessage),
+            nMessageType     := EDI_Message_GetMessageType(oEDIMessage),
+            EDI_Edifact_Scheme_Parse(oDM, aSchemeAST, nMessageStandard, nMessageType),
+
+            cMessageString := EDI_Message_EDIMSG_GetMessageString(oDM, EDI_Message_GetTable(oEDIMessage)),
+            cMessageString := EDI_Edifact_MessageString_StripUNASegment_Internal(cMessageString),
+            EDI_Edifact_AST_ParseMessageString(oAST, cMessageString, aSchemeAST),
+            oFirstNode     := EDI_Edifact_AST_TTreeViewEx_FirstNode_Internal(oAST),
+            oFirstNode.ExpandNode,
+      always
+         EDI_Message_Destroy(oEDIMessage),
+      stopseq,
+   end,
+
+   //***************************************************************************
+   function ButtonCopyMessageContentClick(sender:O)
+      CopyToClipBoard(oEdit.Text),
+   end,
+
+   //***************************************************************************
+   function IsParsableEdifactMessage(oEDIMSG:O)
+   | bIsEDIFACTStandard |
+
+      bIsEDIFACTStandard :=
+         oEDIMSG:EDIPROF_ID <> 0 and
+         EDI_Consts_MessageStandard_IsEdifactStandard(LookUp(waEDIPROF, 'ID', {{oEDIMSG:EDIPROF_ID}}, 'STANDARD')),
+
+      result :=
+         bIsEDIFACTStandard and
+         ((oEDIMSG:DIRECTION = gl_EDI_ProcessDirection_Outbound and
+           oEDIMSG:PROC_STEP > gl_EDI_ProcessStep_EDIMSG_Initialized) or
+          (oEDIMSG:DIRECTION = gl_EDI_ProcessDirection_Inbound and
+           oEDIMSG:PROC_STEP > gl_EDI_ProcessStep_EDIMSG_Inbound_Read)),
+   end,
+
+   oMessageContentForm := CreateObject('TFormEx', 'EDI_MESSAGE_CONTENT_VIEWER'),
+   startseq
+      cMessageFileName := trim(oEDIMSG:FILE_NAME),
+      nMessageId       := oEDIMSG:ID,
+
+      oMessageContentForm.Position       := poMainFormCenter,
+      oMessageContentForm.Height         := 600,
+      oMessageContentForm.Width          := 1100,
+      oMessageContentForm.Font.Name      := 'Segoe UI',
+      oMessageContentForm.Font.Size      := 10,
+      oMessageContentForm.OrigCapt       :=
+         'Nachrichteninhalt (' + iif(empty(cMessageFileName), 'ID: ' + str(nMessageId), cMessageFileName) + ')',
+      oMessageContentForm.KeyPreview     := true,
+
+      oPanelEdit := CreateObject('TBePanel', 'pnl_Edit', oMessageContentForm, oMessageContentForm),
+
+      if IsParsableEdifactMessage(oEDIMSG) then
+         oPanelEdit.Align := alLeft,
+         oPanelEdit.Width := 550,
+         oPanelEdit.ShowBeSplitter := true,
+         VisualiseAbstractSyntaxTree(oDM, nMessageId, oMessageContentForm),
+      else
+         oPanelEdit.Align := alClient,
+      endif,
+
+      oButtonCopyMessageContent := CreateObject('TBeBitBtn', '', oMessageContentForm, oPanelEdit),
+      oButtonCopyMessageContent.Align                  := alTop,
+      oButtonCopyMessageContent.AlignWithMargins       := true,
+      oButtonCopyMessageContent.Caption                := 'Nachrichteninhalt in Zwischenablage kopieren',
+      oButtonCopyMessageContent.Height                 := 27,
+      oButtonCopyMessageContent.ImageIndex.IndexNormal := 625, // Image: Klemmbrett/Clipboard
+      AssignEvent(oButtonCopyMessageContent, 'OnClick', 'ButtonCopyMessageContentClick'),
+
+      oEdit := CreateObject('TBeEdit', '', oMessageContentForm, oPanelEdit),
+      oEdit.Font.Name         := 'Courier New',
+      oEdit.Align             := alClient,
+      oEdit.AlignWithMargins  := true, // Margins verwenden
+      oEdit.Margins.Left      := 3,    // Margins links und
+      oEdit.Margins.Right     := 3,    // rechts verwenden, damit das Edit mit dem Button abschließt
+      oEdit.Margins.Top       := 0,
+      oEdit.Margins.Bottom    := 3,
+      oEdit.Text              := EDI_Message_EDIMSG_GetMessageString(oDM, oEDIMSG),
+      oEdit.ReadOnly          := true,
+      oEdit.Color             := oEdit.ReadOnlyColor,
+      oEdit.WordWrap          := true,
+      oEdit.ShowVertScrollBar := true,
+
+      ShowModal(oMessageContentForm),
+   always
+      DestroyObject(oMessageContentForm),
+   stopseq,
+end,

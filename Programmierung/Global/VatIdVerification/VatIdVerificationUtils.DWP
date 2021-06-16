@@ -1,0 +1,534 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Allgemeine Funktionen für die qualifizierte USt.-ID Prüfung.
+//
+// Das Präfix VATIDV steht für "VAT ID Verification"
+// ("Umsatzsteueridentifikationsnummer-Gültigkeitsprüfung")
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion öffnet eine Instanz der Tabelle UIDSTM aus dem übergebenen
+// Datenmodul und setzt je nach übergebener Workarea den richtigen Index.
+//
+// Der Index wird wie folgt ermittelt:
+//   * nWorkarea = waDab000: "KDNR"
+//   * nWorkarea = waDab100: "LINR"
+//
+// @result: object - TBeRightsTable
+//******************************************************************************
+function _VATIDV_UIDSTM_Open(oDM:O, nWorkarea:N, cAliasName:C:='')
+   result := DbGetTable(oDM, waUIDSTM, cAliasName),
+   case nWorkarea
+      of waDab000 :: result.IndexName := 'KDNR',
+      of waDab100 :: result.IndexName := 'LINR',
+      otherwise
+         SetError('Workarea <' + Str(nWorkarea) + '> not allowed'),
+   endcase,
+
+   // Für die Tabelle soll immer ein Protokoll geschrieben werden.
+   result.WriteProtocol := true,
+end,
+
+//******************************************************************************
+// Diese Funktion versucht in der übergebenen Tabellen-Instanz der UIDSTM einen
+// passenden Datensatz für die übergebenen Parameter (Workarea und Schlüssel) zu
+// finden. Sofern kein passender Datensatz gefunden wurde, wird ein neuer mit
+// den Standardwerten angelegt.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _VATIDV_UIDSTM_FindOrAdd(oDM:O, oUIDSTM:O, nWorkarea:N, nKey:N)
+   if not oUIDSTM.CbFindKey({nKey}) then
+      oUIDSTM.CbAppend(),
+      case nWorkarea
+         of waDab000 :: oUIDSTM:KDNR := nKey,
+         of waDab100 :: oUIDSTM:LINR := nKey,
+         otherwise
+            SetError('Workarea <' + Str(nWorkarea) + '> not allowed'),
+      endcase,
+      oUIDSTM:TYP := gl_VATIDV_AddressType_MainAddress,
+      oUIDSTM.CbPost(),
+   endif,
+end,
+
+//******************************************************************************
+// Öffnen der Haupttabelle (Dab000/Dab100) je nach übergebener Workarea.
+// @result: object - TBeRightsTable
+//******************************************************************************
+function _VATIDV_MasterTable_Open(oDM:O, nWorkarea:N, cAliasName:C:='')
+   SetErrorIf(
+      nWorkarea <> waDab000 and nWorkarea <> waDab100,
+     'Workarea <' + Str(nWorkarea) + '> not allowed'
+   ),
+
+   result := DbGetTable(oDM, nWorkarea, cAliasName),
+   case nWorkarea
+      of waDab000 :: result.IndexName := 'DAB001',
+      of waDab100 :: result.IndexName := 'DAB101',
+   endcase,
+end,
+
+//******************************************************************************
+// TBeCbVATVerification-Objekt erzeugen und mit den übergebenne Daten füllen.
+// @result: object - TBeCbVATVerification
+//******************************************************************************
+function _VATIDV_CreateVatIdVerificationObject(cSenderVatId:C,
+                                               cVerificationVatId:C,
+                                               aVerificationAddress:A,
+                                               nRequestTimeout:N,
+                                               bUseSimpleVerficationAfterQualifiedFailed:L,
+                                               bRequestPrintedProtocol:L)
+| cRequestName, cRequestCity, cRequestZipCode, cRequestStreet |
+
+   cRequestName    := KVU_Get(aVerificationAddress, 'verificationAddress.name',    ''),
+   cRequestZipCode := KVU_Get(aVerificationAddress, 'verificationAddress.zipCode', ''),
+   cRequestCity    := KVU_Get(aVerificationAddress, 'verificationAddress.city',    ''),
+   cRequestStreet  := KVU_Get(aVerificationAddress, 'verificationAddress.street',  ''),
+
+   result := CreateObject('TBeCbVATVerification'),
+   startseq
+      result.CbUseCache                          := false,
+      result.CbTimeOut                           := nRequestTimeout,
+      result.CbUseSimpleVerificationAfterTimeOut := bUseSimpleVerficationAfterQualifiedFailed,
+      result.CbRequestPrintedProtocol            := bRequestPrintedProtocol,
+      result.CbSenderVatId                       := cSenderVatId,
+      result.CbRequestVatId                      := cVerificationVatId,
+      result.CbRequestName                       := cRequestName,
+      result.CbRequestPostCode                   := cRequestZipCode,
+      result.CbRequestCity                       := cRequestCity,
+      result.CbRequestStreet                     := cRequestStreet,
+   onerror
+      DestroyObject(result),
+      Raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// TODO: Parameter bIsSimpleVerificationSuccessful ist überflüssig und sollte
+//       entfernt werden!
+//******************************************************************************
+// Diese Funktion erstellt auf Basis des letzen Abrufs einen
+// UID-Prüfungs-Protokolleintrag.
+//
+// @result: array - Ergebnis der UID-Prüfung in folgendem Format:
+//   {<Einfache Prüfung erfolgreich>, <Qualifizierte Prüfung erfolgreich>}
+//******************************************************************************
+function _VATIDV_CreateProtocolRecord(oDM:O,
+                                      oUIDSTM:O,
+                                      oVatIdVerification:O,
+                                      bIsSimpleVerificationSuccessful:L,
+                                      nEventType:N)
+|
+   oUIDRES, nVerificationMode, bIsQualifiedVerificationSuccessful,
+   nResultCode_Name, nResultCode_City, nResultCode_PostCode, nResultCode_Street
+|
+
+   //***************************************************************************
+   function IsQualifiedVerificationRequest(oVatIdVerification:O)
+      result := not empty(oVatIdVerification.CbRequestName)     or
+                not empty(oVatIdVerification.CbRequestCity)     or
+                not empty(oVatIdVerification.CbRequestPostCode) or
+                not empty(oVatIdVerification.CbRequestStreet),
+   end,
+
+   //***************************************************************************
+   function DetermineVerificationMode(bIsQualifiedVerification:L, nReturnCode:N)
+      case nReturnCode
+         of {205, 206, 207, 208, 213, 214, 215, 217, 999} ::
+            result := gl_VATIDV_VerificationMode_Undefined,
+         otherwise
+            if bIsQualifiedVerification then
+               result := gl_VATIDV_VerificationMode_Qualified,
+            else
+               result := gl_VATIDV_VerificationMode_Simple,
+            endif,
+      endcase,
+   end,
+
+   //***************************************************************************
+   function DetermineSimpleVerificationSuccessful(nReturnCode:N)
+      case nReturnCode
+         of {200, 216, 218, 219, 222} ::
+            result := true,
+         otherwise
+            result := false,
+      endcase,
+   end,
+
+   //***************************************************************************
+   function DetermineQualifiedVerificationSuccessful(oVatIdVerification:O)
+
+      function IsResultCodeOK(nResultCode:N)
+         result := nResultCode = vatrcValid or nResultCode = vatrcNotRequested,
+      end,
+
+      result := IsResultCodeOK(oVatIdVerification.CbResultCode_Name)     and
+                IsResultCodeOK(oVatIdVerification.CbResultCode_City)     and
+                IsResultCodeOK(oVatIdVerification.CbResultCode_PostCode) and
+                IsResultCodeOK(oVatIdVerification.CbResultCode_Street),
+   end,
+
+   bIsSimpleVerificationSuccessful    := DetermineSimpleVerificationSuccessful(oVatIdVerification.CbResult_ErrorCode),
+   nVerificationMode                  := DetermineVerificationMode(IsQualifiedVerificationRequest(oVatIdVerification),
+                                                                   oVatIdVerification.CbResult_ErrorCode),
+   bIsQualifiedVerificationSuccessful := bIsSimpleVerificationSuccessful                          and
+                                         nVerificationMode = gl_VATIDV_VerificationMode_Qualified and
+                                         DetermineQualifiedVerificationSuccessful(oVatIdVerification),
+   result := {
+      bIsSimpleVerificationSuccessful,
+      bIsQualifiedVerificationSuccessful
+   },
+
+   oUIDRES := DbGetTable(oDM, waUIDRES),
+   oUIDRES.CbAppend(),
+   nResultCode_Name     := oVatIdVerification.CbResultCode_Name,
+   nResultCode_City     := oVatIdVerification.CbResultCode_City,
+   nResultCode_PostCode := oVatIdVerification.CbResultCode_PostCode,
+   nResultCode_Street   := oVatIdVerification.CbResultCode_Street,
+
+   oUIDRES:UIDSTM_ID := oUIDSTM:ID,
+   case true
+      of not empty(oUIDSTM:LINR) ::
+         oUIDRES:LINR := oUIDSTM:LINR,
+      of not empty(oUIDSTM:KDNR) ::
+         oUIDRES:KDNR := oUIDSTM:KDNR,
+      otherwise
+   endcase,
+   
+   oUIDRES:EVENT_TYP  := nEventType,
+   oUIDRES:VATID      := oVatIdVerification.CbRequestVatId,
+   oUIDRES:ERG_NAME   := nResultCode_Name,
+   oUIDRES:ERG_PLZ    := nResultCode_City,
+   oUIDRES:ERG_ORT    := nResultCode_PostCode,
+   oUIDRES:ERG_STR    := nResultCode_Street,
+   oUIDRES:NAME       := iif(nResultCode_Name     <> gl_VATIDV_ResultStatus_NotRequested, oVatIdVerification.CbRequestName,     ''),
+   oUIDRES:PLZ        := iif(nResultCode_City     <> gl_VATIDV_ResultStatus_NotRequested, oVatIdVerification.CbRequestPostCode, ''),
+   oUIDRES:ORT        := iif(nResultCode_PostCode <> gl_VATIDV_ResultStatus_NotRequested, oVatIdVerification.CbRequestCity,     ''),
+   oUIDRES:STRASSE    := iif(nResultCode_Street   <> gl_VATIDV_ResultStatus_NotRequested, oVatIdVerification.CbRequestStreet,   ''),
+   oUIDRES:RET_CODE   := oVatIdVerification.CbResult_ErrorCode,
+   oUIDRES:PRUEF_MODE := nVerificationMode,
+   oUIDRES:S_PRUEF_OK := bIsSimpleVerificationSuccessful,
+   oUIDRES:Q_PRUEF_OK := bIsQualifiedVerificationSuccessful,
+   oUIDRES:PRUEFDATUM := oVatIdVerification.CbResult_RequestDateTime,
+   oUIDRES:GUELTIGAB  := oVatIdVerification.CbResult_ValidFrom,
+   oUIDRES:GUELTIGBIS := oVatIdVerification.CbResult_ValidUntil,
+   oUIDRES.CbPost(),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt anhand des in der UIDSTM hinterlegten Adresstyps die
+// für die qualifizierte UID-Prüfung relevante Firmenanschrift.
+//
+// @result: array - KVU-Liste: Enthält alle Informationen einer Firmenanschrift
+//******************************************************************************
+function _VATIDV_DetermineVerificationAddress(oDM:O, nUIDSTM_Id:N)
+|
+   oUIDSTM, nAddressType,
+   nSourceWorkarea, cSourceIndex, nSourceKey, oSourceTable,
+   cName, cZipCode, cCity, cStreet, cCountry,
+   cFieldName_Name, cFieldName_ZipCodeAndCity, cFieldName_Street,
+   cFieldName_Country
+|
+
+   //***************************************************************************
+   // Diese Funktion Teilt den übergebenen String in PLZ und Ort auf.
+   // @result: null - Rückgabe erfolgt über folgende Parameter: cZipCode, cCity
+   //***************************************************************************
+   function SplitZipCodeAndCity(cZipCodeAndCityString:C, cZipCode:R, cCity:R)
+   | nTokens, cToken, i |
+
+      cCity   := '',
+      nTokens := TokenCount(cZipCodeAndCityString, ' '),
+      for i := 1 to nTokens do
+         cToken := Token(cZipCodeAndCityString, ' ', i),
+         if i = 1 then
+            cZipCode := cToken,
+         else
+            cCity := ConcatTrenner(cCity, cToken, ' '),
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion konkatiniert die übergebenen Teile des Firmennamens.
+   // @result: string
+   //***************************************************************************
+   function ConcatCompanyNames(cName1:C, cName2:C, cName3:C)
+      result := ConcatTrenner(cName1, ConcatTrenner(cName2, cName3, ' '), ' '),
+   end,
+
+   //***************************************************************************
+   // Diese Funktion ermittelt den Werd des übergebenen Feldes als String und
+   // führt ein trim() auf den String aus.
+   //
+   // @result: string
+   //***************************************************************************
+   function GetTrimmedStringValue(oTable:O, cFieldName:C)
+      result := Trim(AsString(cFieldName, oTable)),
+   end,
+
+   // UIDSTM-Datensatz ermitteln
+   oUIDSTM           := DbGetTable(oDM, waUIDSTM),
+   oUIDSTM.IndexName := 'ID',
+   SetErrorIf(
+      not oUIDSTM.CbFindKey({nUIDSTM_Id}),
+      'VAT-ID verification configuration with ID <' + str(nUIDSTM_Id) + '> does not exist'
+   ),
+
+   nAddressType := oUIDSTM:TYP,
+
+   if nAddressType = gl_VATIDV_AddressType_VatIdVerificationAddress then
+      cName := ConcatCompanyNames(
+         GetTrimmedStringValue(oUIDSTM, 'NAME1'),
+         GetTrimmedStringValue(oUIDSTM, 'NAME2'),
+         GetTrimmedStringValue(oUIDSTM, 'NAME3')
+      ),
+      cZipCode := GetTrimmedStringValue(oUIDSTM, 'PLZ'),
+      cCity    := GetTrimmedStringValue(oUIDSTM, 'ORT'),
+      cStreet  := GetTrimmedStringValue(oUIDSTM, 'STRASSE'),
+      cCountry := GetTrimmedStringValue(oUIDSTM, 'LANDNR'),
+   else
+      // Datensatz in der Quell-Tabelle (DAB000/DAB100) ermitteln
+      case true
+         of not empty(oUIDSTM:KDNR) ::
+            nSourceWorkarea := waDab000,
+            cSourceIndex    := 'DAB001',
+            nSourceKey      := oUIDSTM:KDNR,
+         of not empty(oUIDSTM:LINR) ::
+            nSourceWorkarea := waDab100,
+            cSourceIndex    := 'DAB101',
+            nSourceKey      := oUIDSTM:LINR,
+         otherwise
+            SetError('No foreign key field (KDNR/LINR) is set for record with ID <' + str(nUIDSTM_Id) + '>'),
+      endcase,
+
+      oSourceTable           := DbGetTable(oDM, nSourceWorkarea),
+      oSourceTable.IndexName := cSourceIndex,
+      SetErrorIf(
+         not oSourceTable.CbFindKey({nSourceKey}),
+         'No source record with key <' + str(nSourceKey) + '> in table <' + str(nSourceWorkarea) + '> found'
+      ),
+
+      case nAddressType
+         of gl_VATIDV_AddressType_MainAddress ::
+            cFieldName_Name           := 'NAME',
+            cFieldName_ZipCodeAndCity := 'PLZORT',
+            cFieldName_Street         := 'STRASSE',
+            cFieldName_Country        := 'LAND',
+         of gl_VATIDV_AddressType_SupplyAddress ::
+            cFieldName_Name           := 'LNAME',
+            cFieldName_ZipCodeAndCity := 'LPLZORT',
+            cFieldName_Street         := 'LSTRASSE',
+            cFieldName_Country        := 'LLANDNR',
+         of gl_VATIDV_AddressType_InvoiceAddress ::
+            cFieldName_Name           := 'RNAME',
+            cFieldName_ZipCodeAndCity := 'RPLZORT',
+            cFieldName_Street         := 'RSTRASSE',
+            cFieldName_Country        := 'RLANDNR',
+         otherwise
+      endcase,
+
+      cName := ConcatCompanyNames(
+         GetTrimmedStringValue(oSourceTable, cFieldName_Name + '1'),
+         GetTrimmedStringValue(oSourceTable, cFieldName_Name + '2'),
+         GetTrimmedStringValue(oSourceTable, cFieldName_Name + '3')
+      ),
+      SplitZipCodeAndCity(GetTrimmedStringValue(oSourceTable, cFieldName_ZipCodeAndCity), cZipCode, cCity),
+      cStreet  := GetTrimmedStringValue(oSourceTable, cFieldName_Street),
+      cCountry := GetTrimmedStringValue(oSourceTable, cFieldName_Country),
+   endif,
+
+   result := {},
+   KVU_Set(result, 'verificationAddress.name',    cName),
+   KVU_Set(result, 'verificationAddress.zipCode', cZipCode),
+   KVU_Set(result, 'verificationAddress.city',    cCity),
+   KVU_Set(result, 'verificationAddress.street',  cStreet),
+   KVU_Set(result, 'verificationAddress.country', cCountry),
+end,
+
+//******************************************************************************
+// TODO
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _VATIDV_SendErrorMail_Internal(nWorkarea:N, nKey:N)
+
+   //***************************************************************************
+   // Eingestellte E-Mail-Verteiler Rolle validieren.
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function ValidateMailingListRoleKey(cMailingListRoleKey:C)
+   | oDabRRO |
+
+      oDabRRO := BeOpen(waDabRRO, 'ROLLENSCHL'),
+      startseq
+         SetErrorIf(
+            not oDabRRO.CbFindKey({cMailingListRoleKey}),
+            'No mailing list role key is defined'
+         ),
+         SetErrorIf(
+            not oDabRRO.CbFindKey({cMailingListRoleKey}),
+            'Role with role key <' + cMailingListRoleKey + '> does not exist'
+         ),
+         SetErrorIf(
+            not oDabRRO:AKTIV,
+            'Role with role key <' + cMailingListRoleKey + '> is not active'
+         ),
+      always
+         BeClose(oDabRRO),
+      stopseq,
+
+   end,
+
+   ValidateMailingListRoleKey(gl_VATIDV_MailingListRoleKey),
+   SetError('VATIDV_SendErrorMail_Internal(): Not yet implemented'),
+end,
+
+//******************************************************************************
+// Diese Funktion führt die qualifizierte UID-Prüfung durch.
+//
+// Mithile der übergebenen Parameter wird die USt.-ID des Kunden/Lieferanten
+// ermittelt und auf Basis der konfigurierten UID-Prfüung die zu Prüfende
+// Adresse für die UID-Prüfung ermittelt.
+// Sofern für den übergebenen Kunden/Lieferanten noch keine Konfiguration in der
+// Tabelle UIDSTM existiert, so wird diese automatisch angelegt und mit den
+// Standard-Werten vorbelegt.
+//
+// Parameter:
+//   * nWorkarea: Tabelle, in der sich der zu Datensatz befindet.
+//                Zulässige Werte: waDab000, waDab100
+//   * nKey:      Schlüssel-Wert für den Datensatz in der angegebenen Tabelle.
+//                Hierbei handelt es sich entweder um die KDNR oder die LINR.
+//
+// @result: array - Ergebnis der UID-PrÃ¼fung in folgendem Format:
+//   {<Einfache Prüfung erfolgreich>, <Qualifizierte Prüfung erfolgreich>}
+//******************************************************************************
+function _VATIDV_QualifiedVatIdVerification(oDM:O,
+                                            nWorkarea:N,
+                                            nKey:N,
+                                            nEventType:N)
+|
+   oMasterTable, oUIDSTM, oVatIdVerification,
+   cVerificationVatId, aVerificationAddress, bSimpleVerificationSuccessful,
+   nUIDSTM_Id
+|
+
+   // Die Validierung von nWorkarea geschieht bereits durch den Aufruf von
+   // VATIDV_MasterTable_Open().
+   oMasterTable := VATIDV_MasterTable_Open(oDM, nWorkarea),
+   SetErrorIf(not oMasterTable.CbFindKey({nKey}), 'Master-table record for key <' + str(nKey) + '> not found'),
+
+   oUIDSTM := VATIDV_UIDSTM_Open(oDM, nWorkarea),
+   VATIDV_UIDSTM_FindOrAdd(oDM, oUIDSTM, nWorkarea, nKey),
+   nUIDSTM_Id           := oUIDSTM:ID,
+   cVerificationVatId   := trim(oMasterTable:UST_IDNR),
+   aVerificationAddress := VATIDV_DetermineVerificationAddress(oDM, nUIDSTM_Id),
+
+   oVatIdVerification := VATIDV_CreateVatIdVerificationObject(
+      gl_VATIDV_SenderVatId,
+      cVerificationVatId,
+      aVerificationAddress,
+      gl_VATIDV_RequestTimeout,
+      gl_VATIDV_UseSimpleVerficationIfNotQualified,
+      gl_VATIDV_RequestPrintedProtocol
+   ),
+   startseq
+      bSimpleVerificationSuccessful := oVatIdVerification.CbVerify(),
+      result := VATIDV_CreateProtocolRecord(
+         oDM,
+         oUIDSTM,
+         oVatIdVerification,
+         bSimpleVerificationSuccessful,
+         nEventType
+      ),
+   always
+      DestroyObject(oVatIdVerification),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob die zuletzt durchgeführte USt.-ID Prüfung
+// erfolgreich war. Existiert noch kein USt.-ID Prüfungsdatensatz, wird <false>
+// zurückgegeben.
+// Es wird auch berücksichtigt, ob sich die zuletzt durchgeführte Prüfung in dem
+// durch gl_VATIDV_ValidCacheDays angegeben Cache-Zeitraum befindet.
+//
+// Rückgabe:
+//   * Es existiert noch kein Ust.-ID Prüfungsdatensatz: false
+//   * Der letzte Ust.-ID Prüfungsdatensatz befindet sich nicht innerhalb des
+//      Cache-Zeitraums: false
+//   * Wenn die oberen beiden Bedingungen nicht zutreffen und die letzte Prüfung
+//     einfach oder qualifiziert erfolgreich war: true
+//
+// @result: boolean - Die Letzte Ust.-ID Prüfung war erfolgreich Ja/Nein
+//******************************************************************************
+function _VATIDV_LastVerificationSuccessful(oDM:O,
+                                            nWorkarea:N,
+                                            nKey:N,
+                                            nEventType:N,
+                                            bPerformAutomaticVerification:L:=false,
+                                            bSimpleVerificationIsSufficient:L:=false,
+                                            bSendErrorMail:L:=false,
+                                            bAbortIfLastVerificationFailed:L:=false)
+| oUIDSTM, oUIDRES, nUIDSTM_Id, nDifferenceInDays, aResult |
+
+   //***************************************************************************
+   function CheckIfVerificationIsSuccessful(bSimpleVerificationIsSufficient:L,
+                                            bSimpleVerificationIsSuccessful:L,
+                                            bQualifiedVerificationIsSuccessful:L)
+      result := bSimpleVerificationIsSuccessful and
+                (bSimpleVerificationIsSufficient or bQualifiedVerificationIsSuccessful),
+   end,
+
+   oUIDSTM := VATIDV_UIDSTM_Open(oDM, nWorkarea),
+   result  := oUIDSTM.CbFindKey({nKey}),
+   if result then
+      nUIDSTM_Id := oUIDSTM:ID,
+      oUIDRES := DbGetTable(oDM, waUIDRES),
+      oUIDRES.IndexName := 'UIDSTM_ID_PRUEFDATUM',
+      oUIDRES.CbSetRangeEx({nUIDSTM_Id}),
+      result := oUIDRES.CbDataAvailable,
+      if result then
+         oUIDRES.CbFirst(), // Auf den Datensatz der letzen Prüfung positionieren
+         nDifferenceInDays := Trunc(Now() - oUIDRES:PRUEFDATUM),
+         result := (nDifferenceInDays > gl_VATIDV_ValidCacheDays) and
+                   CheckIfVerificationIsSuccessful(
+                      bSimpleVerificationIsSufficient,
+                      oUIDRES:S_PRUEF_OK,
+                      oUIDRES:Q_PRUEF_OK
+                   ),
+      endif,
+   endif,
+
+   // Falls die letzte Prüfung nicht erfolgreich war
+   //  -> Ggf. neu prüfen
+   if bPerformAutomaticVerification and not result then
+      aResult := VATIDV_QualifiedVatIdVerification(oDM, nWorkarea, nKey, nEventType),
+      result  := CheckIfVerificationIsSuccessful(
+         bSimpleVerificationIsSufficient,
+         aResult[1],
+         aResult[2]
+      ),
+   endif,
+
+   // Sofern die letzte Pürfung immer nocht nicht erfolgreich ist:
+   if not result then
+      //  * Ggf. Fehler-E-Mail versenden
+      if bSendErrorMail then
+         VATIDV_SendErrorMail_Internal(nWorkarea, nKey),
+      endif,
+      //  * Ggf. Prozess-Abbruch herbeiführen
+      if bAbortIfLastVerificationFailed then
+         SetError('Last Vat-ID verification failed'),
+      endif,
+   endif,
+end,
+

@@ -1,0 +1,41 @@
+//******************************************************************************
+// oUserSession    Klasse: TBeasCbUserSession
+// oContext        Klasse: TBeasCbContext
+// oInputParam     Klasse: TBeasCbDynamicServiceInput
+//                            oInputParam.CbParams    Klasse: TBeasCbServiceInputParam
+// oOutputParam    Klasse: TBeasCbDynamicServiceOutput
+//                            oOutputParam.CbParams   Klasse: TBeasCbServiceOutputParam
+//******************************************************************************
+
+|
+   oUserSession:P1, oContext:P2, oInputParam:P3, oOutputParam:P4,
+
+   // lokale Variablen
+   i, aDict, aLanguages, cLang
+|
+
+//******************************************************************************
+// Funktionen
+//******************************************************************************
+
+//******************************************************************************
+// Hauptprogramm
+//******************************************************************************
+
+BU_Log_ResetLogLevel(),
+BU_Log_Start('SERVICE cb_taskplaner_getDictionary'),
+
+//------------------------------------------------------------------------------
+
+aLanguages := gl_TSKPL_ServiceConfig_Languages,
+
+for i := 1 to ALen(aLanguages) do
+   cLang := Token(aLanguages[i], '-', 1),
+   aDict := Dim(0),
+   aDict := TSKPL_setupDictionaries({cLang}),
+   BU_DataSetToJSON(oOutputParam, aDict, cLang, {}),
+end,
+
+
+BU_Log_End('SERVICE cb_taskplaner_getConfig'),
+

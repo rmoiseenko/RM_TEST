@@ -1,0 +1,1007 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//    Planen von Aktionen für Ressourcen
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aCustomInfoArr:P4,
+
+   m_cFormID, m_cPositionSaveID, m_cBrowserID,
+   m_oDM, m_oMainTable, m_oMROTAT, m_oMROTAT_Search, m_oMROERG,m_oMROERG_Search,
+   m_oMRORES, m_oDAB272, m_nMMT_Personal, m_bFilterImmerAktiv,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Aktion_Anlegen, A_HelpContent, a_Hilfe, A_Tat_Abschl, A_Tat_Anlegen,
+   actionList, attchkcmb_Filter_Bezeichnung, attchkcmb_Filter_Prod_Abt,
+   attchkcmb_Filter_Verantwort, barmngr_Main, barmngr_MainBar1, bbtn_tat_Abschl,
+   BeBarButton1, Bevel_akt_haupt_01, Bevel_akt_haupt_02, Bevel_durchfuehrung,
+   bipnl_Headline, btn_Filter, btn_Refresh, cmb_akt_interv_typ2,
+   cmb_akt_verantwor1, cmb_akt_verantwor2, ds_MainTable, dtp_akt_Zieldatum,
+   edt_akt_artnr, edt_akt_kulanz, edt_akt_pflichterg, edt_akt_Verantw3,
+   edt_akt_Vorauf, edt_akt_warnung, edt_akt_ZielBetriebsstunden, edt_Bez1_erg,
+   edt_bez1_Masch, edt_erg_Intervall, edt_Memo, edt_Memo_Erg, edt_sollkosten,
+   edt_Standort, edt_Tage_berechnung, grd_MainBrowser, gtbtn_akt_artikel,
+   lbl_akt_haut_01, lbl_akt_haut_02, lbl_akt_Intevall_typ, lbl_akt_Kulanz_Warn,
+   lbl_akt_Verantw3, lbl_akt_Verantwor1, lbl_akt_verantwor2,
+   lbl_akt_vorlaufzeit, lbl_akt_Zieldatum_BS, lbl_bez1_erg, lbl_Bez1_MASCH,
+   lbl_durchfuehrung, lbl_Filter_Bezeichnung, lbl_Filter_Prod_Abt,
+   lbl_Filter_Verantwort, lbl_pflicht_artnr, lbl_sollkosten, lbl_Standort,
+   lbl_Tage_berechnung1, lbl_Tage_berechnung2, pc_AktionsZusatz,
+   pnl_akt_haupt_02, pnl_details, pnl_Durchfuehrung, pnl_erg_haupt_01, pnl_Main,
+   pnl_Main_left, pnl_Main_Right, pnl_main_top, tbar_Akt, ts_Memo_akt,
+   ts_memo_erg
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID           := '@FMROTPL', // ID der zugewiesenen F12-Maske
+m_cPositionSaveID   := '@PMROTPL', // ID zum Speichern der Fenster-Position/-Größe
+m_cBrowserID        := '@BMROTPL',    // ID des Browsers
+m_bFilterImmerAktiv := true,   // Wenn false -> der Namens- Verantworltichen Filter
+                                // geht erst wenn man eine Abteilung gewählt hat
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode, bMainTableIsEmpty, bAbtGewaehlt |
+   bInEditMode       := EditModes(m_oMainTable),
+   bMainTableIsEmpty := m_oMainTable.CbNoDataAvailable,
+   bAbtGewaehlt      := alen(attchkcmb_Filter_Prod_Abt.CheckedItems) > 0,
+
+   // Buttons in der Toolbar En-/Disablen
+   A_Tat_Anlegen.Enabled                 := not bMainTableIsEmpty,
+   A_Tat_Abschl.Enabled                  := not bMainTableIsEmpty,
+
+   // Combos steuern und Filterbutton steuern
+   if bAbtGewaehlt or m_bFilterImmerAktiv then
+      if aLen(attchkcmb_Filter_Verantwort.CheckedItems) = 0 then
+         btn_Filter.Enabled                                  := not bMainTableIsEmpty or m_bFilterImmerAktiv,
+         attchkcmb_Filter_Bezeichnung.ReadOnly               := bMainTableIsEmpty and not m_bFilterImmerAktiv,
+         attchkcmb_Filter_Bezeichnung.Enabled                := not bMainTableIsEmpty or m_bFilterImmerAktiv,
+         attchkcmb_Filter_Verantwort.Enabled                 := not bMainTableIsEmpty or m_bFilterImmerAktiv,
+         attchkcmb_Filter_Verantwort.ReadOnly                := bMainTableIsEmpty and not m_bFilterImmerAktiv,
+      endif,
+   else
+      btn_Filter.Enabled                                  := false,
+      attchkcmb_Filter_Bezeichnung.ReadOnly               := true,
+      attchkcmb_Filter_Bezeichnung.Enabled                := false,
+      attchkcmb_Filter_Verantwort.Enabled                 := false,
+      attchkcmb_Filter_Verantwort.ReadOnly                := true,
+   endif,
+end,
+
+//******************************************************************************
+// Alle Standard-Einstellungen setzen z. B. Dynamische Captions eines
+// Labels o. ä.
+//******************************************************************************
+function SetDefaults()
+   bipnl_Headline.Caption    := oForm.OrigCapt,
+   cmb_akt_verantwor1.BeAttributeID := m_nMMT_Personal,
+   cmb_akt_verantwor2.BeAttributeID := m_nMMT_Personal,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'MSAKTPLAN', oForm), // Name Ggf. anpassen
+
+   // Tabelle(n) öffnen
+   m_oMRORES                  := DBGetTable(m_oDM, waMRORES),
+   m_oMRORES.IndexName        := 'ID',
+   m_oMROERG                  := DBGetTable(m_oDM, waMROERG, 'MROERGPLAN1'),
+   m_oMROERG.IndexName        := 'PLANUNG',                                     // Indexausdruck: VERANTWOR1; VERANTWOR2; PROD_ABT; DAT_LZTAKT;   Indexbedingung: STATUS == 'AKT'
+   m_oMROERG_Search           := DBGetTable(m_oDM, waMROERG, 'MROERGPLANSUCHE'),
+   m_oMROERG_Search.IndexName := 'ID',                                          // Indexausdruck: ID
+   m_oMROTAT                  := DBGetTable(m_oDM, waMROTAT),
+   m_oMROTAT.IndexName        := 'PLANUNG',                                     // Indexausdruck: ID_ERG; ZIELDATUM;                              Indexbedingung: EMPTY(MA_ABGESCH)
+   m_oMROTAT_Search           := DBGetTable(m_oDM, waMROTAT, 'AKTIONSDETAILS2'),// Zum suchen von Nicht abgschlossenen Ereignissen
+   m_oMROTAT_Search.IndexName := 'ID_MASCH',                                    // Indexausdruck: ID_MASCH; ID_ERG; TS_ABGESCH
+   m_oDAB272                  := DBGetTable(m_oDM, waDAB272, 'DAB272BERECHNUNG'),
+   m_oDAB272.IndexName        := 'DAB275',                                      // Indexausdruck: DATUM;RES_ID;PERSNR                             Indexbedingung: !EMPTY(DATUM)
+
+   m_oMainTable               := CreateObject("TBeMemTable", "MSAKTPL", m_oDM),
+   m_oMainTable.CbBorrowFromDataset(m_oMROTAT),
+   m_oMainTable.CbAddField('BS_LZTAKT', FtFloat, 0),
+   m_oMainTable.CbAddField('DAT_LZTAKT', FtDate, 0),
+   m_oMainTable.Active  := true,
+   m_oMainTable.CbAddIndex('ZIELDATUM', 'ZIELDATUM; BEZ1_MASCH; BEZ1_ERG', ixPrimary ),
+
+   // Tabelle mit Browser verbinden
+   GU_LinkTableToGUI(m_oMainTable, ds_MainTable, grd_MainBrowser, m_cBrowserID, false),
+end,
+
+//******************************************************************************
+// Errechnet die Items für die Combos Bezeichnung und Verantwortliche, nachdem
+// m_oMROTAT bereits durch die Abteilung gefiltert wurde.
+// @Result: null
+//******************************************************************************
+function GetItemsforBezAndVerantw(oTable)
+|
+   aChkListUser, aChkListUser_tmp, aChkListBezeichnung, aChkListBezeichnung_tmp,
+   i, cPerson, cMaschine, aChkListBezeichnung_sortiert
+|
+   aChkListBezeichnung      := {},
+   aChkListBezeichnung_tmp  := {},
+   aChkListUser             := {},
+   aChkListUser_tmp         := {},
+
+   oTable.CbDisableControls(),                                                     //m_oMROTAT
+   startseq                                                                        //m_oMROERG                                                        //m_oMainTable
+      oTable.CbFirst(),
+      while not oTable.CbEoF do
+         // Items der Comboboxen Bezeichnung und Verwantwortliche errechnen
+         if oTable:VERANTWOR1 > 0 and SeekInArray(oTable:VERANTWOR1, aChkListUser_tmp) < 0 then
+            AAdd(aChkListUser_tmp, oTable:VERANTWOR1),
+         endif,
+         if oTable:VERANTWOR1 > 0 and SeekInArray(oTable:VERANTWOR1, aChkListUser_tmp) < 0 then
+            AAdd(aChkListUser_tmp, oTable:VERANTWOR1),
+         endif,
+         if not Empty(oTable:ID_MASCH) and SeekInArray(oTable:ID_MASCH, aChkListBezeichnung_tmp) < 0 then
+            AAdd(aChkListBezeichnung_tmp, oTable:ID_MASCH),
+         endif,
+         oTable.CbNext(),
+      end,
+   always
+      oTable.CbEnableControls(),
+   stopseq,
+
+   //die zwei oben erstellten "tmp" Arrays übersetzen in Lesbare Arrays
+   for i:=1 to alen(aChkListUser_tmp) do
+      cPerson := AllTrim(LookUp(waDab262, 'Dab263', {{aChkListUser_tmp[i]}}, 'NAME', '')),
+      if not Empty(cPerson) then
+         AAdd(aChkListUser, cPerson + chr(9) + str(aChkListUser_tmp[i])),
+      endif,
+   next,
+   for i:=1 to alen(aChkListBezeichnung_tmp) do
+      cMaschine := AllTrim(lookup(waMRORES, 'ID', {{aChkListBezeichnung_tmp[i]}}, 'BEZ1', '')),
+      if not Empty(cMaschine) then
+         AAdd(aChkListBezeichnung, cMaschine + chr(9) + str(aChkListBezeichnung_tmp[i])),
+      endif,
+   next,
+
+   aChkListBezeichnung := MRO_MS_ArraySortieren(aChkListBezeichnung),
+   aChkListUser        := MRO_MS_ArraySortieren(aChkListUser),
+
+   //Keine Neubelegung der Items, wenn ein Wert ausgecheckt ist
+   if aLen(attchkcmb_Filter_Verantwort.CheckedItems) = 0 then
+      attchkcmb_Filter_Verantwort.BeAttributeId     := 0,
+      attchkcmb_Filter_Verantwort.Items             := aChkListUser,
+   endif,
+   if aLen(attchkcmb_Filter_Bezeichnung.CheckedItems) = 0 then
+      attchkcmb_Filter_Bezeichnung.BeAttributeId    := 0,
+      attchkcmb_Filter_Bezeichnung.Items            := aChkListBezeichnung,
+   endif,
+end,
+
+//******************************************************************************
+// Aufgaben die bei der Initialisierung des Programms erledigt werden müssen
+//
+// @Result: null
+//******************************************************************************
+function InitFunc()
+| aChkListUser, aChkListProdAbt, aChkListBezeich, aChkListUser_tmp, aChkListProdAbt_tmp, aChkListBezeich_tmp, i, nMMT_ABT |
+   // Füllt die Kombobox zum Filtern der Abteilungen und Verantwortlichen
+   aChkListUser        := {},
+   aChkListProdAbt     := {},
+   aChkListUser_tmp    := {},
+   aChkListProdAbt_tmp := {},
+   aChkListBezeich     := {},
+   aChkListBezeich_tmp := {},
+
+   m_nMMT_Personal := AttribTabID(waMROERG, 'VERANTWOR1'),
+   nMMT_ABT        := AttribTabID(waMROTAT, 'PROD_ABT'),
+
+   m_oMROERG.CbFirst(),
+   while not m_oMROERG.CbEoF do
+      if not Empty(m_oMROERG:PROD_ABT) and SeekInArray(m_oMROERG:PROD_ABT, aChkListProdAbt_tmp) < 0 then
+         AAdd(aChkListProdAbt_tmp, m_oMROERG:PROD_ABT),
+      endif,
+      m_oMROERG.CbNext(),
+   end,
+
+   //das oben erstellen "tmp" Array übersetzen in ein lesbare Array
+   for i:=1 to alen(aChkListProdAbt_tmp) do
+      AAdd(aChkListProdAbt, AttribDispVal(nMMT_ABT, alltrim(aChkListProdAbt_tmp[i])) + chr(9) + aChkListProdAbt_tmp[i]),
+   next,
+
+
+   attchkcmb_Filter_Prod_Abt.BeAttributeId    := 0,
+   attchkcmb_Filter_Prod_Abt.Items            := aChkListProdAbt,
+
+   btn_Filter.Visible := not m_bFilterImmerAktiv,
+
+   GetItemsforBezAndVerantw(m_oMROERG),
+end,
+
+//******************************************************************************
+// Erstellt ein Array mit den Selektierten Werten einer TBe(Attr)CheckChombo.
+// Diese Methode wird benoetigt, wenn die Combo manuell
+// (z.B. nicht durch eine MM-Tabelle) befüllt wurde.
+//
+// @Result: Array mit den "CheckedValues"
+//******************************************************************************
+function GetCheckedValues(oChkCmb)
+| i, aCheckedItems |
+   Result := {},
+   aCheckedItems := oChkCmb.CheckedItems,
+   for i := 1 to oChkCmb.CheckedCount do
+      AAdd(Result,StrToken(CollItem(oChkCmb.Items, aCheckedItems[i]), Chr(9), 2)),
+   next,
+end,
+
+//******************************************************************************
+// Filtert die MROERG auf die in der combocheckbox ausgewählten Verantwortlichen
+// und Abteilungen
+//
+// @Result: null
+//******************************************************************************
+function Filter_MROERG()
+| cFilter, i, aUser, cFilter_Verantwort, aProdAbt, cFilter_ProdAbt, cFilter_Bezeich, aBezeich, bOnlyAbtFilter |
+   // Filterstring für Verantwortliche erstellen
+   cFilter_Verantwort := '',
+   aUser              := GetCheckedValues(attchkcmb_Filter_Verantwort),
+   for i := 1 to ALen(aUser) do
+      if i > 1 then
+         cFilter_Verantwort += ' or ',
+      endif,
+      cFilter_Verantwort += "VERANTWOR1 = " + aUser[i] + " or VERANTWOR2 = " + aUser[i],
+      bOnlyAbtFilter     := false,
+   next,
+
+   // Filterstring für Produktionsabteilung erstellen
+   cFilter_ProdAbt := '',
+   aProdAbt        := GetCheckedValues(attchkcmb_Filter_Prod_Abt),
+   for i := 1 to ALen(aProdAbt) do
+      if i > 1 then
+         cFilter_ProdAbt += ' or ',
+      endif,
+      cFilter_ProdAbt += "PROD_ABT == '" + aProdAbt[i] + "'" ,
+   next,
+
+   // Filterstring für Bezeichnung erstellen
+   cFilter_Bezeich := '',
+   aBezeich := GetCheckedValues(attchkcmb_Filter_Bezeichnung),
+   for i := 1 to ALen(aBezeich) do
+      if i > 1 then
+         cFilter_Bezeich += ' or ',
+      endif,
+      cFilter_Bezeich += "ID_MASCH = " + aBezeich[i],
+      bOnlyAbtFilter := false
+   next,
+
+   // den Finalen Filterstring zusammensetzen
+   cFilter := '',
+   if !Empty(cFilter_Verantwort) then
+      cFilter := '( ' + cFilter_Verantwort + ' )',
+   endif,
+   if !Empty(cFilter_ProdAbt) then
+      if Empty(cFilter) then
+         cFilter := '( ' + cFilter_ProdAbt + ' )',
+      else
+         cFilter += ' and ( ' + cFilter_ProdAbt + ' )',
+      endif,
+   endif,
+   if !Empty(cFilter_Bezeich) then
+      if Empty(cFilter) then
+         cFilter := "( " + cFilter_Bezeich + " )",
+      else
+         cFilter += " and ( " + cFilter_Bezeich + " )",
+      endif,
+   endif,
+   m_oMROERG.CbFiltered := false,
+   if !Empty(cFilter) then
+      m_oMROERG.CbFilter   := cFilter,
+      m_oMROERG.CbFiltered := true,
+   endif,
+end,
+
+//******************************************************************************
+// Erstellt eintrag in den Maintable für eine geplante Aktion
+// @Result: null
+//******************************************************************************
+function WriteCalcAKTDataset(dDat_Ziel, nBS_Ziel, dLAkt, nBSLAkt)
+   m_oMainTable.CbAppend(),
+   m_oMainTable:ID_MASCH   := m_oMRORES:ID,
+   m_oMainTable:BEZ1_MASCH := m_oMRORES:BEZ1,
+   m_oMainTable:ORT_MASCH  := m_oMRORES:ORT_MASCH,
+   m_oMainTable:ID_ERG     := m_oMROERG:ID,
+   m_oMainTable:BEZ1_ERG   := m_oMROERG:BEZ1,
+   m_oMainTable:ARTNR      := m_oMROERG:ARTNR,
+   m_oMainTable:PROD_ABT   := m_oMROERG:PROD_ABT,
+   m_oMainTable:PFLICHT    := m_oMROERG:PFLICHT,
+   m_oMainTable:INTERV     := m_oMROERG:INTERV,
+   m_oMainTable:INTERV_TYP := m_oMROERG:INTERV_TYP,
+   m_oMainTable:VORLAUF    := m_oMROERG:VORLAUF,
+   m_oMainTable:KULANZ     := m_oMROERG:KULANZ,
+   m_oMainTable:WARNUNG    := m_oMROERG:WARNUNG,
+   m_oMainTable:SOLLKOSTEN := m_oMROERG:SOLLKOSTEN,
+   m_oMainTable:MEMO       := m_oMROERG:MEMO_AKT,
+   m_oMainTable:MEMO_ERG   := m_oMROERG:MEMO,
+   m_oMainTable:DAT_LZTAKT := dLAkt,
+
+   m_oMainTable:VERANTWOR1 := m_oMROERG:VERANTWOR1,
+   m_oMainTable:VERANTWOR2 := m_oMROERG:VERANTWOR2,
+   m_oMainTable:VERANTWOR3 := m_oMROERG:VERANTWOR3,
+
+   if m_oMainTable:INTERV_TYP == 'BST' then
+      m_oMainTable:ZIELBETRST := nBS_Ziel,
+      m_oMainTable:ZIELDATUM  := dDat_Ziel,
+      m_oMainTable:BS_LZTAKT  := nBSLAkt,
+   else
+      m_oMainTable:ZIELDATUM := dDat_Ziel,
+      m_oMainTable:BS_LZTAKT := m_oMROERG:BS_LZTAKT,
+   endif,
+   m_oMainTable.CbPost(),
+end,
+
+//******************************************************************************
+// Überprüft ob der übergebene Tag Ein Samstag, Sonntag, Feiertag oder ein Tag
+// der Betriebsruhe ist (kein Arbeitstag) und geht soviele Tag "zurück" bis er
+// einen Arbeitstag erreicht (ggf. auch keinen Tag)
+//
+// @Result: Date
+//******************************************************************************
+function PriorWorkday(dBerechnet)
+   Result := dBerechnet,
+   while DoW(Result) = 7 or DoW(Result) = 1 or m_oDAB272.CbFindKey({Result, , 0}) do
+      Result--,
+   end,
+end,
+
+//******************************************************************************
+// Überprüft ob der übergebene Tag Ein Samstag, Sonntag, Feiertag oder ein Tag
+// der Betriebsruhe ist (kein Arbeitstag) und geht soviele Tag "vor" bis er
+// einen Arbeitstag erreicht. (ggf. auch keinen Tag)
+//
+// @Result: Date
+//******************************************************************************
+function NextWorkday(dBerechnet)
+   Result := dBerechnet,
+   while DoW(Result) = 7 or DoW(Result) = 1 or m_oDAB272.CbFindKey({Result, , 0}) do
+      Result++,
+   end,
+end,
+
+//******************************************************************************
+// Berechnung/Bestimmung des Intervalls zur durchführung von einem Eregnis unter
+// berücksichtigung des Itervalltyps und ggf. der durschnittlichen
+// Betriebsstunden der Maschine
+//
+// @Result: Array - { Numeric - Interval in Tagen , String - Fehlertext}
+//******************************************************************************
+function CalcInterval()
+| nIntervall, cErrortext |
+   nIntervall := 0,
+   cErrortext := '',
+   //Berechnung/Bestimmung des Intervalls unter berück des Itervalltyps
+   if m_oMROERG:INTERV_TYP == 'BST' then
+      // Wenn keine durchschnittlichen Betriebsstunden bei der Maschine angeben
+      // wurden so wird soll Ereignis zweimal vorgschlagen werden
+      if Empty(m_oMRORES:DBS) then
+         nIntervall := UpRound(val(edt_Tage_berechnung.text) / 2, 0),
+         if nIntervall <= 0 then
+            nIntervall := 1,
+         endif,
+         cErrortext := 'Für das Ereignis: ' + alltrim(m_oMROERG:BEZ1) + ' (ID: ' + str(m_oMROERG:ID) + ')' + CRLF
+                       + 'der Maschine ' + alltrim(lookup(waMRORES, 'ID',{{m_oMROERG:ID_MASCH}},'BEZ1', '???', lm_Lookup)) + ' konnte kein Intervall ermittelt werden.' + CRLF
+                       + "Bitte überprüfen Sie das Intervall und die durchschnittlichen Betriebsstunden in dem Maschinenstammdaten (sofern nötig)." + CRLF
+                       + "Für die Berechnung wurde ein Durchführungs-Intevall von " + str(nIntervall) + " Tagen verwendet." + CRLF + CRLF ,
+      else
+         case upper(alltrim(m_oMRORES:DBS_JE))
+            of 'TAG' :: nIntervall := RoundInt(m_oMROERG:INTERV      / m_oMRORES:DBS, 0),
+            of 'WOC' :: nIntervall := RoundInt(m_oMROERG:INTERV * 7  / m_oMRORES:DBS, 0),
+            of 'MON' :: nIntervall := RoundInt(m_oMROERG:INTERV * 30 / m_oMRORES:DBS, 0),
+            otherwise MessageDlg("Der Intervalltyp für die durchschnittlichen Betriebsstunden der Maschine " +
+                      alltrim(m_oMRORES:BEZ1) + "ist nicht bekannt." +CRLF +CRLF
+                      + "Die Berechnung wurde abgebrochen.", mterror),
+                      m_oMainTable.CbEmptyTable(),
+         endcase,
+      endif,
+   else,   // wenn der Intervalltyp nicht betriebsstunden ist wird das Ergebnis übernommen
+      nIntervall :=  m_oMROERG:INTERV,
+   endif,
+   Result := {nIntervall, cErrortext},
+end,
+
+//******************************************************************************
+// Berechnet die nötigen Aktion im Gewünschten Zeitraum für die ausgewählten
+// Verantwortlichen
+//
+// @Result: null
+//******************************************************************************
+function CalcAKT()
+|
+  nCursor, nIntervall, nIntervall_temp, dDatum_Berechnung, dDatum_Berechnung2,
+  nBS_Berechnung, dLetzteAktion, nBSLetzteAktion, dEnde, cERGErrorList, cERGErrorList2,
+  i, aCalcInterval
+|
+   startseq
+      nCursor := setcursor(crHourGlass),
+      m_oMainTable.CbDisableControls(),
+      startseq
+         Filter_MROERG(),
+         m_oMainTable.CbEmptyTable(),
+         // falls zwischenzeitlich ein Datensatz angelegt wurde, wird die Tabelle
+         // refreshed
+         m_oMROTAT_Search.CbRefresh(),
+         cERGErrorList  := '',
+         cERGErrorList2 := '',
+
+         // Für jedes Ereignis so viele Aktionen in der MemTable erzeugen wie im
+         // "Vorschauintervall" liegen
+         m_oMROERG.CbFirst(),
+         while not m_oMROERG.CbEoF do
+            // sucht nach aktiven Aktionen und falls welche vorhanden sind wird das
+            // letzte Zieldatum als Grundlage für die Berechnung verwendet, falls
+            // nicht wird überprüft, ob das Datum der Letzten durchführung gefüllt
+            // ist, falls auch hier nichts vorhanden ist wird mit dem 01.01.1900
+            // gerechnet. Zusätzlich werden die Daten der letzten Durchführung
+            // gesetzt
+            m_oMRORES.CbSetRangeEx({m_oMROERG:ID_MASCH}),
+            m_oMROTAT_Search.CbSetRangeEx({m_oMROERG:ID_MASCH, m_oMROERG:ID, null}),
+            if m_oMROTAT_Search.CbBoF and m_oMROTAT_Search.CbEoF then
+               if Empty(m_oMROERG:DAT_LZTAKT) then
+                  cERGErrorList += "   - " + alltrim(m_oMROERG:BEZ1) + CRLF,
+                  dDatum_Berechnung := stod('19000101'),
+               else
+                  dDatum_Berechnung := m_oMROERG:DAT_LZTAKT,
+               endif,
+               dLetzteAktion   := m_oMROERG:DAT_LZTAKT,
+               nBSLetzteAktion := m_oMROERG:BS_LZTAKT,
+            else
+               // Existieren aktive Aktionen so wird das Zieldatum für die
+               // Berechnung weiterer Aktionen sowie als Zieldatum und die Ziel-
+               // betriebsstunden der letzten Durchführung verwendet
+               m_oMROTAT_Search.CbLast(),
+               dDatum_Berechnung := m_oMROTAT_Search:ZIELDATUM,
+               dLetzteAktion     := m_oMROTAT_Search:ZIELDATUM,
+               nBSLetzteAktion   := m_oMROTAT_Search:ZIELBETRST,
+            endif,
+
+            // Wenn bei einem Ereignis das "Inaktivierung geplant zum" gesetzt ist
+            // wird überprüft ob das Inakt.Dat. im betrachteten Zeitraum liegt und
+            // ggf. für dieses Ereignis das Ende datum auf das Inaktvierungsdatum
+            // gesetzt
+            dEnde := date() + val(edt_Tage_berechnung.text),
+            if not Empty(m_oMROERG:DAT_INAKTI) and m_oMROERG:DAT_INAKTI < dEnde  then
+               dEnde := m_oMROERG:DAT_INAKTI,
+            endif,
+
+            //Berechnung/Bestimmung des Intervalls unter berück des Itervalltyps
+            aCalcInterval  := CalcInterval(),
+            nIntervall     := aCalcInterval[1],
+            if not Empty(aCalcInterval[2]) then
+               cERGErrorList2 := aCalcInterval[2],
+            endif,
+
+            i := 0,
+            nBS_Berechnung := 0,
+            while dDatum_Berechnung + nIntervall - m_oMROERG:VORLAUF  < dEnde do
+               // Aktelles Berechnungsdatum "merken" um anschließend die Veränderung
+               // zu Betrachten
+               dDatum_Berechnung2 := dDatum_Berechnung,
+               // wenn beim ersten Schleifendruchlauf das Datum der nächsten,
+               // berechneten Durchführung in der Vergangenheit liegt, wird das Datum
+               // auf heute gesetzt, um bei "Vergessenen Ereignissen" keine Sinnlosen
+               // Aktionen vorzuschlagen
+               if i = 0 and dDatum_Berechnung + nIntervall < NextWorkDay(date()) then
+                  dDatum_Berechnung := NextWorkDay(date()),
+               else
+                  dDatum_Berechnung := PriorWorkday(dDatum_Berechnung + nIntervall),
+               endif,
+               // Berechnet die Betriebstunden für die nächste aktion
+               if m_oMROERG:INTERV_TYP == 'BST' then
+                  nBS_Berechnung := nBSLetzteAktion + m_oMROERG:INTERV,
+               endif,
+
+               // beim zweiten und jedem weitern Durchlauf überprüfen ob das größer
+               // geworden ist, falls nicht "hängt" die Aktion, da das Intervall
+               // kleiner ist die Anzahl der Freien Tage
+               if i > 0 and Day_Diff(dDatum_Berechnung2, dDatum_Berechnung) = 0 then
+                  dDatum_Berechnung := NextWorkDay(dDatum_Berechnung + nIntervall),
+               endif,
+
+               // ab dem zweiten Durchlauf das Datum der letzten Durchführung auf
+               // das Zieldatum/-betriensstunden des vorhergehend Durchlaufs setzen
+               if i > 0 then
+                  dLetzteAktion   := dDatum_Berechnung2,
+                  nBSLetzteAktion += m_oMROERG:INTERV,
+               endif,
+
+               // Datensatz im Memtabel erzeugen
+               if Empty(m_oMROERG:DAT_INAKTI) or ( not Empty(m_oMROERG:DAT_INAKTI) and dDatum_Berechnung < m_oMROERG:DAT_INAKTI ) then
+                  WriteCalcAKTDataset(dDatum_Berechnung, nBS_Berechnung, dLetzteAktion, nBSLetzteAktion),
+               endif,
+               i ++,
+            end,
+            m_oMROERG.CbNext(),
+         end,
+         if not Empty(cERGErrorList) then
+            MessageDlg("Das Datum der letzten erfolgreichen Durchführung (Initialdatum) der folgenden Ereiginse ist leer'" +
+                       CRLF + cERGErrorList + "Für diese Ereignisse wurde für heute das erste Ereignis vorgeschlagen.",
+                       mtInformation),
+         endif,
+         if not Empty(cERGErrorList2) then
+            MessageDlg(cERGErrorList2, mtError),
+         endif,
+
+         m_oMainTable.CbFirst(),
+         ActionsEnabled(),
+      always
+         setcursor(nCursor),
+         m_oMainTable.CbEnableControls(),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Acbhließende Frage per Input-Dialog
+// @Result: Array [Datum, Personalnummer, Kosten_int, Kosten Ext, Kommentar, ]
+//******************************************************************************
+function Abschlussabfrage()
+| aDialogResult |
+   Result := {},
+   aDialogResult :=  DU_InputDialog('Wer hat diese Aktion wann druchgeführt?',
+                                    'Der angegebene Kommentar wird im Text der Tätigkeit gespeichert. ',
+                                     { DU_InputDialog_CreateInputControlDefinition('DATE',      'Abgschlossen am',     gl_DU_InputControlType_Date,      '',                         0,                            date(), True),
+                                       DU_InputDialog_CreateInputControlDefinition('USER',      'Abgschlossen durch',  gl_DU_InputControlType_Attribute, '',           m_nMMT_Personal,                                '', True),
+                                       DU_InputDialog_CreateInputControlDefinition('KOST_INT',  'Kosten intern',       gl_DU_InputControlType_Numeric,   '*[#][;,##]',               0,                                 0, False),
+                                       DU_InputDialog_CreateInputControlDefinition('KOST_EXT',  'Kosten Extern',       gl_DU_InputControlType_Numeric,   '*[#][;,##]',               0,                                 0, False),
+                                       DU_InputDialog_CreateInputControlDefinition('KOMMENTAR', 'Kommentar',           gl_DU_InputControlType_String,    '',                         0, 'Grund für den Abschluss ist ...', False)
+                                     },
+                                     { mrOk, mrCancel }, {}
+                                    ),
+
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = 1 then
+      Result := { DU_InputDialogResult_GetInputValue(aDialogResult, 'DATE'),
+                  DU_InputDialogResult_GetInputValue(aDialogResult, 'USER'),
+                  DU_InputDialogResult_GetInputValue(aDialogResult, 'KOST_INT'),
+                  DU_InputDialogResult_GetInputValue(aDialogResult, 'KOST_EXT'),
+                  DU_InputDialogResult_GetInputValue(aDialogResult, 'KOMMENTAR')
+                },
+   endif,
+end,
+
+//******************************************************************************
+// Erzeugt eine Aktion in der Tabelle MROTAT aus dem aktuell selektierten
+// Datensatz, wird bAbschliessen = true übergeben, so wir die Tätigkeit auch
+// gleich abgeschlossen.
+// @Result: boolean - true wenn das Anlegen erfolgreich war
+//******************************************************************************
+function CreateAKT(bAbschliessen)
+| aAbschluss |
+   Result := false,
+
+   if bAbschliessen then
+      aAbschluss := Abschlussabfrage(),
+      if alen(aAbschluss) < 5 then
+         exit,
+      endif,
+   endif,
+
+   MySeek(m_oMainTable:ID_ERG, m_oMROERG_Search),
+
+   m_oDM.CbTransaction_Begin(),
+   startseq
+      m_oMROTAT.CbAppend(),
+      m_oMROTAT:ID_MASCH   := m_oMainTable:ID_MASCH,
+      m_oMROTAT:BEZ1_MASCH := m_oMainTable:BEZ1_MASCH,
+      m_oMROTAT:ORT_MASCH  := m_oMainTable:ORT_MASCH,
+      m_oMROTAT:ID_ERG     := m_oMainTable:ID_ERG,
+      m_oMROTAT:BEZ1_ERG   := m_oMainTable:BEZ1_ERG,
+      m_oMROTAT:ARTNR      := m_oMainTable:ARTNR,
+      m_oMROTAT:PROD_ABT   := m_oMainTable:PROD_ABT,
+      m_oMROTAT:PFLICHT    := m_oMainTable:PFLICHT,
+      m_oMROTAT:INTERV     := m_oMainTable:INTERV,
+      m_oMROTAT:INTERV_TYP := m_oMainTable:INTERV_TYP,
+      m_oMROTAT:VORLAUF    := m_oMainTable:VORLAUF,
+      m_oMROTAT:KULANZ     := m_oMainTable:KULANZ,
+      m_oMROTAT:WARNUNG    := m_oMainTable:WARNUNG,
+      m_oMROTAT:SOLLKOSTEN := m_oMainTable:SOLLKOSTEN,
+      m_oMROTAT:MEMO_ERG   := m_oMainTable:MEMO,
+      m_oMROTAT:VERANTWOR1 := m_oMainTable:VERANTWOR1,
+      m_oMROTAT:VERANTWOR2 := m_oMainTable:VERANTWOR2,
+      m_oMROTAT:VERANTWOR3 := m_oMainTable:VERANTWOR3,
+      m_oMROTAT:MA_ANGELEG := c_usr,
+      m_oMROTAT:TS_ANGELEG := Now(),
+
+      if m_oMainTable:INTERV_TYP == 'BST' then
+         m_oMROTAT:ZIELBETRST := m_oMainTable:ZIELBETRST,
+         m_oMROTAT:ZIELDATUM  := m_oMainTable:ZIELDATUM,
+      else
+         m_oMROTAT:ZIELDATUM  := m_oMainTable:ZIELDATUM,
+      endif,
+
+      // Soll der Auftrag gleich abgschlossen werden, werdne die Folgenden Felder noch mit gefüllt
+      if bAbschliessen then
+         m_oMROTAT:TS_ABGESCH := Now(),
+         m_oMROTAT:MA_ABGESCH := c_usr,
+         m_oMROTAT:TS_DURCHGE := aAbschluss[1],
+         m_oMROTAT:MA_DURCHGE := aAbschluss[2],
+         m_oMROTAT:ISTKOST_IN := aAbschluss[3],
+         m_oMROTAT:ISTKOST_EX := aAbschluss[4],
+         m_oMROTAT:TERMINTREU := MRO_TermintreueBerechnen(m_oMROTAT:INTERV_TYP, m_oMROTAT:INTERV,
+                                                          m_oMROTAT:BS_DURCHGE, m_oMROERG_Search:BS_LZTAKT,
+                                                          m_oMROERG_Search:DAT_LZTAKT, m_oMROTAT:TS_DURCHGE),
+         m_oMROTAT:MEMO       := ConcatRtf('DIESE TÄTIGKEIT WURDE AUS PLANUNG ABGESCHLOSSEN' + CRLF +
+                                           'Abgeschlossen von: '   + AttribDispVal(-11, c_usr) + '(' + c_usr +')' + CRLF +
+                                           'Abgeschlossen am/um: ' + FormatDateTime('DD.MM.YYYY - hh:nn:ss', m_oMROTAT:TS_ABGESCH) + CRLF +
+                                           CRLF +
+                                           'Kommentar:' ,
+                                           aAbschluss[5]),
+         m_oMROERG_Search.CbEdit(),
+         m_oMROERG_Search:DAT_LZTAKT := m_oMROTAT:TS_DURCHGE,
+         m_oMROERG_Search:BS_LZTAKT  := m_oMROTAT:BS_DURCHGE,
+         m_oMROERG_Search.CbPost(),
+      endif,
+      Result := m_oMROTAT.CbPost(),
+      m_oDM.CbTransaction_Commit(),
+   always
+      if m_oDM.CbTransaction_TryRollback() then
+         Result := false,
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Überprüft ob der der Übergebene Artikel eine Stückliste hat und vom Typ Baugruppe ist
+// @Result: boolean
+//******************************************************************************
+function PruefeArtikel()
+| oDAB010, oDAB210 |
+
+   Result := false,
+
+   oDAB010 := BeOpen(waDAB010, 'DAB011'),
+   oDAB210 := BeOpen(waDAB210, 'DAB211'),
+   startseq
+      if oDAB010.CbFindKey({edt_akt_ArtNr.Text}) then
+         Result := oDAB010:ARTTYP == 'B',
+      endif,
+      Result := Result and oDAB210.CbFindKey({edt_akt_ArtNr.Text}),
+   always
+      BeClose(oDAB010),
+      BeClose(oDAB210),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Kopie des Refresh-Buttons für eine bessere Benutzeroberfläche
+//******************************************************************************
+function btn_FilterClick( Sender )
+   startseq
+      CalcAKT(),
+      GetItemsforBezAndVerantw(m_oMainTable),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Filtern.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Leert die Checkboxen
+//******************************************************************************
+function attchkcmb_Filter_Prod_AbtClickCheck( Sender )
+   if not m_bFilterImmerAktiv then
+      attchkcmb_Filter_Verantwort.CheckedItems  := {},
+      attchkcmb_Filter_Bezeichnung.CheckedItems := {},
+   endif,
+end,
+
+//******************************************************************************
+// Prüft, bevor die Picturemask (z.B. *5[#];,*2[#] ) sich beschwert ob ein Wert
+// ein Komma enthält und fügt ggf. eins hinzu
+//******************************************************************************
+function NumCheck_OnExit( Sender )
+   if TokenCount(Sender.text, ',') = 1 then
+      Sender.text := Sender.text + ',0',
+   endif,
+end,
+
+//******************************************************************************
+// Action: Beim Refresh
+//******************************************************************************
+function btn_Refresh_OnClick( Sender )
+   startseq 
+      if not m_bFilterImmerAktiv then
+         attchkcmb_Filter_Verantwort.CheckedItems  := {},
+         attchkcmb_Filter_Bezeichnung.CheckedItems := {},
+      endif,
+      CalcAKT(),
+      GetItemsforBezAndVerantw(m_oMainTable),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktualisieren.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MainTableStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen prüfen, ob die Haupttabelle noch in Bearbeitung ist
+//        und ggf. rückfragen.
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   m_oMainTable.CbCancel(),
+   bCanClose := not EditModes(m_oMainTable) or
+               JN('Ein Datensatz befindet sich noch in Bearbeitung.' + crlf +
+                  'Möchten Sie die Bearbeitung abbrechen und das Fenster schließen?'),
+
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   startseq
+      GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Schließen des Fensters', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Indiv. Online-Hilfe aufrufen
+//******************************************************************************
+function a_HilfeExecute( Sender )
+   startseq
+      IOHU_ShowOnlineHelpGUI("BETREFF LIKE 'MRO - Tätigkeiten planen%'")
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Öffnen der indiv. Online-Hilfe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Ein Ereignis direkt abschließen, Bei Pflichtereignissen wird der der
+// Text aus der tätigkeit mit einem Default gefüllt um zu zeigen, dass diese
+// Tätigkeit ohne Produktionsauftrag geschlossen wurde.
+//******************************************************************************
+function A_Tat_AbschlExecute( Sender )
+   startseq
+      if m_oMainTable:PFLICHT then
+         if jn('Es handelt sich um ein Pflichtereignis.' + CRLF +
+            'Möchten Sie die Tätigkeit wirklich schließen, ohne einen Produktionsauftrag anzulegen?')
+         then
+            if CreateAKT(true) then
+               m_oMainTable.CbDelete(),
+               MessageDlg('Die Aktion wurde erfolgreich abgeschlossen.',mtInformation),
+            else
+               MessageDlg('Die Aktion wurde weder angelegt noch abgeschlossen', mtError),
+            endif,
+         endif,
+      else
+         if jn('Möchten Sie den Auftrag direkt abschließen?', true) then
+            if CreateAKT(true) then
+               m_oMainTable.CbDelete(),
+               MessageDlg('Die Aktion wurde erfolgreich abgeschlossen.',mtInformation),
+            else
+               MessageDlg('Die Aktion wurde weder angelegt noch abgeschlossen', mtError),
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler im Programm - ' + Progname() + ' -  Tätigkeit abschließen' , GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Tätigkeit Anlegen
+//******************************************************************************
+function A_Tat_AnlegenExecute( Sender )
+   startseq
+      if EditModes(m_oMainTable) then
+         m_oMainTable.CbPost(),
+      endif,
+      if m_oMainTable:PFLICHT then
+         if not PruefeArtikel() then
+            MessageDlg("Bei einem Pflichtereignis muss ein Artikel vom Typ 'Bauart' mit einer Stückliste verwendet werden.", mtError),
+            exit,
+         endif,
+      endif,
+      if CreateAKT(false) then
+         m_oMainTable.CbDelete(),
+         MessageDlg('Die Aktion wurde erfolgreich angelegt.',mtInformation),
+      else
+         MessageDlg('Das Anlegen der Aktion ist fehlgeschlagen, bitte wenden Sie sich an den Systemverantwortlichen', mtError),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler im Programm - ' + Progname() + ' -  Tätigkeit anlegen' , GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      DBCancel(m_oMainTable),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.ImageIndex     := 808,  // Image-Index für den Window-Navigator setzen
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Aktion_Anlegen             := FindObject(oForm, "A_Aktion_Anlegen"),
+   A_HelpContent                := FindObject(oForm, "A_HelpContent"),
+   a_Hilfe                      := FindObject(oForm, "a_Hilfe"),
+   A_Tat_Abschl                 := FindObject(oForm, "A_Tat_Abschl"),
+   A_Tat_Anlegen                := FindObject(oForm, "A_Tat_Anlegen"),
+   actionList                   := FindObject(oForm, "actionList"),
+   attchkcmb_Filter_Bezeichnung := FindObject(oForm, "attchkcmb_Filter_Bezeichnung"),
+   attchkcmb_Filter_Prod_Abt    := FindObject(oForm, "attchkcmb_Filter_Prod_Abt"),
+   attchkcmb_Filter_Verantwort  := FindObject(oForm, "attchkcmb_Filter_Verantwort"),
+   barmngr_Main                 := FindObject(oForm, "barmngr_Main"),
+   barmngr_MainBar1             := FindObject(oForm, "barmngr_MainBar1"),
+   bbtn_tat_Abschl              := FindObject(oForm, "bbtn_tat_Abschl"),
+   BeBarButton1                 := FindObject(oForm, "BeBarButton1"),
+   Bevel_akt_haupt_01           := FindObject(oForm, "Bevel_akt_haupt_01"),
+   Bevel_akt_haupt_02           := FindObject(oForm, "Bevel_akt_haupt_02"),
+   Bevel_durchfuehrung          := FindObject(oForm, "Bevel_durchfuehrung"),
+   bipnl_Headline               := FindObject(oForm, "bipnl_Headline"),
+   btn_Filter                   := FindObject(oForm, "btn_Filter"),
+   btn_Refresh                  := FindObject(oForm, "btn_Refresh"),
+   cmb_akt_interv_typ2          := FindObject(oForm, "cmb_akt_interv_typ2"),
+   cmb_akt_verantwor1           := FindObject(oForm, "cmb_akt_verantwor1"),
+   cmb_akt_verantwor2           := FindObject(oForm, "cmb_akt_verantwor2"),
+   ds_MainTable                 := FindObject(oForm, "ds_MainTable"),
+   dtp_akt_Zieldatum            := FindObject(oForm, "dtp_akt_Zieldatum"),
+   edt_akt_artnr                := FindObject(oForm, "edt_akt_artnr"),
+   edt_akt_kulanz               := FindObject(oForm, "edt_akt_kulanz"),
+   edt_akt_pflichterg           := FindObject(oForm, "edt_akt_pflichterg"),
+   edt_akt_Verantw3             := FindObject(oForm, "edt_akt_Verantw3"),
+   edt_akt_Vorauf               := FindObject(oForm, "edt_akt_Vorauf"),
+   edt_akt_warnung              := FindObject(oForm, "edt_akt_warnung"),
+   edt_akt_ZielBetriebsstunden  := FindObject(oForm, "edt_akt_ZielBetriebsstunden"),
+   edt_Bez1_erg                 := FindObject(oForm, "edt_Bez1_erg"),
+   edt_bez1_Masch               := FindObject(oForm, "edt_bez1_Masch"),
+   edt_erg_Intervall            := FindObject(oForm, "edt_erg_Intervall"),
+   edt_Memo                     := FindObject(oForm, "edt_Memo"),
+   edt_Memo_Erg                 := FindObject(oForm, "edt_Memo_Erg"),
+   edt_sollkosten               := FindObject(oForm, "edt_sollkosten"),
+   edt_Standort                 := FindObject(oForm, "edt_Standort"),
+   edt_Tage_berechnung          := FindObject(oForm, "edt_Tage_berechnung"),
+   grd_MainBrowser              := FindObject(oForm, "grd_MainBrowser"),
+   gtbtn_akt_artikel            := FindObject(oForm, "gtbtn_akt_artikel"),
+   lbl_akt_haut_01              := FindObject(oForm, "lbl_akt_haut_01"),
+   lbl_akt_haut_02              := FindObject(oForm, "lbl_akt_haut_02"),
+   lbl_akt_Intevall_typ         := FindObject(oForm, "lbl_akt_Intevall_typ"),
+   lbl_akt_Kulanz_Warn          := FindObject(oForm, "lbl_akt_Kulanz_Warn"),
+   lbl_akt_Verantw3             := FindObject(oForm, "lbl_akt_Verantw3"),
+   lbl_akt_Verantwor1           := FindObject(oForm, "lbl_akt_Verantwor1"),
+   lbl_akt_verantwor2           := FindObject(oForm, "lbl_akt_verantwor2"),
+   lbl_akt_vorlaufzeit          := FindObject(oForm, "lbl_akt_vorlaufzeit"),
+   lbl_akt_Zieldatum_BS         := FindObject(oForm, "lbl_akt_Zieldatum_BS"),
+   lbl_bez1_erg                 := FindObject(oForm, "lbl_bez1_erg"),
+   lbl_Bez1_MASCH               := FindObject(oForm, "lbl_Bez1_MASCH"),
+   lbl_durchfuehrung            := FindObject(oForm, "lbl_durchfuehrung"),
+   lbl_Filter_Bezeichnung       := FindObject(oForm, "lbl_Filter_Bezeichnung"),
+   lbl_Filter_Prod_Abt          := FindObject(oForm, "lbl_Filter_Prod_Abt"),
+   lbl_Filter_Verantwort        := FindObject(oForm, "lbl_Filter_Verantwort"),
+   lbl_pflicht_artnr            := FindObject(oForm, "lbl_pflicht_artnr"),
+   lbl_sollkosten               := FindObject(oForm, "lbl_sollkosten"),
+   lbl_Standort                 := FindObject(oForm, "lbl_Standort"),
+   lbl_Tage_berechnung1         := FindObject(oForm, "lbl_Tage_berechnung1"),
+   lbl_Tage_berechnung2         := FindObject(oForm, "lbl_Tage_berechnung2"),
+   pc_AktionsZusatz             := FindObject(oForm, "pc_AktionsZusatz"),
+   pnl_akt_haupt_02             := FindObject(oForm, "pnl_akt_haupt_02"),
+   pnl_details                  := FindObject(oForm, "pnl_details"),
+   pnl_Durchfuehrung            := FindObject(oForm, "pnl_Durchfuehrung"),
+   pnl_erg_haupt_01             := FindObject(oForm, "pnl_erg_haupt_01"),
+   pnl_Main                     := FindObject(oForm, "pnl_Main"),
+   pnl_Main_left                := FindObject(oForm, "pnl_Main_left"),
+   pnl_Main_Right               := FindObject(oForm, "pnl_Main_Right"),
+   pnl_main_top                 := FindObject(oForm, "pnl_main_top"),
+   tbar_Akt                     := FindObject(oForm, "tbar_Akt"),
+   ts_Memo_akt                  := FindObject(oForm, "ts_Memo_akt"),
+   ts_memo_erg                  := FindObject(oForm, "ts_memo_erg"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI() zeigt das GUI an, das vorher mit LoadGUI() geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   InitFunc(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm - ' + Progname(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

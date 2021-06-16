@@ -1,0 +1,409 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung: Oberfläche zur modalen Auswahl / Konfiguration des "Prüfmodus"
+//               der Verfügbarkeitsprüfung.
+//
+// Parameter:    Die Übergabe der Parameter erfolgt über den 4. Parameter (P4)
+//               als Array. So ist es möglich die GFU_*_CustomInfo()-
+//               Funktionen zu nutzen.
+//               Das Array besteht aus 2-dimensionalen Arrays, die nach dem
+//               Key-Value-Prinzip funktionieren.
+//               Das Array könnte beispielsweise folgendermaßen aussehen:
+//               {
+//                  {'PRUEFMODE',        100               }, // Prüfmodus, der ausgewählt werden soll
+//                  {'OPTIONSMEMTABLE',  <Memtable-Objekt> }  // Übergabe einer Memtable, die über "VPU_Options_CreateOptionsMem()" erstellt wurde,
+//                                                               um die Einstellungen in das Fenster zu transportieren (nur für den
+//                                                               Modus "<freie Einstellung>" und um die Auswahl im Fenster als Rückgabe zu bekommen.
+//                                                               Die hier übergebene Memtable darf keinen oder einen Datensatz enthalten.
+//               }
+//
+//  Rückgabe: Array der Form
+//            { ModalResult (mrOK, mrCancel),
+//              gewählter Prüfmodus,
+//              übergebene Options-Memtable, gefüllt mit den gewählten Einstellungen }
+//
+//##############################################################################
+//##############################################################################
+
+|
+
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_aParams:P4,
+   m_nParamPruefMode,
+   m_oParamOptionsMem,
+
+   m_nModalResult,
+
+   m_cWinPosSaveId, m_cFormID,
+   m_oOptionsMem, m_cOptionsBrowserID,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_CheckAllAbgaenge, A_CheckAllZugaenge, A_OK,
+   A_UnCheckAllAbgaenge, A_UnCheckAllZugaenge, actions, BeLabel1,
+   btn_Abgaenge_CheckAll, btn_Abgaenge_UnCheckAll, btn_Cancel, btn_OK,
+   btn_Zugaenge_CheckAll, btn_Zugaenge_UnCheckAll, chk_AB_055_O, chk_AB_215_P,
+   chk_AB_240_K, chk_AB_240_O, chk_AB_320_P, chk_LAG_EISB, chk_LAG_VERF,
+   chk_PRUEFHORZ_WBZ, chk_ZU_035_E_B, chk_ZU_035_E_O, chk_ZU_035_P_K,
+   chk_ZU_035_P_O, chk_ZU_215_P, chk_ZU_315_E, chk_ZU_320_E, chk_ZU_320_P,
+   ds_grid, edt_BEZ, edt_MEMO, grid_main, lbl_BEZ, lbl_GoodsIssues,
+   lbl_GoodsReceipt, lbl_Memo, lbl_RelevantMovements, lbl_Stock, pnl_Buttons,
+   pnl_Mask
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cWinPosSaveId     := '@VPUOPT',
+m_cFormID           := '@VPUOPT',
+m_cOptionsBrowserID := '@VPUOPT',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bIsConfigurable |
+   bIsConfigurable := not empty(m_oOptionsMem) and m_oOptionsMem:FREECONF,
+
+   chk_AB_055_O.Enabled      := bIsConfigurable,
+   chk_AB_055_O.Enabled      := bIsConfigurable,
+   chk_AB_215_P.Enabled      := bIsConfigurable,
+   chk_AB_240_K.Enabled      := bIsConfigurable,
+   chk_AB_240_O.Enabled      := bIsConfigurable,
+   chk_AB_320_P.Enabled      := bIsConfigurable,
+   chk_LAG_EISB.Enabled      := bIsConfigurable,
+   chk_LAG_VERF.Enabled      := bIsConfigurable,
+   chk_ZU_035_E_B.Enabled    := bIsConfigurable,
+   chk_ZU_035_E_O.Enabled    := bIsConfigurable,
+   chk_ZU_035_P_K.Enabled    := bIsConfigurable,
+   chk_ZU_035_P_O.Enabled    := bIsConfigurable,
+   chk_ZU_215_P.Enabled      := bIsConfigurable,
+   chk_ZU_315_E.Enabled      := bIsConfigurable,
+   chk_ZU_320_E.Enabled      := bIsConfigurable,
+   chk_ZU_320_P.Enabled      := bIsConfigurable,
+   chk_PRUEFHORZ_WBZ.Enabled := bIsConfigurable,
+
+
+   A_CheckAllAbgaenge.Enabled        := bIsConfigurable,
+   A_CheckAllZugaenge.Enabled        := bIsConfigurable,
+   A_UnCheckAllAbgaenge.Enabled      := bIsConfigurable,
+   A_UnCheckAllZugaenge.Enabled      := bIsConfigurable,
+
+
+   edt_MEMO.Enabled       := false, // setzt man .ReadOnly := true und .ReadOnlyStateFromField := false, so wird nur noch "(MEMO)" angezeigt? Daher hier per .Enabled gelöst
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oOptionsMem := VPU_Options_CreateOptionsMem(oForm),
+   GU_LinkTableToGui(m_oOptionsMem, ds_grid, grid_main, m_cOptionsBrowserID, true),
+
+   VPU_Options_AddDefaultPruefModiToMemTable(m_oOptionsMem),
+   DbGoTop(m_oOptionsMem),
+end,
+
+//******************************************************************************
+// Funktion aktivert bzw. deaktiviert alle Zugangs bzw. Abgangs-Optionen im Stapel
+// @Result: null
+//******************************************************************************
+function CheckAll(bCheck, bZugaenge)
+| bIsConfigurable |
+   bIsConfigurable := not empty(m_oOptionsMem) and m_oOptionsMem:FREECONF,
+
+   if bIsConfigurable then
+      if DbEdit(m_oOptionsMem) then
+         if bZugaenge then
+            m_oOptionsMem:ZU_215_P    := bCheck,
+            m_oOptionsMem:ZU_315_E    := bCheck,
+            m_oOptionsMem:ZU_320_P    := bCheck,
+            m_oOptionsMem:ZU_320_E    := bCheck,
+            m_oOptionsMem:ZU_035_P_O  := bCheck,
+            m_oOptionsMem:ZU_035_P_K  := bCheck,
+            m_oOptionsMem:ZU_035_E_O  := bCheck,
+            m_oOptionsMem:ZU_035_E_B  := bCheck,
+         else
+            m_oOptionsMem:AB_215_P    := bCheck,
+            m_oOptionsMem:AB_320_P    := bCheck,
+            m_oOptionsMem:AB_240_O    := bCheck,
+            m_oOptionsMem:AB_240_K    := bCheck,
+            m_oOptionsMem:AB_055_O    := bCheck,
+         endif,
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Doppelklick im Browser => Fenster mit Selektion schließen
+//******************************************************************************
+function grid_mainDblClick( Sender )
+   ActionExecute(A_OK),
+end,
+
+//******************************************************************************
+// Event: ScrollUpdate
+//******************************************************************************
+function ds_gridScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Alle Zugänge aktivieren
+//******************************************************************************
+function A_CheckAllZugaengeExecute( Sender )
+   CheckAll(true, true),
+end,
+
+//******************************************************************************
+// Action: Alle Abgänge aktivieren
+//******************************************************************************
+function A_CheckAllAbgaengeExecute( Sender )
+   CheckAll(true, false),
+end,
+
+//******************************************************************************
+// Action: Alle Zugänge deaktivieren
+//******************************************************************************
+function A_UnCheckAllZugaengeExecute( Sender )
+   CheckAll(false, true),
+end,
+
+//******************************************************************************
+// Action: Alle Abgänge deaktivieren
+//******************************************************************************
+function A_UnCheckAllAbgaengeExecute( Sender )
+   CheckAll(false, false),
+end,
+
+//******************************************************************************
+// Action: "Abbrechen"
+//******************************************************************************
+function A_CancelExecute( Sender )
+   m_nModalResult := mrCancel,
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: "OK"
+//******************************************************************************
+function A_OKExecute( Sender )
+   m_nModalResult := mrOk,
+   if EditModes(m_oOptionsMem) then
+      DbPost(m_oOptionsMem),
+   endif,
+
+   // Aktuelle Einstellung in die vom Aufrufer übergebene Memtable übertragen
+   if not empty(m_oParamOptionsMem) then
+      if NoDs(m_oParamOptionsMem) then
+         MyAppend(m_oParamOptionsMem),
+      else
+         MyEdit(m_oParamOptionsMem),
+      endif,
+      m_oParamOptionsMem.CbSetRecAsArray(m_oOptionsMem.CbGetRecAsArray()),
+      MyPost(m_oParamOptionsMem),
+   endif,
+
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Übergabeparameter verarbeiten
+// Wird verwendet, wenn das Programm mit einer GFU_*_CustomInfo()-Funktion auf-
+// gerufen wird.
+// Dabei wird Paramter 4 (P4) für die Übergabe der Parameter als Array genutzt.
+//
+// @Result: null
+//******************************************************************************
+function ParseParams()
+|
+   nLen, i, aParam,
+   PARAM_PRUEFMODE,
+   PARAM_OPTIONSMEMTABLE
+|
+   PARAM_PRUEFMODE       :='PRUEFMODE',
+   PARAM_OPTIONSMEMTABLE :='OPTIONSMEMTABLE',
+
+   // Default-Werte initialisieren
+   m_nParamPruefMode       := 0,
+   m_oParamOptionsMem      := nil,
+
+   // Test-Filter:
+//   m_aParams := {
+//      {'PRUEFMODE',        100               },
+//      {'OPTIONSMEMTABLE',  <Memtable-Objekt> }
+//   },
+
+   // Nur Arrays als Parameter zulassen
+   if not ValType(m_aParams) = 'A' then
+      Exit,
+   endif,
+
+   nLen := ALen(m_aParams),
+   for i := 1 to nLen do
+      if ValType(m_aParams[i]) = 'A' and ALen(m_aParams[i]) = 2 then
+         aParam := m_aParams[i],
+         case aParam[1]
+            of PARAM_PRUEFMODE       :: m_nParamPruefMode  := aParam[2],
+            of PARAM_OPTIONSMEMTABLE :: m_oParamOptionsMem := aParam[2],
+         endcase,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                := FindObject(oForm, "A_Cancel"),
+   A_CheckAllAbgaenge      := FindObject(oForm, "A_CheckAllAbgaenge"),
+   A_CheckAllZugaenge      := FindObject(oForm, "A_CheckAllZugaenge"),
+   A_OK                    := FindObject(oForm, "A_OK"),
+   A_UnCheckAllAbgaenge    := FindObject(oForm, "A_UnCheckAllAbgaenge"),
+   A_UnCheckAllZugaenge    := FindObject(oForm, "A_UnCheckAllZugaenge"),
+   actions                 := FindObject(oForm, "actions"),
+   BeLabel1                := FindObject(oForm, "BeLabel1"),
+   btn_Abgaenge_CheckAll   := FindObject(oForm, "btn_Abgaenge_CheckAll"),
+   btn_Abgaenge_UnCheckAll := FindObject(oForm, "btn_Abgaenge_UnCheckAll"),
+   btn_Cancel              := FindObject(oForm, "btn_Cancel"),
+   btn_OK                  := FindObject(oForm, "btn_OK"),
+   btn_Zugaenge_CheckAll   := FindObject(oForm, "btn_Zugaenge_CheckAll"),
+   btn_Zugaenge_UnCheckAll := FindObject(oForm, "btn_Zugaenge_UnCheckAll"),
+   chk_AB_055_O            := FindObject(oForm, "chk_AB_055_O"),
+   chk_AB_215_P            := FindObject(oForm, "chk_AB_215_P"),
+   chk_AB_240_K            := FindObject(oForm, "chk_AB_240_K"),
+   chk_AB_240_O            := FindObject(oForm, "chk_AB_240_O"),
+   chk_AB_320_P            := FindObject(oForm, "chk_AB_320_P"),
+   chk_LAG_EISB            := FindObject(oForm, "chk_LAG_EISB"),
+   chk_LAG_VERF            := FindObject(oForm, "chk_LAG_VERF"),
+   chk_PRUEFHORZ_WBZ       := FindObject(oForm, "chk_PRUEFHORZ_WBZ"),
+   chk_ZU_035_E_B          := FindObject(oForm, "chk_ZU_035_E_B"),
+   chk_ZU_035_E_O          := FindObject(oForm, "chk_ZU_035_E_O"),
+   chk_ZU_035_P_K          := FindObject(oForm, "chk_ZU_035_P_K"),
+   chk_ZU_035_P_O          := FindObject(oForm, "chk_ZU_035_P_O"),
+   chk_ZU_215_P            := FindObject(oForm, "chk_ZU_215_P"),
+   chk_ZU_315_E            := FindObject(oForm, "chk_ZU_315_E"),
+   chk_ZU_320_E            := FindObject(oForm, "chk_ZU_320_E"),
+   chk_ZU_320_P            := FindObject(oForm, "chk_ZU_320_P"),
+   ds_grid                 := FindObject(oForm, "ds_grid"),
+   edt_BEZ                 := FindObject(oForm, "edt_BEZ"),
+   edt_MEMO                := FindObject(oForm, "edt_MEMO"),
+   grid_main               := FindObject(oForm, "grid_main"),
+   lbl_BEZ                 := FindObject(oForm, "lbl_BEZ"),
+   lbl_GoodsIssues         := FindObject(oForm, "lbl_GoodsIssues"),
+   lbl_GoodsReceipt        := FindObject(oForm, "lbl_GoodsReceipt"),
+   lbl_Memo                := FindObject(oForm, "lbl_Memo"),
+   lbl_RelevantMovements   := FindObject(oForm, "lbl_RelevantMovements"),
+   lbl_Stock               := FindObject(oForm, "lbl_Stock"),
+   pnl_Buttons             := FindObject(oForm, "pnl_Buttons"),
+   pnl_Mask                := FindObject(oForm, "pnl_Mask"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.OrigCapt       := 'Verfügbarkeitsprüfung - Prüfmodus Optionen',
+   oForm.KeyPreview     := true, // Für Abbruch per ESC
+   m_nModalResult       := mrCancel,
+
+   if m_nParamPruefMode > 0 then
+      if DbLocate('MODUS', {m_nParamPruefMode}, 0, m_oOptionsMem) then
+
+         // Übergebenen Parameter-Zustand in GUI-Memtable kopieren, wenn es sich um den Modus "<freie Einstellung>" handelt
+         if not empty(m_oParamOptionsMem) and not NoDs(m_oParamOptionsMem) and m_oOptionsMem:FREECONF then
+            MyEdit(m_oOptionsMem),
+            m_oOptionsMem.CbSetRecAsArrayEx(m_oParamOptionsMem.CbGetRecAsArray(), 'MODUS;BEZ;MEMO;DEFAULT;FREECONF'), // nur die Einstellungen-Felder kopieren, nicht die "Grunddaten" des Prüfmodus
+            MyPost(m_oOptionsMem),
+         endif,
+
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   ParseParams(),
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+{m_nModalResult, m_oOptionsMem:MODUS, m_oParamOptionsMem}

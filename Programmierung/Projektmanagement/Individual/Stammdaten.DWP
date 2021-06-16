@@ -1,0 +1,166 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking für zusätzliche Stammdaten im Projektstamm
+//
+// Aufruf aus Indi-Menü:
+//   GFU_ShowDockingFromMaskIndiMenu_DS('MASTER_DATA_INDIV', Self, 'Projektmanagement\Individual\Stammdaten', 'ds_DABPRJ')
+//
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_cFormClassID, m_cWinPosSaveId, m_cBrowserId,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, ds_DabPrj_Indi
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@PRJ_SDZ",
+m_cWinPosSaveId := "@PRJ_SDZ",
+m_cBrowserId    := "@PRJ_SDZ",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   SetErrorIf(empty(m_oMasterTable),               'no mastertable passed to docking'),
+   SetErrorIf(m_oMasterTable.Workarea <> waDabPRJ, 'this docking needs a mastertable with workarea ' + Str(waDabPRJ)),
+
+   // Die übergebene Projektstamm-Tabelle mit dem lokalen DataSource verknüpfen
+   ds_DabPrj_Indi.DataSet := m_oMasterTable,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Nach dem Andocken des Fensters
+//******************************************************************************
+function FormExEndDock( Sender )
+| oParent |
+   // Hilfs-Methode, die der Ziel-Tabkarte das Image des Fensters zuweist
+   oParent := GetParent(oForm),
+   if not empty(oParent) then
+      if ClassName(oParent) = 'TTabSheet' then
+         oParent.ImageIndex := oForm.ImageIndex,
+         oParent.Caption    := StrTran(oForm.Caption, '&', '&&'),
+         oParent.PageIndex  := 1, // hart immer direkt hinter die "Stammdaten & Übersicht" Tabkarte positionieren
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.FormStyle   := fsNormal,
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      ds_DabPrj_Indi := FindObject( oForm, "ds_DabPrj_Indi" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.OrigCapt := 'Zusatz',
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable           := DBOpen(waDabPrj),
+      m_oMasterTable.IndexName := 'ID',
+      // DBSeek({-1}, m_oMasterTable),
+   endif,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+

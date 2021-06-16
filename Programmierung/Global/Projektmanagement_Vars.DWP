@@ -1,0 +1,19 @@
+|
+   // Min. Zeitraum in dem Buchungen erfolgen können (Initalisierung siehe unten)
+   gl_ProjectValidPostingsStep:_N:=0,
+   // ID des Individual-Menüs, welches im Projektstamm angezeigt werden soll
+   gl_ProjectFormIndiMenuId:_N:=-1,
+   // Memo-Typ, der bei der Anlage eines neuen Aufgaben-Memos im Docking
+   // "Vorgänge und Leistungen" verwendet wird.
+   gl_ProjMgmt_DefaultTaskMemoType:_N:=20
+|
+
+//##############################################################################
+//##############################################################################
+// Initalisierung Individuelle Variablen
+//##############################################################################
+//##############################################################################
+
+// Darf  niemals auf < 0 gestellt werden
+gl_ProjectValidPostingsStep := 0.6, // Da man z.B. 163,49 h Buchen kann muss hier
+                                    // mit 0.6 gerechnet werden um den Nachkomma-Anteil korrekt umzurechnen

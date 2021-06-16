@@ -1,0 +1,138 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die Nutzung von Charts zur Darstellung in GUIs
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'CHARTU' steht für 'Chart Utils'
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_CHARTU_nBackgroundColor:_U,
+   gl_CHARTU_nGrayLineColor:_U,
+   gl_CHARTU_cFontName:_U,
+   gl_CHARTU_nGrayFontColor:_U,
+   gl_CHARTU_nGrayFontColor_Intense:_U
+|
+
+gl_CHARTU_nBackgroundColor          := clWhite,
+gl_CHARTU_nGrayLineColor            := GetBeDesignColor(dcbWhite, dcgLevel2),
+gl_CHARTU_cFontName                 := 'Segoe UI',
+gl_CHARTU_nGrayFontColor            := GetBeDesignColor(dcbBlack, dcgLevel2),
+gl_CHARTU_nGrayFontColor_Intense    := GetBeDesignColor(dcbBlack, dcgLevel4),
+
+//******************************************************************************
+// Definiert für ein Chart-Objekt die Grundeinstellungen der Optik ein
+//
+//   TODO: Für eine schönes Darstellung braucht es eigentlich noch das
+//         TxChart.Tools => TAntiAliasTool. Diese kann aber aktuell nur über
+//         den GUI-Designer erstellt werden, nicht per Code.
+//
+// @Result: null
+//******************************************************************************
+function _CHARTU_Vis_InitChart(oChart)
+  oChart.Color                        := gl_CHARTU_nBackgroundColor,
+  oChart.BevelOuter                   := bvNone,
+
+  // "außenrum" um das Chart
+  oChart.SubFoot.Font.Name            := gl_CHARTU_cFontName,
+  oChart.SubTitle.Font.Name           := gl_CHARTU_cFontName,
+  oChart.Foot.Font.Name               := gl_CHARTU_cFontName,
+  oChart.Frame.Color                  := gl_CHARTU_nGrayLineColor,
+
+  // Titel
+  oChart.Title.Font.Name              := gl_CHARTU_cFontName,
+  oChart.Title.Text                   := '',
+  oChart.Title.Font.Size              := 12,
+  oChart.Title.Font.Style             := fsItalic,
+  oChart.Title.Font.Color             := gl_CHARTU_nGrayFontColor,  
+
+  // X-Achse (unten)
+  oChart.BottomAxis.Axis.Color        := gl_CHARTU_nGrayLineColor,
+  oChart.BottomAxis.Axis.Width        := 1,
+  oChart.BottomAxis.LabelsFont.Name   := gl_CHARTU_cFontName,
+  oChart.BottomAxis.LabelsFont.Color  := gl_CHARTU_nGrayFontColor,
+  oChart.BottomAxis.MinimumOffset     := 50,
+  oChart.BottomAxis.MaximumOffset     := 50,
+  oChart.BottomAxis.Grid.Visible      := false, // keine horizontalen Linien im Hintergrund
+  oChart.BottomAxis.Ticks.Visible     := false,
+  oChart.BottomAxis.MinorTicks.Visible:= false,
+
+  // zweite X-Achse (oben)
+  oChart.TopAxis.LabelsFont.Name      := gl_CHARTU_cFontName,
+
+  // Y-Achse (links)
+  oChart.LeftAxis.Axis.Color          := gl_CHARTU_nGrayLineColor,
+  oChart.LeftAxis.Axis.Width          := 1,
+  oChart.LeftAxis.Axis.Visible        := false,
+  oChart.LeftAxis.LabelsFont.Name     := gl_CHARTU_cFontName,
+  oChart.LeftAxis.LabelsFont.Color    := gl_CHARTU_nGrayFontColor,
+  oChart.LeftAxis.AutomaticMinimum    := false,
+  oChart.LeftAxis.MaximumOffset       := 50,
+  oChart.LeftAxis.MinorTicks.Visible  := false,
+  oChart.LeftAxis.Ticks.Visible       := false,
+  oChart.LeftAxis.Grid.Color          := gl_CHARTU_nGrayLineColor,
+  oChart.LeftAxis.Grid.Style          := 0, // durchgezogene Linie
+  oChart.LeftAxis.Title.Font.Name     := gl_CHARTU_cFontName,
+  oChart.LeftAxis.Title.Font.Color    := gl_CHARTU_nGrayFontColor,
+
+  // zweite Y-Achse (rechts)
+  oChart.RightAxis.LabelsFont.Name    := gl_CHARTU_cFontName,
+
+  // 3D-Effekte
+  oChart.View3D                       := false,
+  oChart.View3DWalls                  := false,
+  oChart.BottomWall.Visible           := false,
+  oChart.LeftWall.Color               := clInfoBk,
+  oChart.LeftWall.Pen.Color           := gl_CHARTU_nGrayLineColor,
+  oChart.Chart3DPercent               := 5,
+  oChart.DepthAxis.LabelsFont.Name    := gl_CHARTU_cFontName,
+  oChart.DepthTopAxis.LabelsFont.Name := gl_CHARTU_cFontName,
+
+  // Legende
+  oChart.Legend.Color                 := gl_CHARTU_nBackgroundColor,
+  oChart.Legend.Frame.Color           := gl_CHARTU_nGrayLineColor,
+  oChart.Legend.Frame.Visible         := false,
+  oChart.Legend.Font.Name             := gl_CHARTU_cFontName,
+  oChart.Legend.Font.Color            := gl_CHARTU_nGrayFontColor,
+  oChart.Legend.Shadow.Visible        := false,
+  oChart.Legend.Alignment             := 1, // 'laRight'
+  oChart.Legend.ResizeChart           := true,
+  oChart.Legend.Visible               := true,
+  oChart.Legend.Symbol.Shadow.Visible := false,
+  oChart.Legend.LegendStyle           := 1, // 1 = lsSeries = in der Legende den Titel (oSeries.Title) anzeigen und nicht alle Einzelwerte
+
+  // Antialiasing aktivieren
+  oChart.CbChartToolAdd(CreateObject('TAntiAliasTool', '', oChart)),
+end,
+
+//******************************************************************************
+// Funktion erstellt und initialisiert eine Line-Series
+// @Result: TLineSeries-Instanz
+//******************************************************************************
+function _CHARTU_Vis_CreateAndInit_LineSeries(oOwner, oChart, cComponentName, cTitleCaption, nSeriesColor, bDottedLine)
+| oSeries |
+   oSeries                       := CreateObject('TLineSeries', cComponentName, oOwner, oChart),
+   oSeries.ParentChart           := oChart,
+
+   oSeries.Title                 := cTitleCaption,
+   oSeries.SeriesColor           := nSeriesColor,
+   oSeries.TreatNulls            := 2,   // DontPaint = 0, Skip = 1, Ignore = 2
+
+   oSeries.Pointer.Visible       := false,
+   oSeries.LinePen.Width         := iif(bDottedLine, 1, 2),
+   oSeries.LinePen.Style         := iif(bDottedLine, 1, 0), // 0 = durchgezogene Linie
+
+   // Einstellungen zu den Markern sezten, per Default keine Marker, aber dennoch "hübsch" einstellen, damit man sie optional nur aktivieren muss
+   oSeries.Marks.Visible         := false,
+   oSeries.Marks.Frame.Visible   := false,
+   oSeries.Marks.Font.Name       := gl_CHARTU_cFontName,
+   oSeries.Marks.Font.Color      := gl_CHARTU_nGrayFontColor_Intense,
+   oSeries.Marks.Arrow.Visible   := false,
+   oSeries.Marks.ArrowLength     := 10,
+   oSeries.Marks.Transparent     := true,
+
+   Result := oSeries,
+end,

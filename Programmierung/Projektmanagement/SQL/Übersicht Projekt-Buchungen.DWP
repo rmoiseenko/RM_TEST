@@ -1,0 +1,135 @@
+DECLARE BUCHUNGEN CURSOR;
+
+//******************************************************************************
+// temp. Tabellen löschen
+//******************************************************************************
+TRY DROP TABLE #DAB020_BUCHUNGEN; CATCH ALL END;
+TRY DROP TABLE #DAB020_SUMMEN@@TABLENAMEADDITION@@; CATCH ALL END;
+
+//******************************************************************************
+// Mitarbeiter Abwesenheiten und Anwesenheiten ermitteln
+//    (für Ressourcen gibt es die nicht in der Dab020)
+//****ö**************************************************************************
+SELECT
+      DATUM,
+      'M' AS RES_TYP, // Für Ressourcen können zwar Abwesenheiten (Dab272) definiert werden, hierfür werden aber keine Dab020 Sätze erzeugt
+      PERSNR,
+      'S' AS ZEILEN_TYP,
+      IIF(SUBSTRING(ARTNR, 15, 1) = ' ', MENGE, 0) AS MENGE_ANWESENHEITEN,
+      IIF(SUBSTRING(ARTNR, 15, 1) = ' ', 0, MENGE) AS MENGE_ABWESENHEITEN,
+      0 AS ANZAHL_PROJEKTZEIT_BUCHUNGEN,
+      CAST(0 AS SQL_DOUBLE) AS MENGE_PROJEKTZEITEN,
+      CAST(0 AS SQL_DOUBLE) AS DIFFERENZ,
+      SUBSTRING(ARTNR, 15, 1) AS ABWESENHEITEN
+   INTO #DAB020_BUCHUNGEN
+   FROM "DAB020.ADT" DAB020
+   WHERE (BUART = 'K')
+@@DATEFILTER@@
+@@PERSNR020FILT@@
+         ;
+
+//******************************************************************************
+// Projektzeit-Buchungen ermitteln und in Buchungs-Tabelle einfügen
+//******************************************************************************
+INSERT INTO #DAB020_BUCHUNGEN
+   SELECT
+         DAB020.DATUM,
+         DABPVL.RESTYP,
+         DABPVL.RES_ID AS PERSNR,
+         'S' AS ZEILEN_TYP,
+         0 AS MENGE_ANWESENHEITEN,
+         0 AS MENGE_ABWESENHEITEN,
+         1 AS ANZAHL_PROJEKTZEIT_BUCHUNGEN,  // Jeder Datensatz in der Dab020 ist eine Buchung
+         DAB020.MENGE AS MENGE_PROJEKTZEITEN,
+         0 AS DIFFERENZ,
+         ' ' AS ABWESENHEITEN
+      FROM "Dab020.ADT" DAB020
+      INNER JOIN "DABPVL.ADT" DABPVL ON DAB020.VORGLS_ID = DABPVL.ID
+      WHERE (DABPVL.LEIST_ART = 10) AND
+            (DABPVL.RESTYP = 'M')
+@@DATEFILTER@@
+@@PERSNRPOSTINGSFILT@@
+            ;
+
+//******************************************************************************
+// Gruppierung der An / Abwesenheiten und Projekt-Zeiten auf Tagessummen
+//******************************************************************************
+SELECT
+      DATUM,
+      RES_TYP,
+      PERSNR,
+      ZEILEN_TYP,
+      SUM(MENGE_ANWESENHEITEN)          AS SUMME_ANWESENHEITEN,
+      SUM(MENGE_ABWESENHEITEN)          AS SUMME_ABWESENHEITEN,
+      SUM(ANZAHL_PROJEKTZEIT_BUCHUNGEN) AS ANZAHL_PROJEKTZEIT_BUCHUNGEN,
+      SUM(MENGE_PROJEKTZEITEN)          AS SUMME_PROJEKTZEITEN,
+      SUM(MENGE_PROJEKTZEITEN - MENGE_ANWESENHEITEN) AS DIFFERENZ, // Wie viel der Anwesenheits-Zeit wurde nicht auf Projekte gebucht ?
+      CAST(' ' AS SQL_CHAR(20))         AS ABWESENHEITEN
+   INTO #DAB020_SUMMEN@@TABLENAMEADDITION@@
+   FROM #DAB020_BUCHUNGEN
+   GROUP BY DATUM, RES_TYP, PERSNR, ZEILEN_TYP;
+
+//******************************************************************************
+// Abwesenheits-Infos in die Summen-Tabelle übertragen
+//******************************************************************************
+OPEN BUCHUNGEN AS SELECT * FROM #DAB020_BUCHUNGEN WHERE ABWESENHEITEN <> ' ';
+WHILE FETCH BUCHUNGEN DO
+  UPDATE #DAB020_SUMMEN@@TABLENAMEADDITION@@
+     SET ABWESENHEITEN = RTrim(ABWESENHEITEN) + iif(ABWESENHEITEN = ' ', '', '/') + BUCHUNGEN.ABWESENHEITEN
+     WHERE DATUM = BUCHUNGEN.DATUM AND RES_TYP = BUCHUNGEN.RES_TYP AND PERSNR = BUCHUNGEN.PERSNR AND ZEILEN_TYP = 'S';
+END WHILE;
+CLOSE BUCHUNGEN;
+
+//******************************************************************************
+// Tagestrenner-Summen einfügen
+//******************************************************************************
+INSERT INTO #DAB020_SUMMEN@@TABLENAMEADDITION@@
+   SELECT
+         DATUM,
+         '1' AS RES_TYP, // sorgt für eine Positionierung überhalb der Personen / Ressourcen Tages-Summen-Sätze, da es sich in der GUI um eine "Überschrift" handelt
+         0   AS PERSNR,
+         'T' AS ZEILEN_TYP,
+
+         // Summen-Bildung über den Tag, auch wenn das inhatlich nicht immer sinnvoll ist
+         SUM(SUMME_ANWESENHEITEN)          AS SUMME_ANWESENHEITEN,
+         SUM(SUMME_ABWESENHEITEN)          AS SUMME_ABWESENHEITEN,
+         SUM(ANZAHL_PROJEKTZEIT_BUCHUNGEN) AS ANZAHL_PROJEKTZEIT_BUCHUNGEN,
+         SUM(SUMME_PROJEKTZEITEN)          AS SUMME_PROJEKTZEITEN,
+         SUM(DIFFERENZ)                    AS DIFFERENZ,
+         ' '                               AS ABWESENHEITEN
+      FROM #DAB020_SUMMEN@@TABLENAMEADDITION@@
+      WHERE ZEILEN_TYP = 'S'
+      GROUP BY DATUM;
+
+//******************************************************************************
+// Wochentrenner-Summen einfügen
+//******************************************************************************
+INSERT INTO #DAB020_SUMMEN@@TABLENAMEADDITION@@
+   SELECT
+         MIN(DATUM),        // Datum der zeitlich ersten Buchung in dieser Woche (könnte auch immer der Montag der Woche sein)
+         '0' AS RES_TYP,    // sorgt für eine Positionierung überhalb der Tagestrenner-Summen
+         0   AS PERSNR,
+         'W' AS ZEILEN_TYP, // sorgt für eine Positionierung unterhalb der Tages-Trenner ('T')
+
+         // Summen-Bildung über die Woche, auch wenn das inhatlich nicht immer sinnvoll ist
+         SUM(SUMME_ANWESENHEITEN)          AS SUMME_ANWESENHEITEN,
+         SUM(SUMME_ABWESENHEITEN)          AS SUMME_ABWESENHEITEN,
+         SUM(ANZAHL_PROJEKTZEIT_BUCHUNGEN) AS ANZAHL_PROJEKTZEIT_BUCHUNGEN,
+         SUM(SUMME_PROJEKTZEITEN)          AS SUMME_PROJEKTZEITEN,
+         SUM(DIFFERENZ)                    AS DIFFERENZ,
+         ' '                               AS ABWESENHEITEN
+      FROM #DAB020_SUMMEN@@TABLENAMEADDITION@@
+      WHERE ZEILEN_TYP = 'S'
+      GROUP BY WEEK(DATUM - 1), // Die Woche beginnt bei ADS am Sonntag
+               YEAR(DATUM);
+
+//******************************************************************************
+// Eventuell nur Datensätze die eine Projektzeit haben
+//******************************************************************************
+@@ONLYPRJDAYS@@ DELETE FROM #DAB020_SUMMEN@@TABLENAMEADDITION@@
+@@ONLYPRJDAYS@@    WHERE ANZAHL_PROJEKTZEIT_BUCHUNGEN = 0;
+
+//******************************************************************************
+// Ergebnis sortiert zurück geben
+//******************************************************************************
+SELECT * FROM #DAB020_SUMMEN@@TABLENAMEADDITION@@ ORDER BY DATUM, RES_TYP, PERSNR, ZEILEN_TYP

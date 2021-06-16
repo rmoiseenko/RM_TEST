@@ -1,0 +1,506 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält alle Funktionen, die für die Ausführung des
+//   Task-Schedulers wichtig sind.
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Task-Definition mit allen notwendigen Informationen erstellen
+// @Result: array - Task-Informationen
+//******************************************************************************
+function _TSKPL_TaskDefinition_Create(nId:N,
+                                      cName:C,
+                                      cInfo:C,
+                                      nProgId:N,
+                                      nStartKind:N,
+                                      cStartParam:C,
+                                      nStartType:N,
+                                      cStartOptions:C,
+                                      dtStartFirst:DT,
+                                      dtStartLast:DT,
+                                      dtStartNext:DT,
+                                      bActive:L,
+                                      nLocation:N,
+                                      nDepartment:N,
+                                      cUser:C)
+   result := {},
+   KVU_Set(result, 'task.ID',           nId),
+   KVU_Set(result, 'task.Name',         cName),
+   KVU_Set(result, 'task.Info',         cInfo),
+   KVU_Set(result, 'task.Program',      nProgId),
+   KVU_Set(result, 'task.StartKind',    nStartKind),
+   KVU_Set(result, 'task.StartParam',   cStartParam),
+   KVU_Set(result, 'task.StartType',    nStartType),
+   KVU_Set(result, 'task.StartOptions', cStartOptions),
+   KVU_Set(result, 'task.StartFirst',   dtStartFirst),
+   KVU_Set(result, 'task.StartLast',    dtStartLast),
+   KVU_Set(result, 'task.StartNext',    dtStartNext),
+   KVU_Set(result, 'task.Active',       bActive),
+   KVU_Set(result, 'task.Location',     nLocation),
+   KVU_Set(result, 'task.Department',   nDepartment),
+   KVU_Set(result, 'task.User',         cUser),
+end,
+
+//******************************************************************************
+// Taskdefinition ausführen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _TSKPL_TaskDefinition_Execute(aTaskDefinition:A)
+|
+   nTaskID, cTaskName, nTaskProgramID, nExecutionKind, nLocation,
+   nDepartment, cUser, cCommandLine, aCustomTaskParams,
+   nTaskLauncherProgramID
+|
+
+   //***************************************************************************
+   function TransformCommandLineToKeyValue(cCommandLineString:C,
+                                           cParamDelimiter:C,
+                                           cValueDelimiter:C)
+   | nTokenCount, i, cToken, aParams |
+
+      //************************************************************************
+      function ExtractKeyValuePair(aParams:R, cToken:C, cValueDelimiter:C)
+      | nTokenCount, i |
+
+         result      := '',
+         nTokenCount := TokenCount(cToken, cValueDelimiter),
+         case nTokenCount
+            of 1 ::
+               KVU_SET(aParams, Token(trim(cToken), cValueDelimiter, 1), 0),
+            of 2 ::
+               KVU_SET(aParams, Token(trim(cToken), cValueDelimiter, 1), Token(trim(cToken), cValueDelimiter, 2)),
+            otherwise
+               result := '',
+         endcase,
+      end,
+
+      aParams     := Dim(0),
+      nTokenCount := TokenCount(cCommandLineString, cParamDelimiter),
+      for i := 1 to nTokenCount - 1 do
+         cToken := Token(cCommandLineString, cParamDelimiter, i + 1),
+         ExtractKeyValuePair(aParams, cToken, cValueDelimiter),
+      end,
+      
+      KVU_Set(aParams, 'TSKPL_ID', nTaskID),
+
+      result := aParams,
+   end,
+
+   nTaskID           := KVU_GetAssert(aTaskDefinition, 'task.Id'),
+   cTaskName         := KVU_GetAssert(aTaskDefinition, 'task.Name'),
+   nTaskProgramID    := KVU_GetAssert(aTaskDefinition, 'task.Program'),
+   nExecutionKind    := KVU_GetAssert(aTaskDefinition, 'task.StartKind'),
+   cUser             := KVU_GetAssert(aTaskDefinition, 'task.User'),
+   nLocation         := KVU_Get(aTaskDefinition, 'task.Location',   0),
+   nDepartment       := KVU_Get(aTaskDefinition, 'task.Department', 0),
+   cCommandLine      := KVU_Get(aTaskDefinition, 'task.StartParam', ''),
+
+   nTaskLauncherProgramID :=
+      TSKPL_CreateOrReUseTaskLauncherProgram(0, nTaskID, nTaskProgramID, cTaskName, {}),
+
+   // Variablen / Parameter notwendig für die Ermittlung des aktuell laufenden Tasks für das Schreiben von logs
+   // siehe _TSKPL_Log()
+   SetBeparam('TSKP' + Str(nTaskProgramID), nTaskID),                           // alte Konstruktion für 6.5
+   gl_TSKPL_Log_TaskID := nTaskID,                                              // ab 7.1
+
+   startseq
+      case nExecutionKind
+         of gl_TSKPL_StartKind_Codeblock ::
+            // Task in aktueller be-Instanz ausführen:
+            Call(nTaskLauncherProgramID),
+
+         of gl_TSKPL_StartKind_BeInstance ::
+            // Task in separater/neuer be-Instanz ausführen:
+            // TODO:
+            //  Aktuell wird kein User übergeben, weil dafür das
+            //  Login-Kennwort des entsprechenden Users notwendig ist.
+            aCustomTaskParams := TransformCommandLineToKeyValue(cCommandLine, '/', ':'),
+            KVU_Set(aCustomTaskParams, 'CALL', nTaskLauncherProgramID),
+            CreateBeProcess(aCustomTaskParams, False, '', nLocation, nDepartment, -1),
+
+         otherwise
+            SetError('Ungültige Start-Art (StartKind) <' + Str(nExecutionKind) + '>'),
+      endcase,
+   onerror
+      TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted, 'Fehler beim Ausführen von Task <' + cTaskName + '>: ' + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion führt den Scheduler aus, welcher ggf. Tasks ausführt.
+// Bevor die Ausführun des Schedulers endet, das Zeitintervall berechnet,
+// nachdem die Scheduler-Ausführung erneut starten soll.
+//
+// @result: numeric - Scheduler-Ausführungszeitpunkt
+//******************************************************************************
+function _TSKPL_ExecuteScheduler(nSchedulerID:N)
+|
+   m_nWaitInterval,                // Standardintervall zum Warten
+   m_nTimerImprecision,            // Timerungenauigkeit
+   m_nRunningTaskId,               // ID des aktuell laufenden Tasks
+   m_oDM,
+   m_oTSKPLTASK
+|
+
+   //###########################################################################
+   //###########################################################################
+   // Initialiserung
+   //###########################################################################
+   //###########################################################################
+
+   // Wartezeit, um die Datenbank auf neue Tasks zu prüfen
+   m_nWaitInterval := 60000,
+   // Ungenauigkeit für Ausführzeitpunkt (da Round(), etc).
+   m_nTimerImprecision := 0.6,
+
+   //###########################################################################
+   //###########################################################################
+   // Inline-Funktionen
+   //###########################################################################
+   //###########################################################################
+
+   //***************************************************************************
+   // Fehlerinformationen auf die Console schreiben
+   // @Result: null
+   //***************************************************************************
+   function WriteErrorInformation()
+      writeln('------'),
+      writeln('Fehler-Zeile: '        + Str(GetErrorLine())),
+      writeln('Fehler-Code: '         + Str(GetErrorCode())),
+      writeln('Fehler-Beschreibung: ' + GetErrorText()),
+      writeln('------'),
+   end,
+
+   //***************************************************************************
+   // Berechnet die Differenz zweier DateTime-Werte in Millisekunden
+   // @Result: numeric - Zeit in Millisekunden
+   //***************************************************************************
+   function CalculateDateTimeDiffInMilliseconds(dtTaskExecution)
+   | nDays, nHours, nMinutes, nSeconds, nDifference |
+
+      // Tage
+      nDifference := dtTaskExecution - GetAdsServerTime(),
+      nDays       := (Round(nDifference - Frac(nDifference), 4) * 86400),
+
+      // Stunden
+      nDifference := Frac(nDifference) * 24,
+      nHours      := (Round(nDifference - Frac(nDifference), 4) * 3600),
+
+      // Minuten
+      nDifference := Frac(nDifference) * 60,
+      nMinutes    := (Round(nDifference - Frac(nDifference), 4) * 60),
+
+      // Sekunden + Ungenauigkeit
+      nDifference := Frac(nDifference) * 60,
+      nSeconds    := Round(nDifference - Frac(nDifference) + m_nTimerImprecision, 4),
+
+      // Sekunden addieren und in Millisekunden umrechnen => result
+      result := (nDays + nHours + nMinutes + nSeconds) * 1000,
+   end,
+
+   //***************************************************************************
+   // Zeitpunkt für nächste Ausführung ermitteln
+   // @Result: numeric - Interval in Millisekunden
+   //***************************************************************************
+   function DetermineNextExecutionInterval(aTaskList:A)
+   | i, aTask, nTaskInterval |
+
+      result := m_nWaitInterval,
+      for i := 1 to ALen(aTaskList) do
+         aTask         := aTaskList[i],
+         nTaskInterval := CalculateDateTimeDiffInMilliseconds(KVU_GetAssert(aTask, 'task.StartNext')),
+         if nTaskInterval < result then
+            result := nTaskInterval,
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // Prüft, ob sich ein bestimmter Task NICHT im Edit-Modus befindet.
+   // @Result: boolean
+   //***************************************************************************
+   function TaskNotInEditMode(nTaskID:N)
+   | oTSKPLTASK |
+
+      oTSKPLTASK := BeOpen(waTSKPLTASK, 'ID'),
+      startseq
+         SetErrorIf(not oTSKPLTASK.CbFindKey({nTaskID}),
+                    'Task mit ID <' + Str(nTaskID) + '> existiert nicht'),
+         Result := DbEdit(oTSKPLTASK),
+         if Result then
+            DbCancel(oTSKPLTASK),
+         endif,
+      always
+         BeClose(oTSKPLTASK),
+      stopseq,
+   end,
+
+   //***************************************************************************
+   // Lädt eine Liste aller aktiver Tasks, die zum angegeben Scheduler gehören
+   // aus der Datenbank und fügt diese der internen Liste für auszuführende
+   // Tasks hinzu.
+   //
+   // @Result: array - Liste der auszuführenden Tasks
+   //***************************************************************************
+   function CheckForNewTasks(nSchedulerID:N)
+   |
+      nStartType, cStartOptions, dtTaskStop, dtTaskNext, aTask,
+      aTempStartOptions
+   |
+
+      result := {},
+
+      // Wenn START_NEXT nicht gesetzt ist -> Task ignorieren
+      m_oTSKPLTASK.CbSetFilter('SCHEDUL_ID = ' + Str(nSchedulerID) + ' AND ACTIVE AND START_NEXT <> ''00:00:00'''),
+      startseq
+         while not m_oTSKPLTASK.CbEof do
+            nStartType    := m_oTSKPLTASK:START_TYPE,
+            cStartOptions := m_oTSKPLTASK:START_OPT,
+            dtTaskStop    := m_oTSKPLTASK:START_LAST,
+            dtTaskNext    := m_oTSKPLTASK:START_NEXT,
+
+            // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+            // "Jetzt + 1 Jahr" ermitteln
+            if (dtTaskStop = '00:00:00') then
+               dtTaskStop := GetAdsServerTime() + 365,
+            else
+               dtTaskStop := GetDayEnd(dtTaskStop),
+            endif,
+
+            aTask := TSKPL_TaskDefinition_Create(
+               m_oTSKPLTASK:ID,
+               m_oTSKPLTASK:NAME,
+               m_oTSKPLTASK:INFO,
+               m_oTSKPLTASK:START_PROG,
+               m_oTSKPLTASK:START_KIND,
+               m_oTSKPLTASK:STARTPARAM,
+               nStartType,
+               cStartOptions,
+               m_oTSKPLTASK:STARTFIRST,
+               dtTaskStop,
+               dtTaskNext,
+               m_oTSKPLTASK:ACTIVE,
+               m_oTSKPLTASK:LOCATION,
+               m_oTSKPLTASK:DEPARTMENT,
+               m_oTSKPLTASK:USER
+            ),
+            AAdd(result, aTask),
+
+            m_oTSKPLTASK.CbNext(),
+         end,
+      always
+         m_oTSKPLTASK.CbFilter   := '',
+         m_oTSKPLTASK.CbFiltered := False,
+      stopseq,
+   end,
+
+   //***************************************************************************
+   // Prüft, ob GetAdsServerTime() innerhalb von Start und Stop
+   // @Result: boolean
+   //***************************************************************************
+   function IsCurrentAdsServerTimeWithinRange(dtStart:DT, dtStop:DT)
+   | dtNow |
+
+      dtNow  := GetAdsServerTime(),
+      result := (dtNow >= dtStart) and (dtNow <= dtStop),
+   end,
+
+   //***************************************************************************
+   function GetTolerance(dtStartNext, nTaskID, aTaskOptions)
+   | cToleranceUnit, nToleranceAmount , dtTolerance |
+
+      result := AddMonth(dtStartNext,1000*12),
+      nToleranceAmount := KVU_Get(aTaskOptions, 'execution.ToleranceAmount', '0'),
+      if empty(nToleranceAmount) then
+         nToleranceAmount := 0,
+      else
+         nToleranceAmount := Int(nToleranceAmount),
+      endif,
+      cToleranceUnit   := KVU_Get(aTaskOptions, 'execution.ToleranceUnit', ''),
+      if ((not empty(cToleranceUnit)) and nToleranceAmount > 0)  then
+          case cToleranceUnit
+            of 'm' ::
+               dtTolerance := dtStartNext + (nToleranceAmount / 1440),
+            of 'h' ::
+               dtTolerance := dtStartNext + (nToleranceAmount / 24),
+            of 'd' ::
+               dtTolerance := dtStartNext + nToleranceAmount,
+            otherwise
+               TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_AlgorithmError, 'Ungültige Toleranz-Einheit!'),
+          endcase,
+          result := dtTolerance,
+      endif,
+
+   end,
+
+   //******************************************************************************
+   // Prüft, ob der Scheduler Tasks in seiner Liste hat, die ausgeführt werden
+   // müssen, da die Zeit "abgelaufen" ist
+   // @Param: Array of TaskObjects
+   // @Result: null
+   //******************************************************************************
+   function CheckIfItsTimeToExecuteTasks(aTaskList:R)
+   |
+      aTaskList_Local, i, aTask, dtNewStartDateTime,
+      nTaskId, dtStartNext, dtStartTolerance,
+      dtStartFirst, dtStartLast, nTaskType, aTaskOptions
+   |
+      aTaskList_Local := aTaskList,
+
+      for i := ALen(aTaskList_Local) downto 1 do
+         aTask        := aTaskList_Local[i],
+         nTaskId      := KVU_GetAssert(aTask, 'task.ID'),
+         dtStartNext  := KVU_Get(aTask, 'task.StartNext',  GetAdsServerTime()),
+         nTaskType    := KVU_GetAssert(aTask, 'task.StartType'),
+         if nTaskType = gl_TSKPL_StartType_Once then
+            dtStartFirst := GetAdsServerTime(),
+            dtStartLast  := EncodeDateTime(9999, 12, 31, 23, 59, 59, 999),
+         else
+            dtStartFirst := KVU_Get(aTask, 'task.StartFirst', GetAdsServerTime()),
+            dtStartLast  := KVU_Get(aTask, 'task.StartLast',  '23.12.2222'),
+         endif,
+         if dtStartLast < dtStartFirst then
+            dtStartLast  := EncodeDateTime(9999, 12, 31, 23, 59, 59, 999),
+         endif,
+
+         // Sicherstellen, dass sich der Task nicht im Edit-Modus befindet
+         if TaskNotInEditMode(nTaskId) then
+            aTaskOptions := StrToArr(KVU_Get(aTask, 'task.StartOptions', {})),
+            KVU_Set(aTaskOptions, 'execution.Type',      nTaskType),
+            KVU_Set(aTaskOptions, 'execution.LastStart', ConvertDateTimeToArray(GetAdsServerTime())),
+            KVU_Set(aTaskOptions, 'execution.StartFirst', dtStartFirst),
+
+            dtStartTolerance  := GetTolerance(dtStartNext, nTaskId, aTaskOptions),
+
+            // Prüfen, ob der Task überhaupt schon ausgeführt werden soll
+            if (dtStartNext <= GetAdsServerTime()) and (GetAdsServerTime() <= dtStartTolerance) and
+               // Prüfen, ob wir uns aktuell noch im Ausführungszeitraum des Tasks
+               // befinden
+               IsCurrentAdsServerTimeWithinRange(dtStartFirst, dtStartLast) then
+               KVU_Set(aTask, 'task.Missed', false),
+               startseq
+                  // Task ausführen
+                  TSKPL_TaskDefinition_Execute(aTask),
+                  SetErrorIf(not m_oTSKPLTASK.CbFindKey({nTaskID}),
+                             'Setzen des nächsten Ausführungszeitpunkts nicht möglich -> Task mit ID <' + Str(nTaskID) + '> existiert nicht!'),
+                  if nTaskType = gl_TSKPL_StartType_Once then
+                     // Nach der Ausführung eines "einmaligen" Tasks wird der
+                     // Zeitpunkt für die nächste Ausführung anschließend auf
+                     // 00:00:00 gesetzt, damit der Task bei der nächsten
+                     // Iteration nicht als "verpasst" gilt und erneut
+                     // ausgeführt wird.
+                     dtNewStartDateTime := EncodeTime(0,0,0,0),
+                  else
+                     // Nach Ausführung muss der neue Ausführungszeitpunkt berechnet werden
+                     dtNewStartDateTime := TSKPL_CalculateStart(aTaskOptions, GetAdsServerTime()),
+                     if (not Empty(m_oTSKPLTASK:START_LAST)) and (dtNewStartDateTime > GetDayEnd(m_oTSKPLTASK:START_LAST)) then
+                        dtNewStartDateTime := EncodeTime(0, 0, 0, 0),
+                     endif,
+                  endif,
+                  if (ValType(dtNewStartDateTime) <> 'D') and (ValType(dtNewStartDateTime) <> 'N') then
+                     TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_AlgorithmError,
+                                'Task <' + KVU_Get(aTask, 'task.Name', '') + '> Algorithmus ist fehlerhaft -> Nächster Start undefiniert!'),
+                     MyEdit(m_oTSKPLTASK),
+                     m_oTSKPLTASK:START_NEXT := 0,
+                     MyPost(m_oTSKPLTASK),
+                  else
+                     SetErrorIf(not m_oTSKPLTASK.CbFindKey({nTaskID}),
+                             'Setzen des nächsten Ausführungszeitpunkts nicht möglich -> Task mit ID <' + Str(nTaskID) + '> existiert nicht!'),
+                     MyEdit(m_oTSKPLTASK),
+                     m_oTSKPLTASK:START_NEXT := dtNewStartDateTime,
+                     MyPost(m_oTSKPLTASK),
+
+                     // Task aus der Taskliste löschen, da dieser ausgeführt wurde
+                     ADelete(aTaskList_Local, i),
+                  endif,
+               onerror
+                  TSKPL_WriteLog_Task(nTaskID, GL_TSKPL_EVENTCODE_ALGORITHMERROR, "Task ID " + str(nTaskID) + ':' + geterrortext()),
+                  WriteErrorInformation(),
+               stopseq,
+            else
+               if (dtStartNext <= GetAdsServerTime()) then
+                  // Status verpasst sich merken, sodass es nicht immer wieder im Log
+                  // als verpasst geschrieben wird, obwohl es schon wieder bereit ist.
+                  if not KVU_Get(aTask, 'task.Missed', false) then
+                     TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted, 'Task <' + KVU_Get(aTask, 'task.Name', '') + '> wurde verpasst. ' +
+                       '(Toleranz war bis ' + DateTimeToStr(dtStartTolerance) +
+                       ', Start erlaubt zwischen ' + DateTimeToStr(dtStartFirst) + ' und ' +  DateTimeToStr(dtStartLast) + ')'),
+                     KVU_Set(aTask, 'task.Missed', true),
+                  endif,
+                  if nTaskType <> gl_TSKPL_StartType_Once then
+                     dtNewStartDateTime := TSKPL_CalculateStart(aTaskOptions, GetAdsServerTime()),
+                     SetErrorIf(not m_oTSKPLTASK.CbFindKey({nTaskID}),
+                                'Setzen des nächsten Ausführungszeitpunkts nicht möglich -> Task mit ID <' + Str(nTaskID) + '> existiert nicht!'),
+                     MyEdit(m_oTSKPLTASK),
+                     m_oTSKPLTASK:START_NEXT := dtNewStartDateTime,
+                     MyPost(m_oTSKPLTASK),
+                  endif,
+               endif,
+            endif,
+         else
+            TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted,
+                                'Task <' + KVU_Get(aTask, 'task.Name', '') + '> wird aktuell bearbeitet (Admin-GUI)'),
+         endif,
+      next,
+
+      aTaskList := aTaskList_Local,
+   end
+
+
+   //***************************************************************************
+   // Ausführung des Schedulers:
+   //  1. Wechsel zu Status "Running"
+   //  2. Tasks für den Scheduler laden
+   //  3. Prüfen, welche Tasks ausgeführt werden müssen
+   //  4. Wartezeit bis zur Ausführung des nächsten Tasks bestimmen
+   //
+   // @Result: integer - Wartezeit bis zum nächsten Durchlauf
+   //***************************************************************************
+   function SchedulerExecution()
+   |
+      aTaskList, nNextExecution
+   |
+
+      result := m_nWaitInterval, // Default-Wartezeit
+
+      // 1. Wechsel zu Status "Running"
+      // -> Dient auch zum Schreiben von LAST_RESP (KEEP ALIVE)
+      TSKPL_ChangeSchedulerStateRunning(nSchedulerID),
+      startseq
+         // 2. Tasks für den Scheduler laden
+         aTaskList := CheckForNewTasks(nSchedulerID),
+
+         if ALen(aTaskList) > 0 then
+            // 3. Prüfen, welche Tasks ausgeführt werden müssen
+            CheckIfItsTimeToExecuteTasks(aTaskList),
+
+            if ALen(aTaskList) > 0 then
+               // 4. Wartezeit bis zur Ausführung des nächsten Tasks bestimmen
+               nNextExecution := DetermineNextExecutionInterval(aTaskList),
+               // Setzen als neues "Check"-Interval des Timers (nur, wenn positiv)
+               if (nNextExecution > 0) then
+                  if (nNextExecution > m_nWaitInterval) then
+                     result := m_nWaitInterval,
+                  else
+                     result := nNextExecution,
+                  endif,
+               endif,
+            endif,
+         endif,
+      onerror
+         WriteErrorInformation(),
+         TSKPL_ChangeSchedulerStateInactive(nSchedulerID),
+      stopseq
+   end,
+
+   m_oDM := CreateObject('TBeDBGet'),
+   startseq
+      m_oTSKPLTASK := DbGetTable(m_oDM, waTSKPLTASK, 'TSKPLTASK_SCHEDULEREXECUTION'),
+      result       := SchedulerExecution(),
+   always
+      DestroyObject(m_oDM),
+   stopseq
+end,
+

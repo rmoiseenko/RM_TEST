@@ -1,0 +1,365 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Funktionen für die Protokollierung in "Erweiterte Versandsteuerung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'EVS' steht für 'E'rweiterte 'V'ersand's'teuerung
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_EVS_Beistell_Status_Merkmalstabelle_ID:_N         := -1,
+   gl_EVS_Beistell_Status_Offen:_N                      := 5,
+   gl_EVS_Beistell_Status_Disponiert:_N                 := 10,
+   gl_EVS_Beistell_Status_Bestellt:_N                   := 20,
+   gl_EVS_Beistell_Status_ImVersand:_N                  := 30,
+   gl_EVS_Beistell_Status_Versendet:_N                  := 40,
+   gl_EVS_Beistell_Status_ImWareneingang:_N             := 50,
+   gl_EVS_Beistell_Status_Vereinnahmt:_N                := 60
+|
+
+//******************************************************************************
+// Funktion erzeugt eine leere Memtable-Struktur zur Ermittlung des
+//    Beistell-Status'
+// @Result: TBeMemtable-Instanz
+//******************************************************************************
+function _EVS_Beistell_Status_NewMem(oOwner)
+
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'BEISTELL_STATUS',
+
+   Result.CbAddField('STATUS',           ftInteger,  0),   // Gibt den Status der Beistellung wieder
+
+   Result.CbAddField('ARTNR',            ftString,   mBeArtNoLen),   // Artikel-Nr., im Prinzip überflüssig, aber vereinfacht Browser-Design
+   Result.CbAddField('ARTNR_BG',         ftString,   mBeArtNoLen),   // Artikel-Nr. der Baugruppe, im Prinzip überflüssig, aber vereinfacht Browser-Design
+   Result.CbAddField('KOMMISS',          ftString,   mBeCommissLen),
+   Result.CbAddField('LIEFNR',           ftInteger,  0),             // Beistell-Lieferanten-Nr.
+   Result.CbAddField('MENGE',            ftFloat,    0),             // Menge in Lagereinheit
+   Result.CbAddField('MENGE_BG',         ftFloat,    0),             // Baugruppen-Teile-Menge in Lagereinheit, umgerechnet aus MENGE / Dab240:SOLL
+   Result.CbAddField('MENGE_EK',         ftFloat,    0),             // Menge in Einkaufseinheit
+   Result.CbAddField('MENGE_WE',         ftFloat,    0),             // Menge in Wareneingang
+   Result.CbAddField('TERMIN_INDEX',     ftString,   9),             // Termin des momentanen Status' im Standard-Format
+   Result.CbAddField('TERMIN',           ftString,   9),             // Termin des momentanen Status' in versch. Format
+   Result.CbAddField('DAB320_ID',        ftInteger,  0),             // ID des DAB320-Datensatzes
+   Result.CbAddField('DAB035_BESTPOSNR', ftString,   8),             // BESTPOSNR aus DAB035-Datensatz
+   Result.CbAddField('DAB035_ID',        ftInteger,  0),             // ID aus DAB035-Datensatz
+   Result.CbAddField('DAB035_LIEF_AB',   ftString,  20),             // AB des Lieferanten aus DAB035-Datensatz
+   Result.CbAddField('EVSKOPF_ID',        ftInteger,  0),             // ID aus EVSKOPF-Datensatz
+   Result.CbAddField('EVSSBP_ID',        ftInteger,  0),             // ID aus EVSSBP-Datensatz
+   Result.CbAddField('DAB020_E_ID',      ftInteger,  0),             // ID aus DAB020-'E'-Datensatz
+
+   Result.CbAddIndex('TERMIN_INDEX_STATUS', 'TERMIN_INDEX;STATUS', ixPrimary),
+   Result.CbAddIndex('DAB320_ID', 'DAB320_ID', ixPrimary),
+   Result.Active      := true,
+   Result.CbIndexName := 'TERMIN_INDEX_STATUS',
+end,
+
+//******************************************************************************
+// Füllt die übergebene MemTable mit Datensätzen des Status' "10", wenn
+// Datensätze vorhanden sind
+// @Result: numeric (Summe der DAB320:Menge(n))
+//******************************************************************************
+function _EVS_Beistell_Status_DAB320(oDM, oMemTable, cArtNr, cB_POS_LFD)
+   | oDAB320, cKOMMISS |
+
+   cKOMMISS          := EVS_B_POS_LFD_2_KOMMISS(cB_POS_LFD),
+
+   oDAB320           := DbGetTable(oDM, waDAB320),
+   oDAB320.IndexName := 'DAB322',     // Index: ARTNR;KOMMISS
+   startseq
+      DBScope({cArtNr, cKOMMISS}, {cArtNr, cKOMMISS}, oDAB320),
+      DbGoTop(oDAB320),
+
+      while not EoF(oDAB320) do
+
+         oMemTable.CbAppend(),
+         oMemTable:STATUS       := gl_EVS_Beistell_Status_Disponiert,
+         oMemTable:ARTNR        := oDAB320:ARTNR,
+         oMemTable:KOMMISS      := oDAB320:KOMMISS,
+         oMemTable:LIEFNR       := oDAB320:LIEFNR,
+         oMemTable:MENGE        := oDAB320:MENGE,
+         oMemTable:MENGE_EK     := oDAB320:MENGE_EK,
+         oMemTable:TERMIN_INDEX := oDAB320:TERM_INDEX,
+         oMemTable:TERMIN       := TermIndexToStr(oDAB320:TERM_INDEX),
+         oMemTable:DAB320_ID    := oDAB320:ID,
+         oMemTable.CbPost(),
+         DbSkip(1, oDAB320),
+      end,
+   always
+      EVS_DbResetDMTable(oDAB320),
+   stopseq,
+end,
+
+//******************************************************************************
+// Füllt die übergebene MemTable mit Datensätzen je nach Status' "20", "30", "40"
+//    oder "50", wenn Datensätze vorhanden sind.
+// @Result: numeric (Summe der DAB035:Menge(n))
+//******************************************************************************
+function _EVS_Beistell_Status_DAB035_Versand(oDM, oMemTable, cArtNr, cB_POS_LFD)
+   | oDAB035, oEVSSBP, oEVSKOPF, cKOMMISS |
+   if gl_EVS_EVSIsActive then
+      cKOMMISS          := EVS_B_POS_LFD_2_KOMMISS(cB_POS_LFD),
+
+      oDAB035           := DbGetTable(oDM, waDAB035),
+      oDAB035.IndexName := 'DAB038',        // Index: ARTNR;KOMMISS
+
+      oEVSSBP           := DbGetTable(oDM, Eval('waEVSSBP')),
+      oEVSSBP.IndexName := 'BESTPOSNR',     // Index: BESTPOSNR;EVSKOPF_ID
+
+      oEVSKOPF           := DbGetTable(oDM, Eval('waEVSKOPF')),
+      oEVSKOPF.IndexName := 'ID',            // Index: ID
+
+      startseq
+         DBScope({cArtNr, cKOMMISS}, {cArtNr, cKOMMISS}, oDAB035),
+         DbGoTop(oDAB035),
+
+         while not EoF(oDAB035) do
+            oMemTable.CbAppend(),
+         // MemTable-Status setzen
+         //    Status 20 : gl_EVS_Beistell_Status_Bestellt
+         //    Status 30 : gl_EVS_Beistell_Status_ImVersand
+         //    Status 40 : gl_EVS_Beistell_Status_Versendet
+         //    Status 50 : gl_EVS_Beistell_Status_ImWareneingang
+            case true
+               of oDAB035:MENGE_WE > 0 ::
+                  oMemTable:STATUS := gl_EVS_Beistell_Status_ImWareneingang,
+
+               of DbSeek({oDAB035:BESTPOSNR}, oEVSSBP) and DbSeek({oEVSSBP:EVSKOPF_ID}, oEVSKOPF) ::
+
+                  oMemTable:STATUS := iif(oEVSKOPF:FLAG = 256, gl_EVS_Beistell_Status_Versendet, gl_EVS_Beistell_Status_ImVersand),
+
+               otherwise oMemTable:STATUS := gl_EVS_Beistell_Status_Bestellt,
+            endcase,
+
+
+            if oMemTable:STATUS > gl_EVS_Beistell_Status_Bestellt then
+               if DbSeek({oDAB035:BESTPOSNR}, oEVSSBP) then
+                  oMemTable:EVSKOPF_ID    := oEVSSBP:EVSKOPF_ID,
+                  oMemTable:EVSSBP_ID     := oEVSSBP:ID,
+               endif,
+            endif,
+
+            oMemTable:ARTNR            := oDAB035:ARTNR,
+            oMemTable:KOMMISS          := oDAB035:KOMMISS,
+            oMemTable:LIEFNR           := oDAB035:LIEFNR,
+            oMemTable:MENGE            := oDAB035:MENGE,
+            oMemTable:MENGE_EK         := oDAB035:MENGE_EK,
+            oMemTable:MENGE_WE         := oDAB035:MENGE_WE,
+            oMemTable:TERMIN_INDEX     := oDAB035:TERM_INDEX,
+            oMemTable:TERMIN           := TermIndexToStr(oDAB035:TERM_INDEX),
+            oMemTable:DAB035_BESTPOSNR := oDAB035:BESTPOSNR,
+            oMemTable:DAB035_ID        := oDAB035:ID,
+            oMemTable:DAB035_LIEF_AB   := oDAB035:LIEF_AB,
+            oMemTable.CbPost(),
+            DbSkip(1, oDAB035),
+         end,
+
+      always
+         EVS_DbResetDMTable(oDAB035),
+         EVS_DbResetDMTable(oEVSSBP),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Füllt die übergebene MemTable mit Datensätzen des Status' "60"
+// @Result: numeric (Summe der DAB020:Menge(n))
+//******************************************************************************
+function _EVS_Beistell_Status_DAB020(oDM, oMemTable, cArtNr, cB_POS_LFD)
+   |
+      oDAB020, oDAB035, oEVSSBP, cKOMMISS, cBESTPOSNR, cOldIndex
+   |
+
+   if gl_EVS_EVSIsActive then
+
+      cKOMMISS          := EVS_B_POS_LFD_2_KOMMISS(cB_POS_LFD),
+
+      oDAB020           := DbGetTable(oDM, waDAB020),
+      oDAB020.IndexName := 'I_BUART_ARTNR',   // Index: BUART;ARTNR;STANDORT;DATUM
+
+      oEVSSBP           := DbGetTable(oDM, Eval('waEVSSBP')),
+      oEVSSBP.IndexName := 'BESTPOSNR',       // Index: BESTPOSNR;EVSKOPF_ID
+
+      oDAB035  := DbGetTable(oDM, waDAB035),
+      oDAB035.IndexName := 'DAB036',
+
+      startseq,
+         DBScope({'E', cArtNr, mStandort}, {'E', cArtNr, mStandort}, oDAB020),
+         DbFilter("KOMMISS =='"+padr(cKommiss,mbecommisslen)+"' or ARTNR <> '"+cArtnr+"'",oDAB020),
+         DbGoTop(oDAB020),
+
+         while not EoF(oDAB020) do
+            // wir wollen nur Datensätze, die zur DAB240 passen. Prüfen der KOMMISS
+            if AllTrim(oDab020:KOMMISS) == AllTrim(cKOMMISS) then
+               oMemTable.CbAppend(),
+               oMemTable:STATUS           := gl_EVS_Beistell_Status_Vereinnahmt,
+               oMemTable:ARTNR            := oDAB020:ARTNR,
+               oMemTable:KOMMISS          := cKOMMISS,
+               oMemTable:LIEFNR           := oDAB020:PERSNR,
+               oMemTable:MENGE            := oDAB020:MENGE,
+               oMemTable:MENGE_EK         := oDAB020:MENGE_EK,
+               oMemTable:TERMIN_INDEX     := DToS(oDab020:DATUM) + 'T',
+               oMemTable:TERMIN           := DToC(oDAB020:DATUM),
+               oMemTable:DAB020_E_ID      := oDAB020:ID,
+
+               cBESTPOSNR := EVS_DAB020_APNUMMER_2_BESTPOSNR(oDAB020:APNUMMER), writeln(cBESTPOSNR),
+               oMemTable:DAB035_BESTPOSNR  := cBESTPOSNR,
+
+               if DbSeek({oDAB020:PERSNR, cBESTPOSNR}, oDAB035) then
+                  oMemTable:DAB035_ID      := oDAB035:ID,
+                  oMemTable:DAB035_LIEF_AB := oDAB035:LIEF_AB,
+               endif,
+
+               if DbSeek({cBESTPOSNR}, oEVSSBP) then
+                  oMemTable:EVSKOPF_ID     := oEVSSBP:EVSKOPF_ID,
+                  oMemTable:EVSSBP_ID      := oEVSSBP:ID,
+               endif,
+
+               oMemTable.CbPost(),
+
+            endif,
+
+            DbSkip(1, oDAB020),
+         end,
+      always
+         EVS_DbResetDMTable(oDAB020),
+         EVS_DbResetDMTable(oEVSSBP),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Gibt Artikel-Lieferanten-Filter zurück
+//   (gesperrte Lieferaten, eigenen Standort und ungültiges Datum werden
+//    ignoriert)
+// @Result: String
+//             Filterausdruck für Dab510 - Lieferanten mit übergebenen Standort
+//             & Gültigkeitsdatum
+//******************************************************************************
+function _EVS_Beistell_Status_Dab510_GueltigFilterString( cArtNr, nStandort, dValidDate, bIgnoreSperre )
+   |
+      cDateFilter, cArtNrFilter,
+      cLastFilter,
+      cNextFilter,
+      dFilterDate
+   |
+
+   if bIgnoreSperre then
+      Result := ''
+   else
+      Result := 'Empty(PRIORI) or PRIORI<> "Z"',
+   endif,
+
+   if Result <> '' then
+      Result := '(' + Result + ') and ',
+   endif,
+   Result := Result + 'LINR <> ' + Str(LocationSuppNo(nStandort)),
+
+   if not empty(dValidDate) then
+      cDateFilter := '',
+      cLastFilter := '',
+      cNextFilter := '',
+      dFilterDate := Trunc(dValidDate),
+      if dFilterDate = 0 then
+         dFilterDate := Date(),
+      endif,
+      cLastFilter  := 'Empty(GUELTIGBIS) or DToS(GUELTIGBIS) >= "' + DToS(dFilterDate) + '"',
+      cNextFilter  := 'Empty(GUELTIGVON) or DToS(GUELTIGVON) <= "' + DToS(dFilterDate) + '"',
+      cArtNrFilter := 'padr(ARTNR,'+str(mbeartnolen)+') == "' + padr(cArtNr,mbeartnolen) + '"',
+      cDateFilter  := '(' + cLastFilter + ') and (' + cNextFilter + ') and (' + cArtNrFilter + ')',
+      cDateFilter  := '(' + cDateFilter + ')',
+
+      if Result <> '' then
+         Result := '(' + Result + ') and ',
+      endif,
+      Result := Result + cDateFilter,
+   endif,
+
+end,
+
+
+//******************************************************************************
+// Funktion ermittelt für die übergebenen und positionierten Datensätze den
+//    aktuellen Beistell-Status der Externleistung
+//
+// @Result: null
+//******************************************************************************
+function _EVS_GetBeistellStatus_Internal(oDAB240)
+   | m_oMemtable |
+   result := {-1,""},
+   Startseq,
+      if oDAB240:ARTTYP = 'E' then
+         m_oMemTable := EVS_Beistell_Status_NewMem(GL_oDM),
+         if not empty(m_oMemtable) then
+            EVS_Beistell_Status_DAB320(        GL_oDM, m_oMemTable, oDAB240:ARTNR_E, oDAB240:B_POS_LFD),
+            EVS_Beistell_Status_DAB035_Versand(GL_oDM, m_oMemTable, oDAB240:ARTNR_E, oDAB240:B_POS_LFD),
+            EVS_Beistell_Status_DAB020(        GL_oDM, m_oMemTable, oDAB240:ARTNR_E, oDAB240:B_POS_LFD),
+            m_oMemtable.cbLast(),
+         endif,
+         if not nods(m_oMemtable) then
+            result := {m_oMemtable:STATUS, m_oMemtable:TERMIN, m_oMemtable:DAB035_ID},
+         else,
+            result := {gl_EVS_Beistell_Status_Offen,"",0},
+         endif,
+      endif,
+   Always
+      dbresetdm(GL_oDM),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+// 001 IN 06.09.18 Optimierung und neuer optionaler Parameter
+//******************************************************************************
+function _EVS_CalcAllBeistellStatus(oDM, cBestPosNr:C:='')
+   | oDAB240, oDAB035, aResult, nDAB035_ID |
+
+   oDAB035           := MyGetTable(oDM, waDAB035, 'DAB035_DAB03B'),
+   oDAB035.IndexName := 'DAB03B',
+
+   oDAB240           := MyGetTable(oDM, waDAB240, 'DAB240_DAB241'),
+   oDAB240.IndexName := 'DAB241',
+
+   startseq
+      aResult := nil,
+
+      // +001
+      if not empty(cBestPosNr) then
+         oDAB035.CbSetRangeEx({rtrim(substr(cBestPosnr,1,8))}),
+      endif,
+      // -001
+
+      DbGoTop(oDAB035),
+      while not Eof(oDAB035) do
+
+         // DAB240 durchgehen
+         D240_SetScopeOnOrder(oDAB240, oDAB035:BESTPOSNR, false),
+         DbGoTop(oDAB240),
+         while not Eof(oDAB240) do
+            if oDAB240:ARTTYP = 'E' then                                           // 001 kein lookup nötig
+               aResult := EVS_GetBeistellStatus_Internal(oDAB240),
+               if not empty(aResult[1]) then                                       // 001 abfrage auf Element 1 statt 2
+                  MyEdit(oDAB035),
+                  oDAB035:X_STATUSBS := Val(aResult[1]),
+                  oDAB035:X_TERMINBS := iif(Val(aResult[1]) >= gl_EVS_Beistell_Status_Bestellt and Val(aResult[1]) < gl_EVS_Beistell_Status_ImWareneingang, lookup(waDAB035, 'DAB03D', {{aResult[3]}}, 'dtoc(DATUM)'), aResult[2]),
+                  oDAB035:X_ARTNR_EA := oDAB240:ARTNR_E,
+                  MyPost(oDAB035),
+               endif,
+
+               if oDAB035:X_STATUSBS < gl_EVS_Beistell_Status_ImWareneingang then
+                  break,
+               endif,
+            endif,
+            DbSkip(1, oDAB240),
+         end,
+         DbSkip(1, oDAB035),
+      end,
+   always
+      DbResetDm(oDM),
+   stopseq,
+end,
+
+

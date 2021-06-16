@@ -1,0 +1,63 @@
+//******************************************************************************
+//******************************************************************************
+TRY DROP TABLE #PGKBDP_MIT_KW_GRUPPEN; CATCH ALL END;
+
+//******************************************************************************
+// Positions-Sätze laden
+//******************************************************************************
+SELECT
+     CAST(50 AS SQL_INTEGER) AS CALC_ZEILEN_TYP, // 50 = Detail-Zeilen
+     PGKBDP.*,
+     PGKBDK.TERMIN       AS FA_FERTIG_TERMIN,
+     PGKBDK.BESTPOSNR    AS BESTPOSNR,
+     PGKBDK.ARTNR_BG     AS D240_KOPF_ARTNR1,
+     DAB240_KOPF.SOLL    AS D240_KOPF_SOLL,
+     DAB240_S.MENGE      AS D240_S_MENGE,
+     DAB240_S.MENGE_AUSS AS D240_S_MENGE_AUSS
+
+   INTO #PGKBDP_MIT_KW_GRUPPEN
+   FROM "PGKBDP.ADT" PGKBDP
+
+   LEFT JOIN "DAB240.ADT"  DAB240_KOPF ON DAB240_KOPF.ID = PGKBDP.AUF_ID_240
+   LEFT JOIN "DAB240.ADT"  DAB240_S    ON DAB240_S.ID    = PGKBDP.D240S_ID
+   INNER JOIN "PGKBDK.ADT" PGKBDK      ON ( PGKBDK.AUF_WA  = PGKBDP.AUF_WA AND PGKBDK.AUF_ID  = PGKBDP.AUF_ID)
+
+   WHERE     PGKBDP.ARTTYP = 'A' // Artikeltyp 'E' ausfiltern
+         @EMPTY_RESULT@ AND PGKBDP.ID = -1
+         AND PGKBDP.STANDORT = @STANDORT@
+         AND PGKBDP.AUF_STATUS IN (@AUF_STATUS_LIST@)
+         AND PGKBDP.ARB_STATUS <> 40 // gl_PGKU_ArbeitsgangStatus_Fertig (40)
+         AND NOT PGKBDP.KAP_SPERRE
+         @HAS_QUALI_ID_FILTER@    AND @QUALI_ID_FILTER@
+         @HAS_RESOURCE_ID_FILTER@ AND @RESOURCE_ID_FILTER@
+
+         // AND (PGKBDP.K_REST_R + PGKBDP.K_REST_S) <> 0 
+   ORDER BY PGKBDP.START_FR;
+
+//******************************************************************************
+// KW-Gruppen-Köpfe hinzufügen
+//******************************************************************************
+INSERT INTO #PGKBDP_MIT_KW_GRUPPEN (CALC_ZEILEN_TYP, PP_JAHR, PP_KW, PP_DATUM, START_FR, K_REST_R, K_REST_S)
+SELECT
+     CAST(30 AS SQL_INTEGER) AS CALC_ZEILEN_TYP, // 30 = KW-Gruppierung
+     PP_JAHR,
+     PP_KW,
+     MIN(PP_DATUM) AS PP_DATUM,
+     MIN(START_FR) AS START_FR,
+     SUM(K_REST_R) AS K_REST_R,
+     SUM(K_REST_S) AS K_REST_S
+  FROM #PGKBDP_MIT_KW_GRUPPEN
+  GROUP BY
+     PP_JAHR,
+     PP_KW;
+
+//******************************************************************************
+// Ergebnis zurück liefern
+//******************************************************************************
+SELECT * FROM #PGKBDP_MIT_KW_GRUPPEN
+   ORDER BY
+      PP_JAHR,
+      PP_KW,
+      PP_DATUM,
+      START_FR,
+      CALC_ZEILEN_TYP

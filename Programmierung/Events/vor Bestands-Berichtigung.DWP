@@ -1,0 +1,39 @@
+| nEvtNo:P1, nMode:P2, oDataMod:P3, cArtNo:P4, cDispoNo:P5, nQuantity:P6, uValue:P7, nCorrValue:P8,
+  m_bDoLog, m_cB_POS_LFD_Head |
+// nMode     : Modus zeigt an, aus welchem Programm der Aufruf erfolgt
+//             1 = Re.Kontrolle Pos.Berichtigung
+//             2 = Re.Kontrolle Freigabe
+//             3 = Produktions-Verbrauch anonym
+//             4 = Inventur-Korrektur manuell
+//             5 = Inventur-Korrektur Stapel
+//             6 = Produktion Teil-Fertigmeldung
+//             7 = Produktion End-Fertigmeldung
+// oDataMod  : Datenmodul oder AdsConnecton
+// cArtNo    : Artikel-Nummer
+// cDispoNo  : Dispo-Nummer (Dab020)
+// nQuantity : Buchungs-Menge +/- (in Modus 1 und 2 = Differenzmenge)
+// uValue    : Modus 1-2: gesamter Umlagebetrag der Korrektur (+/-)
+//             Modus 3-5: gesamter Buchungswert (+/-)
+//             Modus 6-7: Array mit detaillierten Informationen über die Zusammensetzung des
+//                        Gesamt-Zugangswertes der Fertigmeldung. Struktur des Arrays:
+//                        { {B_POS_LFD, ARTNR_E, Gesamtwert (ohne Zuschlag), Zuschlagswert}, {...}, ... }
+// nCorrValue: umlagefähiger Betrag (nur verfügbar in Modus 1 und 2)
+// Rückgabe  : nCorrValue (Vorzeichen darf nicht umgekehrt werden, absoluter Wert darf nicht erhöht werden)
+// HINWEIS   : Transaktion aktiv!
+
+// Fertigmeldung einer "manuellen Fertigung" ?
+m_bDoLog := true,
+if nMode = 7 then
+   m_cB_POS_LFD_Head := uValue[1,1],
+   m_cB_POS_LFD_Head := SubStr(m_cB_POS_LFD_Head, 1, 8) + '000',
+   if empty(Lookup(waDAB240, 'DAB241', {{m_cB_POS_LFD_Head}}, 'ID', 0)) then
+      m_bDoLog := false,
+   endif,
+endif,
+if m_bDoLog then
+   BBPU_CreateLogEntry(nMode, oDataMod, cArtNo, cDispoNo, nQuantity, uValue, nCorrValue),
+else
+   MessageDlg('Protokoll Bestandsberichtigung: Bei manueller Fertigung nicht verfügbar.', mtWarning),
+endif,
+
+nCorrValue

@@ -1,0 +1,426 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Basis-Funktionen
+//
+//##############################################################################
+//##############################################################################
+
+
+//##############################################################################
+// Allgemeine Funktionen
+//##############################################################################
+
+//******************************************************************************
+// TODO:
+//  Diese Funktion hat hier in den Basics nichts verloren -> sollte in Kunden-
+//  spezifische Scripte ausgelagert werden und darf nicht Teil des BasicPackages
+//  sein!
+//  -> Sicherstellen, dass diese Funktion bei keinem Kunden, der das
+//     BasicPackage nutzt im Einsatz ist und anschließend entfernen.
+//******************************************************************************
+// Eigene Funktion zur Ermittlung des zuletzt aufgetretenen Fehlers
+// => hier kann der Fehlertext zentral verändert werden (sofern gewünscht)
+//    (z.B. den internen, technischen Teil der Meldung abschneiden etc.)
+//
+// @Result: string
+//******************************************************************************
+function _MyGetErrorText()
+   Result := GetErrorText(),
+end,
+
+//******************************************************************************
+// VERALTET - Abort() bzw. SetError() nutzen
+//
+// TODO:
+//  -> Sicherstellen, dass diese Funktion bei keinem Kunden, der das
+//     BasicPackage nutzt im Einsatz ist und anschließend entfernen.
+//******************************************************************************
+// Eigene Methode zum Auslösen eines Aborts - ohne Zusatz-Funktionalität
+// @Result: null
+//******************************************************************************
+function _MyAbort(cErrorText)
+   SetError(cErrorText, 999),
+end,
+
+//******************************************************************************
+// REQ-692
+//******************************************************************************
+// Diese Funktion ruft das angegebene Script - falls dieses existiert - mithilfe
+// von Call() auf.
+//
+// @result: variant - Rückgabe des Scripts,
+//                    oder null sofern das Script nicht existiert
+//******************************************************************************
+function _CallIfExists(cScriptName:C, uParameters:U:=nil)
+   result := null,
+   if LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'not EoF()', false) then
+      if empty(uParameters) then
+         result := Call(cScriptName),
+      else
+         result := Call(cScriptName, uParameters),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Nicht-Leere Variable zurück geben
+// @Result: entsprechend Input-Typ
+//******************************************************************************
+function _e2v(vVal1, vVal2)
+   Result := iif(empty(vVal1), vVal2, vVal1),
+end,
+
+//******************************************************************************
+// TODO:
+//  Diese Funktion kann nicht für Arrays verwendet werden!
+//  -> Der Vergleich von Arrays sollte folgendermaßen erfolgen:
+//     ArrToStr(u1) == ArrToStr(u2)
+//  Hierzu siehe auch Nested Function IsEqual() in Funktion TEST_AssertEquals().
+//******************************************************************************
+// "Gleichheit" zweier Variablenwerte von beliebigem Datentyp prüfen
+// @Result: Logisch
+//******************************************************************************
+function _VarEqual(u1, u2)
+   if ValType(u1) <> ValType(u2) then
+      Result := false,
+   else
+      // eine rechtsbündige (!) String-Gleichheit betrachten wir auch als "gleich"
+      if ValType(u1) = 'C' then
+         Result := Trim(u1) == Trim(u2),
+      else
+         Result := (u1 == u2),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Dividiert nV1 durch nV2. Falls nV2 = 0, so ist das Ergebnis nDefault
+// @Result: Numerisch
+//******************************************************************************
+function _Div02v(nV1, nV2, nDefault)
+   if nV2 <> 0 then
+      Result := nV1/nV2,
+   else
+      Result := e2v(nDefault, 0),
+   endif,
+end,
+
+//******************************************************************************
+// Fügt zwei Texte mit Trenner getrennt aneinander.
+// Vermeidet überflüssige Trennzeichen, falls einer der Werte nicht gefüllt ist.
+// @Result: String
+//******************************************************************************
+function _ConcatTrenner(a, b, cTrenner)
+   if (not empty(a)) and (not empty(b)) then
+      Result := a + cTrenner + b,
+   else
+      Result := e2v(a, b),
+   endif,
+end,
+
+//******************************************************************************
+// Typische Float-Anzeige-Formatierung für z.B. Preise / Werte
+// - FormatStd(1234567.89, 2) => '1.234.567,89'
+// - FormatStd(0.23, 3)       =>        '0,230'
+// - FormatStd(-0.1, 2)       =>        '-0,10'
+// @Result: String
+//******************************************************************************
+function _FormatStd(nMenge, nStellen)
+| cFormat |
+   cFormat := ',##0.' + PadR('', e2v(nStellen, 0), '0'),
+   Result  := FormatFloat(cFormat, nMenge),
+end,
+
+
+//##############################################################################
+// Konvertierungsfunktionen
+//##############################################################################
+
+//******************************************************************************
+// Wert einer Variable als String zurück geben (diverse Variablentypen zulässig)
+// @Result: String
+//******************************************************************************
+function _ToString(vVal)
+| bDef |
+   bDef := false,
+
+   if ValType(vVal) = 'C' then  // Alphanumerisch
+      Result := vVal,
+      bDef   := true,
+   endif,
+
+   if ValType(vVal) = 'N' then  // Numerisch
+      Result := Str(vVal),
+      bDef   := true,
+   endif,
+
+   if ValType(vVal) = 'D' then  // Datum
+      Result := DateTimeToStr(vVal),
+      bDef   := true,
+   endif,
+
+   if ValType(vVal) = 'A' then  // Array
+      Result := ArrToStr(vVal),
+      bDef   := true,
+   endif,
+
+   if ValType(vVal) = 'L' then  // Logical
+      Result := iif(vVal, 'true', 'false'),
+      bDef   := true,
+   endif,
+
+   // nicht behandelte Datentypen:
+   //  O = Object
+   //  U = Undefined
+   if !bDef then
+      Result := '*** UNDEFINED ***',
+   endif,
+end,
+
+//******************************************************************************
+// Wert einer Variable als Float zurück geben
+// -> Parameter kann Numerisch bzw. Alphanumerisch sein,
+//    andere Datentypen führen zum Ergebnis = 0
+// diese Variante macht auch bei dt/engl. Betriebssystemen kein Problem
+// @Result: Numerisch
+//******************************************************************************
+function _ToFloat(uValue)
+   |cBuf, nPos, nDez|
+   if ValType(uValue)='C' then
+      cBuf:=trim(e2v(charonly('-0123456789,',strtran(uValue, '.', ',')), '0')),   // writeln(cBuf),
+      nPos:=rat(',', cBuf),                                                        // writeln(nPos),
+      if nPos<=0 then
+         nDez:=0,
+      else
+         nDez:=len(cBuf)-nPos,
+      endif,
+      cBuf:=strtran(cBuf, ',', ''),
+      result:=val(cBuf)/10^nDez,
+      exit,
+   endif,
+   if ValType(uValue)='N' then
+      result:=uValue,
+      exit,
+   endif,
+   result:=0,
+end,
+
+
+//******************************************************************************
+// Aus einem Datum / KW-Termin einen TermIndex-String (sortierbar) berechnen
+// -> Input z.B. '14.01.2012' oder 'KW.12.12'
+//******************************************************************************
+function _StrToTermIndex(cDate)
+| cTiSign |
+   if cDate = 'KW' then
+      Result  := WToD(cDate),
+      cTiSign := 'W',
+   else
+      Result  := CToD(cDate),
+      cTiSign := 'T',
+   endif,
+   Result := DToS(Result) + cTiSign,
+end,
+
+//******************************************************************************
+// Kombination aus CToD() und WToD()
+// -> Input z.B. '14.01.2012' oder 'KW.12.12'
+// @Result: Date
+//******************************************************************************
+function _StrToD(cDate)
+   if cDate = 'KW' then
+      Result := WToD(cDate),
+   else
+      Result := CToD(cDate),
+   endif,
+end,
+
+//##############################################################################
+// Array-Funktionen
+//##############################################################################
+
+//******************************************************************************
+// Einen Wert in einem Array suchen
+// @Result: Integer, Position des Treffers im Array
+//******************************************************************************
+function _SeekInArray(aValue, aArray)
+| i |
+   Result := -1,
+   for i := 1 to ALen(aArray) do
+      if ValType(aArray[i]) == ValType(aValue) and VarEqual(aArray[i], aValue) then
+         Result := i,
+      endif
+   end,
+end,
+
+//******************************************************************************
+// Einen Wert in einem zwei-dimensionalen Array suchen
+// @Result: Integer, Position des Treffers im Array
+//******************************************************************************
+function _SeekInDimArray(aValue, aArray, nDim)
+| i |
+   Result := -1,
+   for i := 1 to ALen(aArray) do
+      if ValType(aArray[i, nDim]) == ValType(aValue) and VarEqual(aArray[i, nDim], aValue) then
+         Result := i,
+      endif
+   end,
+end,
+
+//******************************************************************************
+// Zwei Arrays aneinander hängen (Array2 an Array1 anhängen)
+// @Result: null (Array1 wird per Referenz übergeben und modifiziert!)
+//******************************************************************************
+function _AddArray(aArray1:R, aArray2)
+| i |
+   for i := 1 to ALen(aArray2) do
+      AAdd(aArray1, aArray2[i]),
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion sortiert ein 2 - dimensionales Array nach
+// den nField-ten Feld des inneren Arrays
+// @Result: sortiertes Array
+//******************************************************************************
+function _BP_Basics_Sort2DimArrayByField(aIn, nField)
+   | oMemSort, i |
+   result := {},
+   oMemSort := CreateObject('TBeMemTable'),
+   startseq
+      oMemSort.CbAddField('MEMO', ftMemo, 0),
+      omemSort.CbAddField('TOSORT', ftString, 255),
+      oMemSort.Active := true,
+      oMemSort.CbAddIndex('INDEX', 'TOSORT', ixPrimary),
+      for i := 1 to alen(aIn) do
+         oMemSort.cbAppend(),
+         oMemSort:MEMO   := ArrToStr(aIn[i]),
+         if ValType(aIn[i, nField]) = 'N' then
+            oMemSort:TOSORT := Str(aIn[i, nField]),
+         else
+            oMemSort:TOSORT := aIn[i, nField],
+         endif,
+         oMemSort.CbPost(),
+      next,
+      oMemSort.CbFirst(),
+      for i := 1 to alen(aIn) do
+          aadd(result, StrToArr(oMemSort:MEMO)),
+          oMemSort.CbNext(),
+      next,
+   always
+      DestroyObject(oMemSort),
+   stopseq,
+end,
+
+//******************************************************************************
+// Lädt ein in der DabPRG gespeichertes SQL-Script / SQL-Statement
+// @Result: SQL-Script
+//******************************************************************************
+function _BP_Basics_LoadSQLScriptByName(cScriptName)
+   // Das SQL wird im Programm als "Plaintext" abgelegt => dort ist es einfacher
+   // zu pflegen als im Programmtext als String-Literal
+   Result := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   if empty(Result) then
+      SetError('SQL-Text für Script "' + cScriptName + '" nicht gefunden'),
+   endif,
+end,
+
+//******************************************************************************
+// Erstellt aus angegebenen Jahr, Monat, Tag und Zeit ein Datum-Zeitformat.
+// @Result: DateTime
+//******************************************************************************
+function _EncodeDateTime(nYear:N, nMonth:N, nDay:N, nHour:N:=0, nMinute:N:=0, nSecond:N:=0, nMilisecond:N:=0)
+   result := EncodeDate(nYear, nMonth, nDay) + EncodeTime(nHour, nMinute, nSecond, nMilisecond),
+end,
+
+//******************************************************************************
+// Setzt aus dem angegebenen Datum-Zeitformat die dementsprechend übergebene
+// Jahres-, Monats-, Tages-, Stunden-, Minuten-, Sekunden- und
+// Milisekundenvariablen.
+// @Result: null (Rückgabeparameter!)
+//******************************************************************************
+function _DecodeDateTime(nDate:N, rYear:R, rMonth:R, rDay:R, rHour:R, rMinute:R, rSecond:R, rMilisecond:R)
+   DecodeDate(nDate, rYear, rMonth, rDay),
+   DecodeTime(nDate, rHour, rMinute, rSecond, rMilisecond),
+end,
+
+//******************************************************************************
+// Vergleicht zwei Date-Time Werten bis zur Milisekunden-Ebene
+// @Result: Boolean: die Werten sind gleich
+//******************************************************************************
+function _CompareDates(dDateTime1:DT, dDateTime2:DT)
+| nYear1, nMonth1, nDay1, nHour1, nMinute1, nSecond1, nMilisecond1,
+  nYear2, nMonth2, nDay2, nHour2, nMinute2, nSecond2, nMilisecond2 |
+   DecodeDateTime(dDateTime1, nYear1, nMonth1, nDay1, nHour1, nMinute1, nSecond1, nMilisecond1),
+   DecodeDateTime(dDateTime2, nYear2, nMonth2, nDay2, nHour2, nMinute2, nSecond2, nMilisecond2),
+   result := (nYear1 = nYear2)     and (nMonth1 = nMonth2)
+         and (nDay1 = nDay2)       and (nHour1 = nHour2)
+         and (nMinute1 = nMinute2) and (nSecond1 = nSecond2)
+         and (nMilisecond1 = nMilisecond2),
+end,
+
+//******************************************************************************
+// Funktion zur Umwandlung eines Farbwertes, in einen RGB-Wert.
+// @Result: Array{Red, Green, Blue}
+//******************************************************************************
+function _Farbcode2RGB(nFarbcode:N)
+| cHex, nR, nG, nB |
+   cHex := Hex(nFarbcode,16,6),
+   nR := str(unhex(Substr(cHex,5,2))),
+   nG := str(unhex(Substr(cHex,3,2))),
+   nB := str(unhex(Substr(cHex,1,2))),
+   Result := {nR,nG,nB},
+end,
+
+//******************************************************************************
+// Vergleicht zwei be Versionsnummern mit demZiel herauszufinden, ob die 
+//   aktuelle Version ausreichend hoch ist.
+// Wenn 
+// - cBeVersion >= cBeVergleichVersion -> true
+// - cBeVersion <  cBeVergleichVersion -> false
+// Beispiel: CompareBeVersion(mBeVersion, '7.1.1.10')
+// @Result: boolean
+//******************************************************************************
+function _CompareBeVersion(cBeVersion, cBeVergleichVersion)
+   | aBeVersion, aVergleichVersion, i, nMinLen |
+
+   //***************************************************************************
+   // extrahiert aus einer be Versionsnummer die Ziffern in ein Array
+   // @Result: array
+   //***************************************************************************
+   function ConvertVersionToArray(cVersion)
+   | i |
+      Result := {},
+      for i := 1 to TokenCount(cversion,'.') do
+         aAdd(Result, Val(Token(cVersion,'.',i))),
+      next
+   end,
+
+   Result            := true,
+   aBeVersion        := ConvertVersionToArray(cBeVersion),
+   aVergleichVersion := ConvertVersionToArray(cBeVergleichVersion),
+   nMinLen           := Min(ALen(aBeVersion), ALen(aVergleichVersion)),   
+      
+   i := 1,
+   while i <= nMinLen and Result do
+      if aBeVersion[i] > aVergleichVersion[i] then
+         break
+      else
+         Result := aBeVersion[i] = aVergleichVersion[i],
+      endif,
+      i++,
+   end,
+   
+end,
+
+//******************************************************************************
+// Prüft ob die be Version größer 7.0 ist. Diese Implementierung nutzt
+// absichtlich NICHT CompareBeVersion(), weil IsBeDBVersion7() sehr oft genutzt
+// wird und daher eine möglichst performante Implementierung haben soll.
+//******************************************************************************
+function _IsBeDBVersion7()
+| nMajorVersion |
+   nMajorVersion := Val( Token(mBeVersion, '.', 1) ),
+   Result        := nMajorVersion >= 7,
+end,

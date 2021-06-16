@@ -1,0 +1,33 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Allgemeine Funktionen für den GUI Teil der Codeblock CAD-Schnittstelle.
+//
+// Das Präfix CADIF steht für "CAD-InterFace"
+// (CAD steht allgemein für "computer-aided design")
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion berechnet die Farbe eines Datensatzes in einem Browser anhand
+// des Standard-Status des aktuellen Datensatzes.
+//
+// @result: integer - Farbe
+//******************************************************************************
+function _CADIF_GUI_CalculateRecordColorInBrowser(oTable)
+   case oTable:STATUS_STD
+      of gl_CADIF_Status_Error     :: result := GetBeDesignColor(dcbRed,    dcgLevel2),
+      of gl_CADIF_Status_Warning   :: result := GetBeDesignColor(dcbOrange, dcgLevel2),
+      of gl_CADIF_Status_Validated :: result := GetBeDesignColor(dcbCyan,   dcgLevel2),
+      of gl_CADIF_Status_Imported  :: result := GetBeDesignColor(dcbGreen,  dcgLevel2),
+      otherwise
+         result := clNone,
+   endcase,
+end,
+

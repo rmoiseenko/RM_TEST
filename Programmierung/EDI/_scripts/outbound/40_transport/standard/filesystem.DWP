@@ -1,0 +1,156 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion prüft, ob der aktuelle Windows-User für den angegebenen Pfad
+// alle Rechte besitzt.
+//
+// @result: boolean
+//******************************************************************************
+function CheckFullPathRights(cPath:C)                                            // TODO: In die EDI-Globals rein
+| cTestFile1, cTestFile2, oFile, cContent, cBuffer, i |
+
+   result     := false,
+   cTestFile1 := 'BEALLRIGHT1.TMP',
+   cTestFile2 := 'BEALLRIGHT2.TMP',
+   
+   if not empty(cPath) and DirectoryExists(cPath) then
+      if Right(cPath, 1) <> '\' then
+         cPath += '\',
+      endif,
+
+      cContent := '',
+      for i := 0 to 255 do
+         cContent += chr(i),
+      next,
+
+      startseq
+         if File(cPath + cTestFile1) then
+            DeleteFile(cPath + cTestFile1),
+         endif,
+         if File(cPath + cTestFile2) then
+            DeleteFile(cPath + cTestFile2),
+         endif,
+
+         // Erstellen
+         oFile := FOpen(cPath + cTestFile1, _or(FO_CREATE, FO_EXCLUSIVE)),
+         FClose(oFile),
+
+         // Schreiben
+         oFile := FOpen(cPath + cTestFile1, _or(FO_WRITE, FO_EXCLUSIVE)),
+         startseq
+            FWrite(oFile, cContent),
+         always
+            FClose(oFile),
+         stopseq,
+
+         // Lesen
+         cBuffer := '',
+         oFile := FOpen(cPath + cTestFile1, _or(FO_READ, FO_EXCLUSIVE)),
+         startseq
+            FSeek(oFile, 0, FS_SET),
+            FRead(oFile, cBuffer, oFile.Size),
+            FWrite(oFile, cContent),
+         always
+            FClose(oFile),
+         stopseq,
+
+         result := cBuffer == cContent,
+
+         if result then
+            // Umbenennen
+            result := RenameFile(cPath + cTestFile1, cPath + cTestFile2),
+
+            if result then
+               // Löschen
+               result := DeleteFile(cPath + cTestFile2),
+            endif,
+         endif,
+      onerror
+         result := false,
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Eingehender Transport-Prozess für das Protokoll "Verzeichnis"
+// @result: array - KVU-Array mit folgenden Informationen:
+//******************************************************************************
+function TransportOutbound_FileSystem(oDM:O, nEDIMSGId:N, oProgressCallback:O:=nil)
+|
+   oEDITRCH, oEDIMSG,
+   cExportPath, cFileName, oFIle, rBuffer
+|
+
+   result := {},
+   EDI_ProcessResult_SetSuccess(result),
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbIndexName := 'ID',
+   SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+   SetErrorIf(Empty(oEDIMSG:FILE_NAME), 'EDIMSG:FILE_NAME must not be empty'),
+   SetErrorIf(Empty(oEDIMSG:FILE_TYPE), 'EDIMSG:FILE_TYPE must not be empty'),
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindKey({oEDIMSG:EDITRCH_ID}), 'EDITRCH record not found: ' + str(oEDIMSG:EDITRCH_ID)),
+   SetErrorIf(not oEDITRCH:ACTIVE, 'Transport channel <' + trim(oEDITRCH:NAME) + '> not active'), // TODO: Der Kanal muss nicht aktiv sein, er muss nur "aktivierbar" sein
+
+   cExportPath := oEDITRCH:URI,
+
+   ForceDirectories(cExportPath),         // TODO: Der Outbound-Transport soll selbst den Versuch unternehmen, das Verzeichnis anzulegen
+
+   SetErrorIf(not CheckFullPathRights(cExportPath), 'Insufficient rights for given path'),
+
+   if Right(cExportPath, 1) <> '\' then
+      cExportPath += '\',
+   endif,
+
+   cFileName := EDI_Message_EDIMSG_GenerateFileName(oDM, oEDIMSG),
+
+   // ggf. Fortschritt-Callback ausführen
+   EDI_Process_UpdateProgress(oProgressCallback, 1, 1, cFileName),
+
+   oFile := FOpen(cExportPath + cFileName, _or(FO_Create, FO_Write)),
+   startseq
+      FWrite(oFile, EDI_Message_EDIMSG_GetMessageString(oDM, oEDIMSG)),
+      oEDIMSG.CbEdit(),
+      oEDIMSG:FILE_SIZE := oFile.Size,
+      oEDIMSG.CbPost(),
+   always
+      FClose(oFIle),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, false),
+
+m_aResult := {},
+startseq
+   m_aResult := TransportOutbound_FileSystem(m_oDM, m_nEDIMSGId, m_oProgressCallback),
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult

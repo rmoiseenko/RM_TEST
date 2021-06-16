@@ -1,0 +1,659 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses CB Programm soll den Feiertagimport übernehmen.
+//               Es ist als Button in der Feiertagsbearbeitung gedacht.
+//               Es öffnet sich ein Dialog in dem man den Pfad zu einer
+//               *.hol- Datei angibt und die Abteilungen, für welche der
+//               Import erfolgen soll, auswählt.
+//               Mögliche Datumsformate: YYYY-MM-DD, yyyy/MM/DD
+//##############################################################################
+//##############################################################################
+
+|
+   // Funktionen
+   cFileName, oFileObject, oDM, cFile, oDAB272:DB:='49,1', bYN, oDataSourceAbt,
+   oDataSourceStd, cAbtChecked, cStdChecked, oDABPAR:DB:="10,1", oMemTable,
+   oMemDataSource, aKey, bDoImport, cBroOpt, cBroOptE,
+   m_ImportedCount,
+
+   // GUI
+   oDialog, btn_Ok, btn_Cancel, oDlg, btn_Browse, edt_Path, grd_Browser,
+   box_GroupBoxPfad, box_GroupBoxGuel, box_CheckListBoxAbt, box_CheckListBoxStd,
+   box_GroupBoxBrow, pnl_Path, pnl_Boxes, pnl_ButBack, pnl_Buttons, spl_BoxSpl,
+   pnl_Std, pnl_Abt, pnl_Browser, spl_BrowSpl, pnl_Back, pnl_Main, pnl_Head, lbl_Head,
+   pnl_PathBack, pnl_Br, ipnl_Browser, bipnl_AbtStd
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+cBroOpt  := 'dgTitles,dgIndicator,dgColumnResize, dgColLines,' +
+            'dgRowLines,dgConfirmDelete,dgCancelOnExit,dgMultiSelect,dgTabs',
+
+cBroOptE := 'dgTitles,dgIndicator,dgColumnResize, dgColLines, dgRowLines,' +
+            'dgConfirmDelete,dgCancelOnExit,dgMultiSelect,dgTabs,dgEditing',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// MemTable erstellen
+//******************************************************************************
+function CreateMemTable()
+   oMemTable := CreateObject('TMemCalcTable', 'HolidayMem', oDM, oDM),
+   AddMemField(oMemTable, 'DATUM',    'C', 10, 0),
+   AddMemField(oMemTable, 'TEXT',     'C', 30, 0),
+   AddMemField(oMemTable, 'FEIERTAG', 'N',  3, 0),
+   oMemTable.Active := True,
+end,
+
+//******************************************************************************
+// DataSources erstellen und zuweisen
+//******************************************************************************
+function CreateDataSources()
+   oMemDataSource         := CreateObject('TDataSourceEx', 'DataSource', oDM, oDM),
+   oMemDataSource.DataSet := oMemTable,
+   oDataSourceAbt         := CreateObject('TDataSourceEx', 'SourceAbt',  oDM, oDM),
+   oDataSourceAbt.DataSet := oDAB272,
+   oDataSourceStd         := CreateObject('TDataSourceEx', 'SourceStd',  oDM, oDM),
+   oDataSourceStd.DataSet := oDAB272,
+end,
+
+//******************************************************************************
+// Datum kompatibel machen
+//******************************************************************************
+function ConvertDate(cDate)
+   | cBuffer |
+   cBuffer := cDate,
+   startseq,
+      // Bei deutschem Format z.B. 03.10.2012 ins englische Format umwandeln
+      if SubStr(cBuffer, 3, 1) = "." then
+         cBuffer := SubStr(cBuffer, 7, 4) + SubStr(cBuffer, 4, 2) + SubStr(cBuffer, 1, 2),
+      endif,
+
+      // Trennzeichen entfernen
+      cBuffer := StrTran(cBuffer, '.', ""), // Punkte löschen
+      cBuffer := StrTran(cBuffer, '/', ''), // Schrägstriche löschen
+      cBuffer := StrTran(cBuffer, '-', ''), // Bindestriche Löschen
+
+      // Gültiges Datum?
+      if not empty(SToD(cBuffer)) then
+         Result := FormatDateTime('DD.MM.YYYY', SToD(cBuffer)),
+      else
+         Result := 'ERROR',
+      endif,
+   onerror
+      SetError("Fehler beim Konvertieren des Datums" + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Gewählte Standorte ändern
+//******************************************************************************
+function ChangeCheckedStd()
+   | stdValues, stdItems, i |
+   stdValues   := box_CheckListBoxStd.ValuesChecked,
+   stdItems    := box_CheckListBoxStd.CheckedItems,
+   cStdChecked := '',
+   for i := 1 to ALen(stdItems) do
+      cStdChecked += CollItem(stdValues, stdItems[i]) + '/',
+   end,
+   cStdChecked := SubStr(cStdChecked, 1, Len(cStdChecked) - 1),
+end,
+
+//******************************************************************************
+// Gewählte Abteilungen ändern
+//******************************************************************************
+function ChangeCheckedAbt()
+| abtValues, abtItems, i |
+   abtValues   := box_CheckListBoxAbt.ValuesChecked,
+   abtItems    := box_CheckListBoxAbt.CheckedItems,
+   cAbtChecked := '',
+   for i:=1 to ALen(abtItems) do
+      cAbtChecked += CollItem(abtValues, abtItems[i]) + '/',
+   end,
+   cAbtChecked := SubStr(cAbtChecked, 1, Len(cAbtChecked) - 1),
+end,
+
+//******************************************************************************
+// Alle Abteilungen oder Standorte setzen
+//******************************************************************************
+function SetAllDepart(nID)
+| oDabMDT |
+
+   oDabMDT           := DBGetTable(oDM, 251),
+   oDabMDT.IndexName := 'WERT',
+
+   DBScope({nID}, {nID}, oDABMDT),
+   startseq
+      DBGoTop(oDabMDT),
+      if not nID = oDABMDT:TAB_ID then
+         SetError("Scope Fehlgeschlagen!" + crlf + GetErrorText()),
+      endif,
+      while not eof(oDABMDT) do
+         Result += Trim(oDabMDT:WERT) + "/",
+         DBSkip(1, oDABMDT),
+      end,
+   always
+      DBScope(, , oDABMDT),
+   stopseq,
+end,
+
+//******************************************************************************
+// Alle Standorte auswählen
+//******************************************************************************
+function SetAllLoc()
+| oLoc, i |
+   Result := '',
+   for i := 1 to CollCount(mLocationInfos) do
+      oLoc   := CollItem(mLocationInfos,i),
+      Result += StrZero(oLoc.LocNo, 3) + iif(i = CollCount(mLocationInfos), '', '/'),
+   next,
+end,
+
+//******************************************************************************
+// Auf Zeilentrennzeichen prüfen.
+//******************************************************************************
+function CheckToken()
+   FRead(oFileObject, cFile, oFileObject.Size),
+   cFile := UTF8ToAnsi(cFile),
+
+   if At(crlf, cFile) > 0 then // CRLF???
+      Result := crlf,
+   else
+      if At(Chr(10), cFile) > 0 then // LF???
+         Result := Chr(10),
+      else
+         MessageDlg("Nicht unterstützer Dateiinhalt" + crlf +
+                    "Zeilen müssen mit LF's oder CRLF's enden!"),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// MemTable füllen
+//******************************************************************************
+function WriteMem(dDate, sName)
+   DBAppend(oMemTable),
+   oMemTable:DATUM    := dDate,
+   oMemTable:TEXT     := sName,
+   oMemTable:FEIERTAG := 100,
+   DBPost(oMemTable),
+end,
+
+//******************************************************************************
+// MemTable füllen
+//******************************************************************************
+function FillBrowser()
+| dDate, sName, i, cLineBuffer, cToken, nIndex, cItemsSoFar, nTokenCount |
+
+   DBDisableControls(oMemTable),
+   startseq,
+      DeleteAllData(oMemTable),
+      grd_Browser.Options := cBroOptE, // Browser editierbar machen.
+      if not File(cFileName) then
+         MessageDlg("Fehler beim Laden der Datei" + crlf +
+                    "Keine gültige Datei gewählt!"),
+         exit,
+      endif,
+      // DATEI INITIALISIEREN UND BIS ZU RELEVANTEN DATEN SPRINGEN
+      oFileObject := FOpen(cFileName, FO_READ),
+      startseq
+         startseq
+            cToken               := CheckToken(), // Zeilentrenner holen
+            oFileObject.Position := 0,
+            DBgotop(oMemTable),
+            if cToken = crlf then
+               nIndex := 0,
+            else if cToken = Chr(10) then
+               nIndex := 1,
+            endif,
+            endif,
+
+            nTokenCount := TokenCount(cFile, cToken),
+            cItemsSoFar := Token(cFile, cToken, 1) + cToken,
+
+            for i := 2 to nTokenCount - 1 do
+               cLineBuffer := Token(cFile, cToken, i),
+               cItemsSoFar += cLineBuffer + cToken,
+               sName       := SubStr(cLineBuffer, 1, Len(cLineBuffer) - 12),
+               dDate       := SubStr(cLineBuffer, Len(cLineBuffer) - 9, Len(cLineBuffer)),
+               WriteMem(dDate, sName),
+            end,
+            // prüfen ob alles eingelesen wurde bis zum letzten Zeichen und nicht nur
+            // bis zum letzten Token
+            if Len(cFile) > Len(cItemsSoFar) then
+               cLineBuffer := SubStr(cFile, Len(cItemsSoFar) + 1, Len(cFile)),,
+               sName       := SubStr(cLineBuffer, 1, Len(cLineBuffer) - 12),
+               dDate       := SubStr(cLineBuffer, Len(cLineBuffer) - 9,
+                                     Len(cLineBuffer)),
+               WriteMem(dDate, sName),
+            endif,
+            DBGoTop(oMemTable),
+         onerror
+            SetError('Fehler beim Einlesen der Datei' + crlf + crlf + GetErrorText()),
+         stopseq,
+      always
+         FClose(oFileObject),
+      stopseq,
+   always,
+      DBEnableControls(oMemTable),
+   stopseq,
+end,
+
+//******************************************************************************
+// Datei-Auswahldialog öffnen
+//******************************************************************************
+function GetDocument()
+   oDlg := OpenDlg('Import für Feiertage', '*.hol', MBEDEFAULT),
+   startseq,
+      oDlg.Active := True,
+      if oDlg.Selected then
+         if File(oDlg.FileName) then
+            edt_Path.Text := oDlg.FileName,
+            cFileName          := oDlg.FileName,
+            FillBrowser(),
+            CloseForm(oDlg),
+         else
+            SetError(GetErrorText()),
+         endif,
+      endif,
+   onerror,
+      SetError('Fehler beim Öffnen der Importdatei' + crlf + crlf + GetErrorText()),
+      DestroyObject(oDlg),
+   stopseq,
+end,
+
+//******************************************************************************
+// MemTable überprüfen
+//******************************************************************************
+function ValidateMemTable()
+   DBgotop(oMemTable),
+   bDoImport := True,
+   while not eof(oMemTable) do
+      if empty(oMemTable:TEXT) or oMemTable:DATUM = 'ERROR' then
+         bDoImport := False,
+      endif,
+      DBSkip(1, oMemTable)
+   end,
+   if not bDoImport then
+      bDoImport := JN("Nicht alle Felder sind mit Werten befüllt." + crlf +
+                     "Einträge mit fehlenden oder falschen Feldern werden " +
+                     "ignoriert." + crlf + "Import trotzdem durchführen?", False),
+   endif,
+end,
+
+//******************************************************************************
+// Prüfen ob Standorte oder Abteilungen gewählt wurden
+//******************************************************************************
+function CheckIfChoice()
+   | cChecked |
+   if Len(box_CheckListBoxAbt.CheckedItems) = 0 then
+      cChecked    := '',
+      cChecked    := SetAllDepart(102011),
+      cAbtChecked := SubStr(cChecked, 1, Len(cChecked) - 1),
+   endif,
+
+   if Len(box_CheckListBoxStd.CheckedItems) = 0 then
+      cChecked    := '',
+      cStdChecked := SetAllLoc(),
+   endif,
+end,
+
+//******************************************************************************
+// Daten in DAB272 schreiben.
+//******************************************************************************
+function WriteData()
+   startseq,
+      DBAppend(oDAB272),
+
+      oDAB272:DATUM      := oMemTable:DATUM,
+      oDAB272:TEXT       := AllTrim(oMemTable:TEXT),
+      oDAB272:U_BEREICHE := cAbtChecked,
+      oDAB272:STAND_ORTE := cStdChecked,
+      oDAB272:PERSNR     := 0,
+      // Auf gültigen Feiertagswert prüfen und korrigiert eintragen
+      if oMemTable:FEIERTAG <= 50 then
+         oDAB272:FEIERTAG := 50,
+      else
+         oDAB272:FEIERTAG := 100,
+      endif,
+
+      DBPost(oDAB272),
+   onerror
+      DbCancel(oDAB272),
+      SetError("Fehler beim Schreiben der Daten" + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion zum Importieren
+//******************************************************************************
+function CloseDialog()
+   m_ImportedCount := 0,
+   DBDisableControls(oMemTable),
+   BeginSuspend(oDAB272),
+   startseq
+      startseq
+         cFileName := edt_Path.Text,
+         if not File(cFileName) then
+            MessageDlg("Keine gültige Datei gewählt!" + crlf + crlf +
+            GetErrorText(), mtError),
+            exit,
+         endif,
+
+         CheckIfChoice(), // Abteilung/Standort gewählt?. Keiner = Alle
+         ValidateMemTable(),
+         DBFilter('', oDAB272),
+         // Soll importiert werden (mit oder ohne fehler)
+         if bDoImport then
+            DBFilter('PERSNR = 0', oDAB272),
+            DBGoTop(oMemTable),
+            while not EOF(oMemTable) do
+               if not empty(oMemTable:TEXT) and not oMemTable:DATUM = 'ERROR' then // Fehlerhafte überspringen
+                  if not DBSeek({0, oMemTable:DATUM}, oDAB272) then // Wenn Feiertag nicht bereits im System
+                     WriteData(), // Feiertag in Dab272 hinzufügen
+                     m_ImportedCount += 1,
+                  endif,
+               endif,
+            DBSkip(1, oMemTable),
+            end,
+            MessageDlg('Import abgeschlossen, ' + Str(m_ImportedCount) + ' Feiertag(e) importiert.'),
+            CloseForm(oDialog),
+         endif,
+      onerror
+         SetError(GetErrorText()),
+      stopseq,
+   always
+      EndSuspend(oDAB272),
+      DBEnableControls(oMemTable),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Events
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Standort Auswahl
+//******************************************************************************
+function OnCheckListBoxStd( Sender )
+   ChangeCheckedStd(),
+end,
+
+//******************************************************************************
+// Abteilungs Auswahl
+//******************************************************************************
+function OnCheckListBoxAbt( Sender )
+   ChangeCheckedAbt(),
+end,
+
+//******************************************************************************
+// Auf enter prüfen.
+//******************************************************************************
+function edt_PathDoOnKeyPress(Sender, aKey)
+   if aKey = Chr(13) then
+      cFileName := edt_Path.Text,
+      FillBrowser(),
+   endif,
+end,
+
+//******************************************************************************
+// Abbrechen wurde geklickt
+//******************************************************************************
+function btn_CancelClick()
+   CloseForm(oDialog),
+end,
+
+//******************************************************************************
+// Vor dem Posten in der Memtable
+//******************************************************************************
+function MemTableDoBeforePost()
+   oMemTable:DATUM := ConvertDate(oMemTable:DATUM),
+end,
+
+//******************************************************************************
+// Beim klicken auf den Durchsuchenbutton
+//******************************************************************************
+function btn_BrowseClick()
+   GetDocument(),
+end,
+
+//******************************************************************************
+// Beim klicken auf OK
+//******************************************************************************
+function btn_OkClick()
+   CloseDialog(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächenrelevante Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ordnet den Controls die Events zu
+//******************************************************************************
+function AssignEvents()
+   AssignEvent(btn_Cancel,          'OnClick',      'btn_CancelClick'          ),
+   AssignEvent(btn_Ok,              'OnClick',      'btn_OkClick'              ),
+   AssignEvent(btn_Browse,          'OnClick',      'btn_BrowseClick'          ),
+   AssignEvent(box_CheckListBoxAbt, 'OnClickCheck', 'OnCheckListBoxAbt'        ),
+   AssignEvent(box_CheckListBoxStd, 'OnClickCheck', 'OnCheckListBoxStd'        ),
+   AssignEvent(edt_Path,            'OnKeyPress',   'edt_PathDoOnKeyPress'),
+   AssignEvent(oMemTable,           'BeforePost',   'MemTableDoBeforePost'     ),
+end,
+
+//******************************************************************************
+// GUI-Komponenten laden.
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // oForm ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      oDialog := CreateObject('TFormEx'),
+      oDialog.OrigCapt              := "Feiertage importieren",
+      oDialog.Position              := POSCREENCENTER,
+      oDialog.Height                := 570,
+      oDialog.Width                 := 450,
+      oDialog.Font.Name             := 'Segoe UI',
+      oDialog.Font.Size             := 10,
+      oDialog.BorderStyle           := 2,
+      oDialog.Constraints.MinWidth  := 300,
+      oDialog.Constraints.MinHeight := 400,
+      oDialog.AlignWithMargins      := True,
+
+      // Background Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Back := CreateObject('TPanel', , oDialog, oDialog,),
+      pnl_Back.BevelOuter       := False,
+      pnl_Back.Align            := alClient,
+      pnl_Back.AlignWithMargins := True,
+      pnl_Back.Margins.Top      := 5,
+      pnl_Back.Margins.Left     := 5,
+      pnl_Back.Margins.Right    := 5,
+      pnl_Back.Margins.Bottom   := 5,
+      pnl_Back.BevelOuter       := False,
+
+      // Boxen Browser Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Main := CreateObject('TPanel', , pnl_Back, pnl_Back,),
+      pnl_Main.Align      := alClient,
+      pnl_Main.BevelOuter := False,
+
+      // Pfadpanel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_PathBack := CreateObject('TPanel', , pnl_Back, pnl_Back),
+      pnl_PathBack.Align            := alTop,
+      pnl_PathBack.Height           := 60,
+      pnl_PathBack.AlignWithMargins := True,
+      pnl_PathBack.Margins.Left     := 0,
+      pnl_PathBack.Margins.Right    := 0,
+      pnl_PathBack.BevelOuter       := False,
+
+      // Groupbox ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      box_GroupBoxPfad := CreateObject('TPanel', , pnl_PathBack, pnl_PathBack),
+      box_GroupBoxPfad.Height  := 25,
+      box_GroupBoxPfad.Align   := alClient,
+      box_GroupBoxPfad.BevelOuter := False,
+
+      // Pfad Textfeld ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      edt_Path := CreateObject('TBeEdit', , box_GroupBoxPfad, box_GroupBoxPfad),
+      edt_Path.Text                  := '',
+      edt_Path.Constraints.MaxHeight := 25,
+      edt_Path.Align                 := alClient,
+      edt_Path.AlignWithMargins      := True,
+
+      // Browserbutton Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Br := CreateObject('TPanel', , box_GroupBoxPfad, box_GroupBoxPfad),
+      pnl_Br.Align            := alRight,
+      pnl_Br.Width            := 35,
+      pnl_Br.BevelOuter       := False,
+      pnl_Br.AlignWithMargins := True,
+      pnl_Br.Margins.Bottom   := 0,
+
+      // Durchsuchen Button ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      btn_Browse := CreateObject('TBeBitBtn', , pnl_Br, pnl_Br),
+      btn_Browse.Width  := 35,
+      btn_Browse.Height := 25,
+      btn_Browse.ImageIndex.IndexNormal := 29,
+
+      // Headline Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Head := CreateObject('TBeInfoPanel', , box_GroupBoxPfad, box_GroupBoxPfad),
+      pnl_Head.Align          := alTop,
+      pnl_Head.Margins.Bottom := 0,
+      pnl_Head.Caption        := "Pfadauswahl",
+
+      // Button BackPanel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_ButBack := CreateObject('TPanel',, pnl_Back, pnl_Back),
+      pnl_ButBack.Align            := alBottom,
+      pnl_ButBack.Visible          := True,
+      pnl_ButBack.Height           := 35,
+      pnl_ButBack.BevelOuter       := False,
+
+      // Button Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Buttons := CreateObject('TPanel', ,pnl_ButBack, pnl_ButBack),
+      pnl_Buttons.Align      := alRight,
+      pnl_Buttons.Visible    := True,
+      pnl_Buttons.Width      := 210,
+      pnl_Buttons.BevelOuter := False,
+
+      // Importieren Button ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      btn_Ok := CreateObject('TBeBitBtn', , pnl_Buttons, pnl_Buttons),
+      btn_Ok.Top                    := 5,
+      btn_Ok.Left                   := 3,
+      btn_Ok.Height                 := 25,
+      btn_Ok.Width                  := 100,
+      btn_Ok.Caption                := 'Importieren',
+      btn_Ok.ImageIndex.IndexNormal := 62,
+
+      // Abbrechen Button ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      btn_Cancel := CreateObject('TBeBitBtn', , pnl_Buttons, pnl_Buttons),
+      btn_Cancel.Top                    := 5,
+      btn_Cancel.Left                   := 105,
+      btn_Cancel.Height                 := 25,
+      btn_Cancel.Width                  := 100,
+      btn_Cancel.Caption                := 'Abbrechen',
+      btn_Cancel.ImageIndex.IndexNormal := 8,
+
+      // Browser Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Browser := CreateObject('TPanel', , pnl_Main, pnl_Main),
+      pnl_Browser.Align := alClient,
+      pnl_Browser.BevelOuter := False,
+
+      // Browser auswahl Info
+      ipnl_Browser := CreateObject('TBeInfoPanel', , pnl_Main, pnl_Main),
+      ipnl_Browser.Align := alTop,
+      ipnl_Browser.Caption := 'Feiertage bearbeiten',
+
+      // Browser ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      grd_Browser := CreateObject('TBeSelAltGrid', , pnl_Browser, pnl_Browser),
+      grd_Browser.DataSource       := oMemDataSource,
+      grd_Browser.Options          := cBroOpt,
+      grd_Browser.Align            := alClient,
+      grd_Browser.AlignWithMargins := True,
+      grd_Browser.Margins.Top      := 0,
+
+      // Browsersplitter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      spl_BrowSpl := CreateObject('TSplitter', , pnl_Main, pnl_Main),
+      spl_BrowSpl.Align := alBottom,
+
+      // Panel Boxen ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Boxes := CreateObject('TPanel', , pnl_Main, pnl_Main),
+      pnl_Boxes.Caption               := 'Standorte/Abteilungen',
+      pnl_Boxes.Align                 := alBottom,
+      pnl_Boxes.Margins.Bottom        := 0,
+      pnl_Boxes.Height                := 100,
+      pnl_Boxes.Constraints.MinHeight := 50,
+      pnl_Boxes.BevelOuter := False,
+
+      // Abteilung Standort Info Panel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      bipnl_AbtStd := CreateObject('TBeInfoPanel', , pnl_Boxes, pnl_Boxes,),
+      bipnl_AbtStd.Caption := "Standorte und Abteilungen wählen",
+      bipnl_AbtStd.Align := alTop,
+
+      // PnlStandort ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Std := CreateObject('TPanel', , pnl_Boxes, pnl_Boxes),
+      pnl_Std.Align      := alClient,
+      pnl_Std.BevelOuter := False,
+      pnl_Std.Width      := 100,
+
+      // ChecklistBox Standort ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      box_CheckListBoxStd := CreateObject('TBeAttribCheckListBox', , pnl_Std, pnl_Std),
+      box_CheckListBoxStd.Top              := 5,
+      box_CheckListBoxStd.Left             := 5,
+      box_CheckListBoxStd.BeAttributeID    := 102009,
+      box_CheckListBoxStd.Align            := alClient,
+      box_CheckListBoxStd.AlignWithMargins := True,
+      box_CheckListBoxStd.Margins.Right    := False,
+
+      // PnlAbteilung ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      pnl_Abt := CreateObject('TPanel', , pnl_Boxes, pnl_Boxes),
+      pnl_Abt.Align      := alRight,
+      pnl_Abt.BevelOuter := False,
+
+      // ChecklistBox Abteilungen ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      box_CheckListBoxAbt := CreateObject('TBeAttribCheckListBox', , pnl_Abt, pnl_Abt),
+      box_CheckListBoxAbt.Top              := 338,
+      box_CheckListBoxAbt.Left             := 205,
+      box_CheckListBoxAbt.BeAttributeID    := 102011,
+      box_CheckListBoxAbt.Align            := alClient,
+      box_CheckListBoxAbt.AlignWithMargins := True,
+      box_CheckListBoxAbt.Margins.Left     := False,
+
+      // Boxensplitter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      spl_BoxSpl := CreateObject('TSplitter', , pnl_Boxes, pnl_Boxes),
+      spl_BoxSpl.Align := alRight,
+      oDialog.ActiveControl := edt_Path,
+
+   onerror
+      DestroyObject(oDialog),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+oDM := CreateObject('TBeDBGet', 'DataModule'),
+startseq
+   startseq,
+      CreateMemTable(),
+      CreateDataSources(),
+      LoadGui(),
+      AssignEvents(),
+      ShowModal(oDialog),
+   onerror,
+      MessageDlg('Fehler beim Importieren der Feiertage' + crlf + crlf + GetErrorText(), 1),
+   stopseq,
+always
+   DestroyObject(oDM),
+endif,

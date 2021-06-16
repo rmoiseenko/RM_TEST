@@ -1,0 +1,38 @@
+// << Dieses SQL-Script ist ein Teil des Scriptes "...\angebot_vs_bedarf_mit_ueberlast_perioden_zaehler" >>
+
+TRY DROP TABLE #kapa_bedarf_per_periode; CATCH ALL END TRY;
+
+SELECT
+     INNER_RESULT.*,
+     Round(INNER_RESULT.KAPA_MIN / 60, 2) AS KAPA_STUNDEN_BEDARF
+   into #kapa_bedarf_per_periode
+   FROM
+      (
+         SELECT
+            PGKBDP.RESTYP,
+            @GROUP_BY_QUALI@ PGKBDP.QUALI,
+            @GROUP_BY_RES@   PGKBDP.D270_RESID AS RES_ID,
+            PGKBDP.PP_JAHR AS JAHR,
+            PGKBDP.PP_KW   AS KW,
+            SUM(PGKBDP.K_REST_BEA) AS KAPA_MIN
+
+         FROM "PGKBDP.ADT" PGKBDP
+         WHERE
+                PGKBDP.STANDORT   =  @STANDORT@
+            AND PGKBDP.KAP_SPERRE = false
+            AND PGKBDP.ARTTYP     = 'A'
+            AND PGKBDP.PP_DATUM   >= @DATUM_VON@
+            AND PGKBDP.PP_DATUM   <= @DATUM_BIS@                 
+            AND PGKBDP.K_REST_BEA <> 0
+            AND PGKBDP.RESTYP IN (@RESTYP_LIST@)
+            @GROUP_BY_QUALI@ AND PGKBDP.QUALI > 0
+            // AND PGKBDP.D270_RESID > 0
+
+         GROUP BY
+            PGKBDP.RESTYP
+            @GROUP_BY_QUALI@, PGKBDP.QUALI
+            @GROUP_BY_RES@  , PGKBDP.D270_RESID
+            , PGKBDP.PP_JAHR
+            , PGKBDP.PP_KW
+
+       ) AS INNER_RESULT;

@@ -1,0 +1,14 @@
+//##############################################################################
+// package-manager Http-Funktionen
+//##############################################################################
+
+// Das Standard BasicAuth Verfahren von IndyHttp encodiert das Passwort nicht mit
+// UTF-8 und funktioniert somit nicht mit Passwoertern, die z.B. Umlaute enthalten.
+// Die "neue" Methode encodiert das Passwort richtig, verwendet aber weiterhin
+// das BasicAuth-Verfahren
+function BPM_DetermineAuthentificationMode()
+  Result := 1,
+  if CompareBeVersion(mBeVersion, '7.2.1.1.')  and mBeBuildId >= '000.010.252' then
+    Result := 2,
+  endif,
+end,                                                                              

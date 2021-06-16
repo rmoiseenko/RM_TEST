@@ -1,0 +1,813 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking zur Darstellung eines Projekts als Gantt-Diagramm
+//##############################################################################
+//##############################################################################
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3, // m_nDockingUseContext:P4,
+
+   m_cFormClassID, m_cWinPosSaveId, m_cBrowserId, m_nLastTableState,
+   m_oDM, m_oDABPRJ, m_oDABPRV, m_oIDTable,
+   m_nLastMaxInternalID,
+   m_cInternalIDIndex, m_cWAOrigIDIndex,
+   m_oChartComponent, m_oChartItemList, m_oTreeItemList,
+   m_oChart, m_oMenuManager, m_oChartParameter,
+   pnl_ChartOptions,
+   m_nDefaultSelectedColor, m_nDefaultFocusedColor,
+   m_bShowProjectStatusAsMarkers,
+   m_nRowHeight, m_nHierarchyIDLen,
+   // Variablen die als Optionen verwendet werden können
+   m_nTaskTreeWidth,
+   m_DefaultViewDays, m_dStartTimeOfDay, m_dEndTimeOfDay,
+   m_nProjectImage, m_nGroupTaskImage, m_nTaskImage, m_nMileStoneImage,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ReloadChart, AL_Main, bar_MainToolbar, bardock_MainToolbarDock,
+   barm_MainToolbarManager, btn_ReloadChart, ds_MasterTable
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@PRJCHART",
+m_cWinPosSaveId := "@PRJCHPOS2",
+
+//******************************************************************************
+// Optionen
+//******************************************************************************
+
+m_nTaskTreeWidth              := 300,                   // Breite des Vorgangs-Baums
+m_dStartTimeOfDay             := StrToTime('00:00:00'), // Zeit an dem alle Vorgänge starten
+m_dEndTimeOfDay               := StrToTime('23:59:59'), // Zeit an dem alle Vorgänge enden
+m_DefaultViewDays             := 14,                    // Zeitraum der per Default angezeigt wird, wenn sich dieser nicht berechnen lässt
+m_nRowHeight                  := 18,                    // Höhe der Zeilen im Ressourcen-Baum und Chart
+m_bShowProjectStatusAsMarkers := False,                 // Status-Ampeln des Projekts auf Projekt-Balken anzeigen (Funktioniert nur wenn m_nRowHeight >= 20)
+
+// Images
+m_nProjectImage   := 558,
+m_nGroupTaskImage := 363,
+m_nTaskImage      := 363,
+m_nMileStoneImage := 362,
+
+// Farben für selektionen
+m_nDefaultSelectedColor := GetBeDesignColor(dcbLightBlue, dcgLevel1),
+m_nDefaultFocusedColor  := GetBeDesignColor(dcbLightBlue, dcgLevel2),
+
+// Internes
+m_nLastMaxInternalID := 0,
+m_nHierarchyIDLen    := 10,
+m_cInternalIDIndex   := 'ID',
+m_cWAOrigIDIndex     := 'WA_ORIGID',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Chartkomponente benötigt eindeutige ID's zum Identifizieren der einzelnen
+// Items. Hierfür eignen sich die Projekt-ID und die Vorgangs-ID. Da diese
+// jedoch aus zwei verschiedenen Tabellen kommen, können sich diese
+// überschneiden. z.B. Projekt mit ID 1 hat 10 Vorgänge: diese haben dann
+// die ID's 1 - 10. Es existiert also eine überschneidung bei der ID 1.
+// Um dieses Problem zu Umgehen, wird hier eine Zwischentabelle mit eigenen ID's
+// eingeführt. Dadurch lassen sich die Original-ID's mit neuen eindeutigen ID's
+// zwischenspeichern.
+//******************************************************************************
+function CreateIDTable()
+   m_oIDTable := CreateObject('TBeMemTable', 'GANTTIDTBL', m_oDM, m_oDM),
+   m_oIDTable.CbAddField('WA',     ftInteger, 0), // WorkArea der Ursprünglichen Tabelle aus der die ID stammt
+   m_oIDTable.CbAddField('ORIGID', ftInteger, 0), // Originale ID z.B. Projekt-ID
+   m_oIDTable.CbAddField('ID',     ftInteger, 0), // Interne ID
+
+
+   // Sicherstellen, dass die selbst erzeugten ID's nur einmal vorhanden sind!
+   m_oIDTable.CbAddIndex(m_cInternalIDIndex, 'ID',        ixPrimary),
+   m_oIDTable.CbAddIndex(m_cWAOrigIDIndex,   'WA;ORIGID', ixUnique),
+
+   m_oIDTable.Active := True,
+end,
+
+//******************************************************************************
+// Fügt einen neuen Eintrag in die interne ID-Tabelle ein und liefert die
+// neue ID zurück
+//******************************************************************************
+function AddIDEntry(nWA, nOrigID)
+| nNewInternalID |
+   // Nächst höhere ID berechnen
+   m_nLastMaxInternalID := m_nLastMaxInternalID + 1,
+   nNewInternalID       := m_nLastMaxInternalID,
+
+   // Neuen Eintrag in der Tabelle erzeugen
+   m_oIDTable.CbAppend(),
+   m_oIDTable:WA     := nWA,
+   m_oIDTable:ORIGID := nOrigID,
+   m_oIDTable:ID     := nNewInternalID,
+   m_oIDTable.CbPost(),
+
+   Result := nNewInternalID,
+end,
+
+//******************************************************************************
+// Diese Funktion liefert für eine Original-ID die zugehörige Interne ID aus
+// der ID-Zwischentabelle
+//******************************************************************************
+function OriginalIDAsInternalID(nWA, nOrigID)
+   m_oIDTable.CbIndexName := m_cWAOrigIDIndex,
+   if DBSeek({nWA, nOrigID}, m_oIDTable) then
+      Result := m_oIDTable:ID,
+   else
+      Result := AddIDEntry(nWA, nOrigID), // Neue Interne ID vergeben
+   endif,
+end,
+
+//******************************************************************************
+// Liefert für eine Interne ID die Originale ID zurück
+// Werden weitere Informationen benötigt kann auf die m_oIDTable-Felder
+// zugegriffen werden, da diese Tabelle nach dem Aufruf dieser Funktion korrekt
+// positioniert ist.
+//******************************************************************************
+function InternalIDAsOriginalID(nID)
+   Result := -1,
+   m_oIDTable.CbIndexName := m_cInternalIDIndex, // ID
+   if DBSeek({nID}, m_oIDTable) then
+      Result := m_oIDTable:ORIGID,
+   endif,
+end,
+
+//******************************************************************************
+// Berechnet die HierarchyID für ein Projekt
+//******************************************************************************
+function GetProjectHierarchyID()
+   Result := Str(OriginalIDAsInternalID(waDABPRJ, m_oDABPRJ:ID)) +
+             Replicate('0', m_nHierarchyIDLen - Len(Str(m_oDABPRJ:ID))),
+end,
+
+
+//******************************************************************************
+// Berechnet die Caption für das aktuelle in der Basis-Projekt-Tabelle
+// positionierte Projekt
+//******************************************************************************
+function GetProjectCaption()
+   Result := AllTrim(m_oDABPRJ:BEZ) + ' (' + Str(m_oDABPRJ:ID) + ')',
+end,
+
+//******************************************************************************
+// Berechnet den Hint für das aktuelle in der Basis-Projekt-Tabelle
+// positionierte Projekt
+//******************************************************************************
+function GetProjectHint()
+   Result := AllTrim(m_oDABPRJ:BEZ) + ' (' + Str(m_oDABPRJ:ID) + ')',
+end,
+
+//******************************************************************************
+// Berechnet die HierarchyID für einen Vorgang
+//******************************************************************************
+function GetTaskHierarchyID()
+   Result := StrZero(OriginalIDAsInternalID(waDABPRV, m_oDABPRV:ID), m_nHierarchyIDLen),
+end,
+
+//******************************************************************************
+// Berechnet die Caption für den aktuell in der Basis-Vorgangs-Tabelle
+// positionierten Vorgang
+//******************************************************************************
+function GetTaskCaption()
+   Result := AllTrim(m_oDABPRV:BEZ),
+end,
+
+//******************************************************************************
+// Berechnet den Hint für den aktuell in der Basis-Vorgangs-Tabelle
+// positionierten Vorgang
+//******************************************************************************
+function GetTaskHint()
+   Result := AllTrim(m_oDABPRV:BEZ),
+end,
+
+//******************************************************************************
+// Berechnet die Farbe für ein Projekt-Element im Chart auf Basis des aktuell
+// positionierten Projekts in der Basis-Tabelle
+//******************************************************************************
+function GetProjectElementColor()
+   Result := AttribColor(-14, m_oDABPRJ:TYP),
+end,
+
+//******************************************************************************
+// Berechnet die Farbe für ein Vorgangs-Element im Chart auf Basis des aktuell
+// positionierten Vorgangs in der Basisi-Tabelle
+//******************************************************************************
+function GetTaskElementColor()
+   Result := AttribColor(-16, m_oDABPRV:STATUS)
+end,
+
+//******************************************************************************
+// Berechnet die Farbe für einen Milestone im Chart
+//******************************************************************************
+function GetMileStoneColor()
+   Result := GetBeDesignColor(dcbLightBLue, dcgLevel4),
+end,
+
+//******************************************************************************
+// Liefert den ggf. eingetragenen Projekt-Beginn als DateTime zurück
+//******************************************************************************
+function GetProjectStartTime()
+   Result := 0,
+   if not empty(m_oDABPRJ:BEGINN) then
+      Result := m_oDABPRJ:BEGINN + m_dStartTimeOfDay,
+   endif,
+end,
+
+//******************************************************************************
+// Liefert das ggf. eingetragenen Projekt-Ende als DateTime zurück
+//******************************************************************************
+function GetProjectEndTime()
+   Result := 0,
+   if not empty(m_oDABPRJ:ENDE) then
+      Result := m_oDABPRJ:ENDE + m_dEndTimeOfDay,
+   endif,
+end,
+
+//******************************************************************************
+// Liefert den ggf. eingetragenen Vorgangs-Beginn als DateTime zurück
+//******************************************************************************
+function GetTaskStartTime()
+   Result := 0,
+   if not empty(m_oDABPRV:BEGINN) then
+      Result := StrToDateTime(m_oDABPRV:BEGINN) + m_dStartTimeOfDay,
+   endif,
+end,
+
+//******************************************************************************
+// Liefert das ggf. eingetragene Vorgangs-Ende als DateTime zurück
+//******************************************************************************
+function GetTaskEndTime()
+   Result := 0,
+   if not empty(m_oDABPRV:ENDE) then
+      Result := StrToDateTime(m_oDABPRV:ENDE) + m_dEndTimeOfDay,
+   endif,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oDM := CreateObject('TBeDbGet', 'PRJCHTDM', oForm),
+   // Eigene Instanz der Projekt-Vorgangs-Tabelle.
+   // Diese Bekommt Änderungen die über das "Vorgänge & Leistungen"-Docking
+   // erfolgen nicht direkt mit, sondern bezieht sich immer auf den zuletzt in
+   // der Datenbank gespeicherten Zustand.
+   m_oDABPRJ           := DBGetTable(m_oDM, waDABPRJ, 'GANTTPRJ'),
+   m_oDABPRJ.IndexName := 'ID',
+   m_oDABPRV           := DBGetTable(m_oDM, waDABPRV, 'GANTTPRV'),
+   m_oDABPRV.IndexName := 'PRJ_ID',
+
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, waDABPRJ, 'TBeRightsTable'),
+
+   // Erstellen der internen ID-MemTable
+   CreateIDTable(),
+end,
+
+//******************************************************************************
+// Lädt die Vorgänge unter berücksichtigung des Typs und der Hierarchie in
+// den Baum der Chartkomponente
+//******************************************************************************
+function AddElementToTree(oParentTreeElement:R, nLastAddedTreeLevel:R, nCurrentElementLevel, nID, nElementType, bIsProject, cCaption)
+|
+   oProjectTask, oCurrentTreeElement, nLevelSkips, i, nFontStyle, nFontColor,
+   nTreeItemType, nImageIndex
+|
+
+   //***************************************************************************
+   // Logik für Hierarchybildung im Baum
+   //***************************************************************************
+
+   // Prüfen ob die Ebene des aktuellen Datensatz kleiner ist als die Ebene
+   // des zuletzt hinzugefügten Vorgangs. Wenn ja muss der Parent-Knoten neu
+   // ermittelt werden, indem in der Baumhierarchy nach oben gegangen wird.
+   if nCurrentElementLevel < nLastAddedTreeLevel then
+      // Anzahl an Ebenen die nach oben gegangen werden muss um den
+      // korrekten Parent-Knoten zu ermitteln ist die Differenz aus dem
+      // zuletzt hinzugefügten und der Zielebene
+      nLevelSkips := nLastAddedTreeLevel - nCurrentElementLevel,
+
+      for i := 1 to nLevelSkips do
+         oParentTreeElement := oParentTreeElement.Parent,
+      next,
+   endif,
+
+   //***************************************************************************
+   // Berechnung der Informationen für die Darstellung des Elements etc.
+   //***************************************************************************
+   if bIsProject then
+      nTreeItemType := rtKategoriePerson,
+      nImageIndex   := m_nProjectImage,
+      nFontStyle    := fsBold,
+      nFontColor    := clBlack,
+   else
+      case nElementType
+         // Sammelvorgänge
+         of bcPRV_Type_GroupTask ::
+            nTreeItemType := rtKategoriePerson,
+            nImageIndex   := m_nGroupTaskImage,
+            nFontStyle    := fsBold,
+            nFontColor    := clBlack,
+
+         // Vorgänge
+         of bcPRV_Type_Task ::
+            nTreeItemType := rtPerson,
+            nImageIndex   := m_nTaskImage,
+            nFontStyle    := fsNormal,
+            nFontColor    := clBlack,
+
+         // Milestones
+         of bcPRV_Type_Milestone ::
+            nTreeItemType := rtPerson,
+            nImageIndex   := m_nMileStoneImage,
+            nFontStyle    := fsNormal,
+            nFontColor    := GetMileStoneColor(),
+      endcase,
+   endif,
+
+   //***************************************************************************
+   // Knoten anlegen.
+   // Wurde ein übergeordneter Knoten übergeben, wird unter diesem ein neuer
+   // Vorgang eingefügt. Ansonsten wird ein neuer Hauptknoten angelegt
+   //***************************************************************************
+   oCurrentTreeElement := iif(Empty(oParentTreeElement), m_oTreeItemList.CbNewItem, oParentTreeElement.CbNewItem),
+
+   oCurrentTreeElement.ResID          := nID,
+   oCurrentTreeElement.ResType        := nTreeItemType,
+   oCurrentTreeElement.Caption        := cCaption,
+   oCurrentTreeElement.CBLevelHeights := '{' + Str(m_nRowHeight) + '}',
+   oCurrentTreeElement.SelectedColor  := m_nDefaultSelectedColor,
+   oCurrentTreeElement.FocusedColor   := m_nDefaultFocusedColor,
+   oCurrentTreeElement.Font.Style     := nFontStyle,
+   oCurrentTreeElement.Font.Color     := nFontColor,
+   oCurrentTreeElement.ImageIndex     := nImageIndex,
+
+   //***************************************************************************
+   // Logik für Hierarchybildung im Baum
+   //***************************************************************************
+
+   // Ist das Element ein Projekt oder ein Sammelvorgang wird dieses als neues
+   // "Parent"-Element gesetzt
+   if bIsProject or (nElementType = bcPRV_Type_GroupTask) then
+      oParentTreeElement := oCurrentTreeElement,
+   endif,
+
+   // Immer die Ebene Merken auf der zuletzt ein Element hinzugefügt wurde
+   nLastAddedTreeLevel := nCurrentElementLevel,
+end,
+
+//******************************************************************************
+// Fügt ein Element zum Chart hinzu
+//******************************************************************************
+function AddElementToChart(nID, cHierarchyID, nElementType, bIsProject, cCaption, cHint, dStartTime, dEndTime)
+|
+   oCurrentChartElement, nChartItemType, nFontStyle, nFontColor,
+   nElementTypeColor, nDrawPattern, nDrawPatternColor
+|
+
+   // Elemente werden nur hinzugefügt, wenn sie ein Start und Ende haben
+   if not empty(dStartTime) and not empty(dEndTime) then
+
+      //***************************************************************************
+      // Berechnung der Informationen für die Darstellung des Elements etc.
+      //***************************************************************************
+      if bIsProject then
+         nChartItemType    := rtKategoriePerson,
+         nDrawPattern      := 0,
+         nDrawPatternColor := clNone,
+         nElementTypeColor := GetProjectElementColor(),
+      else
+         case nElementType
+            // Sammelvorgänge
+            of bcPRV_Type_GroupTask ::
+               nChartItemType    := rtKategoriePerson,
+               nFontStyle        := fsBold,
+               nFontColor        := clBlack,
+               nDrawPattern      := 0,
+               nDrawPatternColor := clNone,
+               nElementTypeColor := GetTaskElementColor(),
+
+            // Vorgänge
+            of bcPRV_Type_Task ::
+               nChartItemType    := rtPerson,
+               nFontStyle        := fsNormal,
+               nFontColor        := clBlack,
+               nDrawPattern      := 0,
+               nDrawPatternColor := clNone,
+               nElementTypeColor := GetTaskElementColor(),
+
+            // Milestones
+            of bcPRV_Type_Milestone ::
+               nChartItemType    := rtPerson,
+               nFontStyle        := fsNormal,
+               nFontColor        := GetMileStoneColor(),
+               nDrawPattern      := 2,
+               nDrawPatternColor := GetBeDesignColor(dcbLightBlue, dcgLevel2),
+               nElementTypeColor := GetMileStoneColor(),
+         endcase,
+      endif,
+
+      //***************************************************************************
+      // Element im Chart erstellen
+      //***************************************************************************
+      oCurrentChartElement                     := m_oChartItemList.CbNewItem,
+      oCurrentChartElement.ResID               := nID,
+      oCurrentChartElement.HierarchyID         := cHierarchyID,
+      oCUrrentChartElement.ResType             := nChartItemType,
+      oCurrentChartElement.Caption             := cCaption,
+      oCurrentChartElement.Hint                := cHint,
+      oCurrentChartElement.StartTime           := dStartTime,
+      oCurrentChartElement.EndTime             := dEndTime,
+      oCurrentChartElement.ShowHint            := True,
+      oCurrentChartElement.Font.Style          := nFontStyle,
+      oCurrentChartElement.Font.Color          := nFontColor,
+      oCurrentChartElement.OffsetTop           := 1,
+      oCurrentChartElement.OffsetBottom        := 1,
+      oCurrentChartElement.CBDrawPatterns      := nDrawPattern,
+      oCurrentChartElement.DrawPatternColor    := nDrawPatternColor,
+      oCurrentChartElement.Color               := clWhite,
+      oCurrentChartElement.FocusedColor        := m_nDefaultFocusedColor,
+      oCurrentChartElement.SelectedColor       := m_nDefaultSelectedColor,
+      oCurrentChartElement.BorderColor         := nElementTypeColor,
+      oCurrentChartElement.FocusedBorderColor  := nElementTypeColor,
+      oCurrentChartElement.SelectedBorderColor := nElementTypeColor,
+   endif,
+end,
+
+//******************************************************************************
+// Synchronisiert die Projekt- und Projektvorgangs-Tabelle mit der übergebenen
+// Projekt-ID
+// Diese Tabellen dienen im Weiteren als Basis für die Erzeugung der
+// Oberflächen-Elemente.
+//******************************************************************************
+function SyncTables(nProjectID)
+   DBRefresh(m_oDABPRJ),
+   DBRefresh(m_oDABPRV),
+   DBScope({nProjectID}, {nProjectID}, m_oDABPRJ),
+   DBScope({nProjectID}, {nProjectID}, m_oDABPRV),
+end,
+
+//******************************************************************************
+// Berechnen des Ansichtsbereichs. Beginn und Ende des ersten und letzten
+// im Chart vorhandenen Vorgangs/Projekts.
+//******************************************************************************
+function AdjustVisibleRangeToMinAndMaxItemTime()
+|
+   dViewStartDateTime, dViewEndDateTime, nDaysToShow, nMaxShowableDays,
+   nMaxShowableDaysAsWeeks, nIntervalType, nStartAdjustDays, nEndAdjustDays
+|
+
+   //***************************************************************************
+   // Berechnet anhand der Chart-Elemente den Start des ersten und das Ende des
+   // letzten Elements, um bestimmen zu können wie viele Tage angezeigt werden
+   // müssen
+   //***************************************************************************
+   function MinAndMaxStartAndEndDateTimeOfElements(dViewStartDateTime:R, dViewEndDateTime:R)
+   | i, oCurrentChartItem |
+      for i := 1 to CollCount(m_oChartItemList.DataItems) do
+         oCurrentChartItem := CollItem(m_oChartItemList.DataItems, i),
+
+         // Neuer Beginn?
+         if empty(dViewStartDateTime) or oCurrentChartItem.StartTime < dViewStartDateTime then
+            dViewStartDateTime := oCurrentChartItem.StartTime,
+         endif,
+
+         // Neues Ende?
+         if dViewEndDateTime < oCurrentChartItem.EndTime then
+            dViewEndDateTime := oCurrentChartItem.EndTime,
+         endif,
+      next,
+
+      // Da es Fälle gibt, bei denen überhaupt kein Start oder Ende gepflegt ist,
+      // und somit auch kein Chart-Element exisitert, werden hier Default-Werte
+      // belegt
+      if empty(dViewStartDateTime) and empty(dViewEndDateTime) then
+          dViewStartDateTime := Date(),
+          dViewEndDateTime   := Date() + m_dEndTimeOfDay,
+      endif,
+
+      // Für die Berechnung muss hier mit dem reinen Datum gearbeitet werden
+      dViewEndDateTime   := Trunc(dViewEndDateTime),
+      dViewStartDateTime := Trunc(dViewStartDateTime),
+   end,
+
+   // Berechnen des im Chart anzuzeigenden Zeitraums ***************************
+   dViewStartDateTime := 0,
+   dViewEndDateTime   := 0,
+   MinAndMaxStartAndEndDateTimeOfElements(dViewStartDateTime, dViewEndDateTime),
+
+   // Berechnen welche Ansicht für die Anzahl an darzustellenden Tage verwendet
+   // werden muss. *************************************************************
+   nStartAdjustDays        := 0,
+   nEndAdjustDays          := 0,
+   nDaysToShow             := dViewEndDateTime - dViewStartDateTime,
+   nMaxShowableDays        := 4 * 7, // In der Tagesansicht  können maximal 4 Wochen angezeigt werden
+   nMaxShowableDaysAsWeeks := 7 * 7, // In der Wochenansicht können maximal 7 Wochen angezeigt werden
+
+   // Bei der Tagesansicht wird die Anzeige immer um einen Tag vor und einen Tag
+   // nach dem berechneten Projekt-Zeitraum erweitert. Damit dies möglich ist,
+   // müssen diese beiden Tage bei der Ermittlung ob das auch möglich ist
+   // berücksichtigt werden.
+   if nDaysToShow < (nMaxShowableDays - 2) then
+      nIntervalType    := 2, // Tagesanzeige
+      nStartAdjustDays := 1,
+      nEndAdjustDays   := 1,
+   else
+      // Bei der Wochenansicht wird die Anzeige maximal um eine Woche vor oder
+      // nach dem berechneten Projekt-Zeitraum erweitert.
+      if nDaysToShow < (nMaxShowableDaysAsWeeks - 1) then
+         nIntervalType    := 4, // Wochenanzeige
+         nStartAdjustDays := iif(DoW(dViewStartDateTime) = 2, 1, 0), // Bei Start am Montag => Vorwoche anzeigen
+         nEndAdjustDays   := iif(DoW(dViewEndDateTime)   = 1, 1, 0), // Bei Ende am Sonntag => Folgewoche anzeigen
+      else
+         // Bei der Monatsansicht wird die Anzeite erweitert, wenn:
+         // - der Start am 1. des Monats liegt und/oder
+         // - das Ende am letzten des Monats liegt
+         nIntervalType     := 8, // Monatsanzeige
+         nStartAdjustDays  := iif(dViewStartDateTime = BoM(dViewStartDateTime), 1, 0),
+         nEndAdjustDays    := iif(dViewEndDateTime   = EoM(dViewEndDateTime),   1, 0),
+      endif,
+   endif,
+
+   // Anpassung des Ansichtszeitraums ******************************************
+   dViewStartDateTime := dViewStartDateTime - nStartAdjustDays,
+   dViewEndDateTime   := dViewEndDateTime   + nEndAdjustDays,
+   dViewStartDateTime := dViewStartDateTime + m_dStartTimeOfDay, // Uhrzeit für Start hinzufügen
+   dViewEndDateTime   := dViewEndDateTime   + m_dEndTimeOfDay,   // Uhrzeit für Ende hinzufügen
+
+   // Berechnete Werte setzen **************************************************
+   m_oChart.CbIntervalType := nIntervalType,
+   m_oChart.StartTime      := dViewStartDateTime,
+   m_oChart.EndTime        := dViewEndDateTime,
+end,
+
+//******************************************************************************
+// Lädt die gesamten Informationen für ein Projekt in die Chart-Komponente
+//******************************************************************************
+function LoadProjectData(nProjectID)
+| oParentTreeItem, nLastAddedHierarchyLevel, nProjectLevel |
+
+   oParentTreeItem          := nil,
+   nLastAddedHierarchyLevel := 0,
+   nProjectLevel            := 0,
+
+   SyncTables(nProjectID), // Synchronisieren der Basis-Tabellen
+
+   //***************************************************************************
+   // Projekt-Knoten und Balken
+   // TODO: Die ID's von Projekten und Vorgängen können sich überschneiden. Das gäbe exceptions!
+   //***************************************************************************
+   AddElementToTree(oParentTreeItem, nLastAddedHierarchyLevel, nProjectLevel, OriginalIDAsInternalID(waDABPRJ, m_oDABPRJ:ID), -1, True, GetProjectCaption()),
+   AddElementToChart(OriginalIDAsInternalID(waDABPRJ, m_oDABPRJ:ID),
+                     GetProjectHierarchyID(),
+                     -1,
+                     True,
+                     GetProjectCaption(),
+                     GetProjectHint(),
+                     GetProjectStartTime(),
+                     GetProjectEndTime()),
+
+   //***************************************************************************
+   // Projekt-Vorgänge und Balken
+   //***************************************************************************
+   DBGoTop(m_oDABPRV),
+   while not EOF(m_oDABPRV) do
+      AddElementToTree(oParentTreeItem, nLastAddedHierarchyLevel, m_oDABPRV:EBENE, OriginalIDAsInternalID(waDABPRV, m_oDABPRV:ID), m_oDABPRV:TYP, False, GetTaskCaption()),
+      AddElementToChart(OriginalIDAsInternalID(waDABPRV, m_oDABPRV:ID),
+                        GetTaskHierarchyID(),
+                        m_oDABPRV:TYP,
+                        False,
+                        GetTaskCaption(),
+                        GetTaskHint(),
+                        GetTaskStartTime(),
+                        GetTaskEndTime()),
+      DBSkip(1, m_oDABPRV),
+   end,
+end,
+
+//******************************************************************************
+// Laden des Charts auf Basis des aktuell in der MasterTable positionierten
+// Projekts.
+//******************************************************************************
+function LoadChartContent()
+| nOldCursor |
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      // Interne ID-Tabelle leeren, da diese jetzt mit neuen Daten befüllt wird
+      m_oIDTable.CbEmptyTable(),
+
+      // Bisherige Einträge entfernen
+      m_oTreeItemList.CbClear,
+      m_oChartItemList.CbClear,
+
+      // Für mehrere Projekte kann hier dann eine Schleife implementiert werden,
+      // die beispielsweise ein Array mit ID's durchläuft o.ä.
+      LoadProjectData(m_oMasterTable:ID),
+
+      AdjustVisibleRangeToMinAndMaxItemTime(),
+      m_oChart.CbRefresh,
+
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Laden des Charts auf basis des aktuell in der MasterTable
+//         positionierten Projekts
+//******************************************************************************
+function A_ReloadChartExecute( Sender )
+   LoadChartContent(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Dieses Docking erzeugt den Chart ohne jegliche Daten-Interpretierung
+//******************************************************************************
+function CreateChartControl()
+   // Grundobjekte für den Chart erzeugen
+   m_oChartComponent := CreateObject('TBePlanningChartComp',     'CHARTCOMP',  oForm, oForm),
+   m_oChartItemList  := CreateObject('TBePlanningDataContainer', 'CHARTITEMS', oForm, oForm),
+   m_oTreeItemList   := CreateObject('TBePlanningResContainer',  'TREEITEMS',  oForm, oForm),
+
+   // Chart-Componente auf gesamten Fensterbereich ausdehnen lassen
+   m_oChartComponent.Align := alClient,
+
+   // Für eine einfachere Programmierung einzelne Unterobjekte der
+   // PlanningChartComponent in Hilfsvariablen laden
+   m_oChart          := m_oChartComponent.PlanningChart,
+   m_oChartParameter := m_oChart.ChartParameter,
+   m_oMenuManager    := m_oChart.MenuManager,
+
+   // Die beiden Container mit den Ressourcen- und Chart-Item-Informationen dem
+   // Chart zuweisen
+   m_oChart.ResContainer  := m_oTreeItemList,
+   m_oChart.DataContainer := m_oChartItemList,
+
+   // Charteinstellungen setzen
+   m_oChartItemList.HierarchyIDLen := m_nHierarchyIDLen,
+
+   // Erstmaliges initialisieren der Komponente
+   m_oChartComponent.CbInitChart,
+   m_oChartComponent.CBInitFormHook,
+end,
+
+//******************************************************************************
+// Diese Funktion verschiebt die Toolbar die im F12-Designer oben angeordnet
+// ist in den Menübereich der Chart-Komponente
+//******************************************************************************
+function ConfigureChartOptionControl()
+| oOptionControl |
+   // Panel für den Optionsbereich erzeugen
+   pnl_ChartOptions                  := CreateObject('TBePanel', 'ChartOptionPanel', m_oChartComponent),
+   pnl_ChartOptions.BevelOuter       := bvNone,
+   pnl_ChartOptions.Caption          := '',
+   pnl_ChartOptions.Align            := alClient,
+   pnl_ChartOptions.AlignWithMargins := True,
+
+   // Toolbar in das Panel verschieben
+   // (hierfür muss nur das Toolbar-Dock-Control verschoben werden)
+   SetParent(bardock_MainToolbarDock, pnl_ChartOptions),
+
+   // Fertiges Panel der Chart-Komponente zuweisen
+   m_oChartComponent.OptionControl := pnl_ChartOptions,
+end,
+
+//******************************************************************************
+// Da die Breite des Ressourcen-Baums derzeit nicht über den Standard setzbar
+// ist, vorerst ein Workaround, um die Breite setzen zu können
+//******************************************************************************
+function WorkaroundForResourcePanelWidth()
+| oResourceTreePanel |
+   // Das Ressourcen-Panel ist das einzige vom Typen TNoStylePanel, dass links
+   // ausgerichtet ist. Daher kann hier danach gesucht werden
+   while not ( ClassOf(oResourceTreePanel, 'TNoStylePanel') and
+               oResourceTreePanel.Align = alLeft ) do
+      oResourceTreePanel := FindNextControl(oForm, m_oChartComponent, True, False, False),
+   end,
+   oResourceTreePanel.Width := m_nTaskTreeWidth,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Gantt-Diagramm',
+   oForm.ImageIndex     := 257,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_ReloadChart           := FindObject(oForm, "A_ReloadChart"),
+   AL_Main                 := FindObject(oForm, "AL_Main"),
+   bar_MainToolbar         := FindObject(oForm, "bar_MainToolbar"),
+   bardock_MainToolbarDock := FindObject(oForm, "bardock_MainToolbarDock"),
+   barm_MainToolbarManager := FindObject(oForm, "barm_MainToolbarManager"),
+   btn_ReloadChart         := FindObject(oForm, "btn_ReloadChart"),
+   ds_MasterTable          := FindObject(oForm, "ds_MasterTable"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable := DBOpen(waDABPRJ),
+      m_oMasterTable.IndexName := 'ID',
+      DBSeek({2}, m_oMasterTable),
+   endif,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   CreateChartControl(),
+   ConfigureChartOptionControl(),
+   WorkaroundForResourcePanelWidth(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText()  + crlf + crlf +
+               'error stack: ' + crlf +
+               DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

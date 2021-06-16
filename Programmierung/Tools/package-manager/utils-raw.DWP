@@ -1,0 +1,75 @@
+//##############################################################################
+// package-manager Funktionen für die Interaktion mit dem RAW Repository (Während konjunktur-paket)
+//##############################################################################
+
+//##############################################################################
+// Includes
+//##############################################################################
+
+//#p Tools\package-manager\utils-http
+
+//******************************************************************************
+// Lädt ein ZIP-File-Paket vom RAW Repo (Konjunktur-Paket-Phase) herunter und
+//  entpackt dieses im gleichen Ordner
+//  Result = KVU array
+//******************************************************************************
+function BPM_DownloadAndUnZipPackage_From_RAW_Repo(aRepositoryData, cPackageName)
+| cRepositoryUrl, cUserName, cPassword, cPackageUrl, oHTTP, cBuffer, cDownloadedFile, oFile, cDownloadPath |
+
+  cRepositoryUrl := KVU_GetAssert(aRepositoryData, 'REPOSITORY_URL'),
+  cUserName      := KVU_GetAssert(aRepositoryData, 'USERNAME'),
+  cPassword      := KVU_GetAssert(aRepositoryData, 'PASSWORD'),
+
+  cPackageUrl    := cRepositoryUrl + '/' + cPackageName + '/v/latest.zip',
+
+  Result := {},
+
+  oHTTP    := CreateObject('TBeCbHTTP'),
+  startseq,
+    oHTTP.CbAuthentificationMode     := BPM_DetermineAuthentificationMode(),
+    oHTTP.CbAuthentificationUserName := cUserName,
+    oHTTP.CbAuthentificationPassword := cPassword,
+
+    oHTTP.CbConnectTimeout := 2000,
+    oHTTP.CbReadTimeout    := 2000,
+    startseq
+       oHTTP.CbGetURL(cPackageUrl), // HTTP-Get-Request auslösen
+       cBuffer        := oHTTP.CbHTTPBody,
+       cDownloadPath  := GetTempPath() + 'beMPI\' + FormatDateTime('YYYYMMDD-HHMMSS-ZZZ', Now()), WriteLn('temp. download path: "' + cDownloadPath + '"'),
+
+       SetErrorIf(DirectoryExists(cDownloadPath), 'temporary download directory already exists - something wrong'),
+
+       ForceDirectories(cDownloadPath),                                         // ShellExecute(cDownloadPath),
+
+       cDownloadedFile := cDownloadPath + '\' + 'package.zip',
+       KVU_Set(Result, 'EXTRACTED_PACKAGE_FOLDER_PATH',   cDownloadPath),
+       KVU_Set(Result, 'DOWNLOAD_ZIP_FILE_PATH', cDownloadedFile),
+
+       SetErrorIf(File(cDownloadedFile), 'file "' + cDownloadedFile + '" already exists in temporary download folder - something wrong!'),
+
+       // Runterladen und abspeichern
+       oFile := FOpen(cDownloadedFile, fo_Create),
+       startseq
+         FWrite(oFile, cBuffer),
+       always
+         FClose(oFile),
+       stopseq,
+
+       // Zip-Archiv entpacken
+       FileUnZip(cDownloadedFile, cDownloadPath),
+
+       // Zip-Archiv löschen
+       DeleteFile(cDownloadedFile),
+
+    onerror
+       SetError(
+          'Error downloading package-file'                              + crlf +
+          '  ' + GetErrorText()                                         + crlf +
+          '  ErrorHTTPStatusCode = ' + Str(oHTTP.CbErrorHTTPStatusCode) + crlf +
+          '  ErrorHTTPStatusText = ' +     oHTTP.CbErrorHTTPStatusText  + crlf +
+          '  ErrorHTTPBody       = ' +     oHTTP.CbErrorHTTPBody),
+    stopseq,
+  always,
+    DestroyObject(oHTTP),
+  stopseq,
+end,

@@ -1,0 +1,144 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die Verarbeitung von PDFs
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PdfU' steht für 'PDF Utils'
+//
+// Anwendungsfälle:
+//  - PDF-Dokumente liegen als Quelle vor und sollen innerhalb eines Belegs
+//    (z.B. Produktion Auftragskarte) "mitgedruckt" werden.
+//    Hierfür können die PDF-Files in TIFF-Dokumente umgewandelt werden und
+//    anschließend im Layout über eine Codeblock-Image-Komponente gedruckt werden.
+//    Für den sinnvollen Druck im Beleg sind hierbei u.U. die
+//    Größen / Ausrichtungs-Informationen notwendig.
+//  - Das Auslesen von Größen-/ Ausrichtungs-Informationen aus einem PDF kann
+//    z.B. genutzt werden, um
+//    - je Dokumentengröße unterschiedliche Druck-Layouts (oder sogar Beleg-Typen)
+//      zu nutzen, damit die Drucker / Fach-Zuordnung je Größe gesteuert werden 
+//      kann
+//    - im Dokumenten-Management die Informationen für den User anzuzeigen.
+//
+//    Siehe auch:
+//    - Pdf2Tiff()
+//    - TiffPageCount()
+//    - PdfPageCount()
+//
+//    - Druck von Tiffs im Beleg
+//      Im Report-Designer wird das Tiff-File z.B. als Quelle in
+//      einem Codeblock-Image angegeben. Hier können auch einzelne Seiten
+//      angesprochen werden, indem die Seitennummer als Bestandteil
+//      des Dateinamens mitgegeben wird:
+//      Schreibweise: '2>C:\Temp\Dateiname.tiff'  => Druckt Seite 2 des Dokuments
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Aus Ausflösung, Breite und Höhe das Din-A Seitenformat und die Ausrichtung 
+// ermitteln . Umrechnung MM in dpi - http://www.innup.de/DPI-CM-MM-Konvertierer
+//
+// @Result: Array mit Format und Ausrichtung  z.B. {'A4', 'Q'}
+//******************************************************************************
+function _PdfU_CalcDinFormatFromSize(nResolution, nHoehe, nBreite)
+| aDim, aFormat, uKey, bGedreht, nPosition |
+  Result   := {},
+  aFormat  := {},
+
+    // Werte gemäss Auflösung
+    case nResolution
+      of 72 ::
+        aDim := {3370, 2384, 1684, 1191, 842, 595, 420, 298, 210},              // 72dpi Werte für A0 bis A7, A0 = 3370 x 2384, A1 = 2384 x 1684 usw.
+    endcase,
+
+    // Alle möglichen Kombinationen in Array speichern
+    AAdd(aFormat, {"A0", "H", Str(aDim[1]) + 'x' + Str(aDim[2])}),              // A0 Hochkant
+    AAdd(aFormat, {"A0", "Q", Str(aDim[2]) + 'x' + Str(aDim[1])}),              // A0 Quer
+    AAdd(aFormat, {"A1", "H", Str(aDim[2]) + 'x' + Str(aDim[3])}),              // usw.
+    AAdd(aFormat, {"A1", "Q", Str(aDim[3]) + 'x' + Str(aDim[2])}),
+    AAdd(aFormat, {"A2", "H", Str(aDim[3]) + 'x' + Str(aDim[4])}),
+    AAdd(aFormat, {"A2", "Q", Str(aDim[4]) + 'x' + Str(aDim[3])}),
+    AAdd(aFormat, {"A3", "H", Str(aDim[4]) + 'x' + Str(aDim[5])}),
+    AAdd(aFormat, {"A3", "Q", Str(aDim[5]) + 'x' + Str(aDim[4])}),
+    AAdd(aFormat, {"A4", "H", Str(aDim[5]) + 'x' + Str(aDim[6])}),
+    AAdd(aFormat, {"A4", "Q", Str(aDim[6]) + 'x' + Str(aDim[5])}),
+    AAdd(aFormat, {"A5", "H", Str(aDim[6]) + 'x' + Str(aDim[7])}),
+    AAdd(aFormat, {"A5", "Q", Str(aDim[7]) + 'x' + Str(aDim[6])}),
+    AAdd(aFormat, {"A6", "H", Str(aDim[7]) + 'x' + Str(aDim[8])}),
+    AAdd(aFormat, {"A6", "Q", Str(aDim[8]) + 'x' + Str(aDim[7])}),
+    AAdd(aFormat, {"A7", "H", Str(aDim[8]) + 'x' + Str(aDim[9])}),
+    AAdd(aFormat, {"A7", "Q", Str(aDim[9]) + 'x' + Str(aDim[8])}),
+
+    // WriteLn(DebugArr(aFormat)),
+
+    uKey := Str(nHoehe) + 'x' + Str(nBreite),                                   // Höhe x Breite als Array-Suchbegriff
+    // Format und Ausrichtung bestimmen
+    nPosition := SeekInDimArray(uKey, aFormat, 3),
+    if nPosition > 0 then
+       Result := {aFormat[nPosition, 1], aFormat[nPosition, 2]},                // Rückgabe: Format und Ausrichtung
+    endif,
+end,
+
+//******************************************************************************
+// PDF-Informationen aus PDF-Dokument auslesen
+// nPage = 0 => alle Seite auslesen, ansonsten wird nur die Info der Seite nPage ausgelesen
+// @Result: Array
+//******************************************************************************
+function _PdfU_GetLayoutInfo(cFile, nPage)
+| COMPDF_GetPageWidth, COMPDF_GetPageHeight, COMPDF_GetPageRotation,
+  COMPDF_PageSelectionClear, COMPDF_Load, COMPDF_PageSelectionToggle,
+  COMPDF_GoToPage, COMPDF_GetViewPage,
+  oBePdfObj, aPDFInfo, i, nStart, nEnde, nWidth, nHeight, nRotation, aFormat |
+
+  aPdfInfo := {},
+
+  startseq,
+     COMPDF_GoToPage            := 22,   // Variablen für Integer-Werte nutzen
+     COMPDF_Load                := 101,  // für bessere Lesbarkeit des Source
+     COMPDF_GetViewPage         := 202,
+     COMPDF_GetPageWidth        := 203,
+     COMPDF_GetPageHeight       := 204,
+     COMPDF_GetPageRotation     := 205,
+     COMPDF_PageSelectionClear  := 250,
+     COMPDF_PageSelectionToggle := 258,
+
+     oBePdfObj := nil, // wird dann implizit erzeugt
+     if nPage = 0 then
+        nStart := 1,
+        nEnde  := PdfPageCount(cFile),
+     else,
+        nStart := nPage,
+        nEnde  := nPage,
+     endif,
+
+     // PDF laden
+     PdfCmd(oBePdfObj, COMPDF_Load, cFile, 1),
+
+     for i := nStart to nEnde do
+        // aktuelle Seite auswählen
+        PdfCmd(oBePdfObj, COMPDF_PageSelectionClear),
+        PdfCmd(oBePdfObj, COMPDF_GoToPage, i),
+        PdfCmd(oBePdfObj, COMPDF_PageSelectionToggle),
+        nHeight     :=  PdfCmd(oBePdfObj, COMPDF_GetPageHeight),               // Höhe   in Pixel bei 72dpi
+        nWidth      :=  PdfCmd(oBePdfObj, COMPDF_GetPageWidth),                // Breite in Pixel bei 72dpi
+        nRotation   :=  PdfCmd(oBePdfObj, COMPDF_GetPageRotation),             // Rotation in °
+        aFormat     :=  PdfU_CalcDinFormatFromSize(72, nHeight, nWidth),
+
+        // WriteLn('DinFormat für Seite ' + Str(i) + ' : ' + ArrToStr(aFormat), ),
+
+        SetErrorIf(ALen(aFormat) = 0, 'Format-Information für Seite ' + Str(i) + ' konnten nicht ermittelt werden.' + crlf +
+                                      'Height = ' + Str(nHeight) + ', Width = ' + Str(nWidth) + ', Rotation = ' + Str(nRotation) + crlf +
+                                      'Diese Angaben entsprechend nicht einer DIN-Größe.'),
+
+        AAdd( aPDFInfo,
+              {i, aFormat[1], aFormat[2], nRotation, '72dpi', nHeight, nWidth} ),
+     next,
+
+     // Dieser Aufruf von PdfPageCount() ist notwendig, um den belegten Speicher
+     // des Objekts oBePdfObj wieder freizugeben
+     PDFPageCount(cFile),
+  always
+     Result := aPDFInfo,
+  stopseq,
+end,

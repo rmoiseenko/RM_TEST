@@ -1,0 +1,69 @@
+//******************************************************************************
+// 1. Ermitteln des Kapa.Bedarfs nach Quali bzw. Ressource
+//******************************************************************************
+
+TRY DROP TABLE #kapa_bedarf_per_periode; CATCH ALL END TRY;
+
+SELECT
+   PGKBDP.RESTYP,
+   @GROUP_BY_QUALI@ PGKBDP.QUALI,
+   @GROUP_BY_RES@   PGKBDP.D270_RESID AS RES_ID,
+   PGKBDP.PP_JAHR                     AS JAHR,
+   PGKBDP.PP_KW                       AS KW,
+   PGKBDP.AUF_STATUS                  AS AUF_STATUS,
+   PGKBDP.KAP_PRIORI                  AS KAP_PRIORI,
+   SUM(PGKBDP.K_REST_BEA)             AS KAPA_MIN
+
+INTO #kapa_bedarf_per_periode
+FROM "PGKBDP.ADT" PGKBDP
+WHERE
+       PGKBDP.STANDORT   =  @STANDORT@
+   AND PGKBDP.KAP_SPERRE = false
+   AND PGKBDP.ARTTYP     = 'A'
+
+   AND PGKBDP.K_REST_BEA <> 0
+   AND PGKBDP.RESTYP IN (@RESTYP_LIST@)
+   @GROUP_BY_QUALI@ AND PGKBDP.QUALI > 0
+
+GROUP BY
+   PGKBDP.RESTYP
+   @GROUP_BY_QUALI@, PGKBDP.QUALI
+   @GROUP_BY_RES@  , PGKBDP.D270_RESID
+   , PGKBDP.PP_JAHR
+   , PGKBDP.PP_KW
+   , PGKBDP.AUF_STATUS
+   , PGKBDP.KAP_PRIORI;
+
+//******************************************************************************
+// 2. Gruppieren nach Qualifikation / Ressourcen (kein Periodenbezug mehr)
+//******************************************************************************
+
+@GROUP_BY_QUALI@ TRY DROP TABLE #kapa_bedarf_per_quali_res_BY_QUALI; CATCH ALL END TRY;
+@GROUP_BY_RES@   TRY DROP TABLE #kapa_bedarf_per_quali_res_BY_RESID; CATCH ALL END TRY;
+
+SELECT
+      RESTYP
+
+      @GROUP_BY_QUALI@, QUALI
+      @GROUP_BY_QUALI@, 0 AS RES_ID
+
+      @GROUP_BY_RES@  , 0 AS QUALI
+      @GROUP_BY_RES@  , RES_ID
+
+      , AUF_STATUS
+      , KAP_PRIORI 
+      , SUM(KAPA_MIN)    AS KAPA_MIN
+
+   @GROUP_BY_QUALI@ INTO #kapa_bedarf_per_quali_res_BY_QUALI
+   @GROUP_BY_RES@   INTO #kapa_bedarf_per_quali_res_BY_RESID
+   FROM #kapa_bedarf_per_periode
+   WHERE
+      @GROUP_BY_QUALI@ QUALI  > 0
+      @GROUP_BY_RES@   RES_ID > 0
+   GROUP BY
+      RESTYP
+      @GROUP_BY_QUALI@ , QUALI
+      @GROUP_BY_RES@   , RES_ID
+      , AUF_STATUS
+      , KAP_PRIORI                                   
+      ;

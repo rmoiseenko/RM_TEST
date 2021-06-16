@@ -1,0 +1,398 @@
+//##############################################################################
+// Dieses Programm dient der Leistungsmessung eines IT-Systems in Bezug auf die
+// Ausführung typischer Codeblock-Programme
+//
+// Je höher ein Messwert, desto schneller ist das gemessene System.
+//
+// Ein tatsächlich gemessenes Referenz-Operativsystem mit Hardware der Baujahre
+// 2003 (Client) und 2010 (Server) hat unter Last im Betrieb hier tendentiell
+// überall Werte von 100.
+//
+// Für weitere Informationen siehe auch https://confluence.dontenwill.de/x/TIaV
+//
+//##############################################################################
+
+| m_oDAB020:DB:='waDAB020,1', m_oDM, m_bPerformDabPTKWriteTest |
+
+//******************************************************************************
+// Funktion schreibt ein Messergebnis in die Konsole
+// @Result: null
+//******************************************************************************
+function LogOut(cText, nTime, cWarning)
+   WriteLn(PadR(cText, 25) + ': ' + PadR(iif(nTime <> 0, FormatStd(nTime, 2), '-'), 15) + ' ' + cWarning),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die Prozessorgeschwindigkeit
+//******************************************************************************
+function ProcessorSpeed()
+   | nTime, i |
+
+   nTime := GetExTimer(),
+   for i := 1 to 210000 do
+   next,
+   Result := 10000 / (1000 * (GetExTimer() - nTime)),
+
+   LogOut('Prozessor (lokal)', Result, ''),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die ADS-Kommunikationsgeschwindigkeit
+//******************************************************************************
+function ADSRoundtrip()
+   | nTime, i |
+
+   nTime := GetExTimer(),
+   for i := 1 to 4400 do
+      GetAdsServerTime(),   // Die Funktion GetAdsServerTime() kann auf dem ADS-Server komplett im Arbeitsspeicher beantwortet
+                            // werden, daher eignet sich diese gut für den Kommunikationstest
+   next,
+   Result := 10000 / (100 * (GetExTimer() - nTime)),
+
+   LogOut('ADS-Kommunikation', Result, ''),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die DB-Lesegeschwindigkeit zur Tabelle DAB020
+//******************************************************************************
+function ADSRead_DAB020()
+   | nTime, i, n, oMem,nCycles, oDab010, nDays, cWarningText |
+
+   Result       := 0,
+   nCycles      := 900,
+   cWarningText := '',
+   nDays        := 10,
+
+   oDAB010           := DbGetTable(m_oDM, waDab010),
+   oDAB010.IndexName := 'DAB011',
+   DbGoTop(oDAB010),
+
+   // Damit das Ermitteln der nachfolgend zu suchenden Artikel nicht die
+   // Ausführungszeit beeinflusst, werden die Artikel schon vorab gesucht und
+   // in eine Memtable gepuffert.
+   dbfilter("BUCH_DATUM > stod('" + dtos(date() - nDays) + "')", oDAB010),
+   oMem:=createObject('TMemCalcTable'),
+   startseq
+      AddMemField(oMem,'ARTNR', 'C', 25, 0),
+      oMem.active := True,
+      oMem.orderby := 'ARTNR',
+      i := 0,
+      dbgotop(oDAB010),
+      while not eof(oDAB010) and i < nCycles do
+         MyAppend(oMem),
+         oMem:ARTNR:= oDAB010:ARTNR,
+         MyPost(oMem),
+         i += 1,
+         dbskip(1, oDAB010),
+      end,
+      dbfilter('', oDAB010),
+
+      if i < nCycles then
+         cWarningText := 'Achtung, zu wenige Artikel-Bewegungen in den letzten ' + Str(nDays) + ' Tagen für den Dab020-Lesetest vorhanden.',
+      else
+         DbGoTop(oMem),
+         nTime := GetExTimer(),
+         while not eof(oMem) do
+            DbSeek({oMem:ARTNR}, m_oDAB020),
+            DbSkip(1, oMem),
+         end,
+         Result := 40 / (GetExTimer() - nTime),
+      endif,
+   always
+      DestroyObject(oMem),
+   stopseq,
+
+   LogOut('DB-Suche (DAB020)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die DB-Lesegeschwindigkeit zur Tabelle Dab065
+//******************************************************************************
+function ADSRead_DAB065()
+   | nTime, i, oDAB065, oMem, nCycles, cWarningText |
+
+   Result       := 0,
+   nCycles      := 900,
+   cWarningText := '',
+
+   oDAB065 := DbGetTable(m_oDM, waDab065),
+   oDAB065.indexname := 'DAB06B',
+   dbgotop(oDAB065),
+   i := 0,
+   oMem := CreateObject('TMemCalcTable'),
+   startseq
+      AddMemField(oMem,'ID', 'N', 4, 0),
+      oMem.active := True,
+      oMem.orderby := 'ID',
+
+      while not EoF(oDAB065) and  i < nCycles do
+         MyAppend(oMem),
+         oMem:ID := oDAB065:MEMO_ID,
+         MyPost(oMem),
+         i += 1,
+         dbskip(2, oDAB065),
+      end,
+      dbgotop(oMem),
+
+      if i < nCycles then
+         cWarningText := 'Achtung, zu wenige Memos für den Dab065-Lesetest vorhanden.',
+      else
+         nTime := GetExTimer(),
+         while not EoF(oMem) do
+            DbSeek({oMem:ID}, oDAB065),
+            DbSkip(1, oMem),
+         end,
+         Result := 40 / ((GetExTimer() - nTime)),
+      endif,
+   always
+      DestroyObject(oMem),
+   stopseq,
+
+   LogOut('DB-Suche (DAB065)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die DB-Lesegeschwindigkeit zur Tabelle DABPTK
+//******************************************************************************
+function ADSRead_DABPTK()
+   | nTime, i, oMem, oDAB000, oDabPTK, nCycles, cWarningText |
+
+   Result       := 0,
+   nCycles      := 900,
+   cWarningText := '',
+
+   oDAB000 := DbGetTable(m_oDM, waDab000),
+   dbgotop(oDAB000),
+   i := 0,
+
+   oMem := CreateObject('TMemCalcTable'),
+   startseq
+      AddMemField(oMem,'KDNR', 'N', 8, 0),
+      oMem.Active  := True,
+      oMem.OrderBy := 'KDNR',
+
+      while not eof(oDAB000) and  i < nCycles  do
+         MyAppend(oMem),
+         oMem:KDNR := oDAB000:KDNR,
+         MyPost(oMem),
+         i += 1,
+         dbskip(3,oDAB000),
+      end,
+
+      DbGoTop(oMem),
+
+      if i < nCycles then
+         cWarningText := 'Achtung, zu wenige DabPTK Stammdatenprotokoll-Datensätze für Kundendaten (Dab000) vorhanden für den DabPTK-Lesetest vorhanden.',
+      else
+         oDABPTK := DbGetTable(m_oDM, waDabPTK),
+         nTime := GetExTimer(),
+         while not eof(oMem) do
+            dbseek({waDab000, oMem:KDNR}, oDABPTK),
+            dbskip(1, oMem),
+         end,
+         Result := 40 / ((GetExTimer() - nTime)),
+      endif,
+   always
+      DestroyObject(oMem),
+   stopseq,
+
+   LogOut('DB-Suche (DABPTK)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die DB-Lesegeschwindigkeit zur Tabelle DAB240
+//******************************************************************************
+function ADSRead_DAB240()
+   | nTime, i, oMem,oDAB240, nCycles, oDAB010, cWarningText |
+
+   Result       := 0,
+   nCycles      := 900,
+   cWarningText := '',
+
+   oDAB010           := DbGetTable(m_oDM, waDab010, ),
+   oDAB010.IndexName := 'DAB011',
+   DbGoTop(oDAB010),
+   DbFilter('ARTTYP = "B"', oDAB010),
+
+   dbgotop(oDAB010),
+   i := 0,
+
+   oMem := CreateObject('TMemCalcTable'),
+   startseq
+      AddMemField(oMem,'ARTNR', 'C', 25, 0),
+      oMem.active := True,
+      oMem.orderby := 'ARTNR',
+
+      while not eof(oDAB010) and i < nCycles do
+         MyAppend(oMem),
+         oMem:ARTNR := oDAB010:ARTNR,
+         MyPost(oMem),
+         i += 1,
+         dbskip(1, oDAB010),
+      end,
+
+      dbfilter('', oDAB010),
+      dbgotop(oMem),
+
+      if i < nCycles then
+         cWarningText := 'Achtung, zu wenige Dab240 FA-Positionen für den Dab240-Lesetest vorhanden.',
+      else
+         oDAB240           := DbGetTable(m_oDM, waDab240,),
+         oDAB240.IndexName := 'DAB242',
+         nTime := GetExTimer(),
+         while not eof(oMem) do
+            dbseek({oMem:ARTNR}, oDAB240),
+            dbskip(1, oMem),
+         end,
+         Result := 40 / (GetExTimer() - nTime),
+      endif,
+   always
+      DestroyObject(oMem),
+   stopseq,
+
+   LogOut('DB-Suche (DAB240)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für die DB-Lesegeschwindigkeit zur Tabelle DAB520
+//******************************************************************************
+function ADSRead_DAB520()
+   | nTime, i, oMem, oDAB520, nCycles, cWarningText |
+
+   Result       := 0,
+   nCycles      := 900,
+   cWarningText := '',
+
+   oDAB520 := DbGetTable(m_oDM, waDab520),
+   oDAB520.indexname := 'DAB521',
+
+   oMem    := CreateObject('TMemCalcTable'),
+   startseq
+      AddMemField(oMem,'BDATE', 'D', 8, 0),
+      oMem.active := True,
+      oMem.orderby := 'BDATE',
+      i := 0,
+      dbgotop(oDAB520),
+      while not eof(oDAB520) and i < nCycles do
+         MyAppend(oMem),
+         oMem:BDATE := oDAB520:BUCH_DATUM,
+         MyPost(oMem),
+         i += 1,
+         dbskip(1,oDAB520),
+      end,
+      dbgotop(oMem),
+      oDAB520.IndexName:='DAB523',
+
+      if i < nCycles then
+         cWarningText := 'Achtung, zu wenige Datensätze in der Tabelle Dab520 - Kumulierte Statistik.',
+      else
+         nTime := GetExTimer(),
+         while not eof(oMem) do
+            dbseek({oMem:BDATE}, oDAB520),
+            dbskip(1, oMem),
+         end,
+         Result := 25 / (GetExTimer() - nTime),
+      endif,
+   always
+      DestroyObject(oMem),
+   stopseq,
+
+   LogOut('DB-Suche (DAB520)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für DB-Append und DB-Delete
+// für die Tabelle DabPTK
+//******************************************************************************
+function ADSAppendAndDeleteData_DABPTK()
+   | nTime, i, cWarningText |
+
+   cWarningText := '',
+   Result       := 0,
+
+   if m_bPerformDabPTKWriteTest then
+      SetError('TODO: Methode in Transaktion durchführen. Benchmark (100%) noch nicht ermittelt.'),
+      //   nTime := GetExTimer(),
+      //   for i := 1 to 1000 do
+      //      MyAppend(m_oDABPTK),
+      //      m_oDABPTK:DATEI := -999,
+      //      MyPost(m_oDABPTK),
+      //   next,
+
+      //   DbScope({-999}, {-999}, m_oDABPTK),
+
+      //   while not NODS(m_oDABPTK) do
+      //      DbDelete(m_oDABPTK),
+      //   end,
+      //   Result := 400 / ((GetExTimer() - nTime)),
+   else
+      cWarningText := 'Test nicht ausgeführt (ist deaktiviert).',
+   endif,
+
+   LogOut('DB-Append/Delete (DABPTK)', Result, cWarningText),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Leistungsindex für GUI-Operationen
+//******************************************************************************
+function GUISpeed()
+   |oForm, oObj, i, nTime, aObj|
+
+   nTime  := GetExTimer(),
+   Result := 0,
+
+   oForm := CreateObject("TFormEx"),
+   startseq
+      aObj:={},
+      for i:= 1 to 20 do
+         oObj      := createObject("TBEEdit", "E" + strzero(i,2), oForm, oForm),
+         oObj.top  := 22 * i,
+         oObj.left := 10,
+         oObj.text := str(i),
+         aadd(aObj, oObj),
+      next,
+      show(oForm),
+      oForm.height:=500,
+      foreach oObj in aObj do
+         oObj.Text := 'Hallo',
+      end,
+
+      Result := 500 / (100 * (GetExTimer() - nTime)),
+
+      CloseForm(oForm),
+   always
+      DestroyObject(oForm),
+   stopseq,
+
+   LogOut('GUISpeed', Result, ''),
+end,
+
+//******************************************************************************
+// Funktion führt die
+//******************************************************************************
+function main()
+   m_oDM := CreateObject('TBEDBGET'),
+   startseq
+      ProcessorSpeed(),
+      ADSRoundTrip(),
+
+      ADSRead_DAB020(),
+      ADSRead_DAB065(),
+      ADSRead_DABPTK(),
+      ADSRead_DAB240(),
+      ADSRead_DAB520(),
+      ADSAppendAndDeleteData_DABPTK(),
+
+      GUISpeed(),
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+end,
+
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+
+m_bPerformDabPTKWriteTest := false, // DabPTK-Schreib/Lösch-Test ausführen?
+
+Main()

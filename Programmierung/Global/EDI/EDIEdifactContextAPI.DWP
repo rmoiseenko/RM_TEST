@@ -1,0 +1,205 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+
+   gl_EDI_Context:_U
+
+|
+
+function _EDI_Edifact_Context_Get_Internal(cKey:C, bIsOptional:L:=false, uDefaultValue:U:='') ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion gibt zurück, ob der EDI-Kontext aktuell gesetzt ist.
+// @result: boolean
+//******************************************************************************
+function _EDI_Edifact_Context_IsSet()
+   result := empty(gl_EDI_Context) or ALen(gl_EDI_Context) = 0,
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den aktuellen Kontext mit den übergebenen
+// Kontext-Attributen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Context_Set(nStandard:N,
+                          cCompositeElementSeperator:C:='',
+                          cElementSeperator:C:='',
+                          cDecimalSeperator:C:='',
+                          cReleaseIndicator:C:='',
+                          cReservedCharacter:C:='',
+                          cSegmentTerminator:C:='')
+   gl_EDI_Context := {},
+   KVU_Set(gl_EDI_Context, 'context.standard', nStandard),
+
+   if not empty(cCompositeElementSeperator) then
+      KVU_Set(gl_EDI_Context, 'context.compositeElementSeperator', cCompositeElementSeperator),
+   endif,
+   if not empty(cElementSeperator) then
+      KVU_Set(gl_EDI_Context, 'context.elementSeperator', cElementSeperator),
+   endif,
+   if not empty(cDecimalSeperator) then
+      KVU_Set(gl_EDI_Context, 'context.decimalSeperator', cDecimalSeperator),
+   endif,
+   if not empty(cReleaseIndicator) then
+      KVU_Set(gl_EDI_Context, 'context.releaseIndicator', cReleaseIndicator),
+   endif,
+   if not empty(cReservedCharacter) then
+      KVU_Set(gl_EDI_Context, 'context.reservedCharacter', cReservedCharacter),
+   endif,
+   if not empty(cSegmentTerminator) then
+      KVU_Set(gl_EDI_Context, 'context.segmentTerminator', cSegmentTerminator),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Standard des aktuellen Kontextes.
+// @result: integer - Standard
+//******************************************************************************
+function _EDI_Edifact_Context_GetStandard()
+   result := EDI_Edifact_Context_Get_Internal('context.standard'),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Composite-Elementtrenner des aktuellen Kontextes.
+// @result: string - Composite-Elementtrenner
+//******************************************************************************
+function _EDI_Edifact_Context_GetCompositeElementSeperator()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.compositeElementSeperator',
+      true,
+      gl_EDI_Default_CompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Elementtrenner des aktuellen Kontextes.
+// @result: string - Elementtrenner
+//******************************************************************************
+function _EDI_Edifact_Context_GetElementSeperator()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.elementSeperator',
+      true,
+      gl_EDI_Default_ElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Dezimaltrenner des aktuellen Kontextes.
+// @result: string - Dezimaltrenner
+//******************************************************************************
+function _EDI_Edifact_Context_GetDecimalSeperator()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.decimalSeperator',
+      true,
+      gl_EDI_Default_DecimalSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt das Escape-Zeichen des aktuellen Kontextes.
+// @result: string - Escape-Zeichen
+//******************************************************************************
+function _EDI_Edifact_Context_GetReleaseIndicator()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.releaseIndicator',
+      true,
+      gl_EDI_Default_ReleaseIndicator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt das reservierte Zeichen des aktuellen Kontextes.
+// @result: string - reserviertes Zeichen
+//******************************************************************************
+function _EDI_Edifact_Context_GetReservedCharacter()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.reservedCharacter',
+      true,
+      gl_EDI_Default_ReservedCharacter
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Segmenttrenner des aktuellen Kontextes.
+// @result: string - Segmenttrenner
+//******************************************************************************
+function _EDI_Edifact_Context_GetSegmentTerminator()
+   result := EDI_Edifact_Context_Get_Internal(
+      'context.segmentTerminator',
+      true,
+      gl_EDI_Default_SegmentTerminator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion leert den aktuellen Kontextes.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Context_Clear()
+   gl_EDI_Context := nil,
+end,
+
+//******************************************************************************
+// Diese Funktion nutzt das Message-String um das Kontext zu setzen.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_Context_SetByMessageString(nMessageStandard:N, cMessageString:C)
+|
+   cSegmentTerminator, cElementSeperator, cCompositeElementSeperator,
+   cDecimalSeperator, cReleaseIndicator, cReservedCharacter
+|
+
+   // Trennzeichen auf Basis der UNA-Zeile (erste Zeile) auslesen
+   EDI_Edifact_MessageString_GetDelimiters(
+      cMessageString,
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator,
+      cDecimalSeperator,
+      cReleaseIndicator,
+      cReservedCharacter
+   ),
+   // Trennzeichen für das spätere EDI-Parsing setzen
+   EDI_Edifact_Context_Set(                                                     // TODO: Besser wäre es, wenn die Trenner als z.B. MemTable an den AST gehängt werden, damit diese nicht global gelten sondern für diesen einen Parsing-Prozess & AST
+      nMessageStandard,
+      cCompositeElementSeperator,
+      cElementSeperator,
+      cDecimalSeperator,
+      cReleaseIndicator,
+      cReservedCharacter,
+      cSegmentTerminator
+   ),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ermittelt den gesetzten Wert des Attributs mit dem übergebenen
+// Schlüssel.
+//
+// @result: variant - Wert des Attributs
+//******************************************************************************
+function _EDI_Edifact_Context_Get_Internal(cKey:C, bIsOptional:L:=false, uDefaultValue:U:='')
+   SetErrorIf(empty(gl_EDI_Context), 'Context has not been set'),
+   if bIsOptional then
+      result := KVU_Get(gl_EDI_Context, cKey, uDefaultValue),
+   else
+      result := KVU_GetAssert(gl_EDI_Context, cKey),
+   endif,
+end,
+

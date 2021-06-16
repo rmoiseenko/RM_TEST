@@ -1,0 +1,25 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält globale Funktionen der EDI-Toolbox, welche
+//   hauptsächlich in den EDI-Tabellen für diverse Tabllen-/Feld-Rechte
+//   verwendet werden.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion validiert den übergebenen Feldinhalt für SCRIPT_*-Felder.
+// @result: boolean - Feldinhalt valide Ja/Nein
+//******************************************************************************
+function _EDI_DB_ScriptField_DefaultValidate(cFieldContent:C)
+   // TODO: Präzisere Validierung wegen der Umstrukturierung der Script-Verzeichnisse
+   result :=
+      empty(cFieldContent) or
+      (cFieldContent = gl_EDI_ScriptsPathInbound and
+       Len(cFieldContent) > Len(gl_EDI_ScriptsPathInbound)) or
+      (cFieldContent = gl_EDI_ScriptsPathOutbound and
+       Len(cFieldContent) > Len(gl_EDI_ScriptsPathOutbound)),
+end,
+

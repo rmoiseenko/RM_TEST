@@ -1,0 +1,86 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm erstellt Inhouseformat für alle Beleglisten
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion erstellt Inhouseformat für alle Beleglisten
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function CreateInhouseFormatForDocumentLists(oDM:O, oErrorCallback:O, oProgressCallback:O)
+| oEDIDOCL, aProcessResult, nSucceededCount, nFailedCount, cEDIPROFScript |
+
+   nSucceededCount := 0,
+   nFailedCount    := 0,
+
+   oEDIDOCL := MyGetTable(oDM, waEDIDOCL, 'EDIDOCL_TASK'),
+   oEDIDOCL.CbIndexName := 'ID',
+
+   oEDIDOCL.CbFilter := "PROC_STEP=" + str(gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated),
+   oEDIDOCL.Filtered := True,
+   oEDIDOCL.CbFirst(),
+   while not oEDIDOCL.CbEof do
+      startseq
+         cEDIPROFScript := LookUp(waEDIPROF, 'ID', {{oEDIDOCL:EDIPROF_ID}}, 'SCRIPT_EXP'),
+         if Empty(cEDIPROFScript) then
+            SetError('No selected script for creation of inhouse-format.'),
+         else
+            aProcessResult := Call(cEDIPROFScript, oDM, oEDIDOCL:ID),
+         endif,
+         if EDI_ProcessResult_IsSuccess(aProcessResult) then
+            nSucceededCount++,
+         else
+            nFailedCount++,
+            EDI_Process_UpdateError(oErrorCallback, 'DocumentList-ID ' + str(oEDIDOCL:ID) + ': ' + EDI_ProcessResult_GetErrorMessage(aProcessResult)),
+         endif,
+      onerror
+         EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+      stopseq,
+
+      oEDIDOCL.CbNext(),
+   end,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSucceededCount + nFailedCount),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSucceededCount),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nFailedCount),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := CreateInhouseFormatForDocumentLists(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aTaskResult

@@ -1,0 +1,111 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm dient zum individuellen Import eines Artikel- oder
+//   Stücklistenpositions-Datensatzes durch die CAD-Schnittstelle.
+//
+// Parameter:
+//   * m_aParameters (P1): KVU-kompatibles Array mit folgenden Elementen:
+//     - ImportRecordIndividual.dataModule:       Datenmodul
+//     - ImportRecordIndividual.sourceTable:      Quell-Tabelle (z.B. CADART oder CADSTKL)
+//     - ImportRecordIndividual.destinationTable: Ziel-Tabelle (z.B. Dab010 oder Dab210)
+//
+// Fehlerhandling:
+//   Das Programm fängt intern keine Fehler ab und überlässt dem aufrufenden
+//   Programm-Code die Fehlerbehandlung.
+//
+// Rückgabe:
+//   null - keine Rückgabe
+//##############################################################################
+//##############################################################################
+
+|
+   m_aParameters:P1,
+
+   // Parameter-Bezeichner
+   m_cParameterName_DataModule,
+   m_cParameterName_SourceTable,
+   m_cParameterName_DestinationTable,
+
+   // Parameter (extrahiert)
+   m_oDM, m_oSourceTable, m_oDestinationTable
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cParameterName_DataModule       := 'ImportRecordIndividual.dataModule',
+m_cParameterName_SourceTable      := 'ImportRecordIndividual.sourceTable',
+m_cParameterName_DestinationTable := 'ImportRecordIndividual.destinationTable',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion extrahiert die alle Parameter aus dem Programm-Parameter P1
+// m_aParameters und setzt die entsprechenden Programmvariablen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ExtractParameters()
+   m_oDM               := KVU_GetAssert(m_aParameters, m_cParameterName_DataModule),
+   m_oSourceTable      := KVU_GetAssert(m_aParameters, m_cParameterName_SourceTable),
+   m_oDestinationTable := KVU_GetAssert(m_aParameters, m_cParameterName_DestinationTable),
+end,
+
+//******************************************************************************
+// Diese Funktion dient für den individuellen Import eines Artikels.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RecordImport_Article(oDM:O, oSourceTable:O, oDestinationTable:O)
+// | uWeight, nWeight |
+
+// -----------------------------------------------------------------------------
+// Beispiel für den individuellen Import eines Artikels
+// -----------------------------------------------------------------------------
+//   oDestinationTable:X_MATERIAL := CADIF_ReadField(oSourceTable, 'Material', ''),
+//
+//   uWeight := CADIF_ReadField(oSourceTable, 'X_GEWICHT', 0),
+//   if ValType(uWeight) <> 'N' then
+//      nWeight := ToFloat(uWeight),
+//   else
+//      nWeight := uWeight
+//   endif,
+//   oDestinationTable:GEWICHT := Round(nWeight, 4),
+end,
+
+//******************************************************************************
+// Diese Funktion dient für den individuellen Import einer Stücklistenposition.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RecordImport_PartsListPosition(oDM:O, oSourceTable:O, oDestinationTable:O)
+// -----------------------------------------------------------------------------
+// Beispiel für den individuellen Import einer Stücklistenposition
+// -----------------------------------------------------------------------------
+//   oDestinationTable:X_HALBZEUG := CADIF_ReadField(oSourceTable, 'Halbzeug', 0),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+ExtractParameters(),
+
+case m_oSourceTable.Workarea
+   // Import eines Artikels
+   of waCADART  :: RecordImport_Article(m_oDM, m_oSourceTable, m_oDestinationTable),
+
+   // Import einer Stücklistenposition
+   of waCADSTKL :: RecordImport_PartsListPosition(m_oDM, m_oSourceTable, m_oDestinationTable),
+
+   otherwise
+endcase,
+

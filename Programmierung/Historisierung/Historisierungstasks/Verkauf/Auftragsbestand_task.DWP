@@ -1,0 +1,262 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Historisierung des Verkauf - Auftragsbestands
+//##############################################################################
+//##############################################################################
+
+| m_aParams:P1,
+
+  m_bParamTestMode,
+  m_nParamHistType,
+  m_nParamStandort,
+  m_dParamHistorisierungsDatum,
+  m_cParamInlandLandNr,
+  m_dParamAngeboteAbTermin,
+
+  m_aResult |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Liefert die APNUMMER des ersten Dab055-Datensatzes mit Naturalrabatt
+// @Result: leer oder APNUMMER
+//******************************************************************************
+function CheckNaturalRabattInDab055()
+| cSQL, oQuery |
+   cSQL := 'SELECT APNUMMER FROM "DAB055.ADT" DAB055 WHERE BMENGE <> FMENGE AND FMENGEMAX <> 0',
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+      Result := oQuery:APNUMMER,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate den Beginn der Kalenderwoche (Montag) zurück
+// @Result: Date
+//******************************************************************************
+function FirstDayOfWeek(dDate)
+| nDayOfWeek |
+   nDayOfWeek := DoW(dDate) - 1,
+   if nDayOfWeek = 0 then
+      nDayOfWeek := 7,
+   endif,
+   Result     := dDate - nDayOfWeek + 1,
+end,
+
+//******************************************************************************
+// Funktion berechnet die Anzahl der Wochen als Differenz zwischen zwei Datums-Werten
+// @Result: Integer
+//******************************************************************************
+function CalcTerminAbstandInWochen(dStartDatum, dLiefertermin)
+   Result := Round(Day_Diff( dStartDatum, dLiefertermin ) / 7, 0),              // WriteLn(dStartDatum, dLiefertermin, Result),
+end,
+
+//******************************************************************************
+// Berechnet das SQL-Script zur Ermittlung der Quelldaten
+// @Result: String
+//******************************************************************************
+function GetHISVK_SelectQuery(nStandort, dHistorisierungsdatum, cInlandLandNr, dAngeboteAbTermin)
+| cScriptName |
+   cScriptName := 'Historisierung\Historisierungstasks\Verkauf\Auftragsbestand_sql',
+   Result := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   SetErrorIf(empty(Result), 'script not found!'),
+
+   Result := StrTran(Result, '@PARAM_HISTORISIERUNGS_DATUM@',      DateToSql(dHistorisierungsdatum,                 true)),
+   Result := StrTran(Result, '@PARAM_DATUM_START_WOCHEN_ABSTAND@', DateToSql(FirstDayOfWeek(dHistorisierungsdatum), true)),
+   Result := StrTran(Result, '@PARAM_STANDORT@',                   Str(nStandort)),
+   Result := StrTran(Result, '@PARAM_INLAND_LANDNR@',              "'" + cInlandLandNr + "'"),
+   Result := StrTran(Result, '@PARAM_ANGEBOT_AB_TERMIN@',          "'" + iif(empty(dAngeboteAbTermin), '', FormatDateTime('YYYYMMDD', dAngeboteAbTermin)) + "'"),
+
+
+   Result := StrTran(Result, '@DAB010_TABLENAME@', AllTrim(DbSqlTableName(waDab010))),
+   Result := StrTran(Result, '@DIA020_TABLENAME@', AllTrim(DbSqlTableName(waDia020))),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetHISVKDetailFields(oDM, oHISVK, oQuery)
+| i, oField |
+   // Alle Rückgabe-Felder des SQL-Scripts heißen so, wie das entsprechende Feld in der HISVK
+   for i := 1 to DbFCount(oQuery) do         // TBeAdsQuery
+      oField := DbField(i, oQuery),
+      if empty(oField) then
+         SetError('empty field at pos ' + Str(i)),
+      endif,
+      // WriteLn(oField.FieldName),
+      if oField.FieldName <> 'REC_NO' then
+         DbReplace(DbField(oField.FieldName, oHISVK), AsVariant(oField.FieldName, oQuery)),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Historisieren
+// @Result: keine Rückgabe
+//******************************************************************************
+function RunHistorization(bTestMode, nStandort, dHistorisierungsDatum, cInlandLandNr, dAngeboteAbTermin)
+|
+   oDM, oHIVKAKTDelete_Query, oHIVKQuery, cDeleteSQL, cSQL, oDab055, oHISVK,
+   nHISKOPF_ID, nErrorCount, cErrorMessages, nRecordCount, aErrorStack, cErrorStack, i,
+   cAPNummer, cComment
+|
+
+   // Achtung: Aktuell kann nicht für einen anderen Standort als den aktuellen historisiert werden.
+   SetErrorIf(nStandort <> mStandort, 'nStandort <> mStandort => nicht erlaubt'),
+
+   // Achtung: Hier gibt es keine(!) Transaktion, da die der Kopfsatz immer, auch
+   //          im Fehlerfall bestehen bleiben soll. Das schreiben der Detail-Sätze
+   //          ist je Datensatz "atomar", also auch unproblematisch.
+   oDM := CreateObject('TBeDbGet', 'DM_HISVK'),
+   startseq
+      cComment       := 'Historisierung für '  + crlf +
+                        'Standort: '           + Str(nStandort) + crlf +
+                        'Eigene Land-Nr. <'    + cInlandLandNr + '>' + crlf +
+                        'Angebote ab Termin <' + DToC(dAngeboteAbTermin) + '>',
+
+      nHISKOPF_ID    := HIS_HeaderAdd(oDM, m_nParamHistType, dHistorisierungsDatum, null, null, cComment),
+
+      KVU_Set(m_aResult, 'HISKOPF_ID', nHISKOPF_ID),
+
+      nRecordCount   := 0,
+      nErrorCount    := 0,
+      cErrorMessages := '',
+
+      startseq
+         oHIVKQuery := CreateObject('TBeAdsQuery', 'HISVK_QUERY', oDM),
+         startseq
+            cSQL              := GetHISVK_SelectQuery(nStandort, dHistorisierungsDatum, cInlandLandNr, dAngeboteAbTermin),     Prs('RunHistorization', cSQL),
+            oHIVKQuery.SQL    := cSQL,
+            oHIVKQuery.Active := true,
+
+            //******************************************************************
+            // Im Modus "aktueller Auftragsbestand" (HISVKAKT.ADT) werden die bisher
+            // geschriebenen Daten des Standorts vor der Neu-Berechnung gelöscht
+            // => es wird immer nur ein(!) aktuelles Abbild der Dab055 gespeichert
+            //******************************************************************
+            if m_nParamHistType = gl_HIS_HistorizationType_SalesOrderBacklog_Current then
+               cDeleteSQL := 'DELETE FROM ' + DbSqlTableName(waHISVKAKT) + ' WHERE STANDORT = ' + Str(nStandort),
+               oHIVKAKTDelete_Query := CreateObject('TBeAdsQuery', 'HISVKAKT_DELETE_QUERY', oDM),
+               startseq
+                  oHIVKAKTDelete_Query.SQL := cDeleteSQL,
+                  DbExecSql(oHIVKAKTDelete_Query),
+               always
+                  DestroyObject(oHIVKAKTDelete_Query),
+               stopseq,
+            endif,
+
+            oDab055             := DbGetTable(oDM, waDab055),
+            oDab055.IndexName   := 'ID',
+
+            while not oHIVKQuery.CbEof do
+               startseq
+                  nRecordCount++,
+
+                  oHISVK := HIS_DetailAdd(oDM, nHISKOPF_ID, gl_HIS_DetailDataType_Single),
+                  SetHISVKDetailFields(oDM, oHISVK, oHIVKQuery),
+
+                  // Wunschtermin-Feld übertragen, sofern definiert (X-Feld)
+                  if not empty(gl_HIS_PARAM_SalesOrderBackLog_WunschTerminFeldName) then
+                     MySeek({oHISVK:DAB055_ID}, oDab055),
+                     oHISVK:TERMINW  := AsString(gl_HIS_PARAM_SalesOrderBackLog_WunschTerminFeldName, oDab055 ), // Wunsch-Termin als Char(8)
+                     oHISVK:TERMINWD := SToD(Left(DateStr(oHISVK:TERMINW), 8)),                                  // Wunsch-Termin als Date
+                  endif,
+
+                  HIS_DetailPost(oDM, oHISVK),
+
+                  if bTestMode and nRecordCount > 10 then
+                     SetError('Test-Modus ist aktiv: Fehler/Abbruch bei Datensatz ' + Str(nRecordCount)),
+                  endif,
+
+                  if Mod(nRecordCount, 500) = 0 then
+                     WriteLn(Str(nRecordCount, 8) + ' Datensätze historisiert'),
+                     ProcessMsg(),
+                  endif,
+               onerror
+                  nErrorCount++,
+
+                  aErrorStack := GetErrorStack(True),
+                  cErrorStack := '',
+                  startseq
+                     for i := 1 to ALen(aErrorStack) do
+                        cErrorStack += '- '     + aErrorStack[i, 1]      + '(): ',
+                        cErrorStack += 'Zeile ' + Str(aErrorStack[i, 2]) + ': ',
+                        cErrorStack += StrTran(aErrorStack[i, 4], crlf, ' '),
+                        cErrorStack += ' (' + aErrorStack[i, 3] + ')' + crlf,
+                     next,
+                  onerror
+                     cErrorStack := DebugArr(aErrorStack),
+                  stopseq,
+                  cErrorMessages := ConcatTrenner(cErrorMessages, cErrorStack, CRLF + CRLF),
+
+                  SetErrorIf(nErrorCount >= 10, 'Historisierung: Zu viele Fehler sind aufgetreten -> Abbruch'),
+               stopseq,
+
+               oHIVKQuery.CbNext(),
+            end,
+            WriteLn(Str(nRecordCount, 8) + ' Datensätze historisiert (Gesamt)'),
+
+            // Aktuell kann die Mengen- und Wert-Berechnung im SQL noch nicht mit Naturalrabatt umgehen
+            // => hier Fehler auslösen, sofern Naturalrabatt verwendet wird
+            cAPNummer := CheckNaturalRabattInDab055(),
+            if not empty(cAPNummer) then
+               nErrorCount++,
+               cErrorMessages := ConcatTrenner(cErrorMessages,
+                                               'Die Historisierung ist nicht implementiert für die Nutzung von Naturalrabatt (DAB055:FMENGEMAX). ' +
+                                               'Im aktuellen Auftragsbestand wird Naturalrabatt genutzt, z.B. bei APNUMMER <' + AllTrim(cAPNummer) + '>',
+                                               CRLF + CRLF),
+            endif,
+
+         always
+            DestroyObject(oHIVKQuery),
+         stopseq,
+      always
+         if nErrorCount = 0 then
+            HIS_HeaderFinalize(oDM, nHISKOPF_ID),
+         else
+            HIS_HeaderMarkAsErroneous(oDM, nHISKOPF_ID, nErrorCount, cErrorMessages),
+         endif,
+      stopseq,
+   always
+      DestroyObject(oDM),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_aResult := {},
+
+   // übergebene Parameter auslesen
+   m_bParamTestMode              := KVU_Get(m_aParams, 'TESTMODE',  false),
+   m_nParamHistType              := KVU_Get(m_aParams, 'HIST_TYPE', gl_HIS_HistorizationType_SalesOrderBacklog),
+   SetErrorIf(not (m_nParamHistType = gl_HIS_HistorizationType_SalesOrderBacklog or m_nParamHistType = gl_HIS_HistorizationType_SalesOrderBacklog_Current),
+                                     'Parameter "HIST_TYPE" must be gl_HIS_HistorizationType_SalesOrderBacklog or gl_HIS_HistorizationType_SalesOrderBacklog_Current'),
+   m_nParamStandort              := KVU_Get(m_aParams, 'STANDORT',  mStandort),
+   m_dParamHistorisierungsDatum  := KVU_Get(m_aParams, 'DATUM',     mBDatum),
+
+   // die folgenden Parameter werden aus den globals übernommen, sofern nicht definiert
+   m_cParamInlandLandNr          := KVU_Get(m_aParams, 'INLAND_NR',         HIS_GetLandNrForStandort(m_nParamStandort)),
+   m_dParamAngeboteAbTermin      := KVU_Get(m_aParams, 'ANGEBOT_AB_TERMIN', gl_HIS_PARAM_SalesOrderBackLog_AngeboteAbDatum),
+   SetErrorIf(not empty(m_dParamAngeboteAbTermin) and ValType(m_dParamAngeboteAbTermin) <> 'D', 'when defined, Parameter "ANGEBOT_AB_TERMIN" must be empty() or type <date>'),
+
+   RunHistorization(m_bParamTestMode, m_nParamStandort, m_dParamHistorisierungsDatum, m_cParamInlandLandNr, m_dParamAngeboteAbTermin),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+m_aResult

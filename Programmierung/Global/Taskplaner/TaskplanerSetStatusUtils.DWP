@@ -1,0 +1,134 @@
+//******************************************************************************
+// SCHEDULER Funktionen
+//******************************************************************************
+
+//******************************************************************************
+// Interne Funktion
+// @Result: null
+//******************************************************************************
+function _TSKPL_SetSchedulerState(oTSKPLSCHED:O, nNewSchedulerState:N)
+| bOldLockErrorState |
+   Result := False,
+   // Wenn ein Datensatz bereits gesperrt ist -> Sperrdialog anzeigen
+   bOldLockErrorState      := oTSKPLSCHED.ShowLockErr,
+   oTSKPLSCHED.ShowLockErr := True,
+   startseq
+      MyEdit(oTSKPLSCHED),
+      oTSKPLSCHED:STATUS    := nNewSchedulerState,
+      oTSKPLSCHED:LAST_RESP := GetAdsServerTime(),
+      MyPost(oTSKPLSCHED),
+      Result := True,
+   always
+      oTSKPLSCHED.ShowLockErr := bOldLockErrorState,
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_ChangeSchedulerStateInactive(nSchedulerId:N)
+| oTSKPLSCHED |
+   oTSKPLSCHED := BeOpen(waTSKPLSCHED),
+   startseq
+      SetErrorIf(not oTSKPLSCHED.CbFindKey({nSchedulerId}), 'Scheduler existiert nicht!'),
+      Result := TSKPL_SetSchedulerState(oTSKPLSCHED, gl_TSKPL_SchedulerStatus_Inactive),
+      if not Result then
+         TSKPL_WriteLog_Scheduler(nSchedulerId, gl_TSKPL_EventCode_SchedulerStopped, 'Der Scheduler konnte nicht in den Status "inaktiv" gesetzt werden.'),
+      endif,
+   always
+      BeClose(oTSKPLSCHED),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_ChangeSchedulerStateRunning(nSchedulerId:N)
+| oTSKPLSCHED |
+   oTSKPLSCHED := BeOpen(waTSKPLSCHED),
+   startseq
+      SetErrorIf(not oTSKPLSCHED.CbFindKey({nSchedulerId}), 'Scheduler existiert nicht!'),
+      SetErrorIf(not oTSKPLSCHED:HASTORUN, 'Scheduler soll laufen!'),
+      Result := TSKPL_SetSchedulerState(oTSKPLSCHED, gl_TSKPL_SchedulerStatus_Running),
+      if not Result then
+         TSKPL_WriteLog_Scheduler(nSchedulerId, gl_TSKPL_EventCode_SchedulerStarted, 'Der Scheduler konnte nicht in den Status "wird ausgeführt" gesetzt werden.'),
+      endif,
+   always
+      BeClose(oTSKPLSCHED),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_ChangeSchedulerStateTerminated(nSchedulerId:N)
+| oTSKPLSCHED |
+   oTSKPLSCHED := BeOpen(waTSKPLSCHED),
+   startseq
+      SetErrorIf(not oTSKPLSCHED.CbFindKey({nSchedulerId}), 'Scheduler existiert nicht!'),
+      SetErrorIf(oTSKPLSCHED:STATUS <> gl_TSKPL_SchedulerStatus_Running, 'Scheduler Status sollte laufen!'),
+      Result := TSKPL_SetSchedulerState(oTSKPLSCHED, gl_TSKPL_SchedulerStatus_Terminated),
+      if not Result then
+         TSKPL_WriteLog_Scheduler(nSchedulerId, gl_TSKPL_EventCode_SchedulerStopped, 'Der Scheduler konnte nicht in den Status "terminiert" gesetzt werden.'),
+      endif,
+   always
+      BeClose(oTSKPLSCHED),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// TASK Funktionen
+//******************************************************************************
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_SetTaskState(oTSKPLTASK:O, nNewTaskState:N)
+   Result := False,
+   // Wenn ein Datensatz bereits gesperrt ist -> Sperrdialog anzeigen
+   oTSKPLTASK.ShowLockErr := True,
+
+   MyEdit(oTSKPLTASK),
+   oTSKPLTASK:STATUS := nNewTaskState,
+   MyPost(oTSKPLTASK),
+   Result := True,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_ChangeTaskStateReady(nTaskId:N)
+| oTSKPLTASK |
+
+   oTSKPLTASK := BeOpen(waTSKPLTASK),
+   startseq
+      SetErrorIf(not oTSKPLTASK.CbFindKey({nTaskId}), 'Task existiert nicht!'),
+      Result := TSKPL_SetTaskState(oTSKPLTASK, gl_TSKPL_TaskStatus_Ready),
+   always
+      BeClose(oTSKPLTASK),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _TSKPL_ChangeTaskStateRunning(nTaskId:N)
+| oTSKPLTASK, nCurrentTaskStatus |
+
+   oTSKPLTASK := BeOpen(waTSKPLTASK),
+   startseq
+      SetErrorIf(not oTSKPLTASK.CbFindKey({nTaskId}),             'Task existiert nicht!'),
+      SetErrorIf(oTSKPLTASK:STATUS = gl_TSKPL_TaskStatus_Running, 'Task läuft aktuell!'),
+      Result := TSKPL_SetTaskState(oTSKPLTASK, gl_TSKPL_TaskStatus_Running),
+   always
+      BeClose(oTSKPLTASK),
+   stopseq,
+end,
+

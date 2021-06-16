@@ -1,0 +1,146 @@
+//##############################################################################
+//##############################################################################
+//
+// Dieses Hilfsprogramm dient zur automatischen Umstellung aller Controls einer
+// Maske auf die ab Version 6.0 geltende neue Standard-Schriftart 'Segoe UI'
+//
+//  Hinweise:
+//  - Die zu ersetzenden Schrfiten müssen über aReplaceFontNames ggf. definiert
+//    werden
+//  - Vor der Änderung wird ein Backup der alten Maske erstellt
+//    => diese Backup kann nicht über die Oberfläche importiert werden, da es
+//       nur den den Feldinhalt von DabFRM:DATA enthält.
+//  - Nach der Umstellung müssen ggf.
+//    - Ausrichtungen und Abstände geprüft werden (neue Schriftart ist breiter)
+//    - Font-Eigenschaften übergeordneter Element wie Hintergrund-Panels oder
+//      PageControls gesetzt werden.
+//
+//##############################################################################
+//##############################################################################
+
+| m_oDM, m_oDabFRM, m_nMaskId, m_bIsMaskType, m_bIsStandardMask, m_cMask,
+  m_cMaskDesc, m_cMaskBackUpFolder |
+
+//******************************************************************************
+// Im übergebenen Masken-Text die Schriftarten tauschen
+// @Result: string, neuer Masken-Text
+//******************************************************************************
+function ReplaceFontsInMask(cCurrentMaskText)
+| aReplaceFontNames, cNewFontName, cCurReplaceName,
+  cNewDataString, oRegExpr, i |
+   aReplaceFontNames := {'MS Sans Serif', 'Tahoma', 'Arial'},
+   cNewFontName      := 'Segoe UI',
+
+   // Font-Names ersetzen
+   cNewDataString := cCurrentMaskText,
+   oRegExpr   := CreateObject('TBeCBRegExpr'),
+   startseq,
+
+      for i := 1 to Alen(aReplaceFontNames) do
+        cCurReplaceName := aReplaceFontNames[i],
+
+        oRegExpr.SearchText       := cNewDataString,
+        oRegExpr.SearchExpression := "Font.Name = '" + cCurReplaceName + "'",
+        oRegExpr.ReplaceText      := "Font.Name = '" + cNewFontName + "'",
+        cNewDataString            := oRegExpr.Replace,
+      next,
+
+   always
+      DestroyObject(oRegExpr),
+   stopseq,
+
+   Result := cNewDataString,
+end,
+
+//******************************************************************************
+// Ein Backup der alten Maske erstellen und anschließend die neue Maske speichern
+// @Result: null
+//******************************************************************************
+function BackUpAndSaveNewMask(nMaskId, cMaskDesc, cOldMaskText, cNewMaskText)
+| cBackupFileName, cBackUpFilePath |
+   m_cMaskBackUpFolder := mbeDefault + 'BACKUP\MASK',
+   if ForceDirectories('\\august\backup\dingsdings\') then
+
+      cBackupFileName := cMaskDesc + '_FontReplaceBackup_' + Str(nMaskId) + '.~',
+      cBackUpFilePath := m_cMaskBackUpFolder + '\' + cBackupFileName,
+
+      if not SaveFile(cOldMaskText, cBackUpFilePath) then
+         MessageDlg('Die aktuelle Maske konnte nicht unter [' + cBackUpFileName + '] gespeichert werden => Abbruch'),
+      else
+         if Val(m_oDabFRM:MASK_ID) = nMaskId then
+            MyEdit(m_oDabFRM),
+            m_oDabFRM:DATA := cNewMaskText,
+            MyPost(m_oDabFRM),
+
+            MessageDlg('Die umgestellt Maske wurde erfolgreich gespeichert.' + crlf + crlf +
+                       'Nach dieser Umstellung müssen ggf.' + crlf +
+                       '  - Ausrichtungen und Abstände geprüft werden (neue Schriftart ist breiter)' + crlf +
+                       '  - Font-Eigenschaften übergeordneter Element wie Hintergrund-Panels oder PageControls gesetzt werden' + crlf + crlf +
+                       '(technisches Backup der alten Maske unter [' + cBackupFileName + '] im Verzeichnis [' + m_cMaskBackUpFolder + ']'),
+         else
+            SetError('interner Fehler beim Speichern'),
+         endif,
+      endif,
+   else
+      MessageDlg('Das Backup-Verzeichnis [' + m_cMaskBackUpFolder + '] kann nicht angelegt werden => Abbruch'),
+   endif,
+end,
+
+
+startseq,
+   m_oDM := CreateObject('TBeDbGet'),
+   startseq,
+      // Masken-Tabelle öffnen
+      m_oDabFRM           := DbGetTable(m_oDM, waDabFRM),
+      m_oDabFRM.Name      := 'tbl_DabFRM',
+      m_oDabFRM.IndexName := 'MASK_ID',
+      DbGoTop(m_oDabFRM),
+
+      // Maske per Browse auswählen
+      Browse('Maske auswählen', m_oDabFRM, '@FRMFNTCHG', {ScreenWidth / 2 - 350, ScreenHeight / 2 - 400, 700, 800}),
+
+      m_cMaskDesc       := AllTrim(m_oDabFRM:BEZ),
+      m_nMaskId         := Val(m_oDabFRM:MASK_ID),
+      m_bIsMaskType     := Mod(m_nMaskId, 1000) = 0,
+      m_bIsStandardMask := m_oDabFRM:DEFAULT and not m_bIsMaskType,
+
+      if m_bIsMaskType then
+         MessageDlg('Wählen Sie bitte eine gültige Maske aus.'),
+      else
+         if m_bIsStandardMask then
+            MessageDlg('Standard-Masken können nicht angepasst werden.'),
+         else
+            m_cMask := m_oDabFRM:DATA,
+
+            // Hat Maske das "neue" Text-Format schon ?
+            if empty(m_cMask) then
+               MessageDlg('Für die Maske [' + m_cMaskDesc + '] gibt es keine Daten im "DATA"-Format. ' +
+                          'Öffnen Sie die Maske im Designer und schließen diese wieder mit "Änderungen speichern".'),
+            else
+               // Schriftarten ersetzen
+               m_cMask := ReplaceFontsInMask(m_cMask),
+
+               // Wurde etwas geändert ?
+               if AllTrim(m_cMask) == AllTrim(m_oDabFRM:DATA) then
+                  MessageDlg('Es wurden keine alten Schriftart-Angaben in der Maske [' + m_cMaskDesc  + '] gefunden.'),
+               else
+                  // Differenzen anzeigen (modal)
+                  ShowDiff(AllTrim(m_oDabFRM:DATA), m_cMask, 'Maske_alt', 'Maske_neu', true),
+
+                  // Maske in DB speichern
+                  if jn('Soll die geänderte Maske [' + m_cMaskDesc  + '] zurückgeschrieben werden?', false) then
+                     BackUpAndSaveNewMask(m_nMaskId, m_cMaskDesc, AllTrim(m_oDabFRM:DATA), m_cMask),
+                  endif,
+               endif,
+            endif,
+
+         endif,
+      endif,
+
+   always,
+      DestroyObject(m_oDM),
+   stopseq,
+
+onerror,
+   MessageDlg('Fehler im Programm: ' + crlf + GetErrorText()),
+stopseq,

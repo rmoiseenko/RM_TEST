@@ -1,0 +1,512 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung von globalen Funktionen für das Reporting im Bereich Lager
+//
+//   Der Prefix "REPLAGU" steht für "Reporting Lager Utils".
+//
+//##############################################################################
+//
+//  Allgemeine Infos zu Standard-Felder, die hier genutzt werden
+//
+//   Prinzip der Standard-Verbrauchsmengen-Felder am Beispiel Verkauf
+//      DAB010:VKMENGE    -> lfd. Monat
+//      DAB010:VKMENGE1   -> Verkauf 1. Vormonat
+//      DAB010:VKMENGE2   -> Verkauf 2. Vormonat
+//      ...
+//      DAB010:VKMENGEALT -> Verkauf 13. Vormonat + älter
+
+//    Verbrauch Produktion : PRMENGEx
+//    Verbrauch Sto-Umlag. : ULMENGEx
+
+//    Außerdem hilfreich
+//      DAB010:DATLTZTPR -> Datum letzter Prod.Verbrauch, wird geschrieben beim Schreiben der PRMENGE-Felder
+//      DAB010:DATLTZTVK -> Datum letzter Abgang Verkauf, wird geschrieben bei der Faktura
+//
+//##############################################################################
+//##############################################################################
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen für Abgänge / Verbräuche
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermittelt die Verbräuche des Artikel in den letzten 12 Vormonaten
+//
+// @Result: { Summe der Abgänge der ltzt. 12 Monate,
+//            Anzahl Monate für die Daten vorhanden sind }
+//******************************************************************************
+function _REPLAGU_Abgaenge_Internal_12Monate(oDM, cArtnr)
+| oDab010, i, nNKStellen, nSummeAbgaenge, nAnzahlMonate |
+
+   cArtnr     := PadR(cArtnr, mBeArtNoLen),
+   oDab010    := DbGetTableAndMySeek(oDM, waDab010, , cArtnr),
+   nNKStellen := oDab010:NKSTELLEN,
+
+   // => Es werden die Verbräuche der letzten 12 abgeschlossenen Monate betrachtet
+   //    Ggf. liegen jedoch noch nicht für den gesamten Zeitraum Daten vor, da der
+   //    Artikel zu neu ist => @nAnzahlMonate
+   nSummeAbgaenge := 0,
+   nAnzahlMonate  := 0,
+   for i := 12 downto 1 do
+      nSummeAbgaenge  += AsNumber('VKMENGE' + Str(i), oDab010),
+      nSummeAbgaenge  += AsNumber('PRMENGE' + Str(i), oDab010),
+      if nSummeAbgaenge <> 0 and nAnzahlMonate = 0 then
+         nAnzahlMonate := i
+      endif,
+   next,
+   nSummeAbgaenge := Round(nSummeAbgaenge, nNKStellen),
+
+   // Wenn Abgänge > 12 Monate vorliegen, dann immer 12 Monate als Zeitraum annehmen
+   if oDab010:VKMENGEALT <> 0 or oDab010:PRMENGEALT <> 0 then
+      nAnzahlMonate := 12,
+   endif,
+
+   Result         := { nSummeAbgaenge, nAnzahlMonate },
+
+   // Prs('...()', 'Summe der Lagerabgänge der letzten 12 abgeschlossenen Monate: ' + FormatStd(nSummeAbgaenge, nNKStellen) + ' / Daten verfügbar für ' + Str(nAnzahlMonate) + ' Vormonate'),
+end,
+
+//******************************************************************************
+// Ermittelt die Verbräuche des Artikel in den letzten 12 Vormonaten
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Abgaenge_12Monate(oDM, cArtnr)
+| aRes |
+   aRes   := REPLAGU_Abgaenge_Internal_12Monate(oDM, cArtnr),
+   Result := aRes[1],
+end,
+
+//******************************************************************************
+// Berechnet den Ø Lagerabgang pro Monat in den letzten 12 Vormonaten
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Abgaenge_Durchschnitt_Pro_Monat_12Monate(oDM, cArtnr)
+| aRes, nSummeAbgaenge, nAnzahlMonate |
+   aRes           := REPLAGU_Abgaenge_Internal_12Monate(oDM, cArtnr),
+   Result         := 0,
+   nSummeAbgaenge := aRes[1],
+   nAnzahlMonate  := aRes[2],
+   if nAnzahlMonate > 0 then
+      Result := Round(nSummeAbgaenge / nAnzahlMonate, 2),
+   endif,
+end,
+
+//******************************************************************************
+// Berechnet den Ø Lagerabgang pro Tag auf Basis der Daten der letzten 12 Vormonate
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Abgaenge_Durchschnitt_Pro_Tag_12Monate(oDM, cArtnr, nRoundToNkStellen)
+| nDurchschnittProMonat |
+   nDurchschnittProMonat := REPLAGU_Abgaenge_Durchschnitt_Pro_Monat_12Monate(oDM, cArtnr),
+   Result                := Round(nDurchschnittProMonat / 30, nRoundToNkStellen),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen für Lagerbestände
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermittelt den Lagerbestand eines Artikels für einen Monat auf Basis
+//    der historisierten Informationen
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_BestandsHistorie_MonatsEndBestand(oDM, cArtnr, dDatumMonatsEnde)
+| oHISLAG |
+   SetErrorIf(dDatumMonatsEnde <> EoM(dDatumMonatsEnde), 'dDatumMonatsEnde muss ein Monatsende sein'),
+   cArtnr            := PadR(cArtnr, mBeArtNoLen),
+   oHISLAG           := DbGetTable(oDM, waHISLAG),
+   oHISLAG.IndexName := 'STATUS_STANDORT_ARTNR_DATUM', // Ausdruck: STATUS;STANDORT;ARTNR;DATUM
+
+   // Wenn es keinen Datensatz gibt, dann hatte der Artikel zu diesem Zeitpunkt keinen Lagerbestand auf irgendeinem Lager
+   // Wir verlassen uns hier auf die Konsistenz der HISLAG (alle Historisierungen sind erfolgt, keine doppelten etc.)
+   Result            := 0,
+   if DbSeek({gl_HIS_HistorizationState_Completed, mStandort, cArtnr, dDatumMonatsEnde}, oHISLAG) then
+      Result         := oHISLAG:LAGER_VER,
+   endif,
+
+   // Prs('...()', 'Lagerbestand zum Monatsende <' + DToC(dDatumMonatsEnde) + '>: ' + FloatToStr(Result)),
+end,
+
+//******************************************************************************
+// Hilfs-Funktion zur Ermittelung der Anzahl an Monaten, die zwischen den beiden
+//    übergebene Datumswerten liegen
+//    z.B. "01.05.2016" bis "01.07.2012" =>  2 Monate
+//    z.B. "01.05.2016" bis "01.05.2017" => 12 Monate
+//
+// @Result: Integer
+//******************************************************************************
+function _REPLAGU_CalcMonthDiff(dDatumStart, dDatumEnde)
+| nYearStart, nMonthStart, nYearEnde, nMonthEnde, nBuf |
+  SetErrorIf(dDatumStart > dDatumEnde, 'dDatumStart > dDatumEnde not allowed'), // WriteLn(dDatumStart, dDatumEnde),
+
+  DecodeDate(dDatumStart, nYearStart, nMonthStart, nBuf),
+  DecodeDate(dDatumEnde,  nYearEnde,  nMonthEnde, nBuf),
+
+  if nYearStart = nYearEnde then
+     Result := nMonthEnde - nMonthStart
+  else
+     Result := 12 * (nYearEnde - nYearStart - 1)  +
+               12 - nMonthStart
+               + nMonthEnde,
+  endif,
+end,
+
+//******************************************************************************
+// Prüft, ob für den aktuell positi. Artikel in der überg. Dab010 das Statistik-Datum aktuell
+//    ist, d.h. ob die VKMENGEx, PRMENGEx, etc. Felder sinnvoll verwendbar sind
+// @Result: true / false
+//******************************************************************************
+function _REPLAGU_CheckDab010StatDatumAktuell(oDab010)
+   Result := not empty(oDab010:STATDATUM) and BoM(oDAB010:STATDATUM) >= BoM(mBDatum), // WriteLn(oDAB010:STATDATUM, mBDatum),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für Lagerkennzahlen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermittelt den Ø Lagerbestand eines Artikels in
+//    den letzten 12 Vormonaten - immer auf Basis des Monats-Ende-Bestand
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr)
+| oHISLAG, oDab010, dDatumBasis, dDatumBeginn, dDatumEnde, oRec, nSummeBestand12Monate,
+  dMonatsEndeErsterBestand, nAnzahlMonate |
+
+   dDatumBasis       := mBDatum,
+   dDatumBeginn      := EoM(AddMonth(EoM(dDatumBasis), -12)),
+   dDatumEnde        := EoM(AddMonth(EoM(dDatumBasis),  -1)),                        // WriteLN('Start: ' + DtoC(dDatumBeginn) + ' Ende: ' + DtoC(dDatumEnde)),
+   cArtnr            := PadR(cArtnr, mBeArtNoLen),
+
+   oDab010           := DbGetTableAndMySeek(oDM, waDab010, , cArtnr),
+
+   oHISLAG           := DbGetTable(oDM, waHISLAG),
+   oHISLAG.IndexName := 'STATUS_STANDORT_ARTNR_DATUM', // Ausdruck: STATUS;STANDORT;ARTNR;DATUM
+
+   DbScope({gl_HIS_HistorizationState_Completed, mStandort, cArtnr, dDatumBeginn},
+           {gl_HIS_HistorizationState_Completed, mStandort, cArtnr, dDatumEnde}, oHISLAG),
+   startseq
+      nSummeBestand12Monate    := 0,
+      dMonatsEndeErsterBestand := null,
+      // Wir verlassen uns hier auf die Konsistenz der HISLAG (alle Historisierungen sind erfolgt, keine doppelten etc.)
+      foreach oRec in oHISLAG do
+         if oHISLAG:DATUM = EoM(oHISLAG:DATUM) then // nur Monats-Abschlüsse berücksichtigen
+            nSummeBestand12Monate    += oHISLAG:LAGER_VER,
+            dMonatsEndeErsterBestand := iif(empty(dMonatsEndeErsterBestand), oHISLAG:DATUM, dMonatsEndeErsterBestand),
+         endif,
+      next,
+   always
+      DbScope(, oHISLAG),
+   stopseq,
+
+   //***************************************************************************
+   //   Passendes SQL-Statement hierzu (ohne Filter auf "nur Monats-Ende-Werte"
+   //
+   //   SELECT STANDORT, ARTNR, DATUM, LAGER_VER
+   //   FROM "HISLAG.ADT" HISLAG
+   //  WHERE     STATUS   = 50
+   //         AND STANDORT = 0
+   //         AND ARTNR    = 'meine-Artikel-Nr'
+   //         AND DATUM    >= '2015-06-30'
+   //         AND DATUM    <= '2016-04-30'
+   //   ORDER BY STATUS, STANDORT, ARTNR, DATUM
+   //***************************************************************************
+
+   // Wenn der Artikel-Bestand erst in den letzten 12 Monaten begonnen
+   // hat, dann nur anteilig dividieren => es sei denn, es gibt Verbräuche, die
+   // mehr als 12 Monate zurück liegen, dann gab es schon zuvor Bewegungen
+   // => Wenn vor diesem Zeitpunkt nie etwas auf Bestand war, dann muss der Ø-Bestand
+   //    pro Monat mit einem entspr. reduzierten Bemessungszeitraum ermittelt werden.
+   nAnzahlMonate := 12,
+   if     oDab010:VKMENGEALT = 0
+      and oDab010:PRMENGEALT = 0
+      and dMonatsEndeErsterBestand > dDatumBeginn then
+      nAnzahlMonate := REPLAGU_CalcMonthDiff(dMonatsEndeErsterBestand, dDatumEnde) + 1, // WriteLn('dDatumBeginn:', dDatumBeginn, 'dMonatsEndeErsterBestand:', dMonatsEndeErsterBestand, dDatumEnde - dMonatsEndeErsterBestand, 'Anzahl Monate: ' + Str(nAnzahlMonate)),
+   endif,
+   Result        := Round(nSummeBestand12Monate / nAnzahlMonate, oDab010:NKSTELLEN),
+
+   // Prs('...()', 'Ø Lagerbestand ltzt. ' + Str(nAnzahlMonate) + ' Monate: ' + FormatStd(Result, oDab010:NKSTELLEN)),
+end,
+
+//******************************************************************************
+// Berechnet die Lager-Umschlagshäufigkeit eines Artikels, basieren auf den Daten
+//    der letzten 12 Monate
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Kennzahlen_Umschlagshaufigkeit_12Monate(oDM, cArtnr)
+| nLagerabgaenge, nLagerDurchschnittsBestand |
+
+   nLagerabgaenge             := REPLAGU_Abgaenge_12Monate(oDM, cArtnr),
+   nLagerDurchschnittsBestand := REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr),
+
+   Result := 0,
+   if nLagerDurchschnittsBestand <> 0 then
+      Result := Round(nLagerabgaenge / nLagerDurchschnittsBestand, 2),
+   endif,
+
+   // Prs('...()', 'Lager Umschlagshäufigkeit für Artnr <' + AllTrim(cArtnr) + '> : ' + FormatStd(Result, 2)),
+end,
+
+//******************************************************************************
+// Berechnet die Lager-Reichweite eines Artikels in Tagen, basieren auf den Daten
+//    der letzten 12 Monate
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Kennzahlen_Lagerreichweite_InTagen_12Monate(oDM, cArtnr)
+| nLagerDurchschnittsBestand, nDurchschnittBedarf |
+   nLagerDurchschnittsBestand := REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr),
+   nDurchschnittBedarf        := REPLAGU_Abgaenge_Durchschnitt_Pro_Tag_12Monate(oDM, cArtnr, 8),
+   Result                     := 0,
+   if nDurchschnittBedarf <> 0 then
+      Result                  := Round(nLagerDurchschnittsBestand / nDurchschnittBedarf, 2),
+   endif,
+   // Prs('...()', 'Lager Reichweite für Artnr  <' + AllTrim(cArtnr) + '> in Tagen: ' + FormatStd(Result, 2) + ' bei Ø-Lagerbestand: ' + FloatToStr(nLagerDurchschnittsBestand) + ' / Ø Bedarf pro Tag: ' + FloatToStr(nDurchschnittBedarf)),
+end,
+
+//******************************************************************************
+// Berechnet die Lager-Reichweite eines Artikels in Monaten, basieren auf den Daten
+//    der letzten 12 Monate
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Kennzahlen_Lagerreichweite_InMonaten_12Monate(oDM, cArtnr)
+| nLagerDurchschnittsBestand, nDurchschnittBedarf |
+   nLagerDurchschnittsBestand := REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr),
+   nDurchschnittBedarf        := REPLAGU_Abgaenge_Durchschnitt_Pro_Monat_12Monate(oDM, cArtnr),
+   Result                     := 0,
+   if nDurchschnittBedarf <> 0 then
+      Result                  := Round(nLagerDurchschnittsBestand / nDurchschnittBedarf, 2),
+   endif,
+   // Prs('...()', 'Lager Reichweite für Artnr  <' + AllTrim(cArtnr) + '> in Monaten: ' + FormatStd(Result, 2)),
+end,
+
+//******************************************************************************
+// Berechnet die Ø Lager-Dauer eines Artikels bezogen auf die überg. Periode,
+//    basieren auf den Daten der letzten 12 Monate
+// @Result: Float
+//******************************************************************************
+function _REPLAGU_Kennzahlen_DurchschnittlicheLagerdauer_12Monate(oDM, cArtnr, nPeriodenLaengeInTagen)
+| nUmschlagshaufigkeit |
+   nUmschlagshaufigkeit := REPLAGU_Kennzahlen_Umschlagshaufigkeit_12Monate(oDM, cArtnr),
+   Result               := 0,
+   if nUmschlagshaufigkeit <> 0 then
+      Result            := Round(nPeriodenLaengeInTagen / nUmschlagshaufigkeit, 2),
+   endif,
+   // Prs('...()', 'Ø Lagerdauer für Artnr  <' + AllTrim(cArtnr) + '> bezogen auf <' + Str(nPeriodenLaengeInTagen) + '> Tage: ' + FormatStd(Result, 2)),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für die Lager-Historie-Memtable
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Erzeugt eine Memtable zur Anzeige der Lager-Historie eines Artikels
+// @Result: TBeMemtable-Instanz
+//******************************************************************************
+function _REPLAGU_LagerHistorieMem_Create(oOwner, cName)
+   Result           := Createobject('TBeMemTable', cName, oOwner),
+   Result.AliasName := 'MEM_LAGHIS',
+
+   // Artikel-Basis-Daten
+   Result.CbAddField('STANDORT',            ftInteger,  0),
+   Result.CbAddField('ARTNR',               ftString,   mBeArtNoLen),   // eigentlich nicht notwendig aber hilfreich für das Browser-Design etc.
+   Result.CbAddField('ME',                  ftString,   3),
+   Result.CbAddField('NKSTELLEN',           ftInteger,  0),
+
+   // Zeitpunkt
+   Result.CbAddField('DATUM',               ftDate,     0),
+   Result.CbAddField('MONAT_KAL',           ftInteger,  0),
+   Result.CbAddField('JAHR_KAL',            ftInteger,  0),
+   Result.CbAddField('KW',                  ftInteger,  0),
+   Result.CbAddField('JAHR_KW',             ftInteger,  0),
+   Result.CbAddField('IN_LTZT_12MONATE',    ftBoolean,  0),
+
+   // Lagerbestandsdaten aus HISLAG.ADT
+   Result.CbAddField('HISKOPF_ID',          ftInteger,  0),
+   Result.CbAddField('PE',                  ftInteger,  0),
+   Result.CbAddField('EKP',                 ftFloat,    0),
+   Result.CbAddField('LTZTEKP',             ftFloat,    0),
+   Result.CbAddField('DURCHSCHEK',          ftFloat,    0),
+   Result.CbAddField('LAGER_VER',           ftFloat,    0),
+
+   // berechnete Felder
+   Result.CbAddField('LAGWERT_DURCHSCHEK',  ftFloat,    0),  // Lagerwert auf Basis des Ø EKP
+   Result.CbAddField('LAGER_VER_DURCHSCHN', ftFloat,    0),  // Ø Lagerbestand
+   Result.CbAddField('GUI_JAHR_MONAT',      ftString,   5),  // Jahr-Monat als Text für die GUI-Darstellung z.B. in Charts
+
+   // hier könnte man noch Spalte für Verbräche etc. hinzufügen und dann beim Fill() die Daten laden
+
+   Result.CbAddIndex('DATUM', 'DATUM', ixPrimary),
+   Result.Active      := true,
+   Result.CbIndexName := 'DATUM',
+end,
+
+//******************************************************************************
+// Funktion befüllt die zuvor erstellte Memtable mit Informationen zur Lagerhistorie
+//    eines Artikels
+// @Result: null
+//******************************************************************************
+function _REPLAGU_LagerHistorieMem_Fill(oDM, oMemLAGHIS, cArtnr, bClearMemTable, dDatumVon, dDatumBis)
+| oHISLAG, nAnzahlMonate, dCurMonatsEnde, i, oRec, oDab010, dMonatsEnde12MonateErster, dMonatsEnde12MonateLetzter, nDurchschnittsBestand12Monate |
+
+   SetErrorIf(dDatumVon <> EoM(dDatumVon), 'dDatumVon muss ein Monatsende sein'),
+   SetErrorIf(dDatumBis <> EoM(dDatumBis), 'dDatumBis muss ein Monatsende sein'),
+   dMonatsEnde12MonateErster  := EoM(AddMonth(EoM(mBDatum), -12)),
+   dMonatsEnde12MonateLetzter := EoM(AddMonth(EoM(mBDatum),  -1)),
+   cArtnr                     := PadR(cArtnr, mBeArtNoLen),
+
+   DbDisableControls(oMemLAGHIS),
+   startseq
+
+      // Memtable zuvor leeren?
+      if bClearMemTable then
+         oMemLAGHIS.CbEmptyTable(),
+      endif,
+
+      // Ø Lagerbestand der letzten 12 Monate ermitteln
+      nDurchschnittsBestand12Monate := REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr),
+
+      // im angegebenen Zeitraum Memtable-Sätze für jeden Monat erzeugen
+      oDab010       := DbGetTableAndMySeek(oDM, waDab010, , cArtnr),
+      nAnzahlMonate := REPLAGU_CalcMonthDiff(dDatumVon, dDatumBis),
+      for i := 0 to nAnzahlMonate do
+         dCurMonatsEnde := EoM(AddMonth(dDatumVon, i)),
+
+         MyAppend(oMemLAGHIS),
+         oMemLAGHIS:STANDORT               := mStandort,
+         oMemLAGHIS:ARTNR                  := cArtnr,
+         oMemLAGHIS:ME                     := oDab010:ME,
+         oMemLAGHIS:NKSTELLEN              := oDab010:NKSTELLEN,
+
+         oMemLAGHIS:DATUM                  := dCurMonatsEnde,
+         oMemLAGHIS:GUI_JAHR_MONAT         := FormatDateTime('mm.yy', oMemLAGHIS:DATUM),
+         oMemLAGHIS:IN_LTZT_12MONATE       := dCurMonatsEnde >= dMonatsEnde12MonateErster and dCurMonatsEnde <= dMonatsEnde12MonateLetzter,
+         if oMemLAGHIS:IN_LTZT_12MONATE then
+            oMemLAGHIS:LAGER_VER_DURCHSCHN := nDurchschnittsBestand12Monate
+         endif,
+         MyPost(oMemLAGHIS),
+      next,
+
+      // historisierte Lagerbestände aus der HISLAG laden
+      oHISLAG           := DbGetTable(oDM, waHISLAG),
+      oHISLAG.IndexName := 'STATUS_STANDORT_ARTNR_DATUM', // Ausdruck: STATUS;STANDORT;ARTNR;DATUM
+
+      DbScope({gl_HIS_HistorizationState_Completed, mStandort, cArtnr, dDatumVon},
+              {gl_HIS_HistorizationState_Completed, mStandort, cArtnr, dDatumBis}, oHISLAG),
+      foreach oRec in oHISLAG do
+         if oHISLAG:DATUM = EoM(oHISLAG:DATUM) then // nur Monats-Abschlüsse berücksichtigen
+            if oMemLAGHIS.CbFindKey({oHISLAG:DATUM}) then
+               MyEdit(oMemLAGHIS),
+               // Zeitpunkt - Angaben 1:1 aus HISLAG übernehmen
+               oMemLAGHIS:MONAT_KAL          := oHISLAG:MONAT_KAL,
+               oMemLAGHIS:JAHR_KAL           := oHISLAG:JAHR_KAL,
+               oMemLAGHIS:KW                 := oHISLAG:KW,
+               oMemLAGHIS:JAHR_KW            := oHISLAG:JAHR_KW,
+
+               // Lagerbestandsdaten
+               oMemLAGHIS:HISKOPF_ID         := oHISLAG:HISKOPF_ID,
+               oMemLAGHIS:PE                 := oHISLAG:PE,
+               oMemLAGHIS:EKP                := oHISLAG:EKP,
+               oMemLAGHIS:LTZTEKP            := oHISLAG:LTZTEKP,
+               oMemLAGHIS:DURCHSCHEK         := oHISLAG:DURCHSCHEK,
+               oMemLAGHIS:LAGER_VER          := oHISLAG:LAGER_VER,
+
+               // berechnete Daten
+               oMemLAGHIS:LAGWERT_DURCHSCHEK := Round(oHISLAG:LAGER_VER * oHISLAG:DURCHSCHEK, 2),
+
+               MyPost(oMemLAGHIS),
+            endif,
+         endif,
+      next,
+
+      DbGoBottom(oMemLAGHIS),
+   always
+      DbEnableControls(oMemLAGHIS),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen für die Lager-Kennzahlen-Memtable
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Erzeugt eine Memtable zur Anzeige der Lager-Kennzahlen eines Artikels
+// @Result: TBeMemtable-Instanz
+//******************************************************************************
+function _REPLAGU_LagerKennzahlenMem_Create(oOwner)
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'MEM_LAGKENNZAHLEN',
+
+   // Artikel-Basis-Daten
+   Result.CbAddField('STANDORT',           ftInteger,  0),
+   Result.CbAddField('ARTNR',              ftString,   mBeArtNoLen),   // eigentlich nicht notwendig aber hilfreich für das Browser-Design etc.
+   Result.CbAddField('ME',                 ftString,   3),
+   Result.CbAddField('NKSTELLEN',          ftInteger,  0),
+
+   // Kennzahl-Typ und Zeitpunkt der Ermittlung der Kennzahl
+   Result.CbAddField('DATUM',              ftDate,     0),
+   Result.CbAddField('KENNZ_TYP',          ftInteger,  0),
+   Result.CbAddField('KENNZ_BEZ',          ftMemo,     0),
+   Result.CbAddField('KENNZ_WERT',         ftFloat,  0),
+
+   // Result.CbAddIndex('DATUM', 'DATUM', ixPrimary),
+   Result.Active      := true,
+end,
+
+//******************************************************************************
+// Funktion füllt die zuvor erstellte Memtable mit Lagerkennzahlen für den Artikel
+// @Result: null
+//******************************************************************************
+function _REPLAGU_LagerKennzahlenMem_Fill(oDM, oMemLAGKennzahlen, cArtnr, bClearMemTable)
+| oDab010 |
+
+  function AddKennzahlToMem(oDab010, nKennzTyp, nKennzBez, nKennzWert)
+     MyAppend(oMemLAGKennzahlen),
+     oMemLAGKennzahlen:STANDORT   := oDab010:STANDORT,
+     oMemLAGKennzahlen:ARTNR      := oDab010:ARTNR,
+     oMemLAGKennzahlen:ME         := oDab010:ME,
+     oMemLAGKennzahlen:NKSTELLEN  := oDab010:NKSTELLEN,
+
+     oMemLAGKennzahlen:DATUM      := mBDatum,
+     oMemLAGKennzahlen:KENNZ_TYP  := nKennzTyp,
+     oMemLAGKennzahlen:KENNZ_BEZ  := nKennzBez,
+     oMemLAGKennzahlen:KENNZ_WERT := nKennzWert,
+
+     MyPost(oMemLAGKennzahlen),
+  end,
+
+   cArtnr        := PadR(cArtnr, mBeArtNoLen),
+   oDab010       := DbGetTableAndMySeek(oDM, waDab010, , cArtnr),
+
+   DbDisableControls(oMemLAGKennzahlen),
+   startseq
+
+      // Memtable zuvor leeren?
+      if bClearMemTable then
+         oMemLAGKennzahlen.CbEmptyTable(),
+      endif,
+
+      // Eine Zeile je Kennzahl
+      AddKennzahlToMem(oDab010, 10, 'Ø Lagerbestand',             REPLAGU_Kennzahlen_DurchschnittsBestand_12Monate(oDM, cArtnr)),
+      AddKennzahlToMem(oDab010, 20, 'Umschlagshäufigkeit',        REPLAGU_Kennzahlen_Umschlagshaufigkeit_12Monate(oDM, cArtnr)),
+      AddKennzahlToMem(oDab010, 30, 'Lagerreichweite in Tagen',   REPLAGU_Kennzahlen_Lagerreichweite_InTagen_12Monate(oDM, cArtnr)),
+      AddKennzahlToMem(oDab010, 40, 'Lagerreichweite in Monaten', REPLAGU_Kennzahlen_Lagerreichweite_InMonaten_12Monate(oDM, cArtnr)),
+      AddKennzahlToMem(oDab010, 50, 'Ø Lagerdauer (90 Tage)',     REPLAGU_Kennzahlen_DurchschnittlicheLagerdauer_12Monate(oDM, cArtnr, 90)),
+
+      DbGoTop(oMemLAGKennzahlen),
+   always
+      DbEnableControls(oMemLAGKennzahlen),
+   stopseq,
+end,

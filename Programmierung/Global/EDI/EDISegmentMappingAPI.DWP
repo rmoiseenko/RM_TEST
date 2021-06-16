@@ -1,0 +1,164 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Funktionen zum Verwalten von Segment-Mappings.
+//   Diese Funktionen betreffen hauptsächlich die Tabelle EDISEGM.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt ein neues Segment-Mapping in der Tabelle EDISEGM hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_SegmentMapping_Add(oDM:O,
+                                 oEDISEGM:O,
+                                 nStandard:N,
+                                 cSegmentIdentifier:C,
+                                 cCompositeDataElementIdentifier:C,
+                                 cDataElementIdentifier:C,
+                                 nFieldPosition:N,
+                                 nValuePosition:N:=0,
+                                 bMandatory:L:=true,
+                                 cDescription:C:='')
+   oEDISEGM.CbAppend(),
+   oEDISEGM:STANDARD  := nStandard,
+   oEDISEGM:SEGMENT   := cSegmentIdentifier,
+   oEDISEGM:ELEMENT   := cCompositeDataElementIdentifier,
+   oEDISEGM:SUB_ELEM  := cDataElementIdentifier,
+   oEDISEGM:ELEM_POS  := nFieldPosition,
+   oEDISEGM:VALUE_POS := nValuePosition,
+   oEDISEGM:MANDATORY := bMandatory,
+   oEDISEGM:MEMO      := cDescription,
+   oEDISEGM.CbPost(),
+end,
+
+//******************************************************************************
+// Diese Funktion sucht das passende Segment-Mapping zu dem übergebenen Segment-
+// Bezeichner und Datenelement-Bezeichner.
+//
+// @result: boolean - Segment-Mapping wurde gefunden Ja/Nein
+//******************************************************************************
+function _EDI_SegmentMapping_Find(oEDISEGM:O,
+                                  nStandard:N,
+                                  cSegmentIdentifier:C,
+                                  cCompositeDataElementIdentifier:C,
+                                  cDataElementIdentifier:C:='')
+|
+   cIndexName_FindSegmentMapping, nSubElementIndex, aKey,
+   cDataElementIndexDelimiter
+|
+
+   cDataElementIndexDelimiter    := '_',
+   cIndexName_FindSegmentMapping := 'INDEX_UNIQUE',
+   SetErrorIf(
+      oEDISEGM.CbIndexName <> cIndexName_FindSegmentMapping,
+      'instance of table EDISEGM must use index ' + cIndexName_FindSegmentMapping + ' in order to find the appropriate segment-mapping record'
+   ),
+
+   aKey := {nStandard, cSegmentIdentifier, cCompositeDataElementIdentifier},
+   if not empty(cDataElementIdentifier) then
+      nSubElementIndex := val(Token(cDataElementIdentifier, cDataElementIndexDelimiter, 2)),
+      if nSubElementIndex > 0 then
+         AAdd(aKey, Token(cDataElementIdentifier, cDataElementIndexDelimiter, 1)),
+         AAdd(aKey, nSubElementIndex),
+      else
+         AAdd(aKey, cDataElementIdentifier),
+      endif,
+   endif,
+
+   result := oEDISEGM.CbFindKey(aKey),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt die Position des übergebenen Datenelements im
+// übergebenen Segment.
+//
+// @result: array
+//   Format:
+//   {
+//     <Position Datenelement im Segment>,
+//     <Position Wert im Datenelement>,
+//     <Datenelement erforderlich Ja/Nein>
+//   }
+//******************************************************************************
+function _EDI_SegmentMapping_GetPosition(oEDISEGM:O,
+                                         nStandard:N,
+                                         cSegmentIdentifier:C,
+                                         cCompositeDataElementIdentifier:C,
+                                         cDataElementIdentifier:C:='')
+|
+   bFindSubDataElement, bDataElementFound,
+   nCompositeDataElementIndex, nDataElementIndex, bCompositeDataElementMandatory,
+   aPositionInfo
+|
+
+   //***************************************************************************
+   function ThrowSegmentMappingNotFoundException(bSearchForSuperiorDataElement:L,
+                                                 bFindSubDataElement:L,
+                                                 cSegmentIdentifier:C,
+                                                 cCompositeDataElementIdentifier:C,
+                                                 cDataElementIdentifier:C)
+   | cErrorMessage |
+
+      cErrorMessage :=
+         'No segment-mapping found for: segment identifier: ' + cSegmentIdentifier +
+         ', composite data-element identifier: ' + cCompositeDataElementIdentifier,
+
+      if bFindSubDataElement then
+         if bSearchForSuperiorDataElement then
+            cErrorMessage += ', necessary for data-element identifier: ' + cDataElementIdentifier,
+         else
+            cErrorMessage += ', data-element identifier: ' + cDataElementIdentifier,
+         endif,
+      endif,
+
+      SetError(cErrorMessage),
+   end,
+
+   result := {},
+   bFindSubDataElement := not empty(cDataElementIdentifier),
+   if EDI_SegmentMapping_Find(oEDISEGM, nStandard, cSegmentIdentifier, cCompositeDataElementIdentifier) then
+      bCompositeDataElementMandatory := oEDISEGM:MANDATORY,
+      if bFindSubDataElement then
+         if not EDI_SegmentMapping_Find(
+            oEDISEGM,
+            nStandard,
+            cSegmentIdentifier,
+            cCompositeDataElementIdentifier,
+            cDataElementIdentifier) then
+            ThrowSegmentMappingNotFoundException(
+               false,
+               bFindSubDataElement,
+               cSegmentIdentifier,
+               cCompositeDataElementIdentifier,
+               cDataElementIdentifier
+            ),
+         endif,
+      endif,
+
+      aPositionInfo := EDI_Edifact_DataElementMap_Create(
+         oEDISEGM:ELEM_POS,
+         oEDISEGM:VALUE_POS,
+         bCompositeDataElementMandatory,
+         oEDISEGM:MANDATORY
+      ),
+      result := aPositionInfo,
+   else
+      ThrowSegmentMappingNotFoundException(
+         true,
+         bFindSubDataElement,
+         cSegmentIdentifier,
+         cCompositeDataElementIdentifier,
+         cDataElementIdentifier
+      ),
+   endif,
+end,
+

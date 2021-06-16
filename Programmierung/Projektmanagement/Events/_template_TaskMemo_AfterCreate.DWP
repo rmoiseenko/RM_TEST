@@ -1,0 +1,35 @@
+//##############################################################################
+//##############################################################################
+// HINWEIS:
+//   Hierbei handelt es sich um eine Vorlage für das Event "TaskMemo_AfterCreate".
+//   Um das Event zu benutzen muss der Programmname auf
+//   "Projektmanagement\Events\TaskMemo_AfterCreate" geändert werden.
+//##############################################################################
+// Event: TaskMemo_AfterCreate
+// Beschreibung:
+//   Das Event wird nach der Neuanlage eines Task-Memos durch die globale
+//   Funktion ProjMgmt_CreateNewTaskMemo() ausgeführt.
+//
+// Parameter:
+//   Die Parameter werden in Form eines KVU-Arrays an dieses Event übergeben.
+//   Folgende Parameter sind in dem Array enthalten:
+//     * TaskMemoAfterCreateEvent.memoBO:    TBeMemoBO
+//     * TaskMemoAfterCreateEvent.taskBO:    TBeProjectTaskBO
+//     * TaskMemoAfterCreateEvent.projectBO: TBeProjectBO
+//
+//   Das TBeMemoBO befindet sich zum Zeitpunkt des Events im Insert-Modus.
+//
+//##############################################################################
+//##############################################################################
+
+|
+   aParameters:P1, // Parameter Array
+
+   oMemoBO, oTaskBO, oProjectBO
+|
+
+// Parameter ermitteln
+oMemoBO    := KVU_GetAssert(aParameters, 'TaskMemoAfterCreateEvent.memoBO'),
+oTaskBO    := KVU_GetAssert(aParameters, 'TaskMemoAfterCreateEvent.taskBO'),
+oProjectBO := KVU_GetAssert(aParameters, 'TaskMemoAfterCreateEvent.projectBO'),
+

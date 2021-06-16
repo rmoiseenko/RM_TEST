@@ -1,0 +1,303 @@
+
+//******************************************************************************
+// Prüfen, ob ein MailHost der Form ('dontenwill.de', 't-online.de') ein sog.
+// "anonymer" Host ist (Massen-Hoster)
+// @Result: true / false
+//******************************************************************************
+function _Dubl_IsAnonymMailHost(cMailHost)
+| oDabAnonymHosts, cHostOnly |
+   Result    := false,
+   cHostOnly := AllTrim(Upper(Token(cMailHost, '.', 1))),
+   if not empty(cHostOnly) then
+      oDabAnonymHosts           := MyGetTable(gl_oDM, waDUBLEHOST, 'EMAILHOST_GLOBAL_CHECK'),
+      oDabAnonymHosts.IndexName := 'HOST',
+      Result := DbSeek({cHostOnly}, oDabAnonymHosts),
+   endif,
+end,
+
+
+//******************************************************************************
+// Datensatz in Dubletten-MemTable anlegen oder sofern schon vorhanden
+// suchen und editieren
+//******************************************************************************
+function _Dubl_Dab000_MemTable_EditOrAppend(oDublettenMemTable, oDab000Master, aQuery000)
+   | aPLZORT |
+   
+   if DbState(oDublettenMemTable) <> dsBrowse then
+      SetError('DublettenMemTable_EditOrAppend(): DbState() <> dsBrowse'),
+   endif,
+   if DbSeek({oDab000Master:KDNR, aQuery000:KDNR}, oDublettenMemTable) then
+      MyEdit(oDublettenMemTable),
+   else
+      aPLZOrt                        := Dubl_ExplodePLZOrtValue(aQuery000:PLZORT),
+      MyAppend(oDublettenMemTable),
+      oDublettenMemTable:MASTER_KDNR := oDab000Master:KDNR,
+      oDublettenMemTable:MC          := aQuery000:MATCHCODE,
+      oDublettenMemTable:NAME1       := aQuery000:NAME1,
+      oDublettenMemTable:NAME2       := aQuery000:NAME2,
+      oDublettenMemTable:NAME3       := aQuery000:NAME3,
+      oDublettenMemTable:PLZ         := KVU_Get(aPLZOrt, 'PLZ',  0),
+      oDublettenMemTable:ORT         := KVU_Get(aPLZOrt, 'Ort', ''),
+      oDublettenMemTable:STRASSE     := aQuery000:STRASSE,
+      oDublettenMemTable:LANDNR      := aQuery000:LANDNR,
+      oDublettenMemTable:LANDBEZ     := LookUp(waDIA020, 'DIA021', {{aQuery000:LANDNR}}, "BEZ", ""),
+      oDublettenMemTable:USTID       := aQuery000:UST_IDNR,
+      oDublettenMemTable:TELEFON     := aQuery000:TELEFON,
+      oDublettenMemTable:HOMEPAGE    := aQuery000:HOMEPAGE,
+      oDublettenMemTable:EMAIL       := aQuery000:EMAIL,
+      oDublettenMemTable:MAILHOST    := Dubl_NormalizeMailOrWebpageToHost(aQuery000:EMAIL), 
+      oDublettenMemTable:KDNR        := aQuery000:KDNR,
+      oDublettenMemTable:ZIEL_KDNR   := AsVariant(gl_DUBL_TargetKDNR_Field,  aQuery000),
+      oDublettenMemTable:GEPRUEFT    := AsVariant(gl_DUBL_TargetPruef_Field, aQuery000),
+   endif,
+end,
+
+//******************************************************************************
+// Dubletten-Score berechnen
+// @Result: Integer-Wert (Score)
+//******************************************************************************
+function _Dubl_Dab000_CalcScore(oDublettenMemTable)
+   Result := 0,
+   Result += iif( oDublettenMemTable:TELEFON_M,  gl_DUBL_Score_Telefon,  0 ),
+   Result += iif( oDublettenMemTable:MAILHOST_M, gl_DUBL_Score_Mailhost, 0 ),
+   Result += iif( oDublettenMemTable:EMAIL_M,    gl_DUBL_Score_Email,    0 ),
+   Result += iif( oDublettenMemTable:NAME_M,     gl_DUBL_Score_Name,     0 ),
+   Result += iif( oDublettenMemTable:ORT_M,      gl_DUBL_Score_Ort,      0 ),
+   Result += iif( oDublettenMemTable:STRASSE_M,  gl_DUBL_Score_Strasse,  0 ),
+   Result += iif( oDublettenMemTable:USTID_M,    gl_DUBL_Score_USTID,    0 ), 
+end,
+
+//******************************************************************************
+// Datensatz in Dubletten-MemTable speichern => dabei Dubletten-Score rechnen
+//******************************************************************************
+function _Dubl_Dab000_MemTable_Post(oDublettenMemTable)
+   oDublettenMemTable:SCORE := Dubl_Dab000_CalcScore(oDublettenMemTable),
+   MyPost(oDublettenMemTable),
+end,
+
+//******************************************************************************
+// Interne Funktion um Telefon und Mailhost Dubletten zu ermitteln
+// @Result: null
+//******************************************************************************
+function _Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, nFeldTyp, cMatchcode, bMustBeExactMatch)
+| oDUBLMATCH, oDab000_Seek, cMatchFilter, nDublCount |
+
+   nDublCount                := 0,
+
+   if not empty(cMatchcode) then
+      oDUBLMATCH                := MyGetTable(oDM,  waDUBLMATCH, 'DUBLMATCH_SOUNDEX'),
+      oDab000_Seek              := MyGetTable(oDM,  waDAB000,    'DAB000_DUBL_SEEK'),
+      oDab000_Seek.IndexName    := 'DAB003',
+
+      cMatchFilter             :=  " FELDTYP = " + Str(nFeldTyp) + " AND KDNR <> " + Str(oDab000Master:KDNR),
+      if bMustBeExactMatch then
+         cMatchFilter          +=  " AND MATCHCODE = '" + cMatchcode + "'",                  
+      else
+         // Klammern entfernen falls vorhanden, da es sonst zum Fehler kommt (Contains() - Funktion kommt damit nicht zurecht)
+         cMatchcode := StrTran(cMatchcode, '(', ''),
+         cMatchcode := StrTran(cMatchcode, ')', ''),
+         cMatchFilter          +=  " AND Contains(MATCHCODE, '" + cMatchcode + "*')",
+      endif,
+
+      DbFilter(cMatchFilter, oDUBLMATCH),
+      DbGoTop(oDUBLMATCH),
+      while not eof(oDUBLMATCH) do
+         if DbSeek({oDUBLMATCH:KDNR}, oDab000_Seek) then
+            Dubl_Dab000_MemTable_EditOrAppend(oDublettenMemTable, oDab000Master, oDab000_Seek),
+            case nFeldtyp
+
+               of gl_Dubl_FeldTyp_Telefon  ::
+                  oDublettenMemTable:TELEFON_M := true,
+
+               of gl_Dubl_FeldTyp_Mailhost ::
+                  oDublettenMemTable:MAILHOST_M := true,
+
+               of gl_Dubl_FeldTyp_Email ::
+                  oDublettenMemTable:EMAIL_M    := true,
+
+               of gl_Dubl_FeldTyp_USTIDNR ::
+                  oDublettenMemTable:USTID_M    := true,
+
+               otherwise SetError('unknown field type <' + Str(nFeldtyp) + '>'),
+            endcase,
+            // Post ausführen
+            Dubl_Dab000_MemTable_Post(oDublettenMemTable),
+            nDublCount++,
+         endif,
+         DbSkip(1, oDUBLMATCH),
+      end,
+   endif,
+   Result := nDublCount,
+end,
+
+
+//******************************************************************************
+// Dubletten per Name1, Ort & Strasse suchen (Ähnlichkeits-Suche)
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchViaNameOrOrt(oDM, oDublettenMemTable, oDab000Master)
+| aMasterSoundExInfoArr, cNameSoundEx,  cOrtSoundEx, cStrasseSoundEx,
+  nDublCount, oDUBLMATCH, oDab000_Seek, cMatchFilter, cMatch_Ort, cMatch_Strasse, bMatchOrt, bStrasse|
+
+   nDublCount                := 0,
+   bMatchOrt                 := false,
+   bStrasse                  := false,
+
+   aMasterSoundExInfoArr     := Dubl_CalcSoundExInfoArrayForDab000(oDab000Master),
+
+   cNameSoundEx              := KVU_Get(aMasterSoundExInfoArr, 'Name',    ''),
+   cOrtSoundEx               := KVU_Get(aMasterSoundExInfoArr, 'Ort',     ''),
+   cStrasseSoundEx           := KVU_Get(aMasterSoundExInfoArr, 'Strasse', ''),
+
+   // Name + ( Ort oder Straße) nicht leer und Länge von cNameSoundEx >= 4
+   if not empty(cNameSoundEx) and ( not empty(cOrtSoundEx) or not empty(cStrasseSoundEx) ) and Len(cNameSoundEx) >= 4 then
+      //Result := Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, gl_Dubl_FeldTyp_Name, cNameSoundEx, false),
+      oDUBLMATCH                := MyGetTable(oDM,  waDUBLMATCH, 'DUBLMATCH_SOUNDEX'),
+      oDab000_Seek              := MyGetTable(oDM,  waDAB000,    'DAB000_DUBL_SEEK'),
+      oDab000_Seek.IndexName    := 'DAB003',
+
+      cMatchFilter             :=  " FELDTYP = " + Str(gl_Dubl_FeldTyp_Name) + " AND KDNR <> " + Str(oDab000Master:KDNR),
+      // Klammern entfernen falls vorhanden, da es sonst zum Fehler kommt (Contains() - Funktion kommt damit nicht zurecht)
+      cNameSoundEx := StrTran(cNameSoundEx, '(', ''),
+      cNameSoundEx := StrTran(cNameSoundEx, ')', ''),
+      cMatchFilter          +=  " AND Contains(MATCHCODE, '" + cNameSoundEx + "*')",,
+      DbFilter(cMatchFilter, oDUBLMATCH),
+      DbGoTop(oDUBLMATCH),
+      while not eof(oDUBLMATCH) do
+         bMatchOrt := false,
+         bStrasse  := false,
+         if DbSeek({oDUBLMATCH:KDNR}, oDab000_Seek) then
+            cMatch_Ort     := LookUp(waDUBLMATCH, 'KDNR', {{oDUBLMATCH:KDNR, gl_Dubl_FeldTyp_Ort}},     "MATCHCODE", ""),
+            cMatch_Strasse := LookUp(waDUBLMATCH, 'KDNR', {{oDUBLMATCH:KDNR, gl_Dubl_FeldTyp_Strasse}}, "MATCHCODE", ""),
+            bMatchOrt      := not Empty(cMatch_Ort)     and not Empty(cOrtSoundEx)     and cMatch_Ort     = cOrtSoundEx,
+            bStrasse       := not Empty(cMatch_Strasse) and not Empty(cStrasseSoundEx) and cMatch_Strasse = cStrasseSoundEx,
+
+            // Nur wenn der Name enthalten ist + Ort oder Name + Strasse gleich, dann true
+            if bMatchOrt or bStrasse then
+               Dubl_Dab000_MemTable_EditOrAppend(oDublettenMemTable, oDab000Master, oDab000_Seek),
+               oDublettenMemTable:NAME_M     := true,
+               oDublettenMemTable:ORT_M      := bMatchOrt,
+               oDublettenMemTable:STRASSE_M  := bStrasse,
+               Dubl_Dab000_MemTable_Post(oDublettenMemTable),
+               nDublCount++,
+            endif,
+         endif,
+         DbSkip(1, oDUBLMATCH),
+      end,
+   endif,
+   Result := nDublCount,
+end,
+
+//******************************************************************************
+// Dubletten per Telefon-Nr. suchen (über die DUBLMATCH - Suchbegriffstabelle)
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchViaTelNr(oDM, oDublettenMemTable, oDab000Master)
+| cMasterDab000Telefon |
+   Result               := 0,
+   cMasterDab000Telefon := Dubl_NormalizeDab000Telefon(oDab000Master:TELEFON),
+   if not empty(cMasterDab000Telefon) and Len(cMasterDab000Telefon) >= 5  then
+      Result := Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, gl_Dubl_FeldTyp_Telefon, cMasterDab000Telefon, true),
+   endif,
+end,
+
+//******************************************************************************
+// Dubletten per Telefon-Nr. suchen (über die DUBLMATCH - Suchbegriffstabelle)
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchViaMailHost(oDM, oDublettenMemTable, oDab000Master)
+| cMasterDab000MailHost |
+   Result                 := 0,
+   cMasterDab000MailHost  := AllTrim( Dubl_NormalizeMailOrWebpageToHost(oDab000Master:EMAIL) ),
+
+   if not empty(cMasterDab000MailHost) and Len(cMasterDab000MailHost) >= 4  then
+      if not Dubl_IsAnonymMailHost(cMasterDab000MailHost) then                  // ein anonymer Host der Art 't-online.de' deutet nie auf eine Dublette hin => ignorieren!
+         cMasterDab000MailHost     :=  cMasterDab000MailHost,              // WriteLn('Normalisierter Mailhost: ' + cMasterDab000MailHost),
+         Result := Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, gl_Dubl_FeldTyp_Mailhost, cMasterDab000MailHost, false),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Dubletten per Telefon-Nr. suchen (über die DUBLMATCH - Suchbegriffstabelle)
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchViaEMail(oDM, oDublettenMemTable, oDab000Master)
+| cMasterDAB000EMail |
+   Result             := 0,
+   cMasterDAB000EMail := AllTrim(oDab000Master:EMAIL),
+   if not empty(cMasterDAB000EMail) then
+      Result := Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, gl_Dubl_FeldTyp_Email, cMasterDAB000EMail, true),
+   endif,
+end,
+
+//******************************************************************************
+// Dubletten per UST ID-Nr. suchen (über die DUBLMATCH - Suchbegriffstabelle)
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchViaUSTID(oDM, oDublettenMemTable, oDab000Master)
+| cMasterDAB000USTID |
+   Result             := 0,
+   cMasterDAB000USTID := AllTrim(oDab000Master:UST_IDNR),
+   if not empty(cMasterDAB000USTID) then
+      Result := Dubl_Dab000_Search_Internal(oDM, oDublettenMemTable, oDab000Master, gl_DUBL_FeldTyp_USTIDNR, cMasterDAB000USTID, true),
+   endif,
+end,
+
+//******************************************************************************
+// Dubletten über diverse Methoden suchen und in MemTable zusammenführen
+// @Result: Anzahl der über diese Methode gefundenen Dubletten
+//******************************************************************************
+function _Dubl_Dab000_SearchAll(oDM, oDublettenMemTable, oDab000Master )
+  Result := 0,
+  Result += Dubl_Dab000_SearchViaTelNr(oDM, oDublettenMemTable, oDab000Master),
+  Result += Dubl_Dab000_SearchViaEmail(oDM, oDublettenMemTable, oDab000Master),
+  Result += Dubl_Dab000_SearchViaMailHost(oDM, oDublettenMemTable, oDab000Master),
+  Result += Dubl_Dab000_SearchViaNameOrOrt(oDM, oDublettenMemTable, oDab000Master),
+  Result += Dubl_DAB000_SearchViaUSTID(oDM, oDublettenMemTable, oDAB000Master),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _Dubl_Dab000_CreateMemTable()
+   Result              := CreateObject('TBeMemTable'),
+   Result.AliasName    := 'MEM_Dubletten',
+
+   Result.CbAddField('MASTER_KDNR',   ftInteger, 0), // Kdnr. des Kunden, für den Dubletten gesucht werden
+   Result.CbAddField('KDNR',          ftInteger, 0), // Kdnr. der gefundenen Dublette
+
+   Result.CbAddField('TELEFON_M',       ftBoolean, 0), // Match über Telefon-Nr.
+   Result.CbAddField('TELEFON_SCORE',   ftInteger, 0), // Match-Score über Telefon-Nr.
+   Result.CbAddField('NAME_M',          ftBoolean, 0), // Match über Name
+   Result.CbAddField('ORT_M',           ftBoolean, 0), // Match über Name & Ort (nur der Ortsanteil!)
+   Result.CbAddField('STRASSE_M',       ftBoolean, 0), // Match über Name & Strasse
+   Result.CbAddField('EMAIL_M',         ftBoolean, 0), // Match über E-Mail Adresse
+   Result.CbAddField('MAILHOST_M',      ftBoolean, 0), // Match über MailHost
+   Result.CbAddField('USTID_M',         ftBoolean, 0), // Match über UST ID
+
+   Result.CbAddField('SCORE',         ftInteger, 0), // Matching-Score
+
+   // MM - 09.01.17: Kunden-Informationen aus dem Kundenstamm hinzufügen
+   Result.CbAddField('MC',            ftString,  50),
+   Result.CbAddField('NAME1',         ftString,  50),
+   Result.CbAddField('NAME2',         ftString,  50),
+   Result.CbAddField('NAME3',         ftString,  50),
+   Result.CbAddField('PLZ',           ftString,  25),
+   Result.CbAddField('ORT',           ftString,  25),
+   Result.CbAddField('STRASSE',       ftString,  50),
+   Result.CbAddField('LANDNR',        ftString,   3),
+   Result.CbAddField('LANDBEZ',       ftString,  30),
+   Result.CbAddField('USTID',         ftString,  50),
+   Result.CbAddField('TELEFON',       ftString,  50),
+   Result.CbAddField('HOMEPAGE',      ftString,  50),
+   Result.CbAddField('EMAIL',         ftString,  50),
+   Result.CbAddField('MAILHOST',      ftString,  50),
+   Result.CbAddField('ZIEL_KDNR',     ftInteger,  0),
+   Result.CbAddField('GEPRUEFT',      ftDate,     0),
+
+   Result.CbAddIndex('KDNR', 'MASTER_KDNR;KDNR', ixPrimary),
+   Result.CbIndexName := 'KDNR',
+end,
+

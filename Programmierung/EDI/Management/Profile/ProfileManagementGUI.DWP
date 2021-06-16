@@ -1,0 +1,906 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zum Verwalten von EDI-Profilen.
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MANAGEMENT_PROFILE_MANAGER',
+//        self,
+//        'EDI\Management\Profile\ProfileManagementGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI, m_oEDIPROF, m_oEDIDOCL,
+   m_cPositionSaveId, m_cFormId, m_cBrowserId,
+
+   m_bExplicitInsert, m_bExplicitPost,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Activate, A_Cancel, A_CreateDocumentList, A_Deactivate, A_New,
+   A_Save, A_SelectProgram_DoclistCreate, A_SelectProgram_Export,
+   A_SelectProgram_Import, A_SelectProgram_MessageCreate,
+   A_SelectProgram_Parser, al_Actions, bar_Top, bardock_Top, barmngr_Main,
+   bbtn_Activate, bbtn_CancelProfile, bbtn_CreateDocumentList, bbtn_Deactivate,
+   bbtn_NewProfile, bbtn_SaveProfile, bipnl_Title, btn_ScriptName_DoclistCreate,
+   btn_ScriptName_Export, btn_ScriptName_MessageCreate,
+   btn_SelectProgram_Import, btn_SelectProgram_Parser, bvl_Details_Row1_Col1,
+   bvl_Details_Row1_Col2, bvl_Details_Row2_Col1, bvl_Details_Row3_Col1,
+   bvl_Details_Row4_Col1, bvl_Details_Row5_Col1, chk_ProcessMessage,
+   cmb_DataFormat, cmb_Direction, cmb_MessageType, cmb_Standard,
+   cmb_TransportChannel, ds_EDIPROF, dtp_DocumentSelectionStartTS,
+   edt_Description, edt_FileNameExtension, edt_FileNamePattern, edt_GLNOwn,
+   edt_GLNPartner, edt_Matchcode, edt_ScriptName_DoclistCreate,
+   edt_ScriptName_Export, edt_ScriptName_Import, edt_ScriptName_MessageCreate,
+   edt_ScriptName_Parser, grd_EDIPROF, lbl_DataFormat,
+   lbl_Details_Row1_Col1_Title, lbl_Details_Row1_Col2_Title,
+   lbl_Details_Row2_Col1_Title, lbl_Details_Row3_Col1_Title,
+   lbl_Details_Row4_Col1_Title, lbl_Details_Row5_Col1_Title, lbl_Direction,
+   lbl_DocumentSelectionStartTS, lbl_Explanation_ProcessMessage,
+   lbl_FileNameExtension, lbl_FileNamePattern, lbl_GLNOwn, lbl_GLNPartner,
+   lbl_Matchcode, lbl_MessageType, lbl_ProcessMessage,
+   lbl_ScriptName_DoclistCreate, lbl_ScriptName_Export, lbl_ScriptName_Import,
+   lbl_ScriptName_MessageCreate, lbl_ScriptName_Parser, lbl_Standard,
+   lbl_TransportChannel, pnl_ControlGroup_ScriptName_DoclistCreate,
+   pnl_ControlGroup_ScriptName_Export, pnl_ControlGroup_ScriptName_Import,
+   pnl_ControlGroup_ScriptName_MessageCreate,
+   pnl_ControlGroup_ScriptName_Parser, pnl_Details, pnl_Details_Row1,
+   pnl_Details_Row1_Col1, pnl_Details_Row1_Col2, pnl_Details_Row2,
+   pnl_Details_Row2_Col1, pnl_Details_Row3, pnl_Details_Row3_Col1,
+   pnl_Details_Row4, pnl_Details_Row4_Col1, pnl_Details_Row5,
+   pnl_Details_Row5_Col1, pnl_Grid, pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDIPROFPO',
+m_cFormId         := '@EDIPROFUI',
+m_cBrowserId      := '@EDIPROF',
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsDataAvailable, bIsEditModeActive, nDirection, bProfileIsActive |
+
+   bIsDataAvailable  := m_oEDIPROF.CbDataAvailable,
+   bIsEditModeActive := EditModes(m_oEDIPROF),
+   nDirection        := m_oEDIPROF:DIRECTION,
+   bProfileIsActive  := m_oEDIPROF:ACTIVE,
+
+   // Enabled-Zustand der Actions steuern
+   A_New.Enabled                := not bIsEditModeActive,
+   A_Save.Enabled               := bIsEditModeActive,
+   A_Cancel.Enabled             := bIsEditModeActive,
+   A_Activate.Enabled           := not bProfileIsActive and bIsDataAvailable and not bIsEditModeActive,
+   A_Deactivate.Enabled         := bProfileIsActive and bIsDataAvailable and not bIsEditModeActive,
+   A_CreateDocumentList.Enabled := bIsDataAvailable and not bIsEditModeActive and nDirection = gl_EDI_ProcessDirection_Outbound,
+   A_SelectProgram_Parser.Enabled        := bIsDataAvailable and nDirection = gl_EDI_ProcessDirection_Inbound,
+   A_SelectProgram_Import.Enabled        := bIsDataAvailable and nDirection = gl_EDI_ProcessDirection_Inbound,
+   A_SelectProgram_MessageCreate.Enabled := bIsDataAvailable and nDirection = gl_EDI_ProcessDirection_Outbound,
+   A_SelectProgram_Export.Enabled        := bIsDataAvailable and nDirection = gl_EDI_ProcessDirection_Outbound,
+   A_SelectProgram_DoclistCreate.Enabled := bIsDataAvailable and nDirection = gl_EDI_ProcessDirection_Outbound,     
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_ProfileManagementGUI',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_ProfileManagementGUI_GUI', oForm),
+
+   // Haupttabelle (EDIPROF)
+   m_oEDIPROF := DbGetTable(m_oDM_GUI, waEDIPROF),
+   m_oEDIPROF.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDIPROF, ds_EDIPROF, grd_EDIPROF, m_cBrowserId, true),
+
+   m_oEDIDOCL := DbGetTable(m_oDM, waEDIDOCL),
+
+   // Flags initialisieren
+   m_bExplicitInsert := false,
+   m_bExplicitPost   := false,
+
+   // Events zuweisen
+   AssignEvent(ds_EDIPROF, 'OnScroll_Update', 'ds_EDIPROFScroll_Update'),
+   AssignEvent(m_oEDIPROF, 'BeforeInsert',    'EDIPROF_BeforeInsert'),
+   AssignEvent(m_oEDIPROF, 'BeforePost',      'EDIPROF_BeforePost'),
+end,
+
+//******************************************************************************
+// Diese Funktion zeigt den Programmauswahldialog an und schreibt das ggf. aus-
+// gewählte Programm in das übergebenen Feld.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SelectProgram(oTable:O, cFieldName:C)
+| aResult, cProgramName, nCurrentRecord |
+
+   //***************************************************************************
+   // Diese Funktion ermittelt anhand der Prozessrichtung und des
+   // Prozessschrittes die verfügbaren Script-Pfade.
+   //
+   // @result: array - Script-Pfade
+   //***************************************************************************
+   function EDI_DetermineAvailableScriptPaths(nProcessDirection:N, cDestinationFieldName:C)
+   | cBasePath, cProcessStepString |
+
+      cProcessStepString := '',
+      case nProcessDirection
+         of gl_EDI_ProcessDirection_Inbound  ::
+            cBasePath := gl_EDI_ScriptsPathInbound,
+            case cDestinationFieldName
+               of 'SCRIPT_TRA' :: cProcessStepString := '10_transport',
+               of 'SCRIPT_IDT' :: cProcessStepString := '20_identification',
+               of 'SCRIPT_PAR' :: cProcessStepString := '30_parsing',
+               of 'SCRIPT_IMP' :: cProcessStepString := '40_import',
+            endcase,
+
+         of gl_EDI_ProcessDirection_Outbound ::
+            cBasePath := gl_EDI_ScriptsPathOutbound,
+            case cDestinationFieldName
+               of 'SCRIPT_DCL' :: cProcessStepString := '10_documentlist',
+               of 'SCRIPT_EXP' :: cProcessStepString := '20_inhouseformat',
+               of 'SCRIPT_MSG' :: cProcessStepString := '30_createmessage',
+               of 'SCRIPT_TRA' :: cProcessStepString := '40_transport',
+            endcase,
+
+         otherwise
+            SetError('Invalid process direction: ' + str(nProcessDirection)),
+      endcase,
+
+      result := {
+         cBasePath + '\' + cProcessStepString + '\standard',
+         cBasePath + '\' + cProcessStepString + '\custom'
+      },
+   end,
+
+   cProgramName := trim(AsString(cFieldName, oTable)),
+   if empty(cProgramName) then
+      nCurrentRecord := 0,
+   else
+      nCurrentRecord := Lookup(waDabPRG, 'BEZ', {{cProgramName}}, 'PROGNR'),
+   endif,
+
+   aResult := Call(
+      'EDI\Management\ProgramSelectionDialog\GUI',
+      m_oDM,
+      nCurrentRecord,
+      EDI_DetermineAvailableScriptPaths(oTable:DIRECTION, cFieldName)
+   ),
+   if aResult[1] > 0 then
+      if not EditModes(oTable) then
+         oTable.CbEdit(),
+      endif,
+      oTable.CbReplace(cFieldName, aResult[2]),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Name/Matchcode des aktuellen Profils.
+// @result: string - Name/Matchcode des aktuellen Profils
+//******************************************************************************
+function EDIPROF_GetName()
+   result := trim(m_oEDIPROF:MATCHCODE),
+end,
+
+//******************************************************************************
+// Diese Funktion validiert alle relevanten Felder, bevor das Profil aktiviert
+// werden kann.
+//
+// @result: boolean - Alle Felder sind valide Ja/Nein
+//******************************************************************************
+function ValidateFieldsForActivation(cErrorsStringList:R)
+| bErrorFlag |
+
+   //***************************************************************************
+   function ProgramExists(cProgramName:C)
+      result := lookup(waDabPRG, 'BEZ', {{cProgramName}}, 'not Eof()', false),
+   end,
+
+   //***************************************************************************
+   function GetFieldDisplayName(oTable:O, cFieldName:C)
+   | oField |
+
+      oField := oTable.CbFieldByName(cFieldName),
+      result := oField.DisplayLabel,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion wird dazu genutzt, um alle Felder mit ungültigem Inhalt zur
+   // Fehlerliste cErrorsStringList hinzuzufügen.
+   //
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function AppendErrorMessage(oTable:O, cFieldName:C, cErrorMessage:C)
+      cErrorsStringList := ConcatTrenner(
+         cErrorsStringList,
+         'Feld "' + GetFieldDisplayName(oTable, cFieldName) + '": ' + cErrorMessage,
+         CRLF
+      ),
+   end,
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der Inhalt des Feldes mit dem übergebenen Namen
+   // leer ist und schreibt dann ggf. eine entsprechende Fehlermeldung bzw.
+   // setzt das Error-Flag bErrorFlag.
+   //
+   // @result: boolean - Feldinhalt gültig Ja/Nein
+   //***************************************************************************
+   function CheckField_NotEmpty(oTable:O, cFieldName:C)
+      result := true,
+      if empty(AsVariant(cFieldName, oTable)) then
+         AppendErrorMessage(oTable, cFieldName, 'Darf nicht leer sein'),
+         bErrorFlag := true,
+         result     := false,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion prüft, ob der Inhalt eines SCRIPT_*-Feldes gültig ist.
+   // @result: null - keine Rückgabe
+   //***************************************************************************
+   function CheckScriptField_NotEmptyAndProgramExists(oTable:O, cFieldName:C)
+   | cFieldContent |
+
+      if CheckField_NotEmpty(oTable, cFieldName) then
+         cFieldContent := AsVariant(cFieldName, oTable),
+         if not ProgramExists(cFieldContent) then
+            AppendErrorMessage(oTable, cFieldName, 'Script mit dem Namen <' + cFieldContent + '> muss existieren'),
+            bErrorFlag := true,
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   function IsEdifactStandardValid(oEDIPROF)
+      Result :=
+         (EDI_Consts_MessageStandard_IsEdifactStandard(oEDIPROF:STANDARD) and
+          CheckField_NotEmpty(oEDIPROF, 'MSG_TYPE') and
+          CheckField_NotEmpty(oEDIPROF, 'GLN_OWN') and
+          CheckField_NotEmpty(oEDIPROF, 'GLN_PART')) or
+          not EDI_Consts_MessageStandard_IsEdifactStandard(oEDIPROF:STANDARD),
+
+      if not result then
+         AppendErrorMessage(oEDIPROF, 'STANDARD', 'EDIFACT-Standard-Felder müssen befüllt werden.'),
+      endif,
+   end,
+
+   //***************************************************************************
+   function IsIndividualFormatValid(oEDIPROF)
+      Result :=
+         (oEDIPROF:STANDARD = gl_EDI_MessageStandard_Individual and
+          CheckField_NotEmpty(oEDIPROF, 'DATA_FMT')) or
+          oEDIPROF:STANDARD <> gl_EDI_MessageStandard_Individual,
+
+      if not result then
+         AppendErrorMessage(oEDIPROF, 'DATA_FMT', 'Data-Format muss ausgewählt werden.'),
+      endif,
+   end,
+
+   cErrorsStringList := '',
+   bErrorFlag        := false,
+
+   case m_oEDIPROF:DIRECTION
+      of gl_EDI_ProcessDirection_Inbound ::
+         CheckScriptField_NotEmptyAndProgramExists(m_oEDIPROF, 'SCRIPT_PAR'),
+       //  CheckScriptField_NotEmptyAndProgramExists(m_oEDIPROF, 'SCRIPT_IMP'),   //todo
+
+      of gl_EDI_ProcessDirection_Outbound ::
+         CheckScriptField_NotEmptyAndProgramExists(m_oEDIPROF, 'SCRIPT_DCL'),
+         CheckScriptField_NotEmptyAndProgramExists(m_oEDIPROF, 'SCRIPT_EXP'),
+         CheckScriptField_NotEmptyAndProgramExists(m_oEDIPROF, 'SCRIPT_MSG'),
+
+      otherwise
+         SetError('Invalid process direction: ' + str(m_oEDIPROF:DIRECTION)),
+   endcase,
+
+   result := not bErrorFlag and IsEdifactStandardValid(m_oEDIPROF) and IsIndividualFormatValid(m_oEDIPROF),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der EDIPROF
+//******************************************************************************
+function ds_EDIPROFScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern des Datensatzes
+//******************************************************************************
+function EDIPROF_BeforePost( Sender )
+   if not m_bExplicitPost then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor der Neuanlage eines Datensatzes
+//******************************************************************************
+function EDIPROF_BeforeInsert( Sender )
+   if not m_bExplicitInsert then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Standard-Eventhandler beim Ändern einer TBeCombo
+//******************************************************************************
+function TBeCombo_DefaultOnChangeHandler(Sender)
+| oTable |
+
+   oTable := Sender.DataSource.DataSet,
+   if EditModes(oTable) then
+      oTable.CbReplace(Sender.DataField, val(Sender.Value)),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oEDIPROF),
+   if not bCanClose then
+      MessageDlg('Das Fenster kann nicht geschlossen werden, weil noch nicht gespeicherte Änderungen vorhanden sind.', mtWarning),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Belegliste erstellen
+//******************************************************************************
+function A_CreateDocumentListExecute( Sender )
+| cErrorStringList, oProgressCallback, aResult, nBelegListCount |
+
+   cErrorStringList := '',
+   nBelegListCount  := 0,
+
+   if ValidateFieldsForActivation(cErrorStringList) then
+      startseq
+         oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+         startseq
+            ProgressbarShow('', 'Belegliste erstellen für Profil ' + EDIPROF_GetName(), true),
+            startseq
+               m_oDM.CbTransaction_Begin(),
+               startseq
+                  nBelegListCount := m_oEDIDOCL.CbRecordCount,
+                  aResult := Call(m_oEDIPROF:SCRIPT_DCL, m_oDM, m_oEDIPROF:ID, oProgressCallback),
+                  if EDI_ProcessResult_IsSuccess(aResult) then
+                     m_oDM.CbTransaction_Commit(),                              writeln("nBelegListCount/nAktuellerBelegListCount", nBelegListCount, m_oEDIDOCL.CbRecordCount),
+                     if nBelegListCount < m_oEDIDOCL.CbRecordCount then
+                        MessageDlg('Belegliste wurde erfolgreich erstellt.', mtInformation),
+                     else
+                        MessageDlg('Vorgang erfolgreich. Keine neue Belegliste vorhanden.', mtInformation),
+                     endif,
+                  else
+                     MessageDlg('Belegliste konnte nicht erstellt werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+                  endif,
+               always
+                  if m_oDM.CbTransaction_TryRollback() then
+                     DbResetDM(m_oDM),
+                  endif,
+               stopseq,
+            always
+               ProgressbarHide(),
+            stopseq,
+         always
+            DestroyObject(oProgressCallback),
+         stopseq,
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim manuellen Erstellen einer Belegliste', GetErrorObj()),
+      stopseq,
+   else
+      ShowErrorLog(
+         'Belegliste für Profil <' + EDIPROF_GetName() + '> kann nicht erstellt werden, weil nicht alle notwendigen Feldinhalte gültig sind.',
+         cErrorStringList
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Script wählen (Beleglisten erstellen)
+//******************************************************************************
+function A_SelectProgram_DoclistCreateExecute( Sender )
+   SelectProgram(m_oEDIPROF, 'SCRIPT_DCL'),
+end,
+
+//******************************************************************************
+// Action: Script wählen (Nachrichten erstellen)
+//******************************************************************************
+function A_SelectProgram_MessageCreateExecute( Sender )
+   SelectProgram(m_oEDIPROF, 'SCRIPT_MSG'),
+end,
+
+//******************************************************************************
+// Action: Script wählen (Export)
+//******************************************************************************
+function A_SelectProgram_ExportExecute( Sender )
+   SelectProgram(m_oEDIPROF, 'SCRIPT_EXP'),
+end,
+
+//******************************************************************************
+// Action: Script wählen (Import)
+//******************************************************************************
+function A_SelectProgram_ImportExecute( Sender )
+   SelectProgram(m_oEDIPROF, 'SCRIPT_IMP'),
+end,
+
+//******************************************************************************
+// Action: Script wählen (Parser)
+//******************************************************************************
+function A_SelectProgram_ParserExecute( Sender )
+   SelectProgram(m_oEDIPROF, 'SCRIPT_PAR'),
+end,
+
+//******************************************************************************
+// Action: Änderungen am Profil verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDIPROF.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Profil speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| oException |
+
+   startseq
+      m_bExplicitPost := true,
+      startseq
+         m_oEDIPROF.CbPost(),
+      always
+         m_bExplicitPost := false,
+      stopseq,
+   onerror
+      oException := GetErrorObj(),
+      // Fehler nur behandeln, sofern keine ECheckRightsAbort-Exception.
+      // Exceptions vom Typ ECheckRightsAbort werden standardmäßig von be
+      // behandelt.
+      if not ClassOf(oException, 'ECheckRightsAbort') then
+         GU_ShowStdErrorMessage('Fehler beim Speichern des Profils <' + EDIPROF_GetName() + '>', oException),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Anlegen eines neuen Profils
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      m_bExplicitInsert := true,
+      startseq
+         m_oEDIPROF.CbAppend(),
+      always
+         m_bExplicitInsert := false,
+      stopseq,
+      MyFocusControl(oForm, edt_Matchcode),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anlegen eines neuen Profils', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//  Action: Profil aktivieren
+//******************************************************************************
+function A_ActivateExecute( Sender )
+| cErrorStringList |
+   cErrorStringList := '',
+   startseq
+      if ValidateFieldsForActivation(cErrorStringList) then
+         m_bExplicitPost := true,
+         startseq
+            m_oEDIPROF.CbEdit(),
+            m_oEDIPROF:ACTIVE := true,
+            m_oEDIPROF.CbPost(),
+         always
+            m_bExplicitPost := false,
+         stopseq,
+      else
+         MessageDlg('Bitte geben Sie alle benötigte Informationen ein, bevor Sie das Profil aktivieren.' + CRLF
+          + cErrorStringList, mtWarning)
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktivieren des Profils', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//  Action: Profil deaktivieren
+//******************************************************************************
+function A_DeactivateExecute( Sender )
+   startseq
+      m_bExplicitPost := true,
+      startseq
+         m_oEDIPROF.CbEdit(),
+         m_oEDIPROF:ACTIVE := false,
+         m_oEDIPROF.CbPost(),
+      always
+         m_bExplicitPost := false,
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Deaktivieren des Profils', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Profilverwaltung',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 295,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Activate                                := FindObject(oForm, "A_Activate"),
+   A_Cancel                                  := FindObject(oForm, "A_Cancel"),
+   A_CreateDocumentList                      := FindObject(oForm, "A_CreateDocumentList"),
+   A_Deactivate                              := FindObject(oForm, "A_Deactivate"),
+   A_New                                     := FindObject(oForm, "A_New"),
+   A_Save                                    := FindObject(oForm, "A_Save"),
+   A_SelectProgram_DoclistCreate             := FindObject(oForm, "A_SelectProgram_DoclistCreate"),
+   A_SelectProgram_Export                    := FindObject(oForm, "A_SelectProgram_Export"),
+   A_SelectProgram_Import                    := FindObject(oForm, "A_SelectProgram_Import"),
+   A_SelectProgram_MessageCreate             := FindObject(oForm, "A_SelectProgram_MessageCreate"),
+   A_SelectProgram_Parser                    := FindObject(oForm, "A_SelectProgram_Parser"),
+   al_Actions                                := FindObject(oForm, "al_Actions"),
+   bar_Top                                   := FindObject(oForm, "bar_Top"),
+   bardock_Top                               := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                              := FindObject(oForm, "barmngr_Main"),
+   bbtn_Activate                             := FindObject(oForm, "bbtn_Activate"),
+   bbtn_CancelProfile                        := FindObject(oForm, "bbtn_CancelProfile"),
+   bbtn_CreateDocumentList                   := FindObject(oForm, "bbtn_CreateDocumentList"),
+   bbtn_Deactivate                           := FindObject(oForm, "bbtn_Deactivate"),
+   bbtn_NewProfile                           := FindObject(oForm, "bbtn_NewProfile"),
+   bbtn_SaveProfile                          := FindObject(oForm, "bbtn_SaveProfile"),
+   bipnl_Title                               := FindObject(oForm, "bipnl_Title"),
+   btn_ScriptName_DoclistCreate              := FindObject(oForm, "btn_ScriptName_DoclistCreate"),
+   btn_ScriptName_Export                     := FindObject(oForm, "btn_ScriptName_Export"),
+   btn_ScriptName_MessageCreate              := FindObject(oForm, "btn_ScriptName_MessageCreate"),
+   btn_SelectProgram_Import                  := FindObject(oForm, "btn_SelectProgram_Import"),
+   btn_SelectProgram_Parser                  := FindObject(oForm, "btn_SelectProgram_Parser"),
+   bvl_Details_Row1_Col1                     := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row1_Col2                     := FindObject(oForm, "bvl_Details_Row1_Col2"),
+   bvl_Details_Row2_Col1                     := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   bvl_Details_Row3_Col1                     := FindObject(oForm, "bvl_Details_Row3_Col1"),
+   bvl_Details_Row4_Col1                     := FindObject(oForm, "bvl_Details_Row4_Col1"),
+   bvl_Details_Row5_Col1                     := FindObject(oForm, "bvl_Details_Row5_Col1"),
+   chk_ProcessMessage                        := FindObject(oForm, "chk_ProcessMessage"),
+   cmb_DataFormat                            := FindObject(oForm, "cmb_DataFormat"),
+   cmb_Direction                             := FindObject(oForm, "cmb_Direction"),
+   cmb_MessageType                           := FindObject(oForm, "cmb_MessageType"),
+   cmb_Standard                              := FindObject(oForm, "cmb_Standard"),
+   cmb_TransportChannel                      := FindObject(oForm, "cmb_TransportChannel"),
+   ds_EDIPROF                                := FindObject(oForm, "ds_EDIPROF"),
+   dtp_DocumentSelectionStartTS              := FindObject(oForm, "dtp_DocumentSelectionStartTS"),
+   edt_Description                           := FindObject(oForm, "edt_Description"),
+   edt_FileNameExtension                     := FindObject(oForm, "edt_FileNameExtension"),
+   edt_FileNamePattern                       := FindObject(oForm, "edt_FileNamePattern"),
+   edt_GLNOwn                                := FindObject(oForm, "edt_GLNOwn"),
+   edt_GLNPartner                            := FindObject(oForm, "edt_GLNPartner"),
+   edt_Matchcode                             := FindObject(oForm, "edt_Matchcode"),
+   edt_ScriptName_DoclistCreate              := FindObject(oForm, "edt_ScriptName_DoclistCreate"),
+   edt_ScriptName_Export                     := FindObject(oForm, "edt_ScriptName_Export"),
+   edt_ScriptName_Import                     := FindObject(oForm, "edt_ScriptName_Import"),
+   edt_ScriptName_MessageCreate              := FindObject(oForm, "edt_ScriptName_MessageCreate"),
+   edt_ScriptName_Parser                     := FindObject(oForm, "edt_ScriptName_Parser"),
+   grd_EDIPROF                               := FindObject(oForm, "grd_EDIPROF"),
+   lbl_DataFormat                            := FindObject(oForm, "lbl_DataFormat"),
+   lbl_Details_Row1_Col1_Title               := FindObject(oForm, "lbl_Details_Row1_Col1_Title"),
+   lbl_Details_Row1_Col2_Title               := FindObject(oForm, "lbl_Details_Row1_Col2_Title"),
+   lbl_Details_Row2_Col1_Title               := FindObject(oForm, "lbl_Details_Row2_Col1_Title"),
+   lbl_Details_Row3_Col1_Title               := FindObject(oForm, "lbl_Details_Row3_Col1_Title"),
+   lbl_Details_Row4_Col1_Title               := FindObject(oForm, "lbl_Details_Row4_Col1_Title"),
+   lbl_Details_Row5_Col1_Title               := FindObject(oForm, "lbl_Details_Row5_Col1_Title"),
+   lbl_Direction                             := FindObject(oForm, "lbl_Direction"),
+   lbl_DocumentSelectionStartTS              := FindObject(oForm, "lbl_DocumentSelectionStartTS"),
+   lbl_Explanation_ProcessMessage            := FindObject(oForm, "lbl_Explanation_ProcessMessage"),
+   lbl_FileNameExtension                     := FindObject(oForm, "lbl_FileNameExtension"),
+   lbl_FileNamePattern                       := FindObject(oForm, "lbl_FileNamePattern"),
+   lbl_GLNOwn                                := FindObject(oForm, "lbl_GLNOwn"),
+   lbl_GLNPartner                            := FindObject(oForm, "lbl_GLNPartner"),
+   lbl_Matchcode                             := FindObject(oForm, "lbl_Matchcode"),
+   lbl_MessageType                           := FindObject(oForm, "lbl_MessageType"),
+   lbl_ProcessMessage                        := FindObject(oForm, "lbl_ProcessMessage"),
+   lbl_ScriptName_DoclistCreate              := FindObject(oForm, "lbl_ScriptName_DoclistCreate"),
+   lbl_ScriptName_Export                     := FindObject(oForm, "lbl_ScriptName_Export"),
+   lbl_ScriptName_Import                     := FindObject(oForm, "lbl_ScriptName_Import"),
+   lbl_ScriptName_MessageCreate              := FindObject(oForm, "lbl_ScriptName_MessageCreate"),
+   lbl_ScriptName_Parser                     := FindObject(oForm, "lbl_ScriptName_Parser"),
+   lbl_Standard                              := FindObject(oForm, "lbl_Standard"),
+   lbl_TransportChannel                      := FindObject(oForm, "lbl_TransportChannel"),
+   pnl_ControlGroup_ScriptName_DoclistCreate := FindObject(oForm, "pnl_ControlGroup_ScriptName_DoclistCreate"),
+   pnl_ControlGroup_ScriptName_Export        := FindObject(oForm, "pnl_ControlGroup_ScriptName_Export"),
+   pnl_ControlGroup_ScriptName_Import        := FindObject(oForm, "pnl_ControlGroup_ScriptName_Import"),
+   pnl_ControlGroup_ScriptName_MessageCreate := FindObject(oForm, "pnl_ControlGroup_ScriptName_MessageCreate"),
+   pnl_ControlGroup_ScriptName_Parser        := FindObject(oForm, "pnl_ControlGroup_ScriptName_Parser"),
+   pnl_Details                               := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1                          := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1                     := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row1_Col2                     := FindObject(oForm, "pnl_Details_Row1_Col2"),
+   pnl_Details_Row2                          := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_Details_Row2_Col1                     := FindObject(oForm, "pnl_Details_Row2_Col1"),
+   pnl_Details_Row3                          := FindObject(oForm, "pnl_Details_Row3"),
+   pnl_Details_Row3_Col1                     := FindObject(oForm, "pnl_Details_Row3_Col1"),
+   pnl_Details_Row4                          := FindObject(oForm, "pnl_Details_Row4"),
+   pnl_Details_Row4_Col1                     := FindObject(oForm, "pnl_Details_Row4_Col1"),
+   pnl_Details_Row5                          := FindObject(oForm, "pnl_Details_Row5"),
+   pnl_Details_Row5_Col1                     := FindObject(oForm, "pnl_Details_Row5_Col1"),
+   pnl_Grid                                  := FindObject(oForm, "pnl_Grid"),
+   pnl_Main                                  := FindObject(oForm, "pnl_Main"),
+   pnl_Top                                   := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   AssignEvent(cmb_Standard, 'OnChange', 'TBeCombo_DefaultOnChangeHandler'),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   btn_ScriptName_DoclistCreate.Caption := '',
+   btn_ScriptName_Export.Caption        := '',
+   btn_ScriptName_MessageCreate.Caption := '',
+   btn_SelectProgram_Import.Caption     := '',
+   btn_SelectProgram_Parser.Caption     := '',
+
+   // Edits und Combos mit Tabellenfeldern verbinden
+   edt_Matchcode.DataSource         := ds_EDIPROF,
+   edt_Matchcode.DataField          := 'MATCHCODE',
+   edt_Description.DataSource       := ds_EDIPROF,
+   edt_Description.DataField        := 'MEMO',
+   cmb_Direction.DataSource         := ds_EDIPROF,
+   cmb_Direction.DataField          := 'DIRECTION',
+   cmb_TransportChannel.DataSource  := ds_EDIPROF,
+   cmb_TransportChannel.DataField   := 'EDITRCH_ID',
+   cmb_Standard.DataSource          := ds_EDIPROF,
+   cmb_Standard.DataField           := 'STANDARD',
+   cmb_DataFormat.DataSource        := ds_EDIPROF,
+   cmb_DataFormat.DataField         := 'DATA_FMT',
+   cmb_MessageType.DataSource       := ds_EDIPROF,
+   cmb_MessageType.DataField        := 'MSG_TYPE',
+   edt_GLNOwn.DataSource            := ds_EDIPROF,
+   edt_GLNOwn.DataField             := 'GLN_OWN',
+   edt_GLNPartner.DataSource        := ds_EDIPROF,
+   edt_GLNPartner.DataField         := 'GLN_PART',
+   dtp_DocumentSelectionStartTS.DataSource := ds_EDIPROF,
+   dtp_DocumentSelectionStartTS.DataField  := 'BELEGE_AB',
+   chk_ProcessMessage.DataSource    := ds_EDIPROF,
+   chk_ProcessMessage.DataField     := 'PROCESS',
+   edt_FileNamePattern.DataSource   := ds_EDIPROF,
+   edt_FileNamePattern.DataField    := 'FILEN_PAT',
+   edt_FileNameExtension.DataSource := ds_EDIPROF,
+   edt_FileNameExtension.DataField  := 'FILEN_EXT',
+   edt_ScriptName_Parser.DataSource        := ds_EDIPROF,
+   edt_ScriptName_Parser.DataField         := 'SCRIPT_PAR',
+   edt_ScriptName_Import.DataSource        := ds_EDIPROF,
+   edt_ScriptName_Import.DataField         := 'SCRIPT_IMP',
+   edt_ScriptName_DoclistCreate.DataSource := ds_EDIPROF,
+   edt_ScriptName_DoclistCreate.DataField  := 'SCRIPT_DCL',
+   edt_ScriptName_Export.DataSource        := ds_EDIPROF,
+   edt_ScriptName_Export.DataField         := 'SCRIPT_EXP',
+   edt_ScriptName_MessageCreate.DataSource := ds_EDIPROF,
+   edt_ScriptName_MessageCreate.DataField  := 'SCRIPT_MSG',
+
+   // Labels mit Tabellenfeldern verbinden
+   lbl_Matchcode.DataSource               := ds_EDIPROF,
+   lbl_Matchcode.DataField                := 'MATCHCODE',
+   lbl_Matchcode.UseDefaultCaption        := true,
+   lbl_Details_Row3_Col1_Title.DataSource        := ds_EDIPROF,
+   lbl_Details_Row3_Col1_Title.DataField         := 'MEMO',
+   lbl_Details_Row3_Col1_Title.UseDefaultCaption := true,
+   lbl_Direction.DataSource               := ds_EDIPROF,
+   lbl_Direction.DataField                := 'DIRECTION',
+   lbl_Direction.UseDefaultCaption        := true,
+   lbl_TransportChannel.DataSource        := ds_EDIPROF,
+   lbl_TransportChannel.DataField         := 'EDITRCH_ID',
+   lbl_TransportChannel.UseDefaultCaption := true,
+   lbl_Standard.DataSource                := ds_EDIPROF,
+   lbl_Standard.DataField                 := 'STANDARD',
+   lbl_Standard.UseDefaultCaption         := true,
+   lbl_DataFormat.DataSource              := ds_EDIPROF,
+   lbl_DataFormat.DataField               := 'DATA_FMT',
+   lbl_DataFormat.UseDefaultCaption       := true,
+   lbl_MessageType.DataSource             := ds_EDIPROF,
+   lbl_MessageType.DataField              := 'MSG_TYPE',
+   lbl_MessageType.UseDefaultCaption      := true,
+   lbl_GLNOwn.DataSource                  := ds_EDIPROF,
+   lbl_GLNOwn.DataField                   := 'GLN_OWN',
+   lbl_GLNOwn.UseDefaultCaption           := true,
+   lbl_GLNPartner.DataSource              := ds_EDIPROF,
+   lbl_GLNPartner.DataField               := 'GLN_PART',
+   lbl_GLNPartner.UseDefaultCaption       := true,
+   lbl_DocumentSelectionStartTS.DataSource        := ds_EDIPROF,
+   lbl_DocumentSelectionStartTS.DataField         := 'BELEGE_AB',
+   lbl_DocumentSelectionStartTS.UseDefaultCaption := true,
+   lbl_ProcessMessage.DataSource           := ds_EDIPROF,
+   lbl_ProcessMessage.DataField            := 'PROCESS',
+   lbl_ProcessMessage.UseDefaultCaption    := true,
+   lbl_FileNamePattern.DataSource          := ds_EDIPROF,
+   lbl_FileNamePattern.DataField           := 'FILEN_PAT',
+   lbl_FileNamePattern.UseDefaultCaption   := true,
+   lbl_FileNameExtension.DataSource        := ds_EDIPROF,
+   lbl_FileNameExtension.DataField         := 'FILEN_EXT',
+   lbl_FileNameExtension.UseDefaultCaption := true,
+   lbl_ScriptName_Import.DataSource                := ds_EDIPROF,
+   lbl_ScriptName_Import.DataField                 := 'SCRIPT_IMP',
+   lbl_ScriptName_Import.UseDefaultCaption         := true,
+   lbl_ScriptName_DoclistCreate.DataSource         := ds_EDIPROF,
+   lbl_ScriptName_DoclistCreate.DataField          := 'SCRIPT_DCL',
+   lbl_ScriptName_DoclistCreate.UseDefaultCaption  := true,
+   lbl_ScriptName_MessageCreate.DataSource         := ds_EDIPROF,
+   lbl_ScriptName_MessageCreate.DataField          := 'SCRIPT_MSG',
+   lbl_ScriptName_MessageCreate.UseDefaultCaption  := true,
+   lbl_ScriptName_Parser.Caption                   := 'Parsen/Inhouseformat erstellen',
+   lbl_ScriptName_Export.Caption                   := 'Inhouseformat erstellen',
+
+   SetBrowserBeAttribID(grd_EDIPROF, 'EDITRCH_ID', gl_EDI_MMTID_TransportChannel),
+   SetBrowserBeAttribID(grd_EDIPROF, 'DIRECTION',  gl_EDI_MMTID_ProcessDirection),
+   SetBrowserBeAttribID(grd_EDIPROF, 'STANDARD',   gl_EDI_MMTID_MessageStandard),
+   SetBrowserBeAttribID(grd_EDIPROF, 'MSG_TYPE',   gl_EDI_MMTID_MessageType),
+   SetBrowserBeAttribID(grd_EDIPROF, 'DATA_FMT',   gl_EDI_MMTID_DataFormat),
+   
+
+   // Tabellen-gebundene Controls sowie Anzeige-Status von Actions manuell
+   // aktualisieren.
+   // Dies ist insbesondere wichtig, damit der ReadOnly-Zustand von Controls
+   // initial richtig angezeigt wird.
+   m_oEDIPROF.CbRefresh(),
+   ActionsEnabled(),     
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({
+                         edt_Matchcode,
+                         cmb_Direction,
+                         cmb_TransportChannel,
+                         cmb_Standard,
+                         cmb_DataFormat,
+                         cmb_MessageType,
+                         edt_GLNOwn,
+                         edt_GLNPartner,
+                         dtp_DocumentSelectionStartTS,
+                         chk_ProcessMessage,
+                         lbl_ProcessMessage,
+                         edt_FileNamePattern,
+                         edt_FileNameExtension,
+                         edt_ScriptName_Parser,
+                         edt_ScriptName_Import,
+                         edt_ScriptName_DoclistCreate,
+                         edt_ScriptName_Export,
+                         edt_ScriptName_MessageCreate
+                         }),
+
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row1_Col1_Title,
+                                        lbl_Details_Row1_Col2_Title,
+                                        lbl_Details_Row2_Col1_Title,
+                                        lbl_Details_Row3_Col1_Title,
+                                        lbl_Details_Row4_Col1_Title,
+                                        lbl_Details_Row5_Col1_Title}),
+
+   edt_ScriptName_Parser.Font.Name        := 'Courier New',
+   edt_ScriptName_Import.Font.Name        := 'Courier New',
+   edt_ScriptName_DoclistCreate.Font.Name := 'Courier New',
+   edt_ScriptName_Export.Font.Name        := 'Courier New',
+   edt_ScriptName_MessageCreate.Font.Name := 'Courier New',
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

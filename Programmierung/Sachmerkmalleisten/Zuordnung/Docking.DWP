@@ -1,0 +1,628 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking für die Klassfizierung von Datensätzen mit
+//               Sachmerkmalleisten.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+
+   m_cFormClassID,
+   m_cWinPosSaveId,
+   m_cBrowserId,
+
+   m_nLastTableState,
+   m_oDM,
+   m_oMainTable,
+   m_nMainTableWorkarea,
+   m_cMainTableAlias,
+   m_oAssignmentTable,
+   m_nAssignmentTableWorkarea,
+   m_cAssignmentTableIndex,
+   m_cAssignmentTableAlias,
+   m_bAssignmentTableExpicitPost,
+   m_nMasterTableWorkarea,
+
+   m_bIsSynced,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_FirstRecord, A_GotoSML, A_LastRecord, A_New,
+   A_NextRecord, A_PriorRecord, A_Save, actions, al_Main, bar_Main,
+   bardock_Main, barmngr_Main, btn_Cancel, btn_Delete, btn_GotoSML, btn_New,
+   btn_RecFirst, btn_RecLast, btn_RecNext, btn_RecPrior, btn_Save, cmb_SML,
+   ds_AssignmentTable, ds_MainTable, ds_MasterTable, edt_Description,
+   grd_MainTable, ipnl_Attributes, ipnl_Title, lbl_Description, lbl_SML,
+   pnl_Detail, pnl_Grid, pnl_Main, pnl_SMLInfo
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+   , pnl_SMLEdit
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID             := '@SMLZDOCK',
+m_cWinPosSaveId            := '@SMLZDOCK_POS',
+m_cBrowserId               := '@SMLZBRO',
+m_nMainTableWorkarea       := waSmlSTM,
+m_cMainTableAlias          := 'SMLSTM',
+m_nAssignmentTableWorkarea := waSmlZUO,
+m_cAssignmentTableAlias    := 'SMLZUO',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Name der zugeordneten Sachmerkmalleiste
+// @Result: string
+//******************************************************************************
+function SML_GetLabel(nID)
+   Result := Lookup(m_nMainTableWorkarea, 'ID', {{nID}}, 'BEZ', ''),
+end,
+
+//******************************************************************************
+// SLMemo String aus Zuordnungstabelle holen
+// @Result: string
+//******************************************************************************
+function GetSLMemo()
+   Result := m_oAssignmentTable:SL_MEMO,
+end,
+
+//******************************************************************************
+// SLMemo String in Zuordnungstabelle speichern
+// @Result: string
+//******************************************************************************
+function SaveSLMemo(cSLMemo)
+   m_oAssignmentTable:SL_MEMO := cSLMemo,
+end,
+
+//******************************************************************************
+// Oberflächen-Controls aktualisieren
+// @Result: null
+//******************************************************************************
+function RefreshControls()
+   if m_bIsSynced then
+      edt_Description.Text := m_oMainTable:MEMO,
+   else
+      edt_Description.Text := '',
+   endif,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bBrowsing, bTableIsEmpty |
+   bBrowsing     := not EditModes(m_oAssignmentTable),
+   bTableIsEmpty := Eof(m_oAssignmentTable) and Bof(m_oAssignmentTable),
+
+   A_New.Enabled    := bBrowsing,
+   A_Delete.Enabled := bBrowsing and not bTableIsEmpty,
+   A_Save.Enabled   := not bBrowsing,
+   A_Cancel.Enabled := not bBrowsing,
+
+   A_NextRecord.Enabled  := not Eof(m_oAssignmentTable),
+   A_PriorRecord.Enabled := not Bof(m_oAssignmentTable),
+   A_FirstRecord.Enabled := A_PriorRecord.Enabled,
+   A_LastRecord.Enabled  := A_NextRecord.Enabled,
+
+   A_GotoSML.Enabled := not bTableIsEmpty and m_bIsSynced,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_nMasterTableWorkarea := m_oMasterTable.Workarea,
+   if m_nMasterTableWorkarea = waDab010 then
+      m_cAssignmentTableIndex := 'ARTNR_SML_ID',
+   else
+      m_cAssignmentTableIndex := 'VERWEND_WA_VERWEND_ID_SML_ID',
+   endif,
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   m_oDM                        := CreateObject('TBeDbGet', 'DM_SML_Zuordnung', oForm),
+   m_oMainTable                 := DbGetTable(m_oDM, m_nMainTableWorkarea,       m_cMainTableAlias),
+   m_oAssignmentTable           := DbGetTable(m_oDM, m_nAssignmentTableWorkarea, m_cAssignmentTableAlias),
+   m_oAssignmentTable.IndexName := m_cAssignmentTableIndex,
+   GFU_Docking_LinkMasterTableToLocalDataSource(
+      m_oMasterTable,
+      ds_MasterTable,
+      m_nMasterTableWorkarea,
+      'TBeRightsTable'
+   ),
+
+   // Prüfen ob die Master-Tabelle ein ID-Feld hat
+   if Empty(DbField('ID', m_oMasterTable)) then
+      MessageDlg('Master-Tabelle hat kein ID-Feld ' +
+                 '-> Docking kann nicht hier verwendet werden!', mtError),
+      Abort(True),
+   endif,
+
+   GU_LinkTableToGUI(m_oAssignmentTable, ds_AssignmentTable, grd_MainTable, m_cBrowserID, True),
+
+   ds_MainTable.DataSet          := m_oMainTable,
+   m_bAssignmentTableExpicitPost := False,
+   m_nLastTableState             := DbState(m_oAssignmentTable),
+
+   // DataSource-Events zuweisen
+   AssignEvent(ds_AssignmentTable, 'OnScroll_Update', 'ds_AssignmentTableScroll_Update'),
+   AssignEvent(ds_AssignmentTable, 'OnStateChange',   'ds_AssignmentTableStateChange'),
+   // Tabellen-Events für die Zuordnungstabelle zuweisen
+   AssignEvent(m_oAssignmentTable, 'BeforePost',  'AssignmentTable_BeforePost'),
+   AssignEvent(m_oAssignmentTable, 'OnNewRecord', 'AssignmentTable_OnNewRecord'),
+
+   // Controls mit der Haupttabelle verbinden
+   pnl_SMLEdit.DataSource := ds_AssignmentTable,
+   pnl_SMLEdit.DataField  := 'SL_MEMO',
+   cmb_SML.DataSource     := ds_AssignmentTable,
+   cmb_SML.DataField      := 'SML_ID',
+end,
+
+//******************************************************************************
+// Zuordnungstabelle synchronisieren
+// @Result: null
+//******************************************************************************
+function SyncAssignmentTable()
+   // Zuordnungstabelle darf nur gescoped werden, wenn sich diese im Browse-Mode
+   // bzw. nicht im Edit- oder Insert-Mode befindet!
+   if not EditModes(m_oAssignmentTable) then
+      if m_nMasterTableWorkarea = waDab010 then
+         m_oAssignmentTable.CbSetRangeEx({m_oMasterTable:ARTNR}),
+      else
+         m_oAssignmentTable.CbSetRangeEx({m_nMasterTableWorkarea, m_oMasterTable:ID}),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Sachmerkmalleisten-Tabelle synchronisieren
+// @Result: null
+//******************************************************************************
+function SyncMainTable(nSML_ID)
+   m_bIsSynced := DbSeek({nSML_ID}, m_oMainTable),
+end,
+
+//******************************************************************************
+// Einstellungen laden
+// @Result: null
+//******************************************************************************
+function LoadSettings()
+| cSettings |
+   startseq
+      cSettings := GetBeParam('SMLZDOCK'),
+      GU_TBePanel_SetSplitterData(pnl_Grid, StrToArr(cSettings)),
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//******************************************************************************
+// Einstellungen speichern
+// @Result: null
+//******************************************************************************
+function SaveSettings()
+   startseq
+      SetBeParam('SMLZDOCK', ArrToStr(GU_TBePanel_GetSplitterData(pnl_Grid))),
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zuzuordnende Sachmerkmalleiste validieren
+// @Result: boolean
+//******************************************************************************
+function cmb_SML_Validate()
+| nSML_ID |
+
+   Result  := True,
+   nSML_ID := Val(cmb_SML.Value),
+   if not Empty(Trim(cmb_SML.Value)) and
+      InsertMode(m_oAssignmentTable) and
+      SML_ZUO_IsAssigned_Internal(m_oDM,
+                                  m_nMasterTableWorkarea,
+                                  m_oMasterTable:ID,
+                                  m_oAssignmentTable:ARTNR,
+                                  nSML_ID) then
+      Result        := False,
+      cmb_SML.Value := '',
+      SML_ERR_ShowMessage(gl_SML_ERRC_SMLAlreadyAssigned, {SML_GetLabel(nSML_ID)}),
+      MyFocusControl(oForm, cmb_SML),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Wählen der Sachmerkmalleiste
+//******************************************************************************
+function cmb_SMLChange( Sender )
+   SyncMainTable(Val(cmb_SML.Value)),
+   if m_bIsSynced and EditModes(m_oAssignmentTable) then
+      m_oAssignmentTable:SL_MEMO := m_oMainTable:SL_MEMO,
+   endif,
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Zuordnungstabelle
+//******************************************************************************
+function ds_AssignmentTableScroll_Update( Sender )
+   SyncMainTable(m_oAssignmentTable:SML_ID),
+   ActionsEnabled(),
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Beim Wechsel des Zuordnungstabellen-Status wird dem Master der
+//        NoRecordMove gesetzt.
+//******************************************************************************
+function ds_AssignmentTableStateChange( Sender )
+   ActionsEnabled(),
+
+   if DbState(m_oAssignmentTable) <> m_nLastTableState then
+      m_nLastTableState := DbState(m_oAssignmentTable),
+      if EditModes(m_oAssignmentTable) then
+         m_oMasterTable.CbBeginNoRecordMove(),
+      else
+         m_oMasterTable.CbEndNoRecordMove(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   SyncAssignmentTable(),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := not EditModes(m_oAssignmentTable),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   if EditModes(m_oAssignmentTable) then
+      Action := caNone,
+      MessageDlg("Tabelle befindet sich im Editmodus"),
+   else
+      if m_oMasterTable.CbIsNoRecordMove() then
+         m_oMasterTable.CbEndNoRecordMove(),
+      endif,
+      Action := caFree, // = Form zerstören
+   endif,
+
+   startseq
+      SaveSettings(),
+   onerror
+      // Fehler beim Speichern der Einstellungen ignorieren, damit das Fenster
+      // geschlossen werden kann!
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Bei Neuanlage in der Haupttabelle
+//******************************************************************************
+function AssignmentTable_OnNewRecord( Sender )
+   // Neuen Datensatz vorbelegen
+   m_oAssignmentTable:VERWEND_WA := m_nMasterTableWorkarea,
+   // Feld VERWEND_ID muss immer gesetzt werden, damit der Filter der Merkmals-
+   // tabelle 7005 "Sachmerkmalleisten" korrekt funktioniert!
+   m_oAssignmentTable:VERWEND_ID := m_oMasterTable:ID,
+   if m_nMasterTableWorkarea = waDab010 then
+      m_oAssignmentTable:ARTNR := m_oMasterTable:ARTNR,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Posten
+//******************************************************************************
+function AssignmentTable_BeforePost( Sender )
+   if m_bAssignmentTableExpicitPost then
+      m_bAssignmentTableExpicitPost := False,
+   else
+      Abort(True),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Zuordnung löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+| cName |
+   cName := SML_GetLabel(m_oAssignmentTable:SML_ID),
+   if Jn('Zuordnung <' + cName + '> löschen?', False) then
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         SML_DeleteAttributesTable(m_oDM, m_oAssignmentTable:ID),
+         if not DbDelete(m_oAssignmentTable) then
+            MessageDlg('Zuordnung <' + cName + '> konnte nicht gelöscht werden!', mtError),
+         else
+            DbCommit(m_oDM.AdsConnection),
+         endif,
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollback(m_oDM.AdsConnection),
+         endif,
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Neue Zuordnung
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      if DbAppend(m_oAssignmentTable) then
+         MyFocusControl(oForm, cmb_SML),
+      else
+         MessageDlg('Zuordnung konnte nicht angelegt werden!', mtError),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Neuanlage', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Gehe zu Sachmerkmalleiste
+// TODO:   Vorgehen "Positionieren von außen" von Projektmanagement übernehmen!
+//******************************************************************************
+function A_GotoSMLExecute( Sender )
+| oSMLAdmin |
+   oSMLAdmin := GFU_ShowMDIChild('SML_VERWALTUNG', 'Sachmerkmalleisten\Verwaltung\GUI'),
+   if not Empty(oSMLAdmin) then
+      oSMLAdmin := oSMLAdmin.CbHelper.CbInvokeUserDefinedEvent(oSMLAdmin, 'POSITION', {m_oAssignmentTable:SML_ID}),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Springt zum letzten Datensatz
+//******************************************************************************
+function A_LastRecordExecute( Sender )
+   DbGoBottom(m_oAssignmentTable),
+end,
+
+//******************************************************************************
+// Action: Springt zum nächsten Datensatz
+//******************************************************************************
+function A_NextRecordExecute( Sender )
+   DbSkip(1, m_oAssignmentTable),
+end,
+
+//******************************************************************************
+// Action: Springt zum vorherigen Datensatz
+//******************************************************************************
+function A_PriorRecordExecute( Sender )
+   DbSkip(-1, m_oAssignmentTable),
+end,
+
+//******************************************************************************
+// Action: Springt zum ersten Datensatz
+//******************************************************************************
+function A_FirstRecordExecute( Sender )
+   DbGoTop(m_oAssignmentTable),
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| cSLMemo, nSMLID |
+
+   startseq
+      if cmb_SML_Validate() and pnl_SMLEdit.ValidValue then
+         m_bAssignmentTableExpicitPost := True,
+         cSLMemo                       := pnl_SMLEdit.FormVarCalc.PL_Memo,
+         SaveSLMemo(cSLMemo),
+         DbStartTrans(m_oDM.AdsConnection),
+         startseq
+            nSMLID := Val(cmb_SML.Value),
+            SML_StoreAttributesTable(m_oDM,
+                                     m_oAssignmentTable:ID,
+                                     cSLMemo,
+                                     m_oAssignmentTable:VERWEND_WA,
+                                     m_oAssignmentTable:VERWEND_ID,
+                                     m_oAssignmentTable:ARTNR,
+                                     nSMLID),
+            SML_Event_AfterSaveAssignment_Trigger(m_oDM, m_oAssignmentTable),
+            DbCommit(m_oDM.AdsConnection),
+         always
+            if DbInTrans(m_oDM.AdsConnection) then
+               DbRollBack(m_oDM.AdsConnection),
+            endif,
+         stopseq,
+         DbPost(m_oAssignmentTable),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', False) then
+      DbCancel(m_oAssignmentTable),
+      // Sicherheitshalber DbRefresh() auslösen, damit beim Wechseln des Tabs
+      // (z.B.: Im Artikelstamm: Wechseln von "Sachmerkmale" auf "Allgemein")
+      // während sich m_oAssignmentTable im Edit- oder Insert-Mode befindet
+      // keine Anzeigefehler im Grid entstehen.
+      DbRefresh(m_oAssignmentTable),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel           := FindObject(oForm, "A_Cancel"),
+   A_Delete           := FindObject(oForm, "A_Delete"),
+   A_FirstRecord      := FindObject(oForm, "A_FirstRecord"),
+   A_GotoSML          := FindObject(oForm, "A_GotoSML"),
+   A_LastRecord       := FindObject(oForm, "A_LastRecord"),
+   A_New              := FindObject(oForm, "A_New"),
+   A_NextRecord       := FindObject(oForm, "A_NextRecord"),
+   A_PriorRecord      := FindObject(oForm, "A_PriorRecord"),
+   A_Save             := FindObject(oForm, "A_Save"),
+   actions            := FindObject(oForm, "actions"),
+   al_Main            := FindObject(oForm, "al_Main"),
+   bar_Main           := FindObject(oForm, "bar_Main"),
+   bardock_Main       := FindObject(oForm, "bardock_Main"),
+   barmngr_Main       := FindObject(oForm, "barmngr_Main"),
+   btn_Cancel         := FindObject(oForm, "btn_Cancel"),
+   btn_Delete         := FindObject(oForm, "btn_Delete"),
+   btn_GotoSML        := FindObject(oForm, "btn_GotoSML"),
+   btn_New            := FindObject(oForm, "btn_New"),
+   btn_RecFirst       := FindObject(oForm, "btn_RecFirst"),
+   btn_RecLast        := FindObject(oForm, "btn_RecLast"),
+   btn_RecNext        := FindObject(oForm, "btn_RecNext"),
+   btn_RecPrior       := FindObject(oForm, "btn_RecPrior"),
+   btn_Save           := FindObject(oForm, "btn_Save"),
+   cmb_SML            := FindObject(oForm, "cmb_SML"),
+   ds_AssignmentTable := FindObject(oForm, "ds_AssignmentTable"),
+   ds_MainTable       := FindObject(oForm, "ds_MainTable"),
+   ds_MasterTable     := FindObject(oForm, "ds_MasterTable"),
+   edt_Description    := FindObject(oForm, "edt_Description"),
+   grd_MainTable      := FindObject(oForm, "grd_MainTable"),
+   ipnl_Attributes    := FindObject(oForm, "ipnl_Attributes"),
+   ipnl_Title         := FindObject(oForm, "ipnl_Title"),
+   lbl_Description    := FindObject(oForm, "lbl_Description"),
+   lbl_SML            := FindObject(oForm, "lbl_SML"),
+   pnl_Detail         := FindObject(oForm, "pnl_Detail"),
+   pnl_Grid           := FindObject(oForm, "pnl_Grid"),
+   pnl_Main           := FindObject(oForm, "pnl_Main"),
+   pnl_SMLInfo        := FindObject(oForm, "pnl_SMLInfo"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Zusätzliche Oberflächen-Controls erzeugen
+// @Result: null
+//******************************************************************************
+function CreateAdditionalControls()
+   pnl_SMLEdit := CreateObject('TVarCalcPanel', 'pnl_SMLEdit', oForm, pnl_Detail),
+   pnl_SMLEdit.Align                 := alClient,
+   pnl_SMLEdit.AlignWithMargins      := True,
+   pnl_SMLEdit.BevelOuter            := bvNone,
+   pnl_SMLEdit.ReadOnly              := True,
+   pnl_SMLEdit.FormVarCalc.Font.Name := 'Segoe UI',
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt             := 'Sachmerkmale',
+   pnl_SMLEdit.Caption        := '',
+   cmb_SML.Font.Style         := fsBold,
+   cmb_SML.AutoDropDown       := True,
+   edt_Description.Font.Style := fsBold,
+   edt_Description.ReadOnly   := True,
+
+   // 200ms Scroll-Delay für Datenbrowser, damit das TVarCalcPanel nicht bei
+   // jedem Datensatz wechsel aktualisiert werden muss.
+   ds_AssignmentTable.ScrollDelay := 200,
+
+   LoadSettings(),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and Empty(m_oMasterTable) then
+      m_oMasterTable           := DbOpen(waDab010),
+      m_oMasterTable.IndexName := 'DAB011',
+      DbSeek({'B-1'}, m_oMasterTable),
+   endif,
+   InitForm(),
+   LoadGUI(),
+   CreateAdditionalControls(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

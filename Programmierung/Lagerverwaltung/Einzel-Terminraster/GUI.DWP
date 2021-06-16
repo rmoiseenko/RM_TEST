@@ -1,0 +1,784 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//  - Docking "Einzel-Terminraster" bzw. Detail-Terminraster
+//  - Zeigt fast alle einzelnen Bewegungen an und nicht (nur) die Summen je Woche / Tag
+//    -> Einschränkungen: Siehe TODOs im Code oder Doku in Confluence
+//  - Geeignet für die Betrachtung bei Artikeln, bei denen typischerweise eher
+//    wenige Bewegungen vorliegen bzw. fallweise als "Einzelnachweis".
+//
+//  Parameter:
+//      m_aCustomInfoArr:P4 - Array mit Zusatz-Infos
+//                            im Format {
+//                                         (string) Artikel-Nr. Feld-Name (leer = default-Feld, meist 'ARTNR'),
+//                                         (string) optionaler, fester Zusatz zum Fenster-Titel (z.B. "Einzel-Terminraster [Fertigteil]" => 'Fertigteil' übergeben
+//                                      }
+//
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3, m_aCustomInfoArr:P4,
+
+  m_cFormClassID, m_cWinPosSaveId, m_cBrowserId, m_nLastTableState,
+  m_oDM,
+  m_oEinzelTermRastMem,
+  m_nDebugRebuildCount,
+  m_bDebugMode:L:=false,
+  m_nMaxNumberOfLines,
+  m_aStandorte,
+  m_oSelectBox, m_aAusgewaehlteStandorte, m_cAusgewaehlteStandorte,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Baugruppe, A_FertigungsauftragZeigen, A_Kunde, A_Lieferant,
+   A_LieferantBestellRueckstand, A_LieferantDispoPlanung,
+   A_LieferantDisposition, A_ProduktionBedarfsPlanung, A_ProduktionDisposition,
+   A_ProduktionDispositionsPlanung, A_ShowIndiOnlineHelp, A_VerkaufAbgang,
+   actions, al_Main, beipnl_NoDataLoaded, ds_EinzelTermRast, ds_MasterTable,
+   grid_EinzelTermRast, lbl_Debug_Info, mi_auftrag, mi_baugruppe,
+   mi_Fertigungsauftrag, mi_kunde, mi_lieferant, mi_LieferantBestellRueckstand,
+   mi_lieferantdispoplanung, mi_LieferantDisposition,
+   mi_ProduktionBedarfsPlanung, mi_ProduktionDisposition,
+   mi_ProduktionDispositionsPlanung, mi_ShowIndiOnlineHelp, mi_Trenner1,
+   mi_Trenner2, mi_Trenner3, mi_Trenner4, pnl_Debug, pnl_Main, pnl_top,
+   popupMenu_Browser
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@ETRMRAST",
+m_cWinPosSaveId := "@ETRMRAST",
+m_cBrowserId    := "@ETRMRAST",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Prüft ob ein Fenster (Docking) angedockt ist
+// Result: boolean
+//******************************************************************************
+function IsFormDocked(oForm)
+   Result := False,
+   if     (oForm <> nil)
+      and (ClassName(oForm) == 'TFormEx')
+      and (    (GetParent(oForm) <> nil)
+            or (oForm.FormStyle = fsStayOnTop) ) then
+      Result := True,
+   endif,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| nZeilenTyp, bCanJumpToLieferant |
+
+   nZeilenTyp          := m_oEinzelTermRastMem:ZEILEN_TYP,
+   bCanJumpToLieferant := m_oEinzelTermRastMem:LIEFNR > 0, // nicht auf empty() prüfen, denn -1 (Fertigung) ist kein sinnvolles Sprung-Ziel
+
+   // artikel-bezogene Sprünge
+   A_Baugruppe.Enabled                  := not empty(m_oEinzelTermRastMem:BAUGRUPPE),
+
+   // verkaufs-bezogene Sprünge
+   A_Kunde.Enabled                      := not empty(m_oEinzelTermRastMem:KDNR),
+   A_VerkaufAbgang.Enabled              := nZeilenTyp == gl_ETRU_Typ_VerkaufAbgang or not empty(m_oEinzelTermRastMem:APNUMMER) ,
+   // einkaufs-bezogene Sprünge
+   A_Lieferant.Enabled                  := bCanJumpToLieferant,
+   A_LieferantDispoPlanung.Enabled      := nZeilenTyp == gl_ETRU_Typ_GrobPlanEinkaufZugangDab315, // Hinweis: Ein Einkaufs-GP-Zugang (Dab315) kann ohne Lieferant sein (LIEFNR = 0)
+
+   A_LieferantBestellRueckstand.Enabled := (     (nZeilenTyp == gl_ETRU_Typ_EinkaufZugangNichtBestaetigt)
+                                              or (nZeilenTyp == gl_ETRU_Typ_EinkaufZugangBestaetigt)      )
+                                           and bCanJumpToLieferant,
+
+   A_LieferantDisposition.Enabled       :=     (nZeilenTyp == gl_ETRU_Typ_GrobPlanEinkaufZugangDab320)
+                                           and bCanJumpToLieferant,
+   // produktions-bezogene Sprünge
+   A_ProduktionBedarfsPlanung.Enabled      := false,  // TODO: bwProdDemand
+   A_ProduktionDispositionsPlanung.Enabled :=    (nZeilenTyp == gl_ETRU_Typ_GrobPlanProdZugangDab215)
+                                              or (nZeilenTyp == gl_ETRU_Typ_GrobPlanProdAbgangDab215),
+   A_ProduktionDisposition.Enabled         := false,  // TODO: bwProdDisposition
+   A_FertigungsauftragZeigen.Enabled       :=    (nZeilenTyp == gl_ETRU_Typ_ProdZugangKommissioniert)
+                                              or (nZeilenTyp == gl_ETRU_Typ_ProdZugangOffen)
+                                              or (nZeilenTyp == gl_ETRU_Typ_ProdReservKommissioniert)
+                                              or (nZeilenTyp == gl_ETRU_Typ_ProdReservOffen),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+| nTime |
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   m_oDM     := CreateObject('TBeDbGet', '', oForm),
+
+   nTime := GetExTimer(),
+
+   m_oEinzelTermRastMem := ETRU_CreateMem(oForm),
+
+   nTime := GetExTimer() - nTime,
+   WriteLn('Memtable erzeugt in ' + FormatFloat('##,##0.00 mSec', nTime * 1000)),
+
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, -1, 'TBeRightsTable'),
+
+   ds_EinzelTermRast.DataSet           := m_oEinzelTermRastMem,
+   grid_EinzelTermRast.DataSource      := ds_EinzelTermRast,
+   grid_EinzelTermRast.RegisterDataSet := m_oEinzelTermRastMem,
+   grid_EinzelTermRast.ID              := m_cBrowserId,
+   grid_EinzelTermRast.ReadWriteProps  := False,
+end,
+
+//******************************************************************************
+// Funktion wandelt ein Array in einen String, dient dem Performance Log
+// Input: Array im Format { {Zeilen-Kennung, gemessener Zeitwert},
+//                          {Zeilen-Kennung, gemessener Zeitwert} }
+// @Result: String
+//******************************************************************************
+function PerformanceLog_ExTimerArrayToDebugText(aExTimerArray)
+| i, cZeile |
+   Result := '',
+   for i := 1 to ALen(aExTimerArray) do
+      cZeile := PadR(ToString(aExTimerArray[i, 1]), 40) + ' -> ' + PadL(AllTrim(FormatFloat('##,##0.00 mSec', aExTimerArray[i, 2] * 1000)), 9+5),
+      Result := ConcatTrenner(Result, cZeile, crlf),
+   next,
+end,
+
+//******************************************************************************
+// Führt eine Zeitmessung zur Performancemessung durch
+// @Result: null, das Resultat wird in den Übergabeparametern zurückgegeben
+//******************************************************************************
+function PerformanceLog_AddTimerElem(aExTimerArray:R, nLapStartTime:R, uZeilenkennung)
+| nCurrentTime |
+   if m_bDebugMode then
+      nCurrentTime := GetExTimer(),
+      AAdd(aExTimerArray, {uZeilenkennung,  nCurrentTime - nLapStartTime}),
+      nLapStartTime := nCurrentTime,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion behandelt den Sonderfall, einer TBeSemaphoreTable als
+// MasterTable.
+// Semaphor-Tabellen tauschen die echte Tabelle bei einem Edit/Insert durch eine
+// MemTable aus. Daher wird das Docking nicht korrekt aktualisiert.
+// Diese Funktion geht davon aus, dass die Übergebene Tabelle eine
+// Semaphorentabelle ist und prüft an hängig vom Wert von nCheckEditMode,
+//  - 1 die Tabelle im Editmodus ist
+//  - 2 die Tabelle im InsertModus ist
+//  - 3 die Tabelle im Edit- oder Insert-Modus ist
+// Result: boolean
+//******************************************************************************
+function HandleSemaphorTableStateChanges(oTable, nCheckEditMode)
+| oMasterDataSource, oCurrentDataSet |
+   SetErrorIf(oTable.Workarea <> waDAB010 and oTable.Workarea <> waDAB000 and oTable.Workarea <> waDAB100,
+       'Funktion HandleSemaphorTableStateChanges erwartet als ersten Parameter eine Semaphoren Tabelle'),
+
+   Result := False,
+   if not empty(oTable) then
+      oMasterDataSource := oTable.DataSource,
+      if not empty(oMasterDataSource) then
+         oCurrentDataSet := oMasterDataSource.DataSet,
+         if not empty(oCurrentDataSet) then
+            // Unterscheiden sich die DataSets voneinander? Und ist eine von
+            // beiden im Insert-Modus so werden alle Aktionen an der Oberfläche
+            // unterbunden
+            if oTable <> oCurrentDataSet then
+               case nCheckEditMode
+                  of 1 ::  if (DbState(oCurrentDataSet) = DsEdit or DbState(oTable) = DsEdit) then
+                              result := True,
+                           endif,
+                  of 2 ::  if (DbState(oCurrentDataSet) = DsInsert or DbState(oTable) = DsInsert) then
+                              result := True,
+                           endif,
+                  of 3 ::  if (EditModes(oCurrentDataSet) or EditModes(oTable) = DsInsert) then
+                              result := True,
+                           endif,
+                  otherwise
+                        setError('Funktion HandleSemaphorTableStateChanges erwartet als zweiten Parameter eine Zahl zwischen 1 und 3'),
+               endcase,
+            endif,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion ermittelt die Artikel-Nr. der Master-Tabelle (ggf. nicht immer im Feld 'ARTNR'...)
+// @Result: string, Artikel-Nr.
+//******************************************************************************
+function GetMasterTableArtnr()
+| cCustomArtnrField |
+
+   cCustomArtnrField := '',
+   if not empty(m_aCustomInfoArr) and ALen(m_aCustomInfoArr) >= 1 then
+      cCustomArtnrField := m_aCustomInfoArr[1],
+   endif,
+
+   Result := '',
+   if not empty(m_oMasterTable) then
+      // ist ein ARTNR-Feld direkt angegeben?
+      if not empty(cCustomArtnrField) then
+         Result := AsString(cCustomArtnrField, m_oMasterTable),
+      else
+         case m_oMasterTable.Workarea
+            of waDab210 :: Result := m_oMasterTable:ARTNR2,
+            of waDab240 :: Result := m_oMasterTable:ARTNR_E,
+
+            otherwise      Result := m_oMasterTable:ARTNR,
+         endcase,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Aktualisiert die Fenster-Caption
+// @Result: null
+//******************************************************************************
+function RefreshFormCaption()
+  | cCompleteCaption, cIndiCaptionSuffix |
+
+   cCompleteCaption    := 'Einzel-Terminraster',
+
+   // Aktuelle Artikel-Nr. anzeigen ? (TODO: Refresh-Problem bei Wiederherstellung eines zuvor gedockten Einzel-Terminrasters)
+   // if not IsFormDocked(oForm) then
+   //   cCompleteCaption += ' / ' + AllTrim(GetMasterTableArtnr()),
+   // endif,
+
+   // Individueller Fenster-Titel-Zusatz?
+   cIndiCaptionSuffix := '',
+   if not empty(m_aCustomInfoArr) and ALen(m_aCustomInfoArr) >= 2 then
+      cIndiCaptionSuffix := m_aCustomInfoArr[2],
+   endif,
+   if not empty(cIndiCaptionSuffix) then
+      cCompleteCaption += ' ' + cIndiCaptionSuffix,
+   endif,
+
+   oForm.OrigCapt := cCompleteCaption,
+end,
+
+//******************************************************************************
+// Befüllt die GUI-MemTable mit den jeweiligen Detail-Sätzen (Bewegungen)
+//
+// Parameter:
+//   bLoadAllData: nein = nur xx Zeilen je Typ hinzufügen, dann abbrechen (TODO)
+// @Result: null
+//******************************************************************************
+function Rebuild(bLoadAllData)
+| oDab010, cArtnr, nTime, nStartTime, nLapStart, aLapTimes, bDoNotLoadData |                                                      prs('Rebuild()', 'START'),
+
+   if m_bDebugMode then
+      nStartTime := GetExTimer(),
+      nLapStart  := nStartTime,
+      nTime      := nStartTime,
+      aLapTimes  := {},
+      m_nDebugRebuildCount++,
+   endif,
+
+   // TODO: Logik "es wurden nicht alle verfügbaren Zeilen geladen" implementieren
+   //       -> Anzahl = m_nMaxNumberOfLines
+   //       -> Info an die Oberfläche bringen (in Form eines einzublendenen Info-Panels)
+   //          "Alles laden... (Die Berechnung wurde aufgrund zu vieler Zeilen abgebrochen)"
+   //          -> bei Klick auf das Info-Panel dann Rebuild(true)
+
+   DbDisableControls(m_oEinzelTermRastMem),
+   startseq
+      DeleteAllData(m_oEinzelTermRastMem),
+
+      cArtnr            := GetMasterTableArtnr(),                               WriteLn('   Rebuild() für Artikel-Nr. <' + cArtnr + '>'),
+      oDab010           := DbGetTable(m_oDM, waDab010),
+      oDab010.IndexName := 'DAB011',
+
+      if DbSeek({cArtnr}, oDab010) then
+
+         bDoNotLoadData := oDab010:ARTTYP $ '/A/', // bei Artikel-Typ 'A' werden keine Daten geladen.
+                                                   // TODO: statt dessen nur die erste xx Datensätze Teil laden...
+                                                   // TODO: konfigurierbar machen, ob man dieses Verhalten möchte
+         beipnl_NoDataLoaded.Visible := bDoNotLoadData,
+
+         if not bDoNotLoadData then
+            // ETRU_Add_Heute(                           m_oDM, cArtnr, m_oEinzelTermRastMem),               PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: heute'),
+            ETRU_Add_VerfuegBestand(                  m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: verfüg. Bestand'),
+            ETRU_Add_EisernerBestand_Abgang(          m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: Eis. Best.'),
+            ETRU_Add_WareneingangsBestand(            m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: Wareneingang Bestand'),
+            ETRU_Add_EndeWBZInfo(                     m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: WBZ Ende Info'),
+            ETRU_Add_Zugaenge(                        m_oDM, cArtnr, m_oEinzelTermRastMem, {}, '',     m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: Zugänge'),
+            ETRU_Add_GrobplanungsZugaenge(            m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: GP Zugänge'),
+            ETRU_Add_VerkaufAbgaenge(                 m_oDM, cArtnr, m_oEinzelTermRastMem, {}, '',     m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: VK Abgänge'),
+            ETRU_Add_ProduktionsAbgaenge(             m_oDM, cArtnr, m_oEinzelTermRastMem, {}, '',     m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: Prod. Abgänge'),
+            ETRU_Add_ProduktionsGrobplanungsAbgaenge( m_oDM, cArtnr, m_oEinzelTermRastMem,             m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Z.-Typ: Prod. GP Abgänge'),
+
+            ETRU_Calc_VerfuegbareMenge(               m_oDM, cArtnr, m_oEinzelTermRastMem, {}, -1, -1, m_cAusgewaehlteStandorte),  PerformanceLog_AddTimerElem(aLapTimes,  nLapStart, 'Berechnnung Spalte "verfügb. Menge"'),
+         endif,
+      endif,
+      DbGoTop(m_oEinzelTermRastMem),
+   always
+      DbEnableControls(m_oEinzelTermRastMem),
+   stopseq,
+
+   if m_bDebugMode then
+      nTime := GetExTimer() - nTime,
+      lbl_Debug_Info.Caption := 'Berechnet für Art.Nr "' + RTrim(cArtnr) + '" in ' + FormatFloat('##,##0.00 mSec', nTime * 1000) + ' / ' + Str(m_nDebugRebuildCount) + ' mal berechnet seit dem Start'
+                                + crlf + crlf
+                                + PerformanceLog_ExTimerArrayToDebugText(aLapTimes),
+   endif,
+                                                                                prs('Rebuild()', 'ENDE'),
+   // WriteLn(DebugArr(aLapTimes)),
+end,
+
+function CheckSemaphoreInsertAndRebuildOrNot()
+| bSemaphoreMasterIsInInsertMode |                                                    prs('CheckSemaphoreInsertAndRebuildOrNot', 'START'),
+   startseq                                                                        
+      if not empty(m_oMasterTable) and not empty(m_oEinzelTermRastMem) then   
+         bSemaphoreMasterIsInInsertMode := false,
+         if m_oMasterTable.Workarea = waDAB010 then
+            bSemaphoreMasterIsInInsertMode := HandleSemaphorTableStateChanges(m_oMasterTable, 2),
+         endif,
+         if bSemaphoreMasterIsInInsertMode then
+            DeleteAllData(m_oEinzelTermRastMem),
+         else
+            RefreshFormCaption(),
+            Rebuild(false),                                                          
+         endif,
+      endif,                                                                          prs('CheckSemaphoreInsertAndRebuildOrNot', 'END'),
+   onerror
+     GU_ShowStdErrorMessage('Fehler beim Aktualisieren der Daten nach dem Scroll', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: nach Änderung des Standortfilters
+//******************************************************************************
+function SelectBoxChange( Sender )
+| i |
+   startseq
+      // Wenn kein Sto. gewählt, dann den eigenen automatisch anwählen
+      if empty(m_oSelectBox.SelectedAsIDString) then
+         for i := 1 to ALen(m_aStandorte) do
+            if m_aStandorte[i] = mStandort then
+               m_oSelectBox.CbCheckItem(i-1),
+            endif,
+         next,
+      endif,
+
+      m_aAusgewaehlteStandorte := {},
+      for i := 1 to m_oSelectBox.CbCount  do
+         if m_oSelectBox.CbIsItemChecked(i-1) then
+            AAdd(m_aAusgewaehlteStandorte, m_aStandorte[i]),
+         endif,
+      next,
+      m_cAusgewaehlteStandorte            := ArrToStr(m_aAusgewaehlteStandorte),
+      gl_ETRU_nAnzahlSelektierteStandorte := ALen(m_aAusgewaehlteStandorte),
+      grid_EinzelTermRast.CbRefreshShowOnlyWhen(), // Im Grid werden Spalten dynamisch ein / ausgelendet, wenn mehrere Sto. sichtbar sind
+
+      CheckSemaphoreInsertAndRebuildOrNot(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler nach Änderung des Statusfilters', GetErrorObj()),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function ds_EinzelTermRastScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := true,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   CheckSemaphoreInsertAndRebuildOrNot(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiOnlineHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_ETRU_IndiOnlineHelp_SQLWhere),
+end,
+
+//******************************************************************************
+// Action: Spring zum Verkaufsabgang mit der Position
+//******************************************************************************
+function A_VerkaufAbgangExecute( Sender )
+   | cParams |
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da Auftrag im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      cParams :=  PadR(Str(m_oEinzelTermRastMem:KDNR), 8, '') + AllTrim(SubStr(m_oEinzelTermRastMem:APNUMMER, 1, 6)) + ' ' + AllTrim(SubStr(m_oEinzelTermRastMem:APNUMMER, 7, 3)),
+      ShowBeWindow(bwCustOrders, cParams),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Produktion Bedarfsplanungs-Datensatz anzeigen (Dab220)
+//******************************************************************************
+function A_ProduktionBedarfsPlanungExecute( Sender )
+   Meld('nicht implementiert'), // TODO
+end,
+
+//******************************************************************************
+// Action: Produktion Dispositionsplanungs-Datensatz anzeigen (Dab215)
+//******************************************************************************
+function A_ProduktionDispositionsPlanungExecute( Sender )
+
+   //******************************************************************************
+   // Funktion öffnet das Fenster "Produktion - Dispoplanung (Dab215) und positioniert
+   // die übergebene Dab215:AUTOINC (nicht ID!)
+   // @Result: keine Rückgabe
+   //******************************************************************************
+   function ShowDispoPlanungProduktion(nDab215AutoInc)
+   | oProdDispoPlanForm, oMainTable, oDataSource |
+
+      oProdDispoPlanForm := ShowBeWindow(bwProdDispoPlan, ''),
+      if not Empty(oProdDispoPlanForm) then
+         oDataSource := FindObject(oProdDispoPlanForm, 'ds_Browser'),
+         if not empty(oDataSource) then
+            oMainTable := oDataSource.DataSet,
+            if not empty(oMainTable) and oMainTable.Workarea = waDab215 then       // prs('', {ClassName(oMainTable), oMainTable.Workarea, oMainTable.AliasName, oMainTable.IndexName, oMainTable:AUTOINC}),
+               if not DbLocate('AUTOINC', {nDab215AutoInc}, 0, oMainTable) then
+                  MessageDlg('Der Dispositionsvorschlag konnte auf Grund von Filter-Einstellungen nicht positioniert werden.'),
+               endif,
+            endif,
+         endif,
+      endif,
+   end,
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da der Dispositionsvorschlag im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      ShowDispoPlanungProduktion(m_oEinzelTermRastMem:DATENSATZ_ID),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Produktion Dispositionsplanungs-Datensatz anzeigen (Dab320)
+//******************************************************************************
+function A_ProduktionDispositionExecute( Sender )
+   Meld('nicht implementiert'), // TODO
+end,
+
+//******************************************************************************
+// Action: Springe zum Fertigungsauftrag (Dab035)
+//******************************************************************************
+function A_FertigungsauftragZeigenExecute( Sender )
+   | cBestPosNr |
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da Auftrag im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      if empty(m_oEinzelTermRastMem:BESTPOSNR) then
+         cBestPosNr := SubStr(m_oEinzelTermRastMem:B_POS_LFD, 1, 6)
+      else
+         cBestPosNr := AllTrim(SubStr(m_oEinzelTermRastMem:BESTPOSNR, 1, 6)) + AllTrim(SubStr(m_oEinzelTermRastMem:BESTPOSNR, 7, 2)),
+      endif,
+
+      GU_ShowBeWindow_Dab035_Produktion(cBestPosNr),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Spring zur Baugruppe des Artikels
+//******************************************************************************
+function A_BaugruppeExecute( Sender )
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, Datensatz bezieht sich auf Standort " + Str(m_oEinzelTermRastMem:STANDORT)),
+   else
+      ShowBeWindow(bwArticle, m_oEinzelTermRastMem:BAUGRUPPE),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Spring zum Kunden
+//******************************************************************************
+function A_KundeExecute( Sender )
+   ShowBeWindow(bwCustomer, Str(m_oEinzelTermRastMem:KDNR)),
+end,
+
+//******************************************************************************
+// Action: Springen zum Lieferanten-Stamm
+//******************************************************************************
+function A_LieferantExecute( Sender )
+   ShowBeWindow(bwSupplier, Str(m_oEinzelTermRastMem:LIEFNR)),
+end,
+
+//******************************************************************************
+// Action: Springen zum Lieferanten - Dispoplanung (Dab315)
+//******************************************************************************
+function A_LieferantDispoPlanungExecute( Sender )
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da Planungssatz im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      GU_ShowBeWindow_Dab315(m_oEinzelTermRastMem:LIEFNR, 'AUTOINC', m_oEinzelTermRastMem:DATENSATZ_ID)
+   endif,
+end,
+
+//******************************************************************************
+// Action: Springen zum Lieferanten - Disposition (Dab320)
+//******************************************************************************
+function A_LieferantDispositionExecute( Sender )
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da Planungssatz im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      GU_ShowBeWindow_Dab320(m_oEinzelTermRastMem:LIEFNR, 'AUTOINC', m_oEinzelTermRastMem:DATENSATZ_ID)
+   endif,
+end,
+
+//******************************************************************************
+// Action: Springen zum Lieferanten - Bestellrückstände  (Dab035)
+//******************************************************************************
+function A_LieferantBestellRueckstandExecute( Sender )
+   if m_oEinzelTermRastMem:STANDORT <> mStandort then
+      MessageDlg("Sprung nicht möglich, da Rückstand im Standort " + Str(m_oEinzelTermRastMem:STANDORT) + " erfasst wurde."),
+   else
+      GU_ShowBeWindow_Dab035_Einkauf(m_oEinzelTermRastMem:LIEFNR, 'ID', m_oEinzelTermRastMem:DATENSATZ_ID),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// Erzeugt bei Bedarf das Multi-Standort-Auswahl-Control
+// @Result: null
+//******************************************************************************
+function InitMultiStandortControl()
+| i, oLabel |
+
+   pnl_top.Visible      := ALen(m_aStandorte) > 1,
+   pnl_top.Font.Size    := 10,
+
+   if ALen(m_aStandorte) > 1 then
+      m_oSelectBox                  := CreateObject('TSelectBoxEx', '', pnl_Top, pnl_Top),
+      m_oSelectBox.Align            := alLeft,
+      m_oSelectBox.AlignWithMargins := true,
+      m_oSelectBox.Margins.Top      := 1,
+      m_oSelectBox.Margins.Bottom   := 1,
+      m_oSelectBox.Height           := 25,
+      m_oSelectBox.Width            := ALen(m_aStandorte) * 50,
+      m_oSelectBox.DefaultColor     := clWhite,
+
+      // Alle Standorte hinzufügen
+      for i := 1 to aLen(m_aStandorte) do
+         m_oSelectBox.CbAddItem(StrZero(m_aStandorte[i], 3)),
+      next,
+
+      // Aktuellen Standort markieren
+      for i := 1 to aLen(m_aStandorte) do
+         if m_aStandorte[i] = mstandort then
+            m_oSelectBox.CbCheckItem(i-1),
+         endif,
+      next,
+
+      // Change-Event verbinden
+      AssignEvent(m_oSelectBox, 'OnChange', 'SelectBoxChange'),
+
+
+      oLabel                    := CreateObject('TBeLabel', '', pnl_Top, pnl_Top),
+      oLabel.Align              := alLeft,
+      oLabel.AlignWithMargins   := true,
+      oLabel.Margins.Left       := 10,
+      oLabel.Caption            := GetLangText(217), // txtLocations = 'Standorte'
+      oLabel.AutoSize           := false,
+      oLabel.Width              := 70,
+      oLabel.Layout             := 1,  // = tlCenter
+      oLabel.Left               := 0,
+      oLabel.ParentFont         := true,
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Baugruppe                      := FindObject(oForm, "A_Baugruppe"),
+   A_FertigungsauftragZeigen        := FindObject(oForm, "A_FertigungsauftragZeigen"),
+   A_Kunde                          := FindObject(oForm, "A_Kunde"),
+   A_Lieferant                      := FindObject(oForm, "A_Lieferant"),
+   A_LieferantBestellRueckstand     := FindObject(oForm, "A_LieferantBestellRueckstand"),
+   A_LieferantDispoPlanung          := FindObject(oForm, "A_LieferantDispoPlanung"),
+   A_LieferantDisposition           := FindObject(oForm, "A_LieferantDisposition"),
+   A_ProduktionBedarfsPlanung       := FindObject(oForm, "A_ProduktionBedarfsPlanung"),
+   A_ProduktionDisposition          := FindObject(oForm, "A_ProduktionDisposition"),
+   A_ProduktionDispositionsPlanung  := FindObject(oForm, "A_ProduktionDispositionsPlanung"),
+   A_ShowIndiOnlineHelp             := FindObject(oForm, "A_ShowIndiOnlineHelp"),
+   A_VerkaufAbgang                  := FindObject(oForm, "A_VerkaufAbgang"),
+   actions                          := FindObject(oForm, "actions"),
+   al_Main                          := FindObject(oForm, "al_Main"),
+   beipnl_NoDataLoaded              := FindObject(oForm, "beipnl_NoDataLoaded"),
+   ds_EinzelTermRast                := FindObject(oForm, "ds_EinzelTermRast"),
+   ds_MasterTable                   := FindObject(oForm, "ds_MasterTable"),
+   grid_EinzelTermRast              := FindObject(oForm, "grid_EinzelTermRast"),
+   lbl_Debug_Info                   := FindObject(oForm, "lbl_Debug_Info"),
+   mi_auftrag                       := FindObject(oForm, "mi_auftrag"),
+   mi_baugruppe                     := FindObject(oForm, "mi_baugruppe"),
+   mi_Fertigungsauftrag             := FindObject(oForm, "mi_Fertigungsauftrag"),
+   mi_kunde                         := FindObject(oForm, "mi_kunde"),
+   mi_lieferant                     := FindObject(oForm, "mi_lieferant"),
+   mi_LieferantBestellRueckstand    := FindObject(oForm, "mi_LieferantBestellRueckstand"),
+   mi_lieferantdispoplanung         := FindObject(oForm, "mi_lieferantdispoplanung"),
+   mi_LieferantDisposition          := FindObject(oForm, "mi_LieferantDisposition"),
+   mi_ProduktionBedarfsPlanung      := FindObject(oForm, "mi_ProduktionBedarfsPlanung"),
+   mi_ProduktionDisposition         := FindObject(oForm, "mi_ProduktionDisposition"),
+   mi_ProduktionDispositionsPlanung := FindObject(oForm, "mi_ProduktionDispositionsPlanung"),
+   mi_ShowIndiOnlineHelp            := FindObject(oForm, "mi_ShowIndiOnlineHelp"),
+   mi_Trenner1                      := FindObject(oForm, "mi_Trenner1"),
+   mi_Trenner2                      := FindObject(oForm, "mi_Trenner2"),
+   mi_Trenner3                      := FindObject(oForm, "mi_Trenner3"),
+   mi_Trenner4                      := FindObject(oForm, "mi_Trenner4"),
+   pnl_Debug                        := FindObject(oForm, "pnl_Debug"),
+   pnl_Main                         := FindObject(oForm, "pnl_Main"),
+   pnl_top                          := FindObject(oForm, "pnl_top"),
+   popupMenu_Browser                := FindObject(oForm, "popupMenu_Browser"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   oForm.OrigCapt                := 'Einzel-Terminraster',
+   oForm.ImageIndex              := 177,    // Image-Index für den Window-Navigator setzen
+
+   grid_EinzelTermRast.PopupMenu := popupMenu_Browser,
+
+   m_nDebugRebuildCount          := 0,
+
+   lbl_Debug_Info.Caption        := '',
+   lbl_Debug_Info.Visible        := m_bDebugMode,
+   pnl_Debug.Visible             := m_bDebugMode,
+   pnl_Debug.ShowBeSplitter      := m_bDebugMode,
+
+   beipnl_NoDataLoaded.Visible   := false,
+   beipnl_NoDataLoaded.ColorMode := ipcmWarning,
+
+   InitMultiStandortControl(),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Lädt Informationen über die für den User nutzbaren Standorte
+//******************************************************************************
+function LoadStandorteArray()
+| oLocation, i |
+   // Welche Standorte gibt es?
+   m_aStandorte    := {},
+   for i := 1 to CollCount(mLocationInfos) do
+      oLocation := CollItem(mLocationInfos,i), // Liefert eine Instanz von 'TLocationInfo'
+
+      if oLocation.Allowed then
+         AAdd(m_aStandorte, oLocation.LocNo),
+      endif,
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadStandorteArray(),
+
+   m_cAusgewaehlteStandorte            := ArrToStr({mStandort}), // Zum Start nur den eigenen Standort auswählen
+   gl_ETRU_nAnzahlSelektierteStandorte := 1,
+
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable           := DBOpen(waDab010),
+      m_oMasterTable.IndexName := 'DAB011',
+      MySeek({'MUTTER M4'}, m_oMasterTable),
+
+      WriteLn(m_oMasterTable:ARTNR),
+   endif,
+
+   // Der "Debug-Mode" gibt direkt im Fenster aus, wie lange die Berechnung dauert
+   if mBeSupervisor then
+      m_bDebugMode := true,
+   endif,
+   m_nMaxNumberOfLines := 50,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

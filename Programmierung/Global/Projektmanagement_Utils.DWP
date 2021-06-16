@@ -1,0 +1,1192 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm enthält alle globalen Funktionen die für das
+//               Projektmanagement benötigt werden.
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Lädt ein in der DabPRG gespeichertes SQL-Script / SQL-Statement
+// @Result: SQL-Script
+//******************************************************************************
+function _LoadSQLScriptByName(cScriptName)
+   // Das SQL wird im Programm als "Plaintext" abgelegt => dort ist es einfacher
+   // zu pflegen als im Programmtext als String-Literal
+   Result := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   if empty(Result) then
+      SetError('SQL-Text für Script "' + cScriptName + '" nicht gefunden'),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt anhand der übergebenen ProjektID ein
+// SQL-Where-Clause mit dem es möglich ist alle verknüpften Memos zu filtern
+//******************************************************************************
+function _ProjMgmt_GetLinkedMemosSQLWhere(oDM, nProjectID)
+| oProjectBO, oRelationList, i, oRelation |
+   Result        := '',
+   oProjectBO    := nil,
+   oRelationlist := nil,
+
+   // Parameter prüfen
+   if empty(oDM) or not (nProjectID > -1) then
+      SetError('Fehlerhafte Parameter übergeben'),
+   endif,
+
+   // ProjectBO erstellen und positionieren
+   oProjectBO := CreateObject('TBeProjectBO'),
+   startseq
+      startseq
+         oProjectBO.CBDataModule := oDM, // Datenmodul des ProjectBO's auf das übergebene setzen (für Performance & Transaktion...)
+         startseq
+            oProjectBO.CbGoToID(nProjectID), // ProjectBO positionieren
+         onerror
+            SetError('Fehler beim Positionieren auf das Projekt: ' + Str(nProjectID) +
+                     crlf + crlf + GetErrorText()),
+         stopseq,
+
+         // Alle Memo-Verknüpfungen des Projekts finden (liefert TBeBORelationShipList)
+         // (beideseitig suchen, also "Memo zu Projekt" und "Projekt zu Memo")
+         oRelationList := oProjectBO.CBRelationShips.CbFindAllRelationShips('(ZIEL_WA  = ' + Str(waDAB065) + ' or ' +
+                                                                             'QUELL_WA = ' + Str(waDAB065) + ')', rsfdSourceAndDestination),
+         startseq,
+            // SQL-Where-Clause zusammenbauen
+            if oRelationList.CbCount() > 0 then
+               for i := 1 to oRelationList.CBCount() do
+                  oRelation := oRelationList.CBItem(i),   // liefert eine Instanz von TBeBORelationShip
+                  Result    += iif(empty(Result), '', ' OR '),
+                  Result    += 'MEMO_ID = ' + iif(oRelation.CbSourceWorkArea = 260, Str(oRelation.CbDestID), Str(oRelation.CbSourceID)),
+               next,
+               Result := ' (' + Result + ') ',
+            else
+               Result := ' (MEMO_ID = -1) ',
+            endif,
+         always,
+            DestroyObject(oRelationList),
+         stopseq,
+      onerror
+         SetError('Fehler beim Auslesen der Verknüpfungen' + crlf + crlf +
+                  GetErrorText()),
+      stopseq,
+   always
+      DestroyObject(oProjectBO),
+   stopseq,
+end,
+
+//******************************************************************************
+// Erstellt die Memtable zum anzeigen der Verknüpfungen
+//******************************************************************************
+function _ProjMgmt_CreateLinkMemtable(oOwner)
+| oLinkMem |
+   startseq
+      oLinkMem := CreateObject('TMemCalcTable', 'LinkMem', oOwner),
+      AddMemField(oLinkMem, 'LINKEDID',     'N',  20, 0),
+      AddMemField(oLinkMem, 'LINKEDWA',     'N',   3, 0),
+      AddMemField(oLinkMem, 'LINKEDWANAME', 'C',  50, 0),
+      AddMemField(oLinkMem, 'DESCRIPTION',  'C', 100, 0),
+      AddMemField(oLinkMem, 'TYP',          'C',  75, 0),
+      AddMemField(oLinkMem, 'PLATZ',        'C',   3, 0),
+      AddMemField(oLinkMem, 'ERSTELLT',     'C',  50, 0),
+      AddMemField(oLinkMem, 'GEAND_USR',    'C',   3, 0),
+      AddMemField(oLinkMem, 'GEANDERT',     'C',  50, 0),
+      AddMemField(oLinkMem, 'ZIEL_STO',     'N',   8, 0),
+      oLinkMem.OrderBy := 'LINKEDWA',
+      oLinkMem.Active  := True,
+      Result := oLinkMem,
+   onerror
+      SetError('Fehler beim Erstellen der Verknüpfungs-Tabelle' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Berechnet für eine übergebene Workarea und eine beliebige ID einen
+// Beschreibungstext, zur Anzeige z. B. in Browsern
+// Funktioniert für folgende Workareas:
+//    waDab000 - Kunden
+//    waDab005 - Kontakte
+//    waDab010 - Artikel
+//    waDab035 - Produktion
+//    waDab050 - Aufträge-Kunden
+//    waDAB062 - Vertreter
+//    waDab065 - Memos
+//    waDab100 - Zulieferer
+//    waDab240 - Fertigungsaufträge
+//    waDABPRJ - Projekte
+//******************************************************************************
+function _ProjMgmt_CalculateDescriptionForRecord(nWA, nID)
+| cDesc, cAPNr, cARTNR |
+
+   //***************************************************************************
+   // Baut einen Beschreibungstext zusammen für den Fall, dass ein Datensatz
+   // unter der angegebenen ID nicht existiert
+   // @Result: null
+   //***************************************************************************
+   function DSWithIDNotAvailable(cStartText, nID)
+   | cBeginText, cEndText |
+      cBeginText := ' mit der ID: ',
+      cEndText   := ' ist nicht (mehr) verfügbar.',
+      Result     := cStartText + cBeginText + Str(nID) + cEndText,
+   end,
+
+   Result := '',
+   case nWA
+      // Kunden (Indexnamen variieren wenn Fibu vorhanden, darum wird hier kein Index-Name verwendet)
+      of waDab000 ::
+         Result := AllTrim(Lookup(waDAB000, 5, {{nID}}, 'NAME1', '')) + ' ' + // Std.-Indexname
+                   AllTrim(Lookup(waDAB000, 5, {{nID}}, 'NAME2', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Kunde', nID),
+         endif,
+
+      // Artikel
+      of waDab010 ::
+         Result := AllTrim(lookup(waDAB010, 'DAB01G', {{nID}}, '"Artikel: " + Trim(ARTNR) + " " + Trim(BEZ1) + " " + Trim(BEZ2)', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Artikel', nID),
+         endif,
+
+      // Aufträge
+      of waDab050 ::
+         Result := AllTrim(Lookup(waDAB050, 'ID', {{nID}}, 'NAME1', '')) + ' ' +
+                   AllTrim(Lookup(waDAB050, 'ID', {{nID}}, 'NAME2', '')) +
+                   ' Auftragsnr.: ' + AllTrim(Lookup(waDAB050, 'ID', {{nID}}, 'ANUMMER', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Auftrag', nID),
+         endif,
+
+      // Lieferanten (Indexnamen variieren wenn Fibu vorhanden)
+      of waDab100 ::
+         Result := AllTrim(Lookup(waDAB100, 5, {{nID}}, 'NAME1', '')) + ' ' +
+                   AllTrim(Lookup(waDAB100, 5, {{nID}}, 'NAME2', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Lieferant', nID),
+         endif,
+
+      // Memos (MEMO_ID nicht ID)
+      of waDab065 ::
+         Result := AllTrim(Lookup(waDAB065, 'DAB06B', {{nID}}, 'BETREFF', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Das Memo', nID),
+         endif,
+
+      // Kontakte
+      of waDab005 ::
+         Result := AllTrim(Lookup(waDAB005, 'DAB007', {{nID}}, 'NAME', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Kontakt', nID),
+         endif,
+
+      // Produktion
+      of waDab035 ::
+         cAPNr  := AllTrim(Lookup(waDAB035, 'DAB03D', {{nID}}, 'BESTPOSNR', '')),
+         cARTNR := Lookup(waDAB035, 'DAB03D', {{nID}}, 'ARTNR', ''),
+
+         if not empty(cAPNr) then
+            if not empty(cARTNR) then
+               Result := 'Bestellposition: ' + cAPNr +
+                         ' Artikel: ' + cARTNR + ' ' + AllTrim(Lookup(waDAB010, 'DAB011', {{cARTNR}}, 'BEZ1', '')),
+            else
+               Result := 'Bestellposition: ' + cAPNr,
+            endif,
+         else
+            Result := DSWithIDNotAvailable('Der Produktionsauftrag', nID),
+         endif,
+
+      // Fertigungsaufträge
+      of waDab240 ::
+         cAPNr  := AllTrim(Left(Lookup(waDab240, 'DAB245', {{nID}}, 'B_POS_LFD', ''), 8)),
+         cARTNR := Alltrim(Lookup(waDab240, 'DAB245', {{nID}}, 'ARTNR1', '')),
+
+         if not empty(cAPNr) then
+            if not empty(cARTNR) then
+               Result := 'Artikel: ' + cARTNR + ', Auftragsnr.: ' + cAPNr,
+            else
+               Result := 'Auftragsnr.: ' + cAPNr,
+            endif,
+         else
+            Result := DSWithIDNotAvailable('Der Fertigungsauftrag', nID),
+         endif,
+
+      // Projekte
+      of waDABPRJ ::
+         Result := AllTrim(Lookup(waDABPRJ, 'ID', {{nID}}, 'BEZ', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Das Projekt', nID),
+         endif,
+
+      // Vertreter
+      of waDAB062 ::
+         Result := AllTrim(Lookup(waDAB062, 'DAB06P', {{nID}}, 'Trim(NAME1) + " " + Trim(NAME2)', '')),
+         if empty(Result) then
+            Result := DSWithIDNotAvailable('Der Vertreter', nID),
+         endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Füllt die übergebene Memtable mit allen Verknüpfungen zum übergebenen ProjektBO
+//******************************************************************************
+function _ProjMgmt_GetLinkData(oProjectBO, oMem)
+| i, oRelationList, oRelation, aDestinationData |
+
+   //***************************************************************************
+   // Da das echte Ziel einer Verknüpfung in beide Richtungen in der DABVKN
+   // stehen kann muss hier geprüft werden welches die QUELL (Projektnr.) und
+   // welches die Ziel ID ist.
+   //***************************************************************************
+   function GetDestinationData(oRelation)
+      Result := {},
+
+      if waDABPRJ = oRelation.CbSourceWorkArea and
+         oRelation.CbSourceID = oProjectBO.CbID then
+
+         AAdd(Result, oRelation.CbDestID),
+         AAdd(Result, oRelation.CbDestWorkArea),
+      else
+         if waDABPRJ <> oRelation.CbDestWorkArea and
+            not oRelation.CbDestID = oProjectBO.CbID then
+
+            AAdd(Result, oRelation.CbSourceID),
+            AAdd(Result, oRelation.CbSourceWorkArea),
+         endif,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Name/Bezeichnung für Ziel ermitteln
+   //***************************************************************************
+   function GetLinkedName(nWorkArea)
+   | oTableInfo|
+      case nWorkArea
+
+         of waDab240 :: Result := 'Fertigungsauftrag',
+
+      otherwise
+         oTableInfo := GetTableInfo(nWorkArea),
+         Result     := oTableInfo.TableLabel,
+      endcase,
+   end,
+
+   oRelationList    := nil,
+   oRelation        := nil,
+   aDestinationData := {},
+   startseq
+      // Suche nach allen Verknüpfungen zu diesem Projekt
+      // (beideseitig suchen, also "Projekt zu Ziel" und "Quelle zu Projekt")
+      oRelationList := oProjectBO.CBRelationShips.CBFindAllRelationShips('', rsfdSourceAndDestination),
+      startseq,
+         if oRelationList.CBCount() > 0 then
+            // Jede Verknüpfung in MemTable übernehmen
+            for i := 1 to oRelationList.CBCount() do
+               oRelation  := oRelationList.CBItem(i),
+
+               aDestinationData  := GetDestinationData(oRelation),
+               if ALen(aDestinationData) > 0 then
+                  DBAppend(oMem),
+                  oMem:LINKEDID     := aDestinationData[1],
+                  oMem:LINKEDWA     := aDestinationData[2],
+                  oMem:LINKEDWANAME := GetLinkedName(aDestinationData[2]),
+                  oMem:DESCRIPTION  := ProjMgmt_CalculateDescriptionForRecord(aDestinationData[2], aDestinationData[1]),
+                  oMem:TYP          := oRelation.CbRelationType,
+                  oMem:PLATZ        := oRelation.CbCreatedBy,
+                  oMem:ERSTELLT     := DateTimeToStr(oRelation.CbCreated),
+                  oMem:GEAND_USR    := oRelation.CbChangedBy,
+                  oMem:GEANDERT     := DateTimeToStr(oRelation.CbChanged),
+                  oMem:ZIEL_STO     := oRelation.CbDestLocation,
+                  DBPost(oMem),
+               endif,
+            next,
+            DBGoTop(oMem),
+         endif,
+      always,
+         DestroyObject(oRelationList),
+      stopseq,
+   onerror
+      SetError('Fehler beim Laden der Verknüpfungsdaten' + crlf + crlf +
+               GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion legt ein neues Aufgaben-Memo zu einem Vorgang
+// an.
+// @Result: null
+//******************************************************************************
+function _ProjMgmt_CreateNewTaskMemo(oTaskBO, oMemoBO, oProjectBO)
+|
+   aUserArray, cEditor, nProjPrio, nProjID, cAuthority, nTaskID,
+   oTaskEffortTable, nPersNoType, nPersNo,
+   aEventParameters
+|
+
+   //***************************************************************************
+   // Liest alle User aus den Vorgangsleistungen aus und ermittelt deren
+   // Usernummer
+   // @Result: null
+   //***************************************************************************
+   function GetAllTaskEffortUser(aArr:R)
+   | cUser |
+      aArr := {},
+      // Userliste erstellen
+      startseq
+         DBGoTop(oTaskEffortTable),
+         while not EOF(oTaskEffortTable) do
+            if 'M' $ oTaskEffortTable:RESTYP then // Nur Mitarbeiter
+               cUser := Lookup(waDAB262, 'DAB263', {{oTaskEffortTable:RES_ID}}, 'USER', ''),
+               if not empty(cUser) then
+                  AAdd(aArr, cUser),
+               endif,
+            endif,
+
+            DBSkip(1, oTaskEffortTable),
+         end,
+      onerror
+         SetError('Fehler beim Ermitteln der Nutzer für die nächste Aktion' +
+                  crlf + crlf + GetErrorText()),
+      stopseq,
+   end,
+
+   //***************************************************************************
+   // Setzt alle User im übergebenen Array in die nächste Aktion des übergebenen
+   // Memos
+   //***************************************************************************
+   function AddAllTaskEffortUser(oMemoBO, aArr)
+   | i, cUserList |
+      startseq
+         // Alle User aus der N_Aktion entfernen
+         cUserList := oMemoBO.DAB065:N_AKTION,
+         for i := 1 to TokenCount(cUserList, '/') do
+            oMemoBO.MarkAction.UserID := StrZero(Val(StrToken(cUserList, "/", i)), 3),
+            oMemoBO.MarkAction.CBMarkActionRemove(),
+         next,
+         if not empty(oMemoBo.DAB065:N_AKTION) then
+            oMemoBO.MarkAction.UserID := StrZero(Val(oMemoBO.DAB065:N_AKTION), 3),
+            oMemoBO.MarkAction.CBMarkActionRemove(),
+         endif,
+
+         // Neue User hinzufügen
+         for i := 1 to ALen(aArr) do
+            oMemoBO.MarkAction.WriteMemoHistory := False,
+            oMemoBO.MarkAction.UserID           := aArr[1],
+            oMemoBO.MarkAction.CBMarkActionAdd(),
+         next,
+
+         // Wenn kein User eingetragen wurde, den Ersteller in die Nächste Aktion
+         if empty(oMemoBO.DAB065:N_AKTION) then
+            oMemoBO.MarkAction.WriteMemoHistory := False,
+            oMemoBO.MarkAction.UserID := c_usr,
+            oMemoBO.MarkAction.CBMarkActionAdd(),
+         endif,
+      onerror
+         SetError('Fehler beim Hinzufügen der Nutzer in die Nächste Aktion' +
+                  crlf + crlf + GetErrorText()),
+      stopseq
+   end,
+
+   //---------------------------------------------------------------------------
+
+   aUserArray       := {},
+   oTaskEffortTable := BeOpen(waDABPVL, 'VORG_ID'),
+   startseq
+      DBFilter('VORG_ID = ' + Str(oTaskBO.CbID), oTaskEffortTable),
+      if empty(oProjectBO.CbAuthority) then
+         cAuthority := c_usr,
+      else
+         cAuthority := oProjectBO.CbAuthority,
+      endif,
+
+      startseq
+         GetAllTaskEffortUser(aUserArray),
+
+         // Existiert genau eine Vorgangs-Leistung mit einem geplanten User,
+         // wird dieser als Memo-Bearbeiter gesetzt. Ansonsten bleibt der
+         // Bearbeiter leer.
+         cEditor := iif(ALen(aUserArray) = 1, aUserArray[1], ''),
+
+         // Memo beim Kunden anlegen, sofern das Projekt Kunden-Zuordnung hat
+         if oProjectBO.CbCustomerNo > 0 then
+            nPersNoType := 1,          // Benutzer-Zuordnung
+            nPersNo     := oProjectBO.CbCustomerNo,
+         else
+            nPersNoType := 4,          // Benutzer-Zuordnung
+            nPersNo     := cAuthority,
+         endif,
+
+         oMemoBO.CBInsertEmptyMemo(gl_ProjMgmt_DefaultTaskMemoType, nPersNoType, nPersNo, 0),
+         AddAllTaskEffortUser(oMemoBO, aUserArray),
+
+         BeginSuspend(oMemoBO.CbTable),
+         startseq
+            oMemoBO.SubjectValue      := oTaskBO.CbDescription,
+            oMemoBO.DateValue         := iif(empty(oTaskBO.CbStart), Date(), oTaskBO.CbStart),
+            oMemoBO.BringFwdDateValue := iif(empty(oTaskBO.CbStart), Date(), oTaskBO.CbStart),
+            oMemoBO.EditorValue       := cEditor,
+            oMemoBO.PriorityValue     := oProjectBO.CbPriority,
+            oMemoBO.CbProjectID       := oProjectBO.CbID,
+            oMemoBO.CbTaskID          := oTaskBO.CbID,
+         always
+            EndSuspend(oMemoBO.CbTable),
+         stopseq,
+
+         // Ggf. das Codeblock-Event "Projektmanagement\Events\TaskMemo_AfterCreate"
+         // auslösen.
+         aEventParameters := {},
+         KVU_Set(aEventParameters, 'TaskMemoAfterCreateEvent.memoBO',    oMemoBO),
+         KVU_Set(aEventParameters, 'TaskMemoAfterCreateEvent.taskBO',    oTaskBO),
+         KVU_Set(aEventParameters, 'TaskMemoAfterCreateEvent.projectBO', oProjectBO),
+         CallIfExists('Projektmanagement\Events\TaskMemo_AfterCreate', aEventParameters),
+      onerror
+         oMemoBO.CBCancel(),
+         Raise(), // Echte Exception weitergeben um die Exceptionklasse zu behalten
+      stopseq,
+   always
+      BeClose(oTaskEffortTable),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt für ein Projekt eine Übersicht über alle geplanten
+// Leistungen und Ist-Leistungen und gibt diese in die übergebene Memtable
+//******************************************************************************
+function _ProjMgmt_GetPerformanceSumForProjectByEmployee(oMem, nProjectID, bWithData, cAdditionalFilter)
+| oQuery, cSQL, cSQLScript, nProject |
+   startseq
+      if empty(oMem) then
+         SetError('Fehler in GetPerformanceSumForProjectByEmployee()' + crlf +
+                  'Memtable nicht initialisiert'),
+      endif,
+
+      // Wenn keine Daten erwünscht Projektid auf -1 stellen
+      if bWithData then
+         nProject := nProjectID,
+      else
+         nProject := -1,
+      endif,
+
+      // Laden des SQL-Skripts
+      cSQL := LoadSQLScriptByName('Projektmanagement\SQL\SummenArbeitsleistungProjektProMitarbeiter'),
+      // Projektid in Statement einfügen
+      cSQL := StrTran(cSQL, '@PROJID@', Str(nProject)), // Projektid setzen
+
+      // Hier wird die Filterung für einen Datumsbereich eingefügt
+      if empty(cAdditionalFilter) then
+         cSQL := StrTran(cSQL, '@USEDATEFILT@', '//'),
+      else
+         cSQL := StrTran(cSQL, '@USEDATEFILT@', ''),
+         cSQL := StrTran(cSQL, '@DATEFILTER@', cAdditionalFilter),
+      endif,
+
+      oQuery := CreateObject('TBeAdsQuery', 'SumQuery'),
+      startseq
+         startseq
+            oQuery.SQL    := cSQL,
+            oQuery.Active := True,
+
+            if not bWithData then
+               oMem.BorrowFromDataSet := oQuery, // Felddefinitionen übernehmen
+               oMem.Active := True,
+            else
+               if DBFCount(oMem) <= 0 then
+                  SetError('Die übergebene Tabelle wurde nicht initialisiert'),
+               endif,
+
+               oMem.LoadFromDataSet := oQuery,   // Daten in MemTable übernehmen
+            endif,
+         onerror
+            SetError(GetErrorText()),
+         stopseq,
+      always
+         DestroyObject(oQuery),
+      stopseq,
+   onerror
+      SetError('Fehler in GetPerformanceSumForProjectByEmployee()' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Funktion für die Auswertung "Projekt- bzw. Vorgangs- Änderungsverfolgung PLAN / IST Werte"
+// => überträgt die Ergebnisse in @oMemTable
+// @bStructureOnly: nur die Feldstruktur für @oMemTable definieren
+// @Result: null
+//******************************************************************************
+function _ProjMgmt_GetAccumulatedChangeTrackingValues(oMemTable, nProjectID, aVorgangIDs, bStructureOnly, bOnProjectLevel)
+| oQuery, i, cSQL, cVorgangIDs, cSqlScript1Text, cSqlScript2Text, cSqlSelect3Text |
+
+   //***************************************************************************
+   // Füllt entweder nur die Struktur oder nur den Inhalt eines SQL-Query in die
+   // übergebene Memtable
+   //***************************************************************************
+   function FillMemTable(oMemTable, oSQLQuery, bStructureOnly)
+      if bStructureOnly then
+         oMemTable.Active            := False,
+         oMemTable.BorrowFromDataSet := oQuery, // nur Feldstruktur übernehmen
+         oMemTable.Active            := True,
+      else
+         oMemTable.LoadFromDataSet   := oQuery, // Daten in MemTable übernehmen
+      endif,
+   end,
+
+   startseq
+      iif(empty(oMemTable), SetError('Memtable nicht initialisiert'),),
+
+      if bStructureOnly then
+         // Wenn nur die Struktur gewünscht ist, kann dies mit einem vereinfachten
+         // Statement geschehen.
+         cSqlScript1Text := LoadSQLScriptByName('Projektmanagement\SQL\Änderungsverfolgung Vorgangsleistungen_StructureOnly'),
+         oQuery          := CreateObject('TBeAdsQuery', 'AdsQuery'),
+         startseq
+            oQuery.SQL    := cSqlScript1Text,
+            oQuery.Active := True,
+            FillMemTable(oMemTable, oQuery, bStructureOnly),
+         always
+            DestroyObject(oQuery),
+         stopseq,
+      else
+         cVorgangIDs := '',
+         aVorgangIDs := iif(Alen(aVorgangIDs) = 0, {{-1}}, aVorgangIDs),
+         for i := 1 to Alen(aVorgangIDs) do
+            cVorgangIDs := ConcatTrenner(cVorgangIDs, Str(aVorgangIDs[i, 1]), ', '),
+         next,
+
+         // Laden der SQL-Skripts
+         cSqlScript1Text := LoadSQLScriptByName('Projektmanagement\SQL\Änderungsverfolgung Vorgangsleistungen'),
+         cSqlScript2Text := LoadSQLScriptByName('Projektmanagement\SQL\Änderungsverfolgung Vorgang bzw. Projekt'),
+         cSqlSelect3Text := LoadSQLScriptByName('Projektmanagement\SQL\Änderungsverfolgung mit Zustand je Berichtszeitpunkt'),
+
+         // Im Script1 sind die relevanten Parameter für die Selektion des Projekts / Vorgangs
+         //   '@@PRJ_ID@@'         => Projekt-ID
+         //   '@@VORGFILT@@'  => durch '//' ersetzen, falls es keine Vorgangs-Einschränkung
+         //                           geben soll, sonst löschen
+         //   '@@VORG_IDS@@'        => Vorgangs-ID
+
+         // Projekt-ID einsetzen
+         cSqlScript1Text := StrTran(cSqlScript1Text, '@@PRJ_ID@@', Str(nProjectID)),
+
+         // Je nach ansichtsebene Vorgangs-ID's einschränken oder nicht
+         if bOnProjectLevel then
+            cSqlScript1Text := StrTran(cSqlScript1Text, '@@VORGFILT@@',  '//'), // Vorgangs-Where-Teil auskommentieren
+         else
+            cSqlScript1Text := StrTran(cSqlScript1Text, '@@VORGFILT@@', ''),    // Vorgangs-Where-Teil hinzufügen
+            cSqlScript1Text := StrTran(cSqlScript1Text, '@@VORG_IDS@@', cVorgangIDs), // ID's einsetzen
+         endif,
+
+         // Im Script2 wird auf die temp. Tabelle aus Script 1 zugegriffen,
+         // Parameter gibt es nicht
+
+         oQuery := CreateObject('TBeAdsQuery', 'AdsQuery'),
+         startseq
+            oQuery.SQL    := cSqlScript1Text,
+            DbExecSQL(oQuery),
+
+            oQuery.SQL    := cSqlScript2Text,
+            DbExecSQL(oQuery),
+
+            // Nach Ausführung der Scripte kann das Ergebnis (erweitert um Zusatz-Infos )
+            // mit Select-Statement 3 ermittelt werden:
+            oQuery.SQL    := cSqlSelect3Text,
+            oQuery.Active := True,
+
+            FillMemTable(oMemTable, oQuery, bStructureOnly),
+         always
+            DestroyObject(oQuery),
+         stopseq,
+      endif,
+   onerror
+      SetError('Fehler in ProjMgmt_GetAccumulatedChangeTrackingValues()' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Funktion für die Auswertung der Änderungsverfolgung zu einem Vorgangsbaum
+// => überträgt die Ergebnisse in @oMemTable
+// @bStructureOnly: nur die Feldstruktur für @oMemTable definieren
+// @Result: null
+//******************************************************************************
+function _ProjMgmt_GetChangeTrackingValues(oQuery, nProjectID, aVorgangIDs, dDateFrom, bStructureOnly, bProjectLevel)
+| cSQL, cSqlScriptText, cVorgangIDs, cDateFrom, i  |
+   startseq
+      iif(empty(oQuery) or not ClassOf(oQuery, 'TBeAdsQuery'), SetError('Es wird ein gültiges Query-Objekt benötigt'),),
+
+      // Sicherstellen, dass eine "leere Selektion" erfolgt, wenn nur die MemTable-Struktur ermittelt werden soll
+      nProjectID  := iif(bStructureOnly, -1, nProjectID),
+      aVorgangIDs := iif(bStructureOnly, {{-1}}, aVorgangIDs),
+
+      cVorgangIDs := '',
+      aVorgangIDs := iif(Alen(aVorgangIDs) = 0, {{-1}}, aVorgangIDs),
+      for i := 1 to Alen(aVorgangIDs) do
+        if not empty(cVorgangIDs) then
+           cVorgangIDs += ', ',
+        endif,
+        cVorgangIDs += Str(aVorgangIDs[i, 1]),
+      next,
+
+      // Datumsfilter
+      cDateFrom := iif(empty(dDateFrom), '', FormatDateTime('YYYY-MM-DD HH:NN:SS', dDateFrom)),
+
+      // Laden des SQL-Skripts
+      cSqlScriptText := LoadSQLScriptByName('Projektmanagement\SQL\Änderungsverfolgung'),
+
+      // Im Script sind die relevanten Parameter für die Selektion des Vorgangsbaumes
+      //   @@DATEFILT@@   => Nur ab einem bestimmten Datum auswerten? Zum aktivieren mit '' zum deaktivieren mit // ersetzen
+      //   @@DATESTRING@@ => Datum ab wann Änderungen zurückgeliefert werden sollen
+      //   @@PRJFILT@@    => Auf Projektebene Filtern? Zum aktivieren mit '' zum deaktivieren mit // ersetzen
+      //   @@TASKFILT@@   => Auf bestimmte Vorgänge einschränken Zum aktivieren mit '' zum deaktivieren mit // ersetzen
+      //   @@PRJ_ID@@     => Projekt-ID
+      //   @@VORG_IDS@@   => Liste der Vorgangs-ID (Vorgangs-Baum)
+
+      // Datumsfilter einfügen?!
+      if empty(cDateFrom) then
+         cSqlScriptText := StrTran(cSqlScriptText, '@@DATEFILT@@', '//'),
+      else
+         cSqlScriptText := StrTran(cSqlScriptText, '@@DATEFILT@@', ''),
+         cSqlScriptText := StrTran(cSqlScriptText, '@@DATESTRING@@', "'" + cDateFrom + "'"),
+      endif,
+
+      // Unterscheidung zwischen Projektübergreifende Änderungen oder nur zu aktuellem Vorgang inc. aller Untervorgänge
+      // Platzhalter dementsprechend überschreiben
+      if bProjectLevel then
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PRJFILT@@',    ''),         // Projektbereich im Statement aktivieren
+         cSqlScriptText := StrTran(cSqlScriptText, '@@TASKFILT@@', '//'),         // Zeilen auskommentieren die Vorgangseinschränkend sind
+      else
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PRJFILT@@', '//'),          // Projektbereich im Statement auskommentieren
+         cSqlScriptText := StrTran(cSqlScriptText, '@@TASKFILT@@',  ''),          // Zeilen einkommentieren die Vorgangseinschränkend sind
+         cSqlScriptText := StrTran(cSqlScriptText, '@@VORG_IDS@@', cVorgangIDs ), // Vorgangs-ID's einsetzen
+      endif,
+      cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_ID@@', Str(nProjectID)),   // Projekt-ID einsetzen
+
+      // Im Modus "bStructureOnly":
+      //   Deutlich vereinfachtes SQL-Statement reicht hier völlig aus. Selbst
+      //   wenn in das eigentliche Statement nicht vorhandene Project-Id's (-1)
+      //   eingesetzt werden, ist die Ausführungszeit relativ hoch
+      //   (1.5 sec in einem lebenden System).
+      if bStructureOnly then
+         cSqlScriptText := 'SELECT * FROM ' + DbSqlTableName(waDabAvg) + ' WHERE ID = -1',
+      endif,
+
+      oQuery.SQL    := cSqlScriptText,
+      oQuery.Active := True,
+   onerror
+      SetError('Fehler in ProjMgmt_GetChangeTrackingValues()' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Funktion für die Erstellung einer MemTable als Übersicht über ein/mehrere Projekt(e)
+// => überträgt die Ergebnisse in @oMemTable
+// @bStructureOnly: nur die Feldstruktur für @oMemTable definieren
+// @cSQLFilter:     SQL-konformer WHERE-Filter-Ausdruck, mit dem die Auswahl
+//                  eingeschränkt werden kann
+// @Result: null
+//******************************************************************************
+function _ProjMgmt_GetProjectOverviewWithValues(oMemTable, bStructureOnly, cSQLFilter)
+| oQuery, cSqlScriptText |
+   startseq
+      iif(empty(oMemTable), SetError('Memtable nicht initialisiert'),),
+
+      // Laden des SQL-Skripts
+      cSqlScriptText := LoadSQLScriptByName('Projektmanagement\SQL\Projekt Übersicht'),
+
+      // Im Script sind die relevanten Parameter für die Selektion der Projekte
+      //   '@@PRJ_FILTER@@' => durch '//' ersetzen, falls es keine Einschränkung gibt
+      //   '@@PRJ_WHERE@@'  =>  Filter für Projekt-Stamm
+
+      // Keine Daten, nur Struktur übernehmen
+      if bStructureOnly then
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_FILTER@@', ''),
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_WHERE@@', 'ID = -1'),
+      else
+         if empty(cSQLFilter) then
+            cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_FILTER@@',  '//'), // Where-Teil 'auskommentieren'
+         else
+            cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_FILTER@@', ''),
+            cSqlScriptText := StrTran(cSqlScriptText, '@@PRJ_WHERE@@', cSQLFilter),
+         endif,
+      endif,
+
+      oQuery := CreateObject('TBeAdsQuery', 'AdsQuery'),
+      startseq
+         oQuery.SQL    := cSqlScriptText,
+         oQuery.Active := True,
+         if bStructureOnly then
+            oMemTable.BorrowFromDataSet := oQuery, // Felddefinitionen übernehmen
+
+            // Info: Hier können Individual-Felder zur Memtable hinzugefügt
+            //       werden, die nicht im SQL definiert sind
+
+            oMemTable.Active := True,
+         else
+            if DBFCount(oMemTable) <= 0 then
+               SetError('Die übergebene Tabelle wurde nicht initialisiert'),
+            endif,
+
+            oMemTable.LoadFromDataSet := oQuery,   // Daten in MemTable übernehmen
+            oMemTable.OrderBy         := 'BEGINN',
+
+            // Info: Hier kann eine Verarbeitungs-Schleife für die Berechnung
+            //       von komplexen Feldinhalten, die nicht per SQL berechnet wurden,
+            //       implementiert werden
+
+            // DbGoTop(oMemTable),
+            // while not eof(oMemTable) do
+            //    MyEdit(oMemTable),
+            //    ... hier die Feldinhalte berechnen ...
+            //    MyPost(oMemTable),
+            //    DbSkip(1, oMemTable),
+            // end,
+         endif,
+      always
+         DestroyObject(oQuery),
+      stopseq,
+   onerror
+      SetError('Fehler in ProjMgmt_GetProjectOverviewWithValues()' + crlf + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Initialisiert und befüllt eine Memtable für das Projektzeit-Erfassung Docking
+//******************************************************************************
+function _ProjMgmt_ProjectPostingMemtable(oMemTable, bStructureOnly, nPersonnel,
+                                          dDateFrom, nDaysCount, cTimeUnit)
+
+   //***************************************************************************
+   // Setzt den Readonly-Status eines Feldes
+   //***************************************************************************
+   function SetFieldReadOnly(oMemtable, cFieldName)
+   | oField |
+      oField := DBField(cFieldName, oMemTable),
+      oField.ReadOnly := True,
+   end,
+
+   //***************************************************************************
+   // Fügt eine "leere" Summen-Zeile zur Memtable hinzu
+   //***************************************************************************
+   function AddInfoLine(oMemTable, cType, nKey, cTimeUnit, dDateFrom)
+      MyAppend(oMemTable),
+      oMemTable:ZEILEN_TYP      := cType,
+      oMemTable:SORT_KEY        := Str(nKey),
+      oMemTable:EINGABE_EINHEIT := cTimeUnit,
+      oMemTable:PRJ_ID          := -1,
+      oMemTable:VORG_ID         := -1,
+      oMemTable:VORGLS_ID       := -1,
+      oMemTable:START_DATE      := dDateFrom,
+      MyPost(oMemTable),
+   end,
+
+   //***************************************************************************
+   // Aktualisiert die Summen-Werte einer Summen-Zeile
+   //***************************************************************************
+   function UpdateSum(oMemTable, dDate, cType, nValue, cTimeUnit)
+   | oField |
+      if DBLocate('ZEILEN_TYP', cType, 0, oMemTable) then
+         // Falls die Zeit-Einheit in Stunden ist, muss der Wert von Minuten in Stunden umgerechnet werden
+         nValue := iif(cTimeUnit = 'h', Round(nValue / 60, cPMResMinutePrec), nValue),
+         MyEdit(oMemTable),
+         oField := DBField('TAG_OLD_' + Str(dDate), oMemTable),
+         DBReplace(oField, nValue),
+         oField := DBField('TAG_NEW_' + Str(dDate), oMemTable),
+         DBReplace(oField, nValue),
+         MyPost(oMemTable),
+      endif,
+   end,
+
+    //***************************************************************************
+   // Memtable initalisieren
+   //***************************************************************************
+   function InitMemtable(oMemTable, nDaysCount)
+   | i, oField |
+      startseq,
+         MyAddMemField(oMemTable, 'ZEILEN_TYP',      'ftString',  1, 0),
+         MyAddMemField(oMemTable, 'SORT_KEY',        'ftInteger', 0, 0),
+         MyAddMemField(oMemTable, 'START_DATE',      'ftDate',    0, 0),
+         MyAddMemField(oMemTable, 'EINGABE_EINHEIT', 'ftString',  1, 0),
+         MyAddMemField(oMemTable, 'PRJ_ID',          'ftInteger', 0, 0),
+         MyAddMemField(oMemTable, 'VORG_ID',         'ftInteger', 0, 0),
+         MyAddMemField(oMemTable, 'VORGLS_ID',       'ftInteger', 0, 0),
+         // Für jeden "sichtbaren" Tag jeweils ein "OLD" und "NEW" Feld hinzufügen
+         for i:=1 to nDaysCount do
+            MyAddMemField(oMemTable, 'TAG_OLD_' + Str(i), 'ftFloat', 0, 2), // Feld für letzten Wert
+            MyAddMemField(oMemTable, 'TAG_NEW_' + Str(i), 'ftFloat', 0, 2), // Feld für neuen Wert
+            MyAddMemField(oMemTable, 'TAG_COM_' + Str(i), 'ftMemo',   ,  ), // Feld für Kommentare
+         next,
+
+         // Info: Hier können Individual-Felder zur Memtable hinzugefügt
+         //       werden, die nicht im SQL definiert sind
+
+         oMemTable.OrderBy := 'SORT_KEY;PRJ_ID;VORG_ID;VORGLS_ID',
+         oMemTable.Active  := True,
+
+         // Einige der Felder dürfen nicht verändert werden -> readonly
+         SetFieldReadOnly(oMemTable, 'ZEILEN_TYP'),
+         SetFieldReadOnly(oMemTable, 'SORT_KEY'),
+         SetFieldReadOnly(oMemTable, 'START_DATE'),
+         SetFieldReadOnly(oMemTable, 'PRJ_ID'),
+         SetFieldReadOnly(oMemTable, 'VORG_ID'),
+         SetFieldReadOnly(oMemTable, 'VORGLS_ID'),
+         for i:=1 to nDaysCount do
+            SetFieldReadOnly(oMemTable, 'TAG_OLD_' + Str(i)),
+         next,
+      onerror
+         SetError('Fehler beim Erstellen der Buchungs-Tabelle' + crlf + crlf + GetErrorText()),
+      stopseq,
+   end,
+
+   //******************************************************************************
+   // Die Info-Zeilen per SQL ermitteln und in Memtable übernehmen
+   //******************************************************************************
+   function CreateInfoLines(oMemTable, nPersonnel, dDateFrom, nDaysCount, cTimeUnit)
+   | cDateFilter, cDateFrom, cDateTo, cSqlScriptText, oQuery, cDayField, oField, dDate |
+      startseq
+         cSqlScriptText := LoadSQLScriptByName('Projektmanagement\SQL\Übersicht Projekt-Buchungen'),
+         cSqlScriptText := StrTran(cSqlScriptText, '@@TABLENAMEADDITION@@', '_PRJ_ZEIT_ERFASS'),
+         // Nur Buchungen des aktuellen Benutzers
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PERSNR020FILT@@', '         AND (PERSNR = ' + Str(nPersonnel) + ')'),
+         cSqlScriptText := StrTran(cSqlScriptText, '@@PERSNRPOSTINGSFILT@@', '    AND (DABPVL.RES_ID = ' + Str(nPersonnel) + ')'),
+         // Datums-Filter
+         cDateFrom   := "(DATUM >= '" + FormatDateTime('YYYY-MM-DD', dDateFrom) + "')",
+         cDateTo     := "(DATUM <= '" + FormatDateTime('YYYY-MM-DD', dDateFrom + nDaysCount - 1) + "')",
+         cDateFilter := '         AND (' + cDateFrom + ' AND ' + cDateTo + ')',
+         cSqlScriptText := StrTran(cSqlScriptText, '@@DATEFILTER@@', cDateFilter),
+         // Nur Buchungen mit Projekt-Bezug
+         cSqlScriptText := StrTran(cSqlScriptText, '@@ONLYPRJDAYS@@', '//'),
+         oQuery := CreateObject('TBeAdsQuery', 'AdsQuery'),
+         startseq,
+            oQuery.SQL      := cSqlScriptText,
+            oQuery.Active   := True,
+            oQuery.Filtered := False,
+            oQuery.Filter   := 'ZEILEN_TYP = ''S''',
+            oQuery.Filtered := True,
+            DbGoTop(oQuery),
+
+            // Summenzeilen hinzufügen
+            AddInfoLine(oMemTable, 'A',   0, cTimeUnit, dDateFrom),             // Summe (A)nwesenheit
+            AddInfoLine(oMemTable, 'W',  10, cTimeUnit, dDateFrom),             // Summe Ab(W)esnheit
+            AddInfoLine(oMemTable, 'P',  90, cTimeUnit, dDateFrom),             // Summe (P)rojektzeit
+            AddInfoLine(oMemTable, 'D', 100, cTimeUnit, dDateFrom),             // (D)ifferenz (aus A&P)
+
+            // Vorhandene Summen in Memtable übernehemen
+            if not (BoF(oQuery) and EoF(oQuery)) then
+               while not EoF(oQuery) do
+                  dDate := (oQuery:DATUM-dDateFrom) + 1,
+                  UpdateSum(oMemTable, dDate, 'A', oQuery:SUMME_ANWESENHEITEN, cTimeUnit),
+                  UpdateSum(oMemTable, dDate, 'W', oQuery:SUMME_ABWESENHEITEN, cTimeUnit),
+                  UpdateSum(oMemTable, dDate, 'P', oQuery:SUMME_PROJEKTZEITEN, cTimeUnit),
+                  UpdateSum(oMemTable, dDate, 'D', oQuery:SUMME_PROJEKTZEITEN - oQuery:SUMME_ANWESENHEITEN, cTimeUnit),
+                  DbSkip(1, oQuery),
+               end,
+            endif,
+         always,
+            DestroyObject(oQuery),
+         stopseq,
+      onerror
+         SetError('Fehler beim Erstellen des SQL-Statements' + crlf + GetErrorText()),
+      stopseq,
+   end,
+
+   //******************************************************************************
+   // Buchungs-Zeilen per SQL ermitteln und in Memtable übernehmen
+   //******************************************************************************
+   function CreatePostingLines(oMemTable, nPersonnel, dDateFrom, nDaysCount, cTimeUnit)
+   | cSqlScriptText, oQuery, cDayField, oField, nValue |
+      // Laden des SQL-Skripts
+      cSqlScriptText := LoadSQLScriptByName('Projektmanagement\SQL\ProjektzeitErfassungJeProjektMitarbeiter'),
+
+      // Im Script sind die relevanten Parameter für die Selektion der Projekte
+      //   '@@PERSNR@@'     => PersNr für die Buchungen gesucht werden
+      //   '@@DATE_FROM@@'  => Datums-Filter von
+      //   '@@DATE_TO@@'    => Datums-Filter bis
+
+      cSqlScriptText := StrTran(cSqlScriptText, '@@PERSNR@@',    Str(nPersonnel)),
+      cSqlScriptText := StrTran(cSqlScriptText, '@@DATE_FROM@@', FormatDateTime('YYYY-MM-DD', dDateFrom)),
+      cSqlScriptText := StrTran(cSqlScriptText, '@@DATE_TO@@',   FormatDateTime('YYYY-MM-DD', dDateFrom + nDaysCount - 1)),
+      oQuery := CreateObject('TBeAdsQuery', 'ProjMgmt_ProjectPostingMemtable_Query'),
+      startseq,
+         oQuery.SQL    := cSqlScriptText,
+         oQuery.Active := True,
+
+         DbGoTop(oQuery),
+         while not EoF(oQuery) do
+           // Für jede Kombination aus Projekt + Vorgang einen neuen Satz anlegen
+            if not EditModes(oMemTable) then
+               MyAppend(oMemTable),
+            endif,
+            oMemTable:ZEILEN_TYP      := 'B',
+            oMemTable:SORT_KEY        := '50',
+            oMemTable:EINGABE_EINHEIT := cTimeUnit,
+            oMemTable:PRJ_ID          := oQuery:PRJ_ID,
+            oMemTable:VORG_ID         := oQuery:VORG_ID,
+            oMemTable:VORGLS_ID       := oQuery:VORGLS_ID,
+            oMemTable:START_DATE      := dDateFrom,
+
+            cDayField := Str((oQuery:DATUM-dDateFrom)+1),
+            nValue    := iif(cTimeUnit = 'h', Round(oQuery:MINUTEN / 60, cPMResMinutePrec), oQuery:MINUTEN),
+            oField    := DBField('TAG_OLD_' + cDayField, oMemTable),
+            DBReplace(oField, nValue),
+            oField    := DBField('TAG_NEW_' + cDayField, oMemTable),
+            DBReplace(oField, nValue),
+            DbSkip(1, oQuery),
+
+            if Eof(oQuery) or (oMemTable:VORG_ID <> oQuery:VORG_ID) then
+               MyPost(oMemTable),
+            endif,
+
+            // Hinweis:
+            // bei individueller Erweiterung muss sichergestellt sein, dass je
+            // Kombination Projekt + Vorgang + Vorgangs-Leistung nur ein 'B'
+            // Datensatz in der Memtable enthalen sein darf
+         end,
+      always,
+         DestroyObject(oQuery),
+      stopseq,
+   end,
+
+   //***************************************************************************
+
+   if bStructureOnly then
+      InitMemtable(oMemTable, nDaysCount),
+   else
+      if Empty(oMemTable) or DBFCount(oMemTable) <= 0 then
+         SetError('Die übergebene Tabelle wurde nicht initialisiert'),
+      else
+         DeleteAllData(oMemTable), // Inhalt der Memtable ggf. leeren
+      endif,
+
+      CreateInfoLines(oMemTable, nPersonnel, dDateFrom, nDaysCount, cTimeUnit),
+      CreatePostingLines(oMemTable, nPersonnel, dDateFrom, nDaysCount, cTimeUnit),
+   endif,
+end,
+
+//******************************************************************************
+// Erzeugt eine leere Memtable die mit Daten für den Import von Projekt-Buchungen
+// verwendet werden kann
+//******************************************************************************
+function _ProjMgmt_InitProjectEffortPostingImportTable(oMemtable)
+   startseq,
+      MyAddMemField(oMemTable, 'ID',      'ftInteger', 0, 0), // Eindeutige ID des Import-Datensatz
+      MyAddMemField(oMemTable, 'RES_ID',  'ftInteger', 0, 0), // Ressourcen-ID
+      MyAddMemField(oMemTable, 'RESTYP',  'ftString',  1, 0), // Ressourcen-Typ
+      MyAddMemField(oMemTable, 'PRJ_ID',  'ftInteger', 0, 0), // Zuordnung Projekt-ID
+      MyAddMemField(oMemTable, 'VORG_ID', 'ftInteger', 0, 0), // Zuordnung Vorgang-ID
+      MyAddMemField(oMemTable, 'DATE',    'ftDate',    0, 0), // Datum für das gebucht wird
+      MyAddMemField(oMemTable, 'MINUTES', 'ftFloat',   0, 2), // Menge die gebucht wird
+      MyAddMemField(oMemTable, 'MEMO',    'ftMemo',    0, 0), // Kommentar für Buchung
+
+      // Info: Hier können Individual-Felder zur Memtable hinzugefügt werden
+
+      oMemTable.OrderBy := 'RESTYP;RES_ID;PRJ_ID;VORG_ID;DATE',
+      oMemTable.Active  := True,
+   onerror
+      SetError('Fehler beim Erstellen der Import-Tabelle' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Eine mit buchungs-relevanten Daten gefüllte Memtable validieren
+//******************************************************************************
+function _ProjMgmt_ValidateProjectEffortPostingImportTable(oDM, oMemtable, dMinDate, dMaxDate)
+| nMinutes |
+
+   // Memtable gültig?
+   if Empty(oMemTable) or DBFCount(oMemTable) <= 0 then
+      SetError('Die übergebene Tabelle wurde nicht initialisiert', 11),
+   endif,
+
+   // Alle Datensätze validieren
+   DbGotop(oMemTable),
+   while not Eof(oMemTable) do
+
+      prs('ProjMgmt_ValidateProjectEffortPostingImportTable', 'Validierung | Projekt: ' + Str(oMemTable:PRJ_ID) +
+                                    ' / Vorgang:   ' + Str(oMemTable:VORG_ID) +
+                                    ' / Ressource: ' + Str(oMemTable:RES_ID) +
+                                    ' / Res. Typ:  ' + oMemTable:RESTYP +
+                                    ' / Minuten:   ' + FloatToStr(Round(oMemtable:MINUTES, cPMResMinutePrec)) +
+                                    ' / Datum:     ' + DToC(oMemtable:DATE)),
+
+      // Aktuell nur Buchungen für Ressourcen "M" (Mitarbeiter) möglich
+      if oMemTable:RESTYP <> 'M' then
+         SetError('Buchungen nur für Ressourcen-Typ "M" (Mitarbeiter) erlaubt', 50),
+      endif,
+
+      // Prüfen ob Ressource existiert
+      if ( oMemTable:RESTYP = 'M' and LookUp(waDab262, 'DAB263', {{oMemTable:RES_ID}}, 'PERSNR', -1) = -1 ) or
+         ( oMemTable:RESTYP = 'R' and LookUp(waDab330, 'ID',     {{oMemTable:RES_ID}}, 'ID', -1) = -1 ) then
+         SetError('Ressource "' + Str(oMemTable:RES_ID) + '" Typ "' + oMemTable:RESTYP + '"' + ' existiert nicht' , 51),
+      endif,
+
+      // Datum gültig und innerhalb des zulässigen Bereichs
+      dMinDate := iif(Empty(dMinDate), FrKW('00.00'), dMinDate),
+      dMaxDate := iif(Empty(dMaxDate), FrKW('99.99'), dMaxDate),
+      if oMemTable:DATE = 0 or not TrmChk(oMemTable:DATE, dMinDate, dMaxDate, False) then
+         SetError('Das Buchungsdatum ' + DToC(oMemTable:DATE) + ' ist ein ungültiges Buchungsdatum oder außerhalb des zulässigen Bereichs', 52),
+      endif,
+
+      // Prüfen ob die Buchungs-Menge in der zulässigen Schrittweiter angegeben ist
+      nMinutes := ToFloat(oMemTable:MINUTES),
+      if Frac(Round(nMinutes / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 then
+         SetError('Angabe der Minuten nur in ' + FormatFloat('##', gl_ProjectValidPostingsStep) +  '-Minuten-Schritten erlaubt', 53),
+      endif,
+
+      // Info: Hier können weitere, individuelle, Validierungs-Regeln definiert werden
+
+      DBSkip(1, oMemTable),
+   end,
+end,
+
+//******************************************************************************
+// Projekt-Buchungen anhand einer, mit buchungs-relevanten Daten, gefüllter
+// Memtable erzeugen
+//******************************************************************************
+function _ProjMgmt_ImportProjectEffortPostingImportTable(oDM, oMemtable, dMinDate, dMaxDate)
+| oProjectController, oProjectBO, oTaskBo, oEffortBo, oDabPVL|
+
+   // Datenmodul und Transaktion prüfen
+   if Empty(oDM) or not (DbInTrans(oDM.AdsConnection)) then
+      SetError('Kein gültiges Datenmodul oder Transaktion nicht aktiv', 10),
+   endif,
+
+   // Memtable gültig?
+   if Empty(oMemTable) or DBFCount(oMemTable) <= 0 then
+      SetError('Die übergebene Tabelle wurde nicht initialisiert', 11),
+   endif,
+
+   // Datensätze der Memtable validieren
+   ProjMgmt_ValidateProjectEffortPostingImportTable(oDM, oMemtable, dMinDate, dMaxDate),
+
+   // Business-Objekte und Controller erzeugen
+   oProjectController              := CreateObject('TBeProjectBusinessController', 'ProjBuchImp_Controller'),
+   oProjectController.CBDataModule := oDM,
+   oProjectBO                      := CreateObject('TBeProjectBo', 'ProjBuchImp_Bo'),
+   oProjectBO.CBDataModule         := oDM,
+   oTaskBo                         := CreateObject('TBeProjectTaskBo', 'ProjTskBuchImp_Bo'),
+   oTaskBo.CBDataModule            := oDM,
+   oEffortBo                       := CreateObject('TBeProjectTaskEffortBo', 'ProjTskEfftBuchImp_Bo'),
+   oEffortBo.CBDataModule          := oDM,
+   oDabPVL                         := DBGetTable(oDM, waDABPVL),
+
+   startseq
+      DbGotop(oMemTable),
+      while not Eof(oMemTable) do
+         // BOs positionieren
+         oProjectBO.CbGoToID(oMemtable:PRJ_ID),
+         oTaskBo.CbGoToID(oMemtable:VORG_ID),
+
+         startseq
+            // Wenn keinepassende Vorgangs-Leistung existiert dann eine anlegen
+            if not DBLocate('PRJ_ID;VORG_ID;RESTYP;RES_ID',
+                            {oMemtable:PRJ_ID, oMemtable:VORG_ID, oMemtable:RESTYP, oMemtable:RES_ID},
+                            0, oDabPVL) then
+               oEffortBo.CbInsertTaskEffort(oTaskBo.CbID),
+               oEffortBo.CbResourceType    := oMemtable:RESTYP,
+               oEffortBo.CbResourceID      := oMemtable:RES_ID,
+               oEffortBo.CbDescription     := '',
+               oEffortBo.CbQuantityPlanned := 0,
+               oEffortBo.CbPost(),
+            else
+               oEffortBo.CbGoToID(oDabPVL:ID),
+            endif,
+         onerror
+            SetError('Fehler beim automatischen Anlegen der Vorgangs-Leistung' + crlf + GetErrorText(), 30),
+         stopseq,
+
+         prs('ProjMgmt_ImportProjectEffortPostingImportTable', 'CREATE POSTING | Projekt: ' + Str(oProjectBo.CbID) +
+                                       ' / Vorgang: ' + Str(oTaskBo.CbID) +
+                                       ' / Leistung: ' + Str(oEffortBo.CbID) +
+                                       ' / Ressource: ' + Str(oEffortBo.CbResourceID) +
+                                       ' / Res. Typ: ' + oEffortBo.CbResourceType +
+                                       ' / Minuten: ' + FloatToStr(Round(oMemtable:MINUTES, cPMResMinutePrec)) +
+                                       ' / Datum: ' + DToC(oMemtable:DATE)),
+         // Buchung durchführen
+         oProjectController.CbCreateEffortPosting(oProjectBo, oTaskBo, oEffortBo,
+                                                  oMemtable:DATE,
+                                                  Round(oMemtable:MINUTES, cPMResMinutePrec),
+                                                  oMemtable:MEMO),
+         dbSkip(1, oMemTable),
+      end,
+
+   always
+      DestroyObject(oEffortBo),
+      DestroyObject(oTaskBo),
+      DestroyObject(oProjectBO),
+      DestroyObject(oProjectController),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt einen formatierten Benutzerstempel der z. B. im
+// Vorgangs-Memo verwendet werden kann.
+// @Result: String - Benutzer- Datum-/Zeitstempel
+//******************************************************************************
+function _ProjMgmt_GetUserStamp()
+   // RTF-Text für den User-Zeit-Stempel vorbereiten
+   Result :=
+      // Allgemein
+      '{\rtf1' +
+         '\ansi\ansicpg0\uc0\deff0\deflang0\deflangfe0' +
+      // Schriftarten
+      '{\fonttbl' +
+         '{\f0\fnil Calibri;}}' +// {\f1\fnil\fcharset0 Segoe UI;}}' +
+      // Farben
+      '{\colortbl;' +
+         '\red0\green0\blue0;\red0\green0\blue255;\red0\green255\blue255;' +
+         '\red0\green255\blue0;\red255\green0\blue255;\red255\green0\blue0;' +
+         '\red255\green255\blue0;\red255\green255\blue255;\red0\green0\blue128;' +
+         '\red0\green128\blue128;\red0\green128\blue0;\red128\green0\blue128;\' +
+         'red128\green0\blue0;\red128\green128\blue0;\red128\green128\blue128;\' +
+         'red192\green192\blue192;\red51\green102\blue255;}' +
+      // Formatierter Text
+      '\pard\' +
+         'fi0\li0\ql\ri0\sb0\sa0\itap0 \plain \f1\b\fs22 @USER@ @DATUM@ ' +
+         '\plain \f1\i\fs18 @HOUR@\plain \f1\fs22' +
+         '\par \par \plain \f0\fs22' +
+      '\par}',
+
+   // Entsprechende Werte in den RTF-String einfügen
+   Result := StrTran(Result, '@DATUM@', FormatDateTime('DD.MM.YYYY', Date())),
+   Result := StrTran(Result, '@HOUR@' , FormatDateTime('HH:NN:SS', Now())),
+   Result := StrTran(Result, '@USER@', '/' + BeUserShortName(c_usr)),
+end,
+
+//******************************************************************************
+// Die Funktion macht aus einem String oder einem Array einen
+// ADS konformen Filterstring
+// @Result: String - ADS konformer Filter
+//******************************************************************************
+function _PrjMgmt_CreateFilter(cFilter, cField)
+| i, cUsers |
+   Result := '',
+   if ValType(cFilter) = 'A' then
+      for i := 1 to ALen(cFilter) do
+         Result += iif(Empty(Result), '( ', ' OR '),
+         Result += cField + ' = ' + Str(cFilter[i]),
+      next,
+   else,
+      for i := 1 to TokenCount(cFilter, '/') do
+         if Token(cFilter, '/', i) <> '' then
+            Result += iif(Empty(Result), '( ', ' OR '),
+            Result += cField + ' = ' + Token(cFilter, '/', i),
+         endif,
+      next,
+   endif,
+   if not Empty(Result) then
+      Result += ' )',
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion macht aus einem Userstring oder einem Userarray einen
+// ADS konformen Filterstring
+// @Result: String - ADS konformer Filter
+//******************************************************************************
+function _PrjMgmt_CreateUserFilter(cFilter)
+   Result := PrjMgmt_CreateFilter(cFilter, 'PERSNR'),
+end,
+
+//******************************************************************************
+// Die Funktion prüft ob die übergebene Tabelle im Insert-Modus ist
+// ACHTUNG: Die Funktion gehört eigentlich in die DBFunctions. Die Funktion ist
+//          vorerst hier, damit die Consultants die DBFunctions nicht auschecken
+//          müssen.
+// @Result: boolean
+//******************************************************************************
+function _InsertMode(oTable)
+   Result := DBState(oTable) = dsInsert,
+end,

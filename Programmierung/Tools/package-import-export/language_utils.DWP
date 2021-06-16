@@ -1,0 +1,303 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktion
+//##############################################################################
+//##############################################################################
+
+// kann wieder entfernt werden wenn WriteToLog auf MemTable umgestellt wurde
+function WriteToLog(nType, cText, bBold) ... end,
+
+//******************************************************************************
+// Export der Übersetzungen eines Labels
+// @Result: null
+//******************************************************************************
+function ReplaceAllTranslations(oTranslations:R, oDabUBP:R)
+   | oTranslation, cISOCode |
+   oTranslation := null,
+   
+   oTranslations.Clear(),
+   
+   oDabUBP.CbFirst(),
+   while not oDabUBP.CbEoF do
+      if not empty(Trim(oDabUBP:BEZ)) or not empty(Trim(oDabUBP:MEMO)) then
+
+         cISOCode := Eval('|nSprache| LU_BeLayoutLanguageToISOLanguageCode(nSprache)', oDabUBP:SPRACHE),
+         SetErrorif(Empty(Trim(cISOCode)), 'ISO-Codes sind nicht ordentlich gepflegt. (Fehler bei Label "' + Trim(oDabUBP:LABEL) +'")'),
+         
+         oTranslation := oTranslations.appendObject(),
+         oTranslation.appendString('iso_code', cISOCode),
+         if not empty(Trim(oDabUBP:BEZ)) then
+            oTranslation.appendString('short_text', Trim(oDabUBP:BEZ)),
+         endif,
+         if not empty(Trim(oDabUBP:MEMO)) then
+            oTranslation.appendString('long_text', Trim(oDabUBP:MEMO)),
+         endif,
+      endif,
+      oDabUBP.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Export eines einzelnen Label mit Übersetzungen
+// @Result: null
+//******************************************************************************
+function WriteLabelProperies(oLabel:R, oDabUBK:R, oDabUBP:R)
+   | oTranslations |
+   
+   oTranslations := null,
+   
+   if not empty(Trim(oDabUBK:BEZ)) then
+      if oLabel.PathExists('short_text') then
+         oLabel.setString('short_text', Trim(oDabUBK:BEZ)),
+      else
+         oLabel.appendString('short_text', Trim(oDabUBK:BEZ)),
+      endif,
+   else
+      oLabel.DeletePath('short_text'),
+   endif,
+   
+   if not oDabUBK:TEXTONLY then
+      if oLabel.PathExists('is_plain_text') then
+         oLabel.setBoolean('is_plain_text', oDabUBK:TEXTONLY),
+      else
+         oLabel.appendBoolean('is_plain_text', oDabUBK:TEXTONLY),
+      endif,
+   else
+      oLabel.DeletePath('is_plain_text'),
+   endif,
+   
+   if not empty(Trim(oDabUBK:MEMO)) then
+      if oLabel.PathExists('long_text') then
+         oLabel.setString('long_text', Trim(oDabUBK:MEMO)),
+      else
+         oLabel.appendString('long_text', Trim(oDabUBK:MEMO)),
+      endif,
+   else
+      oLabel.DeletePath('long_text'),
+   endif,
+   
+   if not empty(Trim(oDabUBK:INFOTEXT)) then
+      if oLabel.PathExists('description') then
+         oLabel.setString('description', Trim(oDabUBK:INFOTEXT)),
+      else
+         oLabel.appendString('description', Trim(oDabUBK:INFOTEXT)),
+      endif,
+   else
+      oLabel.DeletePath('description'),
+   endif,
+   
+   oDabUBP.CbCancelRange(),
+   oDabUBP.CbSetRangeEx({oDabUBK:LABEL}),
+   
+   if oDabUBP.CbDataAvailable then
+      
+      if oLabel.PathExists('translations') then
+         oTranslations := oLabel.getArray('translations'),
+      else
+         oTranslations := oLabel.appendArray('translations'),
+      endif,
+      ReplaceAllTranslations(oTranslations, oDabUBP),
+   else
+      oLabel.DeletePath('translations'),
+   endif,
+end,
+
+//******************************************************************************
+// Export der Labels
+// hier wird unterschieden zwischen einem Set mit einzelnen Labels oder
+// einem Set mit Präfix
+// @Result: null
+//******************************************************************************
+function ReplaceLanguages(oDM:O, oLanguages:R)
+   | i, j, oLanguageSet, oLabels, oLabel, oDabUBK, oDabUBP, nCountLabels |
+   
+   oLanguageSet := null,
+   oLabels := null,
+   oLabel := null,
+   
+   oDabUBK := MyGetTable(oDM, Eval('waDabUBK'),), // Eval wird genutzt weil Konstante erst ab 7.2 verfügbar ist und Programm rückwärts kompatible sein muss
+   oDabUBK.IndexName := 'LABEL',
+   oDabUBP := MyGetTable(oDM, Eval('waDabUBP'),),
+   oDabUBP.IndexName := 'LABEL_SPRACHE',
+   startseq
+      for i := 0 to oLanguages.Count() - 1 do
+         oLanguageSet := oLanguages.getObject({i}),
+         oLabels := null,
+         if oLanguageSet.PathExists('labels') then
+            oLabels := oLanguageSet.getArray('labels'),
+         endif,
+         
+         if oLanguageSet.PathExists('prefix') then
+            if empty(oLabels) then
+               oLabels := oLanguageSet.AppendArray('labels'),
+            endif,
+            nCountLabels := 0,
+            oLabels.Clear(),
+            oDabUBK.CbSetFilter('CONTAINS(LABEL, ''' + oLanguageSet.getString('prefix') + '*'')'), // TODO: SChutzblock für aufheben des Filters
+            startseq
+               oDabUBK.CbFirst(),
+               while not oDabUBK.CbEoF do
+                  oLabel := oLabels.appendObject(),
+                  oLabel.AppendString('name', Trim(oDabUBK:LABEL)),
+                  WriteLabelProperies(oLabel, oDabUBK, oDabUBP),
+                  nCountLabels++,
+                  oDabUBK.CbNext(),
+               end,
+            always
+               oDabUBK.CbSetFilter(''),
+            stopseq,
+            WriteToLog(0, 'Es wurden ' + str(nCountLabels) + ' Labels mit dem Präfix `' + oLanguageSet.getString('prefix') + '` exportiert.', false),
+         else
+            if not empty(oLabels) then
+               for j := 0 to oLabels.Count() - 1 do
+                  oLabel := oLabels.getObject({j}),
+                  if oDabUBK.CbFindKey({oLabel.GetString('name')}) then
+                     WriteLabelProperies(oLabel, oDabUBK, oDabUBP),
+                     WriteToLog(0, 'Label `' + Trim(oDabUBK:LABEL)  + '` wurde exportiert.', false),
+                  else
+                     WriteToLog(2, 'Label "' + oLabel.GetString('name') + '" wurde nicht gefunden.', false),
+                     // Erhöhung der Anzahl von Errors nicht notwendig, da kein kritischer Fehler
+                  endif,
+               next,
+            endif,
+         endif,
+      next,
+   always
+      beClose(oDabUBP),
+      beClose(oDabUBK),
+   stopseq,
+end,
+
+//******************************************************************************
+// Export von aller Labels(DabUBK) mit den Übersetzungen(DabUBP)
+// @Result: null
+//******************************************************************************
+function ExportLabels(oDM:O, oAnything:R, cFileName)
+   | oLanguages |
+   WriteToLog(0, 'Export der Labels mit Übersetzungen...', True),
+   oLanguages := oAnything.getArray({'customizing-objects', 'language'}),
+   ReplaceLanguages(oDM, oLanguages),
+   SaveFile(AnsiToUtf8(oAnything.ToFormattedString()), cFileName),
+end,
+
+//******************************************************************************
+// Import der Übersetzungen eines Labels
+// @Result: null
+//******************************************************************************
+function ImportTranslations(oLabel:R, oDabUBP:R)
+   | i, oTranslations, oTranslation, nSprache |
+   if oLabel.PathExists('translations') then
+      oTranslations := oLabel.getArray('translations'),
+      for i := 0 to oTranslations.Count() - 1 do
+         oTranslation := oTranslations.GetObject(i),
+         nSprache := Eval('|cIsoCode| LU_ISOLanguageCodeToBeLayoutLanguage(cIsoCode)', oTranslation.getString('iso_code')),
+         SetErrorIf(empty(nSprache), 'ISO Code "' + oTranslation.getString('iso_code') + '" ist im System nicht gepflegt.'),
+         if oDabUBP.CbFindKey({oLabel.getString('name'), nSprache}) then
+            oDabUBP.CbEdit(),
+         else
+            oDabUBP.CbInsert(),
+         endif,
+         oDabUBP:LABEL   := oLabel.getString('name'),
+         oDabUBP:SPRACHE := nSprache,
+         oDabUBP:BEZ     := oTranslation.getStringDef('short_text', ''),
+         oDabUBP:MEMO    := oTranslation.getStringDef('long_text', ''),
+         oDabUBP.CbPost(),
+      next,
+   endif,
+end,
+
+
+//******************************************************************************
+// Import eines einzelnen Label mit Übersetzungen
+// @Result: null
+//******************************************************************************
+function ImportSingleLabel(oLabel:R, oDabUBK:R, oDabUBP:R, bIsPrefixLabel:L)
+   if oDabUBK.CbFindKey({oLabel.getString('name')}) then
+      oDabUBK.CbEdit(),
+      if not bIsPrefixLabel then
+         WriteToLog(0, 'Label `' + Trim(oDabUBK:LABEL)  + '` wurde beim Import geändert.', false),
+      endif,
+   else
+      oDabUBK.CbInsert(),
+      oDabUBK:LABEL := oLabel.getString('name'),
+      if not bIsPrefixLabel then
+         WriteToLog(0, 'Label `' + Trim(oDabUBK:LABEL)  + '` wurde beim Import neu erstellt.', false),
+      endif,
+   endif,
+   oDabUBK:BEZ      := oLabel.getStringDef('short_text', ''),
+   oDabUBK:TEXTONLY := oLabel.getBooleanDef('is_plain_text', true),
+   oDabUBK:MEMO     := oLabel.getStringDef('long_text', ''),
+   oDabUBK:INFOTEXT := oLabel.getStringDef('description', ''),
+   oDabUBK.CbPost(),
+   
+   ImportTranslations(oLabel, oDabUBP),
+end,
+
+
+//******************************************************************************
+// Import von aller Labels(DabUBK) mit den Übersetzungen(DabUBP)
+// @Result: null
+//******************************************************************************
+function ImportLabels(oDM:O, oAnything:R)
+   | i, j, oLanguages, oLabels, oLabel, oDabUBK, oDabUBP, oSet, nCountLabels, bHasPrefix  |
+   oLanguages := oAnything.getArray({'customizing-objects', 'language'}),
+   
+   WriteToLog(0, 'Import der Labels mit Übersetzungen...', True),
+   
+   oDabUBK := MyGetTable(oDM, Eval('waDabUBK'), 'IMPORT_LABEL_TRANS_DABUBK'),
+   oDabUBK.IndexName := 'LABEL',
+   oDabUBP := MyGetTable(oDM, Eval('waDabUBP'), 'IMPORT_LABEL_TRANS_DABUBP'),
+   oDabUBP.IndexName := 'LABEL_SPRACHE',
+   
+   for i := 0 to oLanguages.Count() -1 do
+      nCountLabels := 0,
+      oSet := oLanguages.getObject(i),
+      bHasPrefix := oSet.PathExists('prefix'),
+      oLabels := oLanguages.getArray({i, 'labels'}),
+      for j := 0 to oLabels.Count() - 1 do
+         oLabel := oLabels.GetObject(j),
+         ImportSingleLabel(oLabel, oDabUBK, oDabUBP, bHasPrefix),
+         nCountLabels++,
+      next,
+      if bHasPrefix then
+         WriteToLog(0, 'Es wurden ' + str(nCountLabels) + ' Labels mit dem Präfix `' + oSet.getString('prefix') + '` importiert.', false),
+      endif,
+   next,
+   
+end,
+
+//******************************************************************************
+// Import/Export von Labels(DabUBK) mit den Übersetzungen(DabUBP)
+// @Result: null
+//******************************************************************************
+function ImportOrExportLanguages(oDM, cType, cFileName)
+   | oAnything |
+   
+   SetErrorIf(not File(cFileName), 'Datei "' + cFileName + '" wurde nicht gefunden.'),
+   oAnything := CreateObject('tbeCbAnything'),
+   startseq
+      oAnything.FromString(Utf8ToAnsi(MemoRead(cFileName))),
+      if oAnything.PathExists({'customizing-objects', 'language'}) then
+         case Upper(cType)
+            of 'IMPORT' :: ImportLabels(oDM, oAnything),
+            of 'EXPORT' :: ExportLabels(oDM, oAnything, cFileName),
+            otherwise
+               SetError('Type "' + cType +'" ist nicht bekannt!'),
+         endcase,
+      endif,
+   always
+      DestroyObject(oAnything),
+   stopseq,
+end,
+
+
+
+
+
+

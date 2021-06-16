@@ -1,0 +1,65 @@
+//##############################################################################
+//##############################################################################
+// Dieses Programm dient zur Migration der Daten aus den Tabellen der
+// Layoutübersetungen (KDNBLK und KDNLBP)
+//##############################################################################
+//##############################################################################
+| oDM, oKDNLBK, oKDNLBP, oDABUBK, oDABUBP |
+
+startseq
+   oDM := BeCreateTransactionDM(nil, 'TRANSOBJ_MIGRATION_LAYOUTUEBERSETUNGEN'),
+   startseq
+      BeStartTransaction(oDM),
+      startseq,
+         oKDNLBK   := MyGetTable(oDM, waKDNLBK,),
+         oKDNLBP   := MyGetTable(oDM, waKDNLBP,),
+         oDABUBK   := MyGetTable(oDM, waDABUBK,),
+         oDABUBP   := MyGetTable(oDM, waDABUBP,),
+
+         oKDNLBK.CbIndexName  := 'LABEL',
+         oKDNLBP.CbIndexName  := 'LABEL',
+         oDABUBK.CbIndexName  := 'LABEL',
+         oDABUBP.CbIndexName  := 'LABEL_SPRACHE',
+
+         // Kopfdaten übertragen
+         writeln('---- Kopfdaten ----'),
+         oKDNLBK.CbFirst(),
+         while not oKDNLBK.CbEof do
+            if not oDABUBK.CbFindKey({oKDNLBK:LABEL}) then
+               oDABUBK.CbAppend(),
+               oDABUBK.CbSetRecAsArray(oKDNLBK.CbGetRecAsArray()),
+               oDABUBK:TEXTONLY := false,
+               oDABUBK.CbPost(),
+               writeln('Label "' + Alltrim(oDABUBK:LABEL) + '" erfolgreich angelegt'),
+            else
+               writeln('Label "' + Alltrim(oKDNLBK:LABEL) + '" existiert bereits in der DABUBK'),
+            endif,
+            oKDNLBK.CbNext(),
+         end,
+
+         // Positionsdaten übertragen
+         writeln('---- Positionen ----'),
+         oKDNLBP.CbFirst(),
+         while not oKDNLBP.CbEof do
+            if not oDABUBP.CbFindKey({oKDNLBP:LABEL, oKDNLBP:SPRACHE}) then
+               oDABUBP.CbAppend(),
+               oDABUBP.CbSetRecAsArray(oKDNLBP.CbGetRecAsArray()),
+               oDABUBP.CbPost(),
+               writeln('Übersetung für Label "' + Alltrim(oDABUBP:LABEL) + '" in der Sprache "' + AttribDispVal(-17, oDABUBP:SPRACHE) + '" erfolgreich angelegt'),
+            else
+               writeln('Übersetung für Label "' + Alltrim(oKDNLBP:LABEL) + '" in der Sprache "' + AttribDispVal(-17, oKDNLBP:SPRACHE) + '" existiert bereits in der DABUBK'),
+            endif,
+            oKDNLBP.CbNext(),
+         end,                     
+
+         BeCommitTransaction(oDM),
+      always
+         BeRollbackTransaction(oDM),
+      stopseq,
+   always
+      DestroyObject(oDM),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage(GetErrorText(), GetErrorObj()),
+stopseq,
+

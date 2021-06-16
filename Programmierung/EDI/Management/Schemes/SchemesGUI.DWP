@@ -1,0 +1,397 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zur Ansicht und zum Verwalten von
+//   EDI-Schemata.
+//
+// Master-Tabelle
+//   In diesem Docking wird keine Master-Table genutzt. Das Docking wird in der
+//   EDI-Verwaltungs-Maske angedockt.
+//
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MANAGEMENT_SCHEMES',
+//        self,
+//        'EDI\Management\Schemes\SchemesGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI,
+   m_oEDISCHM_BL,
+   m_oEDISCHM_GUI,
+
+   m_cPositionSaveId, m_cFormId, m_cBrowserId,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_New, A_NewFromWeb, A_Save, al_Actions, bar_Main,
+   bardock_Top, barmngr_Main, bbtn_Cancel, bbtn_Delete, bbtn_New,
+   bbtn_NewFromWeb, bbtn_NewGroup, bbtn_Save, bipnl_Title,
+   bvl_Details_Row1_Col1, bvl_Details_Row2_Col1, cmb_MessageType, cmb_Standard,
+   ds_EDISCHM, edt_Scheme, grd_EDISCHM, lbl_Details_Row1_Col1,
+   lbl_Details_Row2_Col1, lbl_MessageType, lbl_Standard, pnl_Details,
+   pnl_Details_Row1, pnl_Details_Row1_Col1, pnl_Details_Row2,
+   pnl_Details_Row2_Col1, pnl_EDISCHM, pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDISCHMPO',
+m_cFormId         := '@EDISCHMUI',
+m_cBrowserId      := '@EDISCHM',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsInEditMode, bIsInsertMode, bIsDataAvailable |
+
+   bIsInEditMode    := EditModes(m_oEDISCHM_GUI),
+   bIsInsertMode    := InsertMode(m_oEDISCHM_GUI),
+   bIsDataAvailable := m_oEDISCHM_GUI.CbDataAvailable,
+
+   // Enabled-Zustand der Actions steuern
+   bbtn_NewGroup.Enabled := not bIsInEditMode,
+   A_New.Enabled         := not bIsInEditMode,
+   A_NewFromWeb.Enabled  := false,                                              //A_NewFromWeb.Enabled  := not bIsInEditMode, TODO
+   A_Delete.Enabled      := bIsDataAvailable and not bIsInEditMode,
+   A_Save.Enabled        := bIsInEditMode,
+   A_Cancel.Enabled      := bIsInEditMode,
+
+   // ReadOnly-Zustand der Controls steuern
+   InputControl_SetReadOnlyState(cmb_Standard,    not bIsInsertMode),
+   InputControl_SetReadOnlyState(cmb_MessageType, not bIsInsertMode),
+   edt_Scheme.Color := iif(bIsInsertMode, edt_Scheme.DefaultColor, edt_Scheme.ReadOnlyColor),
+   InputControl_SetReadOnlyState(edt_Scheme, not bIsInsertMode),
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_SchemesGUI',     oForm), // Datenmodul ausschließlich für Business-Logik
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_SchemesGUI_GUI', oForm), // Datenmodul ausschließlich für GUI
+
+   // Business-Logik: Tabellen
+   m_oEDISCHM_BL               := MyGetTable(m_oDM, waEDISCHM, ''),
+   m_oEDISCHM_BL.CbIndexName   := 'STANDARD_MSG_TYPE',
+   m_oEDISCHM_BL.WriteProtocol := true,
+
+   // GUI: Tabellen
+   m_oEDISCHM_GUI := DbGetTable(m_oDM_GUI, waEDISCHM),
+
+   m_oEDISCHM_GUI.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDISCHM_GUI, ds_EDISCHM, grd_EDISCHM, m_cBrowserId, true),
+
+   // Events zuweisen
+   AssignEvent(ds_EDISCHM, 'OnScroll_Update', 'ds_EDISCHMScroll_Update'),
+end,
+
+//******************************************************************************
+// Synchronisieren der GUI-Tabelle EDISCHM auf Basis der übergebenen ID.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDISCHM_GUI_FromExternalSource(nId:N)
+   m_oEDISCHM_GUI.CbFindKey({nId}),
+end,
+
+//******************************************************************************
+// Diese Funktion aktualisiert nacheinander alle GUI-Tabellen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RefreshAllGUITables()
+   m_oEDISCHM_GUI.CbRefresh(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDISCHM
+//******************************************************************************
+function ds_EDISCHMScroll_Update()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := true,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDISCHM_GUI.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| bAlreadyExists |
+   bAlreadyExists :=     m_oEDISCHM_BL.CbFindKey({m_oEDISCHM_GUI:STANDARD, m_oEDISCHM_GUI:MSG_TYPE})
+                     and m_oEDISCHM_BL:ID <> m_oEDISCHM_GUI:ID,
+   if bAlreadyExists then
+      MessageDlg('Die Kombination aus Standard und Vorgangsart darf nicht mehrfach angelegt werden.', mtError),
+   else
+      m_oEDISCHM_GUI.CbPost(),
+      RefreshAllGUITables(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Schema löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   if Jn('Schema löschen?', false) then
+      m_oEDISCHM_GUI.CbDelete(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Neues Schema manuell anlegen
+//******************************************************************************
+function A_NewExecute( Sender )
+   m_oEDISCHM_GUI.CbAppend(),
+   MyFocusControl(oForm, cmb_Standard),
+end,
+
+//******************************************************************************
+// Action: Neues Schema aus dem Internet herunterladen und anlegen
+//******************************************************************************
+function A_NewFromWebExecute( Sender )
+|
+   aDialogResult,
+   nStandard, nMessageType
+|
+
+   startseq
+      aDialogResult := DU_InputDialog(
+         'Schema herunterladen',
+         'Bitte geben Sie den gewünschten EDI-Standard (Directory) sowie die Vorgangsart an, für die das passende Schema heruntergeladen werden soll',
+         {
+            DU_InputDialog_CreateInputControlDefinition('STANDART', 'Standard',    gl_DU_InputControlType_Attribute, '', gl_EDI_MMTID_MessageStandard, '', true),
+            DU_InputDialog_CreateInputControlDefinition('MSG_TYPE', 'Vorgangsart', gl_DU_InputControlType_Attribute, '', gl_EDI_MMTID_MessageType,     '', true)
+         },
+         {
+            DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOk, 7, true),
+            mrCancel
+         },
+         {}
+      ),
+
+      if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+         nStandard    := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'STANDART')),
+         nMessageType := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'MSG_TYPE')),
+
+         startseq
+            Call('EDI\Tools\SchemeWebImporter', m_oDM, m_oEDISCHM_BL, nStandard, nMessageType),
+            SynchronizeEDISCHM_GUI_FromExternalSource(m_oEDISCHM_BL:ID),
+         always
+            RefreshAllGUITables(),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Herunterladen eines Schemas', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI-Schemata',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 816,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel              := FindObject(oForm, "A_Cancel"),
+   A_Delete              := FindObject(oForm, "A_Delete"),
+   A_New                 := FindObject(oForm, "A_New"),
+   A_NewFromWeb          := FindObject(oForm, "A_NewFromWeb"),
+   A_Save                := FindObject(oForm, "A_Save"),
+   al_Actions            := FindObject(oForm, "al_Actions"),
+   bar_Main              := FindObject(oForm, "bar_Main"),
+   bardock_Top           := FindObject(oForm, "bardock_Top"),
+   barmngr_Main          := FindObject(oForm, "barmngr_Main"),
+   bbtn_Cancel           := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_Delete           := FindObject(oForm, "bbtn_Delete"),
+   bbtn_New              := FindObject(oForm, "bbtn_New"),
+   bbtn_NewFromWeb       := FindObject(oForm, "bbtn_NewFromWeb"),
+   bbtn_NewGroup         := FindObject(oForm, "bbtn_NewGroup"),
+   bbtn_Save             := FindObject(oForm, "bbtn_Save"),
+   bipnl_Title           := FindObject(oForm, "bipnl_Title"),
+   bvl_Details_Row1_Col1 := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row2_Col1 := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   cmb_MessageType       := FindObject(oForm, "cmb_MessageType"),
+   cmb_Standard          := FindObject(oForm, "cmb_Standard"),
+   ds_EDISCHM            := FindObject(oForm, "ds_EDISCHM"),
+   edt_Scheme            := FindObject(oForm, "edt_Scheme"),
+   grd_EDISCHM           := FindObject(oForm, "grd_EDISCHM"),
+   lbl_Details_Row1_Col1 := FindObject(oForm, "lbl_Details_Row1_Col1"),
+   lbl_Details_Row2_Col1 := FindObject(oForm, "lbl_Details_Row2_Col1"),
+   lbl_MessageType       := FindObject(oForm, "lbl_MessageType"),
+   lbl_Standard          := FindObject(oForm, "lbl_Standard"),
+   pnl_Details           := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1      := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1 := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row2      := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_Details_Row2_Col1 := FindObject(oForm, "pnl_Details_Row2_Col1"),
+   pnl_EDISCHM           := FindObject(oForm, "pnl_EDISCHM"),
+   pnl_Main              := FindObject(oForm, "pnl_Main"),
+   pnl_Top               := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end, 
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   cmb_Standard.DataSource    := ds_EDISCHM,
+   cmb_Standard.DataField     := 'STANDARD',
+   cmb_MessageType.DataSource := ds_EDISCHM,
+   cmb_MessageType.DataField  := 'MSG_TYPE',
+   edt_Scheme.DataSource      := ds_EDISCHM,
+   edt_Scheme.DataField       := 'SCHEME',
+   edt_Scheme.WantReturns     := true,
+
+   lbl_Standard.DataSource           := ds_EDISCHM,
+   lbl_Standard.DataField            := 'STANDARD',
+   lbl_Standard.UseDefaultCaption    := true,
+   lbl_MessageType.DataSource        := ds_EDISCHM,
+   lbl_MessageType.DataField         := 'MSG_TYPE',
+   lbl_MessageType.UseDefaultCaption := true,
+   bbtn_NewFromWeb.Visible           := false,
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({cmb_Standard, cmb_MessageType}),
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row1_Col1, lbl_Details_Row2_Col1}),
+   m_oEDISCHM_GUI.CbRefresh(),
+   RefreshReadOnlyColor(edt_Scheme),
+
+   SetBrowserBeAttribID(grd_EDISCHM, 'STANDARD', gl_EDI_MMTID_MessageStandard),
+   SetBrowserBeAttribID(grd_EDISCHM, 'MSG_TYPE', gl_EDI_MMTID_MessageType),
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

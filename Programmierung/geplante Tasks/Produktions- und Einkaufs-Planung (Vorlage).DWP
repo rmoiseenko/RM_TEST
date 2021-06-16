@@ -1,0 +1,148 @@
+//##############################################################################
+//##############################################################################
+//
+// Vorlage für einen regelmäßigen Task zur Erstellung von
+//   Produktions- und Einkaufs-Vorschlägen auf Basis der
+//   Standard-Dispositions-Planung
+//
+//##############################################################################
+//##############################################################################
+
+| m_oDM, m_oProtFile, m_cText, m_cLogPath, m_cFileName, dtTime:DT |
+
+//******************************************************************************
+// Log-Zeile hinzufügen und in der Console ausgeben...
+//******************************************************************************
+function AddToLogFile(cText)
+   WriteLn(cText),
+   m_cText += crlf + cText,
+end,
+
+//******************************************************************************
+// Funktion startet eine Zeitmessung
+// @Result: null
+//******************************************************************************
+function StopWatch_Start()
+   dtTime.Precision := precSeconds,
+   dtTime.DateTime  := Now(),
+end,
+
+//******************************************************************************
+// Funktion beendet eine Zeitmessung und schreibt das Ergebnis ins Logfile
+// @Result: null
+//******************************************************************************
+function StopWatch_StopAndLog(nLogIndent)
+| dtNow:DT, drDuration:DR, oDateTimeHelper |
+
+   dtNow.Precision := precSeconds,
+   dtNow.DateTime  := Now(),
+
+   oDateTimeHelper := CreateObject('TBeCbDateTimeHelper'),
+   startseq
+      drDuration := oDateTimeHelper.Subtract(dtNow, dtTime),
+   always
+      DestroyObject(oDateTimeHelper),
+   stopseq,
+
+   AddToLogFile(Replicate(' ', nLogIndent) + 'Dauer: ' + drDuration.AsString),
+end,
+
+// Erzeugung einer Protokolldatei
+m_cLogPath  := mBeDefault + 'Logging\',
+m_cFileName := "Protokoll der Produktions- und Einkaufs-Planung (Standort " + Str(mstandort) + ") " + FormatDateTime('YYYY-MM-DD HH-MM-SS', Now()) + ".txt",
+ForceDirectories(m_cLogPath),
+
+m_oProtFile := FOpen(m_cLogPath + m_cFileName, fo_Create),
+startseq
+
+   startseq
+      m_cText := '',
+      AddToLogFile(Replicate('-', 80)),
+      AddToLogFile("Start: " + Time() + " " + DToC(Date())),
+      AddToLogFile("Standort, Abteilung : " + Str(mStandort) + ", " + Str(mAbteilung)),
+
+      //***************************************************************************
+      // 1. Schritt: Löschen der bisherigen Planungsvorschläge
+      //***************************************************************************
+      m_oDM := CreateObject('TBeDbGet'),
+      startseq
+         // Löschen der Einkaufsdispo (Dab315)
+         StopWatch_Start(),
+         BestPlanClear(m_oDM, waDab315),
+         AddToLogFile("Einkaufsdispo (Dab315) gelöscht"),
+         StopWatch_StopAndLog(3),
+
+         // Löschen der primären Produktionsplanung (Dab220)
+         // -> die sekundäre (Dab215) wird durch ProdRechAuto() gelöscht - siehe unten
+         StopWatch_Start(),
+         BestPlanClear(m_oDM, waDab220),
+         AddToLogFile("Primäre Produktionsplanung (Dab220) gelöscht"),
+         StopWatch_StopAndLog(3),
+      always
+         DestroyObject(m_oDM),
+      stopseq,
+
+      //***************************************************************************
+      // 2. Schritt: Produktion Primärplanung = "Automatische Bedarfs-Ermittlung"
+      //             (entspricht Umsch+F4 im Fenster Produktion -> Bedarfsplanung)
+      //***************************************************************************
+      StopWatch_Start(),
+      AddToLogFile("Start Produktion Primärplanung: " + Time()),
+      ProdPlanAuto('', Replicate('Z', mBeArtNoLen), '', 'ZZZ'),
+      AddToLogFile("   beendet: " + Time()),
+      StopWatch_StopAndLog(3),
+
+      //***************************************************************************
+      // 3. Schritt: Produktion Sekundärplanung = "Bedarfsrechnung"
+      //             (entspricht F8 im Fenster Produktion -> Bedarfsplanung)
+      //             Parameter:
+      //                nRechMode:N;     0 = Nachfragen
+      //                                 1 = Standard-Planung
+      //                                 2 = Voll-Planung
+      //                                 3 = Brutto-Planung
+      //                lLoeschRech:L;   True = Existierende Bed.Rechung löschen, False = nicht löschen
+      //***************************************************************************
+      StopWatch_Start(),
+      AddToLogFile("Start Produktion Sekundärplanung: " + Time()),
+      AddToLogFile("  (existierende Displanung (Dab215) wird gelöscht)"),
+      ProdRechAuto(2, True, 'TEILE_GESP <> "J"'),
+      AddToLogFile("   beendet: " + Time()),
+      StopWatch_StopAndLog(3),
+
+      //***************************************************************************
+      // 4. Schritt: Einkauf Disposistionsplanung = "Automatische Bestellvorschläge"
+      //             (entspricht F11 im Fenster Lieferantenverwaltung -> Bestellwesen -> Disposistionsplanung)
+      //
+      //             In diesem Schritt werden die nicht in der Produktion relevanten
+      //             Bedarfe erkannt und zusätzlich in die Einkaufs-Planung geschoben.
+      //             -> z.B. reine Handelsware
+      //
+      //             Parameter:
+      //               nLiefNr:N;            0 = Alle Lieferanten, 1..n = nur Lieferant x
+      //               lLoeschPlan:L;
+      //                                True  = Existierende Vorschläge löschen,
+      //                            ->  False = nicht löschen
+      //                                => existierende Vorschläge nicht löschen, sonst würden die Ergebnisse
+      //                                   der Produktion Sekundärplanung wieder verworfen.
+      //***************************************************************************
+      StopWatch_Start(),
+      AddToLogFile("Start Einkaufsplanung: " + Time()),
+      BestPlanAuto(0, false),
+      AddToLogFile("   beendet: " + Time()),
+      StopWatch_StopAndLog(3),
+
+   onerror
+      AddToLogFile(Replicate('#', 80)),
+      AddToLogFile('Fehler im Programm ' + ProgName() + crlf + GetErrorText() + crlf + ArrToStr(GetErrorStack())),
+      AddToLogFile("   mit Fehler beendet: " + Time()),
+      AddToLogFile(Replicate('#', 80)),
+   stopseq,
+
+   AddToLogFile("Ende: " + Time() + " " + DToC(Date())),
+   AddToLogFile(Replicate('-', 80)),
+
+   FWrite(m_oProtFile, m_cText),
+
+always
+   FClose(m_oProtFile),
+stopseq,

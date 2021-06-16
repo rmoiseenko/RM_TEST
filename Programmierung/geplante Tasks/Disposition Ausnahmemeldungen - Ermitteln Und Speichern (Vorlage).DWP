@@ -1,0 +1,90 @@
+//##############################################################################
+//##############################################################################
+//
+// Vorlage für einen regelmäßigen Task zur Ermittlung von
+//    "Disposition Ausnahmemeldungen"
+//
+//    => Programm gehört zum Package "Ausnahmemeldungen.BCP"
+//
+//##############################################################################
+//##############################################################################
+
+| m_oDM, m_cError |
+
+//******************************************************************************
+// Funktion ruft die Jobs
+//   - "Ausnahmemeldungen erzeugen (in Memtable speichern)" und
+//   - "Ausnahmemeldungen persistent speichern (aus Memtable in KdnDAM aktualisieren)"
+//  auf.
+//
+// @Result: null
+//******************************************************************************
+function DAMU_Task_ErzeugeUndSpeichereAusnahmen(oDM, bShowProgress)
+  | oMemAusnahmen, cOnlyArtnr, cOnlyProdAbt |
+
+   oMemAusnahmen := DAMU_CreateAusnahmeMemTable(nil),    
+   startseq
+
+      cOnlyArtnr   := '', // Einschränkung auf Artikel-Nr. ?
+      cOnlyProdAbt := '', // Einschränkung auf eine Produktions-Abteilung ?
+
+      iif(bShowProgress, ProgressBarShow('Berechne Ausnahmemeldungen', 'Ausnahmemeldungen Disposition'), ),
+      startseq
+
+         //*********************************************************************
+         // 1. In die Memtable alle Ausnahmen aufnehmen, die jetzt erzeugt werden sollen...
+         //*********************************************************************
+         DAMU_Erzeuge_10(oDM, oMemAusnahmen, true, true, cOnlyArtnr, cOnlyProdAbt, bShowProgress),
+         DAMU_Erzeuge_20(oDM, oMemAusnahmen,             cOnlyArtnr, cOnlyProdAbt, bShowProgress),
+         DAMU_Erzeuge_50(oDM, oMemAusnahmen,             cOnlyArtnr, cOnlyProdAbt, bShowProgress),
+         DAMU_Erzeuge_60(oDM, oMemAusnahmen,             cOnlyArtnr, cOnlyProdAbt, bShowProgress),
+         DAMU_Erzeuge_80(oDM, oMemAusnahmen,             cOnlyArtnr,               bShowProgress, gl_DAMU_ABueberfaelligTage),
+
+         //*********************************************************************
+         // 2. "Abgleich" der Memtable (neue Ausnahmen) mit der KDNDAM (bestehende Ausnahmen)
+         //*********************************************************************
+         DAMU_Aktualisiere_Bestehende_Mit_Neuen_Ausnahmen(oDM, oMemAusnahmen, cOnlyArtnr, cOnlyProdAbt), // TODO: bShowProgress übergeben und nutzen
+
+         // Jetzt für Artikel mit Produktionssperre Dab010:PROD_ABT = 'ZZZ' die vorher
+         // gepflegte Dab010:PROD_ABT eintragen. Hintergrund siehe Funktions-Doku.
+         // TODO: Das hier könnte auch schon im Ermittlungs-Prozess passieren (beim Schreiben der KdnDAM)
+         DAMU_SetPriorProdAbt_For_ZZZ_KdnDAMRecords(oDM),
+
+      always
+         ProgressBarHide(),
+      stopseq,
+   always
+      DestroyObject(oMemAusnahmen),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Sofern über das Datenmodul Daten geändert werden und die
+   // Stammdaten-Protokollierung (DabPTK) aktiv ist, sollte ein sprechender Name
+   // vergeben werden, da dieser in DabPTK:PROGRAMM geschrieben wird
+   m_oDM := CreateObject('TBeDbGet', 'TASK_ERZEUGE_AUSNAHMEN'),
+   m_cError := '',
+   startseq
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         DAMU_Task_ErzeugeUndSpeichereAusnahmen(m_oDM, true),
+         DbCommit(m_oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection),
+            DbCancelAll(m_oDM),
+         endif,
+      stopseq,
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   m_cError := GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj(), gl_DAMU_IndiErrorsQuietMode ),
+stopseq,
+m_cError

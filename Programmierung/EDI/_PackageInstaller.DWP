@@ -1,0 +1,1005 @@
+//#############################################################################
+//##############################################################################
+// Beschreibung:
+//   Installations-Script für Tabellen und Merkmalstabellen im Standard-Package
+//   "EDI".
+//##############################################################################
+//##############################################################################
+
+|
+   // Workareas
+   nWorkarea_EDITRCH,
+   nWorkarea_EDIMSG,
+   nWorkarea_EDIBSP,
+   nWorkarea_EDIPROF,
+   nWorkarea_EDIPART,
+   nWorkarea_EDIDOCL,
+   nWorkarea_EDIDOC,
+   nWorkarea_EDIHEAD,
+   nWorkarea_EDIPOS,
+   nWorkarea_EDISEGM,
+   nWorkarea_EDISCHM,
+
+   // Merkmalstabellen IDs
+   nMMTID_ProcessDirection,
+   nMMTID_DataTransferProtocol,
+   nMMTID_ProcessStatus,
+   nMMTID_EDIMSG_ProcessStep,
+   nMMTID_MessageStandard,
+   nMMTID_MessageType,
+   nMMTID_TransportChannel,
+   nMMTID_Profile,
+   nMMTID_PartnerWorkarea,
+   nMMTID_EDIDOCL_ProcessStep,
+   nMMTID_EDIDOC_ProcessStep,
+   nMMTID_DataFormat,
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_EDITRCH := 733,
+nWorkarea_EDIMSG  := 734,
+nWorkarea_EDIBSP  := 735,
+nWorkarea_EDIPROF := 736,
+nWorkarea_EDIPART := 737,
+nWorkarea_EDIDOC  := 738,
+nWorkarea_EDIDOCL := 739,
+nWorkarea_EDIHEAD := 740,
+nWorkarea_EDIPOS  := 741,
+nWorkarea_EDISEGM := 742,
+nWorkarea_EDISCHM := 743,
+
+nMMTID_ProcessDirection     := 8024,
+nMMTID_DataTransferProtocol := 8025,
+nMMTID_ProcessStatus        := 8026,
+nMMTID_EDIMSG_ProcessStep   := 8027,
+nMMTID_MessageStandard      := 8028,
+nMMTID_MessageType          := 8029,
+nMMTID_TransportChannel     := 8030,
+nMMTID_Profile              := 8031,
+nMMTID_PartnerWorkarea      := 8032,
+nMMTID_EDIDOCL_ProcessStep  := 8033,
+nMMTID_EDIDOC_ProcessStep   := 8034,
+nMMTID_DataFormat           := 8035,
+
+//##############################################################################
+//##############################################################################
+// Merkmalstabellen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt eine neue MMT hinzu.
+// @result: null
+//******************************************************************************
+function MMT_Create_Internal(oDM:O,
+                             nId:N,
+                             cName:C,
+                             aValues:A,
+                             cDynamicDataSource:C,
+                             cDisplayValueCodeblock:C,
+                             cDataField:C,
+                             bRefreshOnRecordChange:L,
+                             cFilter:C:='')
+| oDabMTA, oDabMDT, i, cColor |
+
+   oDabMTA := MyGetTable(oDM, waDabMTA, ''),
+
+   oDabMTA.CbAppend(),
+   oDabMTA:TAB_ID     := nId,
+   oDabMTA:BEZ        := cName,
+   oDabMTA:DEFAULT    := 'N', // Default-Merkmalstabelle: false
+   oDabMTA:CHG_DEF    := 'false',
+   oDabMTA:CHG_USR    := 'false',
+   oDabMTA:FILT_DEF   := cFilter,
+   oDabMTA:FILT_USR   := '',
+   oDabMTA:DSREF_DEF  := '',
+   oDabMTA:DSREF_USR  := '',
+   oDabMTA:TAB_DEF    := cDynamicDataSource,
+   oDabMTA:SORTTYP    := 'S',
+   oDabMTA:DISPVALUE  := cDisplayValueCodeblock,
+   oDabMTA:FLD_DATA   := cDataField,
+   oDabMTA:FLD_VIEW   := 'WERT;BEZ1;BEZ2;BEZ3',
+   oDabMTA:REFRESH    := iif(bRefreshOnRecordChange, 'J', 'N'),
+   oDabMTA:MASK       := '!!!!!!!!!',
+   oDabMTA:BROWSERID  := 'ATTDEF',
+   oDabMTA:HIERARCHIE := false,
+   oDabMTA:MC_FIXED   := 'N',
+   oDabMTA:MC_SEP     := '/',
+   oDabMTA:USER_ADMIN := false,
+   oDabMTA.CbPost(),
+
+   oDabMDT := MyGetTable(oDM, waDabMDT, ''),
+
+   for i := 1 to ALen(aValues) do
+      if ALen(aValues[i]) > 3 then
+         cColor := aValues[i, 4],
+      else
+         cColor := '',
+      endif,
+
+      oDabMDT.CbAppend(),
+      oDabMDT:TAB_ID    := nId,
+      oDabMDT:DEFAULT   := false,
+      oDabMDT:MASTER_ID := 0,
+      oDabMDT:SORT_ID   := aValues[i, 2],
+      oDabMDT:WERT      := ToString(aValues[i, 1]),
+      oDabMDT:BEZ1      := aValues[i, 3],
+      oDabMDT:BEZ2      := '',
+      oDabMDT:BEZ3      := '',
+      oDabMDT:FARBE     := cColor,
+      oDabMDT:IMG_LISTE := 0,
+      oDabMDT:IMG_INDEX := 0,
+      oDabMDT.CbPost(),
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion fügt eine neue MMT hinzu.
+// @result: null
+//******************************************************************************
+function MMT_CreateStatic_Internal(oDM:O,
+                                   nId:N,
+                                   cName:C,
+                                   aValues:A,
+                                   cFilter:C:='')
+   MMT_Create_Internal(
+      oDM,
+      nId,
+      cName,
+      aValues,
+      '',
+      'AllTrim(DABMDT:BEZ1)',
+      'WERT',
+      false,
+      cFilter
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion löscht die MMT mit der angegeben ID.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_Delete(oDM:O, nId:N)
+| cStatementTemplate |
+
+   cStatementTemplate := 'DELETE FROM @@TABLENAME@@ WHERE TAB_ID = ' + Str(nID),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMTA)), oDM),
+   DBU_SQLExecute_DM(StrTran(cStatementTemplate, '@@TABLENAME@@', DbSQLTableName(waDabMDT)), oDM),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Prozessrichtung" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_ProcessDirection_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_ProcessDirection, 'EDI: Prozessrichtung', {
+      {10, 100, 'Inbound',  BeSkinColor(clarGreen, clarAccent2)},
+      {20, 200, 'Outbound', BeSkinColor(clarBlue,  clarAccent2)} 
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Datenübertragungsprot." hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_DataTransferProtocol_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_DataTransferProtocol, 'EDI: Datenübertragungsprot.', {
+      {10, 100, 'Verzeichnis'},
+      {20, 200, 'SFTP'},
+      {30, 300, 'FTP'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Prozessstatus" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_ProcessStatus_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_ProcessStatus, 'EDI: Prozessstatus', {
+      {10, 100, 'Ok',                BeSkinColor(clarGreen,    clarAccent2 )},  // Font: clWhite
+      {20, 200, 'Warnung vorhanden', BeSkinColor(clarOrange,   clarAccent0 )},  // Font: clWhite
+      {30, 300, 'Fehler vorhanden',  BeSkinColor(clarRed,      clarAccent2 )},  // Font: clWhite
+      {40, 400, 'Beendet',           BeSkinColor(clarWarmGrey, clarAccent2 )}   // Font: clWhite
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Prozessschritt (EDIMSG)" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_EDIMSG_ProcessStep_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_EDIMSG_ProcessStep, 'EDI: Prozessschritt (EDIMSG)', {
+      {5,   50,   'initialisiert', BeSkinColor(clarYellow,    clarAccent7)},
+      {10,  100,  'eingelesen',    BeSkinColor(clarGreen,     clarAccent7)},
+      {20,  200,  'identifiziert', BeSkinColor(clarGreen,     clarAccent5)},
+      {30,  300,  'geparst / Inhouseformat erstellt',
+                                   BeSkinColor(clarGreen,     clarAccent3)},
+      {40,  400,  'importiert',    BeSkinColor(clarGreen,     clarAccent1)},    // Font: clWhite
+      {110, 1100, 'erstellt',      BeSkinColor(clarBlue,      clarAccent7)},
+      {120, 1200, 'versendet',     BeSkinColor(clarBlue,      clarAccent1)}     // Font: clWhite
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Nachrichten-Standard" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_MessageStandard_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_MessageStandard, 'EDI: Nachrichten-Standard', {
+      {10,  100,  'individuelles Format'},
+      {110, 1110, 'EDIFACT: D96A'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Nachrichten-Typ" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_MessageType_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_MessageType, 'EDI: Nachrichten-Typ', {
+      {10,  100, 'PRICAT'},
+      {20,  200, 'ORDERS'},
+      {30,  300, 'ORDRSP'},
+      {40,  400, 'ORDCHG'},
+      {50,  500, 'DESADV'},
+      {60,  600, 'INVOIC'}
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Transportkanal" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_TransportChannel_Create(oDM:O)
+   MMT_Create_Internal(
+      oDM,
+      nMMTID_TransportChannel,
+      'EDI: Transportkanal',
+      {},
+      "| oEDITRCH:DB:='waEDITRCH,DIRECTION' |" + CRLF + "oEDITRCH",
+      "str(oEDITRCH:ID) + ' - ' +" + CRLF +
+      "iif(" + CRLF +
+      "   oEDITRCH:DIRECTION = gl_EDI_ProcessDirection_Inbound," + CRLF +
+      "   'Inbound'," + CRLF +
+      "   iif(" + CRLF +
+      "      oEDITRCH:DIRECTION = gl_EDI_ProcessDirection_Outbound," + CRLF +
+      "      'Outbound'," + CRLF +
+      "      '<unbekannt>'" + CRLF +
+      "   )" + CRLF +
+      ") + ' - ' +" + CRLF +
+      "AllTrim(oEDITRCH:NAME) + iif(oEDITRCH:ACTIVE, '', ' (inaktiv)')",
+      'ID',
+      true
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Profil" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_Profile_Create(oDM:O)
+   MMT_Create_Internal(
+      oDM,
+      nMMTID_Profile,
+      'EDI: Profil',
+      {},
+      "| oEDIPROF:DB:='waEDIPROF,ID' |" + CRLF + "oEDIPROF",
+      "str(oEDIPROF:ID) + ' - ' + AllTrim(oEDIPROF:MATCHCODE) + iif(oEDIPROF:ACTIVE, '', ' (inaktiv)')",
+      'ID',
+      true
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Partner-Workarea" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_PartnerWorkarea_Create(oDM:O)
+| aWorkareas, aAttributes, i, oTableInfo |
+
+   aWorkareas  := {waDab000, waDab100},
+   aAttributes := {},
+
+   for i := 1 to ALen(aWorkareas) do
+      oTableInfo := GetTableInfo(aWorkareas[i]),
+      AAdd(aAttributes, {aWorkareas[i], i * 100, oTableInfo.TableLabel + ' (' + oTableInfo.TableDef.AliasName + ')'}),
+   next,
+
+   MMT_CreateStatic_Internal(oDM, nMMTID_PartnerWorkarea, 'EDI: Partner-Workarea', aAttributes),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Prozessschritt (EDIDOCL)" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_EDIDOCL_ProcessStep_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_EDIDOCL_ProcessStep, 'EDI: Prozessschritt (EDIDOCL)', {
+      {10, 100, 'Belegliste erstellt',    BeSkinColor(clarBlue, clarAccent7)},
+      {20, 200, 'Inhouseformat erstellt', BeSkinColor(clarBlue, clarAccent5)},
+      {30, 300, 'Nachricht erstellt',     BeSkinColor(clarBlue, clarAccent3)},  // Font: clWhite
+      {40, 400, 'Nachricht versendet',    BeSkinColor(clarBlue, clarAccent1)}   // Font: clWhite
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Prozessschritt (EDIDOC)" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_EDIDOC_ProcessStep_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_EDIDOC_ProcessStep, 'EDI: Prozessschritt (EDIDOC)', {
+      {10, 100, 'Beleg ausgewählt',         BeSkinColor(clarBlue, clarAccent7)},
+      {20, 200, 'Inhouseformat erstellt',   BeSkinColor(clarBlue, clarAccent5)},
+      {30, 300, 'In Nachricht aufgenommen', BeSkinColor(clarBlue, clarAccent3)} // Font: clWhite
+   }),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die MMT "EDI: Datenformat" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function MMT_DataFormat_Create(oDM:O)
+   MMT_CreateStatic_Internal(oDM, nMMTID_DataFormat, 'EDI: Datenformat', {
+      {10, 100, 'XML'},
+      {20, 200, 'EDIFACT'},
+      {30, 300, 'Plain-Text'}
+   }),
+end,
+
+//##############################################################################
+//##############################################################################
+// Felddefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt die vier Status-Felder der übergebenen Tabellendefinition
+// hinzu.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TableDefinition_AddStatusFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STATUS',       0, 0, gl_PCKGU_ftShort, 'Status',                         '', 0, 1, '', '', nMMTID_ProcessStatus, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ERROR_MSG',    0, 0, ftMemo,           'Fehlertext',                     'Dieses Feld enthält den Fehlertext des zuletzt aufgetretenen Fehlers.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WARN_MSG',     0, 0, ftMemo,           'Warnungstext',                   'Dieses Feld enthält den Warnungstext der zuletzt aufgetretenen Warnung.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'COMM_MSG',     0, 0, ftMemo,           'Kommentar',                      'Dieses Feld enthält den Kommentar der zuletzt erfasst wurde.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt die drei Status-Felder der übergebenen Tabellendefinition
+// hinzu.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TableDefinition_AddDocumentsStartTimestampField(oTableDefinition:R)
+| cDefaultRight_Edit |
+
+   case KVU_GetAssert(oTableDefinition, gl_PCKGU_TableDef_WorkArea)
+      of nWorkarea_EDIPROF :: cDefaultRight_Edit := 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE',
+      of nWorkarea_EDIPART :: cDefaultRight_Edit := "lookup(waEDIPROF, 'ID', {{EDIPROF_ID}}, 'DIRECTION', 0) = gl_EDI_ProcessDirection_Outbound",
+      otherwise
+         cDefaultRight_Edit := '',
+   endcase,
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGE_AB',    0, 0, ftDateTime,       'Start für Belegselektion',       'Dieses Feld bestimmt den Zeitpunkt ab dem Belege bei der Belegselektion berücksichtigt werden.' + CRLF + 'Wenn das Feld leer ist, wird das ERSTELLT-Datum als Startzeitpunkt herangezogen.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', cDefaultRight_Edit, '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDITRCH" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDITRCH_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DIRECTION',    0, 0, gl_PCKGU_ftShort, 'Prozessrichtung',                '', 0, 1, '', '', nMMTID_ProcessDirection, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROTOCOL',     0, 0, gl_PCKGU_ftShort, 'Datenübertragungsprotokoll',     '', 0, 1, '', '', nMMTID_DataTransferProtocol, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME',       255, 0, ftString,         'Name',                           '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', 'not empty(trim(NAME))', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ACTIVE',       0, 0, ftBoolean,        'Aktiv',                          '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MASK',         0, 0, ftMemo,           'Dateinamenendung(en)',           'Liste der Dateinamenendungen, die in dem Inbound-Transport-Prozess abgerufen werden sollen.' + CRLF +
+                                                                                                                              'Mehrere Endungen können durch Komma getrennt angegeben werden, z.B. edi,xml,csv' + CRLF +
+                                                                                                                              'Wenn das Feld leer ist, werden alle Dateien abgerufen.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE and DIRECTION = gl_EDI_ProcessDirection_Inbound', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'URI',          0, 0, ftMemo,           'Datenübertragungs-URI',          'Die URI dient je nach Prozessrichtung als Quelle bzw. Ziel der Datenübertragung.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'URI_LOGIN',    0, 0, ftMemo,           'Datenübertragungs-Login',        'Login bzw. Username für die Authentifizierung bei der Übertragung von Daten',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE and PROTOCOL <> gl_EDI_DataTransferProtocol_FileSystem', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'URI_PASS',     0, 0, ftMemo,           'Datenübertragungs-Passwort',     'Passwort für die Authentifizierung bei der Übertragung von Daten',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE and PROTOCOL <> gl_EDI_DataTransferProtocol_FileSystem', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_IDT',   0, 0, ftMemo,           'Identifikations-Script',         'Script für die Identifikation der Nachricht',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE and DIRECTION = gl_EDI_ProcessDirection_Inbound', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_IDT)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_TRA',   0, 0, ftMemo,           'Transport-Script',               'Script für den Transport der Nachricht',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_TRA)', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIMSG" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIMSG_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDITRCH_ID',   0, 0, ftInteger,        'Verweis auf EDITRCH-Datensatz',  '', 0, 1, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPROF_ID',   0, 0, ftInteger,        'Verweis auf EDIPROF-Datensatz',  '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_ID',   0, 0, ftInteger,        'Verweis auf EDIPART-Datensatz',  '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIDOCL_ID',   0, 0, ftInteger,        'Verweis auf EDIDOCL-Datensatz',  '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D_GUID_STR',  38, 0, gl_PCKGU_ftciCharacter, 'Verweis auf Blob-Daten',   'Dieses Feld verweist auf einen Datensatz in der Tabelle EDIBSP (Blobspeicher), in der sich der Dateiinhalt für den Nachrichten-Datensatz befindet.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILE_NAME',  255, 0, ftString,         'Dateiname',                      '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILE_TYPE',   20, 0, ftString,         'Dateityp',                       '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILE_SIZE',    0, 0, ftInteger,        'Dateigröße',                     '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILE_AEND',    0, 0, ftDateTime,       'Datei-Änderungsdatum',           '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDARD',     0, 0, gl_PCKGU_ftShort, 'Standard',                       '(redundant) für einfaches Filtern. Enthält den Feldinhalt von EDIPROF:STANDARD.',
+                                                                                                                                  0, 1, '', '', nMMTID_MessageStandard, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MSG_TYPE',     0, 0, gl_PCKGU_ftShort, 'Vorgangsart',                    '(redundant) für einfaches Filtern. Enthält den Feldinhalt von EDIPROF:MSG_TYPE.',
+                                                                                                                                  0, 1, '', '', nMMTID_MessageType, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MSG_KEY',     25, 0, ftString,         'Nachrichten-Schlüssel',          '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROF_MC',     50, 0, ftString,         'Profil-Matchcode',               '(redundant) für einfaches Filtern. Enthält den Feldinhalt von EDIPROF:MATCHCODE.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDORT',     0, 0, gl_PCKGU_ftShort, 'Standort',                       '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABTEILUNG',    0, 0, gl_PCKGU_ftShort, 'Abteilung',                      '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DIRECTION',    0, 0, gl_PCKGU_ftShort, 'Prozessrichtung',                '', 0, 1, '', '', nMMTID_ProcessDirection, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROC_STEP',    0, 0, gl_PCKGU_ftShort, 'Prozessschritt',                 'Das Feld zeigt an, welcher Prozessschritt für den Datensatz zuletzt erfolgreich durchgeführt wurde.',
+                                                                                                                                  0, 1, '', '', nMMTID_EDIMSG_ProcessStep, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROCESS',      0, 0, ftBoolean,        'Automatisch verarbeiten',        '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TEST',         0, 0, ftBoolean,        'Testnachricht',                  '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+
+   TableDefinition_AddStatusFields(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIBSP" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIBSP_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GUID_STR',    38, 0, ftString,         'GUID',                           'eindeutige GUID zur Verknüfpung der Blob-Daten mit EDIMSG:D_GUID_STR',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATA',         0, 0, ftBlob,           'Daten',                          '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIPROF" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPROF_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDITRCH_ID',   0, 0, ftInteger,        'Verknüpfter Transportkanal',     '', 0, 1, '', '', nMMTID_TransportChannel, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', "empty(EDITRCH_ID) or" + CRLF + "DIRECTION = lookup(waEDITRCH, 'ID', {{EDITRCH_ID}}, 'DIRECTION', 0)", '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MATCHCODE',   50, 0, ftString,         'Matchcode',                      '', 0, 0, '', "'~*{!}'", 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', 'not empty(trim(MATCHCODE))', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MEMO',         0, 0, ftMemo,           'Beschreibung',                   '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DIRECTION',    0, 0, gl_PCKGU_ftShort, 'Prozessrichtung',                '', 0, 1, '', '', nMMTID_ProcessDirection, true, false, false, true, false, true, '', false, 0, 0, '', 'InsertMode(EDIPROF)', 'not empty(DIRECTION)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDARD',     0, 0, gl_PCKGU_ftShort, 'EDI-Standard',                   '', 0, 1, '', '', nMMTID_MessageStandard,  true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MSG_TYPE',     0, 0, gl_PCKGU_ftShort, 'Vorgangsart',                    '', 0, 1, '', '', nMMTID_MessageType,      true, false, false, true, false, true, '', false, 0, 0, '', 'EDI_Consts_MessageStandard_IsEdifactStandard(STANDARD) and' + CRLF + 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GLN_OWN',     35, 0, ftString,         'Eigene GLN (Envelope)',          '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GLN_PART',    35, 0, ftString,         'Partner-GLN (Envelope)',         '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ACTIVE',       0, 0, ftBoolean,        'Profil aktiviert',               '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', 'false'),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROCESS',      0, 0, ftBoolean,        'Nachrichten autom. verarbeiten', 'Voreinstellung für die Nachrichten, welche bei der Identifikation mit diesem Profil verknüpft werden.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', 'true'),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILEN_EXT',    3, 0, ftString,         'Dateinamen-Erweiterung',         'Dateinamen-Erweiterung bei Outbound-Nachrichten', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'FILEN_PAT',    0, 0, ftMemo,           'Dateinamen-Muster',              'Muster für den Dateinamen bei Outbound-Nachrichten.' + CRLF + CRLF +
+                                                                                                                              'Im Muster können Platzhalter für diverse Werte angegeben werden. Die Platzhalter müssen innerhalb zweier @-Zeichen angegeben werden (Beispiel: @PLATZHALTER@).' + CRLF + CRLF +
+                                                                                                                              'Folgende Platzhalter sind möglich:' + CRLF +
+                                                                                                                              '* @PROFILE_MC@ => Matchcode des Profils (EDIMSG:PROF_MC)' + CRLF +
+                                                                                                                              '* @ID@ => ID der Nachricht (EDIMSG:ID)' + CRLF +
+                                                                                                                              '* @BELEGLIST_ID@ => ID der Belegliste (EDIMSG:EDIDOCL_ID)' + CRLF +
+                                                                                                                              '* @DATE_CREATED@ => Erstell-Datum der Nachricht im Format "YYYY-MM-DD" (EDIMSG:ERSTELLT)' + CRLF +
+                                                                                                                              '* @TIME_CREATED@ => Erstell-Uhrzeit der Nachricht im Format "HH-NN-SS" (EDIMSG:ERSTELLT)' + CRLF +
+                                                                                                                              '* @DATE_SENT@ => Versand-Datum im Format "YYYY-MM-DD"' + CRLF +
+                                                                                                                              '* @TIME_SENT@ => Versand-Uhrzeit der Nachricht im Format "HH-NN-SS"' + CRLF + CRLF +
+                                                                                                                              'Ist dieses Feld leer, wird folgendes Standard-Muster verwendet: @PROFILE_MC@_@ID@_@DATE_CREATED@' + CRLF + CRLF +
+                                                                                                                              'HINWEIS: Der Dateiname wird sowohl beim Erstellen der Nachricht als auch beim Versenden der Nachricht generiert.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATA_FMT',     0, 0, gl_PCKGU_ftShort, 'Datenformat',                    '', 0, 1, '', '', nMMTID_DataFormat, true, false, false, true, false, true, '', false, 0, 0, '', 'not ACTIVE', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_PAR',   0, 0, ftMemo,           'Inbound-Inhouseformat erst.',    'Script zur Erstellung des Inhouseformats im Inbound-Prozess',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Inbound and' + CRLF + 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_PAR)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_IMP',   0, 0, ftMemo,           'Inhouseformat importieren',      'Script für den Import aus dem Inhouseformat in be-Prozesse',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Inbound and' + CRLF + 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_IMP)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_DCL',   0, 0, ftMemo,           'Beleglisten erstellen',          'Script für die Erstellung von Beleglisten im Outbound-Prozess',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_DCL)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_EXP',   0, 0, ftMemo,           'Outbound-Inhouseformat erst.',   'Script für die Erstellung des Inhouseformats im Outbound-Prozess',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_EXP)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCRIPT_MSG',   0, 0, ftMemo,           'Nachrichten erstellen',          'Script für die Erstellung der Nachricht im Outbound-Prozess',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'DIRECTION = gl_EDI_ProcessDirection_Outbound and' + CRLF + 'not ACTIVE', 'EDI_DB_ScriptField_DefaultValidate(SCRIPT_MSG)', '', '', ''),
+
+   TableDefinition_AddDocumentsStartTimestampField(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIPART" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPART_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'NAME',       255, 0, ftString,         'Name',                           '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', 'not empty(trim(NAME))', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MEMO',         0, 0, ftMemo,           'Beschreibung',                   '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WORKAREA',     0, 0, gl_PCKGU_ftShort, 'Partner-Workarea',               'Dieses Feld bildet zusammen mit dem Feld "RECORD_ID" den Fremdschlüssel zum dem verknüpften Kunden bzw. Lieferanten.',
+                                                                                                                                  0, 1, '', '', nMMTID_PartnerWorkarea, true, false, false, true, false, true, '', false, 0, 0, '', 'InsertMode(EDIPART)', 'not empty(WORKAREA)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'RECORD_ID',    0, 0, ftInteger,        'Partner-Datensatz-ID',           'Dieses Feld bildet zusammen mit dem Feld "WORKAREA" den Fremdschlüssel zum dem verknüpften Kunden bzw. Lieferanten.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', 'InsertMode(EDIPART) and WORKAREA <> 0', 'not empty(RECORD_ID)', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPROF_ID',   0, 0, ftInteger,        'Profil',                         'Verweis auf einen EDIPROF-Datensatz',
+                                                                                                                                  0, 1, '', '', nMMTID_Profile, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GLN_OWN',     35, 0, ftString,         'Eigene GLN (kaufmännisch)',      'Die eigene kaufmännische GLN befindet sich i.d.R. in dem entsprechenden NAD-Segment.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'GLN_PART',    35, 0, ftString,         'Partner-GLN (kaufmännisch)',     'Die kaufmännische Partner-GLN befindet sich i.d.R. in dem entsprechenden NAD-Segment.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROC_STO',     0, 0, gl_PCKGU_ftShort, 'Verarbeiten in Standort',        '', 0, 1, '', '', , true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', 'mStandort'),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROC_ABTLG',   0, 0, gl_PCKGU_ftShort, 'Verarbeiten in Abteilung',       '', 0, 1, '', '', , true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', 'mAbteilung'),
+
+   TableDefinition_AddDocumentsStartTimestampField(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIDOCL" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIDOCL_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPROF_ID',   0, 0, ftInteger,        'Profil',                         'Verweis auf einen EDIPROF-Datensatz',
+                                                                                                                                  0, 1, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_ID',   0, 0, ftInteger,        'Partnerkonfiguration',           'Verweis auf einen EDIPART-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIMSG_ID',    0, 0, ftInteger,        'Nachricht',                      'Verweis auf einen EDIMSG-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROC_STEP',    0, 0, gl_PCKGU_ftShort, 'Prozessschritt',                 'Das Feld zeigt an, welcher Prozessschritt für den Datensatz zuletzt erfolgreich durchgeführt wurde.',
+                                                                                                                                  0, 1, '', '', nMMTID_EDIDOCL_ProcessStep, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+
+   TableDefinition_AddStatusFields(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIDOC" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIDOC_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_ID',      0, 0, ftInteger,        'Dab700: ID',                     'Verweis auf einen Dab700-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_STO',     0, 0, ftInteger,        'Dab700: Standort',               'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_BEART',   0, 0, gl_PCKGU_ftShort, 'Dab700: Beleg-Art',              'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_BELNR',  20, 0, ftString,         'Dab700: Beleg-Nummer',           'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_LFDNR',   0, 0, ftInteger,        'Dab700: Laufende Nummer',        'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_PERNR',   0, 0, ftInteger,        'Dab700: Pers.-Nr.',              'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'D700_DATUM',   0, 0, ftDate,           'Dab700: Datum',                  'Dieses Feld ist Teil des Fremdschlüssels für die Dab700.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIDOCL_ID',   0, 0, ftInteger,        'Belegliste',                     'Verweis auf einen EDIDOCL-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_ID',   0, 0, ftInteger,        'Partnerkonfiguration',           'Verweis auf einen EDIPART-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROC_STEP',    0, 0, gl_PCKGU_ftShort, 'Prozessschritt',                 'Das Feld zeigt an, welcher Prozessschritt für den Datensatz zuletzt erfolgreich durchgeführt wurde.',
+                                                                                                                                  0, 1, '', '', nMMTID_EDIDOC_ProcessStep, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+
+   TableDefinition_AddStatusFields(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIHEAD" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIHEAD_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIMSG_ID',    0, 0, ftInteger,        'Nachricht',                      'Verweis auf einen EDIMSG-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIDOCL_ID',   0, 0, ftInteger,        'Belegliste',                     'Verweis auf einen EDIDOCL-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIDOC_ID',    0, 0, ftInteger,        'Beleg',                          'Verweis auf einen EDIDOC-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB050_ID',    0, 0, ftInteger,        'Kundenauftrag',                  'Enthält die Nummer des verknüpften Kundenauftrags.' + CRLF + 'Dieses Feld wird befüllt, sobald durch den Inbound-Porzess ein be-Auftrag aus dem EDIHEAD Datensatz erzeugt wird. Die Auftragsnummer des erzeugten Auftrags wird dann in dieses Feld geschrieben.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ANUMMER',      6, 0, ftString,         'Auftragsnummer',                 '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_ID',   0, 0, ftInteger,        'Partnerkonfiguration',           'Verweis auf einen EDIPART-Datensatz (optional, meist gefüllt)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_WA',   0, 0, gl_PCKGU_ftShort, 'EDIPART: Workarea',              '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIPART_RI',   0, 0, ftInteger,        'EDIPART: Record-ID',             '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATA',         0, 0, ftMemo,           'Daten',                          'Dieses Feld enthält individuelle Daten in Form eines sog. KVU-Arrays.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DIRECTION',    0, 0, gl_PCKGU_ftShort, 'Prozessrichtung',                '', 0, 1, '', '', nMMTID_ProcessDirection, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGART',     0, 0, gl_PCKGU_ftShort, 'Beleg-Art',                      '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGPERNR',   0, 0, ftInteger,        'Beleg-Persnummer',               '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGNR',     20, 0, ftString,         'Beleg-Nummer',                   '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGLFD',     0, 0, ftInteger,        'Beleg-Laufende Nummer',          '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEG_DSTA',   8, 0, ftString,         'Beleg Verbundtabelle',           '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEG_DSID',   0, 0, ftInteger,        'Beleg DatensatzID',              '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+
+   TableDefinition_AddStatusFields(oTableDefinition),
+
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDIPOS" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPOS_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EDIHEAD_ID',   0, 0, ftInteger,        'Kopfsatz',                       'Verweis auf einen EDIHEAD-Datensatz',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB055_ID',    0, 0, ftInteger,        'Kundenauftragsposition',         'Enthält die Nummer der verknüpften Kundenauftragsposition.' + CRLF + 'Dieses Feld wird befüllt, sobald durch den Inbound-Porzess eine be-Auftragsposition aus dem EDIPOS Datensatz erzeugt wird. Die Auftragspositionsnummer der erzeugten Auftragsposition wird dann in dieses Feld geschrieben.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'APNUMMER',      9, 0, ftString,         'Auftragspositionsnummer',        '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATA',         0, 0, ftMemo,           'Daten',                          'Dieses Feld enthält individuelle Daten in Form eines sog. KVU-Arrays.',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGART',     0, 0, gl_PCKGU_ftShort, 'Beleg-Art',                      '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGPERNR',   0, 0, ftInteger,        'Beleg-Persnummer',               '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGNR',     20, 0, ftString,         'Beleg-Nummer',                   '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEGLFD',     0, 0, ftInteger,        'Beleg-Laufende Nummer',          '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEG_DSTA',   8, 0, ftString,         'Beleg Verbundtabelle',           '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BELEG_DSID',   0, 0, ftInteger,        'Beleg DatensatzID',              '(redundant)',
+                                                                                                                                  0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+
+
+   TableDefinition_AddStatusFields(oTableDefinition),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDISEGM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDISEGM_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDARD',     0, 0, gl_PCKGU_ftShort, 'EDI-Standard',                   '', 0, 1, '', '', nMMTID_MessageStandard, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SEGMENT',      3, 0, ftString,         'Segmentbezeichner',              '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ELEMENT',      5, 0, ftString,         'Composite-Datenelementbez.',     '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SUB_ELEM',     4, 0, ftString,         'Datenelementbezeichner',         '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ELEM_POS',     0, 0, ftInteger,        'Position des Datenelements',     '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'VALUE_POS',    0, 0, ftInteger,        'Position des Sub-Datenelements', '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MANDATORY',    0, 0, ftBoolean,        'Datenelement ist erforderlich',  '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MEMO',         0, 0, ftMemo,           'Beschreibung',                   '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Felddefinitionen für die Tabelle "EDISCHM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDISCHM_AddFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDARD',     0, 0, gl_PCKGU_ftShort, 'EDI-Standard',                   '', 0, 1, '', '', nMMTID_MessageStandard, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MSG_TYPE',     0, 0, gl_PCKGU_ftShort, 'Vorgangsart',                    '', 0, 1, '', '', nMMTID_MessageType, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SCHEME',       0, 0, ftMemo,           'Schema',                         '', 0, 0, '', '', 0, true, false, false, true, false, true, '', false, 0, 0, '', '', '', '', '', ''),
+end,
+
+//##############################################################################
+//##############################################################################
+// Indexdefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDITRCH" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDITRCH_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DIRECTION', {'DIRECTION'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ACTIVE',    {'ACTIVE'},    '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIMSG" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIMSG_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DIRECTION',  {'DIRECTION'},  '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'PROC_STEP',  {'PROC_STEP'},  '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'PROF_MC',    {'PROF_MC'},    '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIDOCL_ID', {'EDIDOCL_ID'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIPROF_ID_MSG_KEY', {'EDIPROF_ID', 'MSG_KEY'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIBSP" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIBSP_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'GUID_STR', {'GUID_STR'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIPROF" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPROF_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDITRCH_ID', {'EDITRCH_ID'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'MATCHCODE',  {'MATCHCODE'},  '', '', true,  false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DIRECTION',  {'DIRECTION'},  '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'STANDARD',   {'STANDARD'},   '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'MSG_TYPE',   {'MSG_TYPE'},   '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIPART" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPART_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'WORKAREA_RECORD_ID', {'WORKAREA', 'RECORD_ID'}, '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIPROF_ID',         {'EDIPROF_ID'},            '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'GLN_OWN',            {'GLN_OWN'},               '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'GLN_PART',           {'GLN_PART'},              '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIDOCL" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIDOCL_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIMSG_ID', {'EDIMSG_ID'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIDOC" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIDOC_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIDOCL_ID', {'EDIDOCL_ID'},                                                                     '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DAB700_KEY', {'D700_STO', 'D700_BEART', 'D700_BELNR', 'D700_LFDNR', 'D700_PERNR', 'D700_DATUM'}, '', '', true, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIHEAD" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIHEAD_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DIRECTION',  {'DIRECTION'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIMSG_ID',  {'EDIMSG_ID'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIDOCL_ID', {'EDIDOCL_ID', 'ID'},         '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIDOC_ID',  {'EDIDOC_ID'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DAB050_ID',  {'DAB050_ID'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'BELEGVERB',  {'BELEG_DSTA', 'BELEG_DSID'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDIPOS" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPOS_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIHEAD_ID',           {'EDIHEAD_ID', 'ID'},         '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'EDIHEAD_ID_DAB055_ID', {'EDIHEAD_ID', 'DAB055_ID'},  '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'DAB055_ID',            {'DAB055_ID'},                '', '', false, false, false, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'BELEGVERB',            {'BELEG_DSTA', 'BELEG_DSID'}, '', '', false, false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDISEGM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDISEGM_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'INDEX_UNIQUE', {'STANDARD', 'SEGMENT', 'ELEMENT', 'SUB_ELEM', 'VALUE_POS'}, '', '', true,  false, false, 512),
+end,
+
+//******************************************************************************
+// Diese Funktion fügt alle Indexes für die Tabelle "EDISCHM" hinzu.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDISCHM_AddIndexes(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'STANDARD_MSG_TYPE', {'STANDARD', 'MSG_TYPE'}, '', '', true, false, false, 512),
+end,
+
+//##############################################################################
+//##############################################################################
+// Tabellendefinitionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDITRCH.
+// @result: array - TableDefinition der Tabelle EDITRCH
+//******************************************************************************
+function EDITRCH_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDITRCH', nWorkarea_EDITRCH, 'EDI: Transportkanal', '', true, false),
+   EDITRCH_AddFields(result),
+   EDITRCH_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIMSG.
+// @result: array - TableDefinition der Tabelle EDIMSG
+//******************************************************************************
+function EDIMSG_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIMSG', nWorkarea_EDIMSG, 'EDI: Nachricht', '', true, false),
+   EDIMSG_AddFields(result),
+   EDIMSG_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIBSP.
+// @result: array - TableDefinition der Tabelle EDIBSP
+//******************************************************************************
+function EDIBSP_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIBSP', nWorkarea_EDIBSP, 'EDI: Blobspeicher', '', true, false),
+   EDIBSP_AddFields(result),
+   EDIBSP_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIPROF.
+// @result: array - TableDefinition der Tabelle EDIPROF
+//******************************************************************************
+function EDIPROF_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIPROF', nWorkarea_EDIPROF, 'EDI: Profil', '', true, false),
+   EDIPROF_AddFields(result),
+   EDIPROF_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIPART.
+// @result: array - TableDefinition der Tabelle EDIPART
+//******************************************************************************
+function EDIPART_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIPART', nWorkarea_EDIPART, 'EDI: Partnerkonfiguration', '', true, false),
+   EDIPART_AddFields(result),
+   EDIPART_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIDOCL.
+// @result: array - TableDefinition der Tabelle EDIDOCL
+//******************************************************************************
+function EDIDOCL_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIDOCL', nWorkarea_EDIDOCL, 'EDI: Belegliste', '', true, false),
+   EDIDOCL_AddFields(result),
+   EDIDOCL_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIDOC.
+// @result: array - TableDefinition der Tabelle EDIDOC
+//******************************************************************************
+function EDIDOC_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIDOC', nWorkarea_EDIDOC, 'EDI: Beleg', '', true, false),
+   EDIDOC_AddFields(result),
+   EDIDOC_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIHEAD.
+// @result: array - TableDefinition der Tabelle EDIHEAD
+//******************************************************************************
+function EDIHEAD_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIHEAD', nWorkarea_EDIHEAD, 'EDI: Kopfsatz', '', true, false),
+   EDIHEAD_AddFields(result),
+   EDIHEAD_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDIPOS.
+// @result: array - TableDefinition der Tabelle EDIPOS
+//******************************************************************************
+function EDIPOS_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDIPOS', nWorkarea_EDIPOS, 'EDI: Position', '', true, false),
+   EDIPOS_AddFields(result),
+   EDIPOS_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDISEGM.
+// @result: array - TableDefinition der Tabelle EDISEGM
+//******************************************************************************
+function EDISEGM_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDISEGM', nWorkarea_EDISEGM, 'EDI: Segment-Mapping', '', true, false),
+   EDISEGM_AddFields(result),
+   EDISEGM_AddIndexes(result),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt eine vollständige Tabellendefinition der Tabelle EDISCHM.
+// @result: array - TableDefinition der Tabelle EDISCHM
+//******************************************************************************
+function EDISCHM_CreateTableDefinition()
+   result := PCKGU_TableDefinition_Create('EDISCHM', nWorkarea_EDISCHM, 'EDI: Schema', '', true, false),
+   EDISCHM_AddFields(result),
+   EDISCHM_AddIndexes(result),
+end,
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', true),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOK, 7, true),
+         mrCancel
+      },
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+//            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+//            //          müssen die folgenden beiden Zeilen einkommentiert werden:
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDITRCH, 'EDITRCH', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIMSG,  'EDIMSG',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIBSP,  'EDIBSP',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIPROF, 'EDIPROF', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIPART, 'EDIPART', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIDOCL, 'EDIDOCL', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIDOC,  'EDIDOC',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIHEAD, 'EDIHEAD', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDIPOS,  'EDIPOS',  cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDISEGM, 'EDISEGM', cUsername, cPassword),
+//            PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_EDISCHM, 'EDISCHM', cUsername, cPassword),
+//            // Merkmalstabellen löschen
+//            MMT_Delete(oDM, nMMTID_ProcessDirection),
+//            MMT_Delete(oDM, nMMTID_DataTransferProtocol),
+//            MMT_Delete(oDM, nMMTID_ProcessStatus),
+//            MMT_Delete(oDM, nMMTID_EDIMSG_ProcessStep),
+//            MMT_Delete(oDM, nMMTID_MessageStandard),
+//            MMT_Delete(oDM, nMMTID_MessageType),
+//            MMT_Delete(oDM, nMMTID_TransportChannel),
+//            MMT_Delete(oDM, nMMTID_Profile),
+//            MMT_Delete(oDM, nMMTID_PartnerWorkarea),
+//            MMT_Delete(oDM, nMMTID_EDIDOCL_ProcessStep),
+//            MMT_Delete(oDM, nMMTID_EDIDOC_ProcessStep),
+//            MMT_Delete(oDM, nMMTID_DataFormat),
+
+            PCKGU_AddTableAndMetaInfo(oDM, EDITRCH_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIMSG_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIBSP_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIPROF_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIPART_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIDOCL_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIDOC_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIHEAD_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDIPOS_CreateTableDefinition(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDISEGM_CreateTableDefinition(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, EDISCHM_CreateTableDefinition(), cUsername, cPassword),
+            // Merkmalstabellen anlegen
+            MMT_ProcessDirection_Create(oDM),
+            MMT_DataTransferProtocol_Create(oDM),
+            MMT_ProcessStatus_Create(oDM),
+            MMT_EDIMSG_ProcessStep_Create(oDM),
+            MMT_MessageStandard_Create(oDM),
+            MMT_MessageType_Create(oDM),
+            MMT_TransportChannel_Create(oDM),
+            MMT_Profile_Create(oDM),
+            MMT_PartnerWorkarea_Create(oDM),
+            MMT_EDIDOCL_ProcessStep_Create(oDM),
+            MMT_EDIDOC_ProcessStep_Create(oDM),
+            MMT_DataFormat_Create(oDM),
+
+            oDM.CbTransaction_Commit(),
+
+            PCKGU_DeleteAllRightsBerCacheFiles(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

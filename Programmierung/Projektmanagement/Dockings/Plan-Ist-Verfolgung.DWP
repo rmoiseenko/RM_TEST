@@ -1,0 +1,252 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking zur Anzeige der Plan-/Ist-Werte zu einem Projekt
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+   m_oDM, m_oProjBO, m_oChangeTrackingTable, m_cTrackingBrowser,
+   m_nLastProjectID,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Refresh, btn_Refresh, ChangeTrackingActionList, ds_ChangeTracking,
+   ds_MasterTable, grd_ChangeTracking, pnl_ChangeTrackingBack,
+   pnl_ChangeTrackingMenuPanel
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cTrackingBrowser := '@PCHTRA', // Vorgangsleistungs-Tracking Browser Projekt
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Steuern der Action- und Button-Stati
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   A_Refresh.Enabled := not empty(m_oProjBO) and m_oProjBO.CbID > 0
+                        and not InsertMode(m_oMasterTable),
+end,
+
+//******************************************************************************
+// Öffnen der relevanten Tabellen und deren Zuweisung an den Browser.
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+   startseq
+      if empty(m_oMasterTable) then
+         SetError('Das Plan-/Ist-Docking kann nicht ohne MasterDataSet aufgerufen werden!'),
+      else
+         if m_oMasterTable.WorkArea <> waDABPRJ then
+            SetError('Die übergebene Tabelle ist nicht die Projekt-Stamm-Tabelle'),
+         else
+            ds_MasterTable.DataSet := m_oMasterTable,
+         endif,
+      endif,
+
+      m_oDM     := CreateObject('TBeDBGet', 'PLANACTGET', oForm, oForm),
+      m_oProjBO := CreateObject('TBeProjectBO', 'PLANACTPROBO', oForm, oForm),
+      if m_oMasterTable:ID > 0 and not InsertMode(m_oMasterTable) then
+         m_oProjBO.CbGoToID(m_oMasterTable:ID),
+      else
+         m_oProjBO.CbGoToID(-1),
+      endif,
+
+      // Tabelle für Projektübergreifendes Vorgangsleistungs-Tracking öffnen
+      m_oChangeTrackingTable             := CreateObject('TMemCalcTable', 'ProjectChangeTrackingDock', oForm, oForm),
+      m_oChangeTrackingTable.AliasName   := 'MEM_PCHTRA',
+
+      // Einmalige Struktur holen
+      ProjMgmt_GetAccumulatedChangeTrackingValues(m_oChangeTrackingTable, -1,  {{-1}}, True, True),
+      ds_ChangeTracking.DataSet          := m_oChangeTrackingTable,
+      grd_ChangeTracking.DataSource      := ds_ChangeTracking,
+      grd_ChangeTracking.RegisterDataSet := m_oChangeTrackingTable,
+      grd_ChangeTracking.ID              := m_cTrackingBrowser,
+      grd_ChangeTracking.ReadWriteProps  := False,
+   always
+      ActionsEnabled(),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksetzen
+//******************************************************************************
+function FormExDestroy( Sender )
+   if not empty(m_oOwnerForm) then
+      GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+   endif,
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle muss das Docking aktualisiert
+//        werden
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   startseq
+      ActionsEnabled(),
+      // Nur Änderungen am Fenster zulassen, wenn sich das Projekt geändert hat
+      if m_nLastProjectID <> m_oMasterTable:ID then
+         // Alte Daten löschen
+         if not empty(m_oChangeTrackingTable) then
+            DeleteAllData(m_oChangeTrackingTable),
+         endif,
+
+         // Project-BO neu positionieren
+         if not empty(m_oProjBO) then
+            if m_oMasterTable:ID > 0 and
+               LookUp(waDABPRJ, 'ID', {{m_oMasterTable:ID}}, 'ID', 0) > 0 then
+               m_oProjBO.CbGoToID(m_oMasterTable:ID),
+            else
+               m_oProjBO.CbGoToID(-1),
+            endif,
+         endif,
+
+         m_nLastProjectID := m_oMasterTable:ID,
+      endif,
+   onerror
+      SetError('Fehler beim Aktualisieren der Plan-/Ist-Verfolgung' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars dieses freigeben
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Aktualisiert das Soll-Ist-Tracking beim Klicken auf den Refresh Button
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nOldCursor |
+   startseq
+      nOldCursor := SetCursor(crHourglass),
+      startseq
+         if not empty(m_oProjBO) then
+            ProjMgmt_GetAccumulatedChangeTrackingValues(m_oChangeTrackingTable,
+                                                        m_oProjBO.CbID,
+                                                        {{-1}},
+                                                        False,
+                                                        True),
+            m_nLastProjectID := m_oProjBO.CbID, // Letzte Projekt-ID merken
+         endif,
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   onerror
+      MessageDlg('Fehler beim Abrufen der Plan-/Ist-Werte' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners und setzt
+// grundsätzliche einstellungen
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm('@PRJPACHTR', Application),
+   else
+      oForm      := LoadForm('@PRJPACHTR', m_oOwnerForm),
+   endif,
+
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.BorderStyle    := bsSizeToolWin,
+   oForm.PositionSaveID := '@CHTRPOS',
+   oForm.OrigCapt       := 'Plan-/Ist-Verfolgung',
+   oForm.ImageIndex     := 223,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_Refresh                   := FindObject( oForm, "A_Refresh" ),
+      btn_Refresh                 := FindObject( oForm, "btn_Refresh" ),
+      ChangeTrackingActionList    := FindObject( oForm, "ChangeTrackingActionList" ),
+      ds_ChangeTracking           := FindObject( oForm, "ds_ChangeTracking" ),
+      ds_MasterTable              := FindObject( oForm, "ds_MasterTable" ),
+      grd_ChangeTracking          := FindObject( oForm, "grd_ChangeTracking" ),
+      pnl_ChangeTrackingBack      := FindObject( oForm, "pnl_ChangeTrackingBack" ),
+      pnl_ChangeTrackingMenuPanel := FindObject( oForm, "pnl_ChangeTrackingMenuPanel" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+
+   // Für Tests in der Entwicklungsumgebung
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable := DBOpen(waDABPRJ),
+      DBSeek({2}, m_oMasterTable),
+   endif,
+
+   LoadGUI(),
+   OpenDataBase(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

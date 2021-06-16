@@ -1,0 +1,110 @@
+|
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, BeLabel1, BeLabel2, br_dia020, btn_cancel, btn_filter, btn_ok, DIA020,
+  ds_dia020, edt_sort, edt_suche, Panel1, Panel2, Panel3
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+  , cResult |
+
+// Beschreibung:
+// Programm zum Suchen von Ländern und Übernahme der Landnummer
+
+// Maske schliessen
+// =============================================================================
+function btn_cancelClick( Sender )
+  closeform(oForm),
+end,
+
+// Land übernehmen
+// =============================================================================
+function btn_okClick( Sender )
+  cResult := DIA020:LANDNR,
+  closeform(oForm),
+end,
+
+// Land übernehmen per Enter
+// =============================================================================
+function br_dia020DblClick( Sender )
+  cResult := DIA020:LANDNR,
+  closeform(oForm),
+end,
+
+function br_dia020KeyPress( Sender, aKey )
+  if aKey = chr(13) then
+    cResult := DIA020:LANDNR,
+    closeform(oForm),
+  endif,
+end,
+
+// Filter aufheben
+// =============================================================================
+function btn_filterClick( Sender )
+  dbfilter(,DIA020),
+  dbgotop(DIA020),
+end,
+
+// Filter aktivieren
+// =============================================================================
+function edt_sucheChange( Sender )
+  dbfilter("upper('"+edt_suche.text+"')$upper(bez+landnr+iso)",dia020),
+  dbgotop(DIA020),
+end,
+
+// Sortierung ändern
+// =============================================================================
+function edt_sortChange( Sender )
+  case edt_sort.itemindex
+    of 0 ::
+      DIA020.indexname := "DIA021",
+    of 1 ::
+      DIA020.indexname := "DIA022",
+    of 2 ::
+      DIA020.indexname := "DIA023",
+  endcase,
+  dbgotop(DIA020),
+end,
+
+// Maskenoberfläche
+// =============================================================================
+Function GUI()
+  StartSeq
+     // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm      := LoadForm( "@FILAND", Application ),
+   BeLabel1   := FindObject( oForm, "BeLabel1" ),
+   BeLabel2   := FindObject( oForm, "BeLabel2" ),
+   br_dia020  := FindObject( oForm, "br_dia020" ),
+   btn_cancel := FindObject( oForm, "btn_cancel" ),
+   btn_filter := FindObject( oForm, "btn_filter" ),
+   btn_ok     := FindObject( oForm, "btn_ok" ),
+   DIA020     := FindObject( oForm, "DIA020" ),
+   ds_dia020  := FindObject( oForm, "ds_dia020" ),
+   edt_sort   := FindObject( oForm, "edt_sort" ),
+   edt_suche  := FindObject( oForm, "edt_suche" ),
+   Panel1     := FindObject( oForm, "Panel1" ),
+   Panel2     := FindObject( oForm, "Panel2" ),
+   Panel3     := FindObject( oForm, "Panel3" ),
+     // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+     dia020.active := true,
+     dia020.indexname := "DIA021",
+     edt_sort.itemindex := 1,
+     br_dia020.ID             := '@LAND',
+     br_dia020.readwriteprops := false,
+     br_dia020.enabled        := true,
+     oForm.Activecontrol      := edt_suche,
+     ShowModal(oForm),
+  OnError
+     DestroyObject( oForm ),
+     seterror(GetErrorText()),
+  StopSeq,
+end,
+
+Startseq,
+  cResult := "",
+  GUI(),
+OnError
+  meld(GetErrortext()),
+stopseq,
+
+cResult
+
+

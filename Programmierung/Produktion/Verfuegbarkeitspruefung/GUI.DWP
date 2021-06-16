@@ -1,0 +1,863 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//
+//   GUI für die "Verfügbarkeits-Prüfung"  (von Fertigungsaufträgen)
+//
+//
+//   Parameter:
+//      Das Fenster kann mittels der Funktion
+//      "VPU_GUI_ShowVerfuegbarkeitspruefungAsMdiChild()" aufgerufen werden.
+//      Über diese Funktion können Übergabe-Parameter mitgegeben werden, die
+//      auch für ein bereits geöffnetes MDI-Child-Fenster greifen.
+//
+//   Rückgabe:
+//      Die Formular-Instanz wird zurückgegeben für Kombatibilität
+//      mit den GFU*()-Funktionen.
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cFormID, m_cWinPosSaveId, m_cDefaultSaveId,
+
+   m_oGUI_DM, m_oDab035_SelectedFa,
+   m_oCheckDM,
+   m_oEinzelTermRast_DM,
+   m_oOptionsMem,
+   m_bPruefModusSetByCode,
+
+   // Übergabe-Parameter
+   m_nOrder_Workarea,
+   m_nOrder_No,
+   m_nPruefMode,
+
+   m_bRefreshTermRaster:L:=false,
+   m_cLastSelectedArtNr:C:='',
+   m_oDab010_CurrentlySelectedInStklStruktur,
+   m_memStklStruktur,
+
+   m_oTerminRasterForm,
+   m_oEinzelTermRastMem,
+   m_aOptionsPresetArray,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Calc, A_CalcDetailsForCurrentRecord, A_GeheZuArtikel,
+   A_GeheZuFertigungsAuftraege, A_ShowIndiHelp, A_ShowPruefModusOptionsDialog,
+   actions, BeBarButton1, BeBarButton3, BeBarButton4, BeBarDockControl1,
+   BeBarManager, BeBarManager1Bar1, BeBitBtn1, BeInfoPanel2, BePanel1, BePanel2,
+   BePanel3, bepnl_InfoHeader, btn_ShowPruefModusOptionsDialog, btn_StartCalc,
+   chk_Ausblenden_BedarfDurchLagerGedeckt, chk_Ausblenden_Kaufteile,
+   chk_Ausblenden_KeineBedarfsmenge, cmb_PruefModus,
+   ds_Dab010_CurrentlySelectedInStklStruktur, ds_EinzelTerminraster,
+   ds_StklStruktur, edt_Dab010_ARTNR, edt_Dab010_BEZ, edt_Dab035ARTNR,
+   edt_Dab035BEZ, edt_Datum, edt_FA, edt_Menge, gotobtn_Article,
+   grid_EinzelTerminraster, grid_StklStruktur, Label1, Label3, Label9,
+   lbl_Dab035ARTNR, lbl_Datum, lbl_FA, lbl_menge, lbl_PresetMode,
+   pctl_Terminraster, pnl_background, pnl_BaseInput, pnl_GuiFilterOptions,
+   pnl_InfoHeader, pnl_Modus, pnl_StrukturAlt, pnl_Terminraster,
+   pnl_Terminraster_Info, ts_EinzelTerminraster, ts_terminraster
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID        := "@VPU",
+m_cWinPosSaveId  := "@VPU",
+m_cDefaultSaveId := "@VPU",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Terminraster-Docking erzeugen und anzeigen
+//******************************************************************************
+function CreateAndShowTerminRasterForm()
+   if empty(m_oTerminRasterForm) then
+      m_oTerminRasterForm               := CreateObject('TFormArtDates', 'Terminraster_Docking', oForm, ts_terminraster),
+      m_oTerminRasterForm.Align         := alclient,
+      m_oTerminRasterForm.BorderStyle   := bsnone,
+      m_oTerminRasterForm.KeyPreview    := false,
+      m_oTerminRasterForm.FormStyle     := fsStayOnTop,
+   endif,
+   Show(m_oTerminRasterForm),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+
+   m_oGUI_DM                      := CreateObject('TBeDbGet', '', oForm), // eigenes Datenmodul für die GUI erstellen
+   m_oCheckDM                     := CreateObject('TBeDbGet', '', oForm), // eigenes Datenmodul für die Logik erstellen
+
+   // Dab035-Instanz, die auf den gewählten FA positioniert wird
+   m_oDab035_SelectedFa           := DbGetTable(m_oGUI_DM, waDab035, 'DAB035_SELECTED_FA'),
+   m_oDab035_SelectedFa.IndexName := 'DAB036', // LIEFNR;BESTPOSNR;TERM_INDEX
+
+   // Memtable für die Prüfmodus-Einstellungen
+   m_oOptionsMem := VPU_Options_CreateOptionsMem(oForm),
+
+   // Memtable für die hierarchische Darstellung der Stückliste
+   m_memStklStruktur                     := VPU_GUI_CreateStrukturMem(oForm),
+   m_memStklStruktur.OrderBy             := 'SORT_KEY',
+   AssignEvent(m_memStklStruktur, 'AfterScroll', 'm_memStklStrukturAfterScroll'),
+   m_cLastSelectedArtNr                  := '',
+   m_memStklStruktur.Active              := true,
+   GU_LinkTableToGui(m_memStklStruktur, ds_StklStruktur, grid_StklStruktur, '@VPU_MEM', false),
+   m_bRefreshTermRaster      := true,
+
+   // Tabelle und Datasource für gedockte das Standard-Terminraster
+   m_oDab010_CurrentlySelectedInStklStruktur                     := CreateObject('TBeRightsTable', 'DAB010_TERM_RAST', oForm), // nicht die Standard-Dab010 aus dem Datenmodul nehmen...
+   m_oDab010_CurrentlySelectedInStklStruktur.Workarea            := waDab010,
+   m_oDab010_CurrentlySelectedInStklStruktur.Active              := true,
+   m_oDab010_CurrentlySelectedInStklStruktur.IndexName           := 'DAB011',
+   DbScope({Chr(255)}, {Chr(255)}, m_oDab010_CurrentlySelectedInStklStruktur),
+
+   ds_Dab010_CurrentlySelectedInStklStruktur.DataSet            := m_oDab010_CurrentlySelectedInStklStruktur,
+   m_oTerminRasterForm.MasterDataSet := m_oDab010_CurrentlySelectedInStklStruktur,
+
+   // Tabelle für das Einzel-Terminraster
+   m_oEinzelTermRastMem := ETRU_CreateMem(oForm),
+   GU_LinkTableToGui(m_oEinzelTermRastMem, ds_EinzelTerminRaster, grid_EinzelTerminraster, '@ETRMRAST', false), // Gleiche Browser-ID nutzen wie im Einzelterminraster-Docking
+end,
+
+//******************************************************************************
+// Setzt den Filter anhand der Filterfelder der GUI
+// @Result: null
+//******************************************************************************
+function RefreshMemStklStrukturFilter()
+| cFilter, cLastSortKey |
+
+   if empty(m_memStklStruktur) then
+      exit,
+   endif,
+
+   cLastSortKey := AllTrim(m_memStklStruktur:SORT_KEY),       // Positionierung der MemTable beibehalten, falls möglich...
+   startseq
+      m_memStklStruktur.Filtered := false,
+      cFilter             := '',
+
+      if chk_Ausblenden_Kaufteile.Checked then
+         cFilter := ConcatTrenner(cFilter, "ARTTYP <> 'T'", " AND "),
+      endif,
+
+      if chk_Ausblenden_KeineBedarfsmenge.Checked then
+         cFilter := ConcatTrenner(cFilter, "(BEDARF_MENGE <> 0)",   " AND "),
+      endif,
+
+      if chk_Ausblenden_BedarfDurchLagerGedeckt.Checked then
+         cFilter := ConcatTrenner(cFilter, "(CALC_BEDARF_GEDECKT_DURCH_LAGER <> 'J')",   " AND "),
+      endif,
+
+      // writeln('RefreshMemStklStrukturFilter:', cFilter),
+
+      m_memStklStruktur.Filter   := cFilter,
+      m_memStklStruktur.Filtered := not empty(cFilter),
+   always
+      DbSeek({cLastSortKey}, m_memStklStruktur),
+   stopseq,
+end,
+
+//******************************************************************************
+// GUI-Einstellungen (z.B. Splitter-Position) speichern
+//******************************************************************************
+function SaveGUISettings()
+| aArr |
+   aArr := {},
+   AAdd(aArr, pnl_Terminraster.Width),
+   AAdd(aArr, cmb_PruefModus.Value),
+   SetBeParam(m_cDefaultSaveId, ArrToStr(aArr)), // Parameterarray speichern
+end,
+
+//******************************************************************************
+// GUI-Einstellungen (z.B. Splitter-Position) laden
+//******************************************************************************
+function LoadGUISettings()
+| aParams, nPruefModus |
+   aParams := GetBeParam(m_cDefaultSaveId),
+   aParams := iif(empty(aParams), {}, StrToArr(aParams)),
+
+   // Vertikaler Splitter
+   pnl_Terminraster.Width   := iif(ALen(aParams) > 0 and not empty(aParams[1]),
+                                   aParams[1],
+                                   pnl_Terminraster.Width),
+
+   // zuletzt gewählten Prüfmodus wiederherstellen
+   m_bPruefModusSetByCode  := true,
+   nPruefModus             := iif(ALen(aParams) > 1 and not empty(aParams[2]),
+                                  aParams[2],
+                                  Str(gl_VPU_Pruefmodus_FreieEinstellung)),
+   cmb_PruefModus.Value    := nPruefModus,
+   VPU_Options_LoadOptionsByPruefModus(m_oOptionsMem, nPruefModus),
+   m_bPruefModusSetByCode  := false,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CheckVerfuegbarkeit_GUI(cBestPosNr, bResolveDetail)
+| aZeilenTypen, cCurSortKey, nEbene, cParentSortKey, nOldCursor, aFuncRes,
+  nAddedStuelistRecordsCount, bRueckstaendeVorhanden |
+
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      cCurSortKey := AllTrim(m_memStklStruktur:SORT_KEY), // Im Falle einer Zugangs-Kopf-Auflösung
+
+      m_bRefreshTermRaster    := false,
+      startseq
+         DbDisableControls(m_memStklStruktur),
+         startseq
+            m_memStklStruktur.Filtered := false,
+
+            // erste Ebene:
+            if not bResolveDetail then
+               DeleteAllData(m_memStklStruktur),
+               nEbene         := 1,
+               cParentSortKey := '',
+            else  // "Aufklappen" einer Position
+               MySeek({cCurSortKey}, m_memStklStruktur),
+               nEbene         := m_memStklStruktur:EBENE,    // der Zugangs-Kopf-Satz ist bereits eine Ebene tiefer als der dadurch zu deckende Bedarf, deshalb hier die Ebene nicht erhöhen!
+               cParentSortKey := AllTrim(m_memStklStruktur:SORT_KEY),
+               MyEdit(m_memStklStruktur),
+               m_memStklStruktur:IS_EXPANDED := true,
+               MyPost(m_memStklStruktur),
+            endif,
+
+            aZeilenTypen := VPU_Options_GetZeilenTypenFromMemOptions(m_oOptionsMem),
+            aFuncRes     := VPU_StrukturMem_CalcVerfuegForProdAuf( m_oCheckDM, m_memStklStruktur, cBestPosNr, aZeilenTypen, nEbene, cParentSortKey ),
+
+            nAddedStuelistRecordsCount := aFuncRes[1], // wie viele Stücklisten-Positionen (TYP=10) wurden hinzugefügt?
+            bRueckstaendeVorhanden     := aFuncRes[2], // Hat der FA (noch) Positionen mit Rückstandsmengen? (ja/nein)?
+
+            RefreshMemStklStrukturFilter(),
+
+            if bResolveDetail then
+               MySeek({cCurSortKey}, m_memStklStruktur),
+
+               // Ergebnisse der Zugangs-Auflösung in den Zugangs-Kopf eintragen
+               MyEdit(m_memStklStruktur),
+               m_memStklStruktur:ANZ_MAT_POSITIONEN  := nAddedStuelistRecordsCount,
+               m_memStklStruktur:HAT_MAT_RUECKSTAND  := iif(bRueckstaendeVorhanden, 'J', 'N'),
+               MyPost(m_memStklStruktur),
+            else
+               DbGoTop(m_memStklStruktur),
+            endif,
+
+         always
+            DbEnableControls(m_memStklStruktur),
+         stopseq,
+      always
+         m_bRefreshTermRaster := true,
+      stopseq,
+
+      if nAddedStuelistRecordsCount = 0 then
+         StatusError('Der analysierte Fertigungsauftrag <' + cBestPosNr + '> enthält keine relevanten Stücklistenpositionen.'),
+      else
+         if not bRueckstaendeVorhanden then
+            StatusError('Der analysierte Fertigungsauftrag <' + cBestPosNr + '> ist vollständig gebucht (keine Rückstände).'),
+         endif,
+      endif,
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+// An der GUI wurde eine BESTPOSNR eingegeben
+//******************************************************************************
+function Search_FA()
+| cBestPosNr |
+   Result := false,
+   cBestPosNr := PadR(edt_FA.Text, 8),
+   if not empty(cBestPosNr) and DbSeek({-1, cBestPosNr}, m_oDab035_SelectedFa) then
+      edt_Datum.Text       := m_oDab035_SelectedFa:TERMIN,
+      edt_Menge.Text       := str(m_oDab035_SelectedFa:MENGE),
+      edt_Dab035BEZ.Text   := lookup(waDab010, 'DAB011', {{m_oDab035_SelectedFa:ARTNR}}, 'AllTrim(AllTrim(BEZ1) + " " + AllTrim(BEZ2))', '?'),
+      edt_Dab035ARTNR.Text := m_oDab035_SelectedFa:ARTNR,
+      Result               := true,
+   else
+      if not empty(cBestPosNr) then
+         Meld('Fertigungsauftrag <' + cBestPosNr + '> nicht gefunden.'),
+      endif,
+      edt_Datum.Text       := '',
+      edt_Menge.Text       := '',
+      edt_Dab035BEZ.Text   := '',
+      edt_Dab035ARTNR.Text := '',
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Rebuild_GUI_EinzelTerminraster(oDM, cArtnr, oMemStruktur)
+| oDab010, aZeilenTypen, nBedarfsTyp, uBedarfsId |
+
+   aZeilenTypen := VPU_Options_GetZeilenTypenFromMemOptions(m_oOptionsMem),
+
+   DbDisableControls(m_oEinzelTermRastMem),
+   startseq
+      DeleteAllData(m_oEinzelTermRastMem),
+
+      cArtnr            := PadR(cArtnr, mBeArtNoLen),
+      oDab010           := DbGetTable(oDM, waDab010),
+      oDab010.IndexName := 'DAB011',
+
+      if DbSeek({cArtnr}, oDab010) then
+         ETRU_Add_Heute(                           oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_VerfuegBestand(                  oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_EisernerBestand_Abgang(          oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_WareneingangsBestand(            oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_EndeWBZInfo(                     oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_Zugaenge(                        oDM, cArtnr, m_oEinzelTermRastMem, {}, ''),
+         ETRU_Add_GrobplanungsZugaenge(            oDM, cArtnr, m_oEinzelTermRastMem),
+         ETRU_Add_VerkaufAbgaenge(                 oDM, cArtnr, m_oEinzelTermRastMem, {}, ''),
+         ETRU_Add_ProduktionsAbgaenge(             oDM, cArtnr, m_oEinzelTermRastMem, {}, ''),
+         ETRU_Add_ProduktionsGrobplanungsAbgaenge( oDM, cArtnr, m_oEinzelTermRastMem),
+
+         // Sofern der aktuell in der Struktur-Memtable markierte Satz einen
+         // Bedarf darstellt, wird dieser immer bei der Berechnung der "verfügbaren Menge im Zeitverlauf" berücksichtigt.
+         // -> Also auch hier an der GUI berücksichtigen, damit das Berechnungsergebnis nachvollzogen werden kann.
+         if     oMemStruktur:TYP = 10
+             and (    oMemStruktur:ZEILEN_TYP = gl_ETRU_Typ_ProdReservOffen
+                   or oMemStruktur:ZEILEN_TYP = gl_ETRU_Typ_ProdReservKommissioniert ) then
+            nBedarfsTyp := oMemStruktur:ZEILEN_TYP,
+            uBedarfsId  := oMemStruktur:DAB240_ID,
+         else
+            nBedarfsTyp := -1,
+            uBedarfsId  := -1,
+         endif,
+
+         ETRU_Calc_VerfuegbareMenge(               oDM, cArtnr, m_oEinzelTermRastMem, aZeilenTypen, nBedarfsTyp, uBedarfsId),
+      endif,
+   always
+      DbEnableControls(m_oEinzelTermRastMem),
+   stopseq,
+
+end,
+
+//******************************************************************************
+// Funktion prüft, ob für die aktuelle Zeile in der "Struktur-MemTable" eine
+//   Detail-Auflösung durchgefürht werden kann
+// @Result: Logisch, ja/nein
+//******************************************************************************
+function CanCalcDetailsForCurrentRecord(oMemStklStruktur)
+   Result :=     not empty(oMemStklStruktur)
+             and oMemStklStruktur:TYP = 20
+             and not empty(oMemStklStruktur:ZUGANG_BESTPOSNR)
+             and (    oMemStklStruktur:ZEILEN_TYP = gl_ETRU_Typ_ProdZugangOffen
+                   or oMemStklStruktur:ZEILEN_TYP = gl_ETRU_Typ_ProdZugangKommissioniert )
+             and not oMemStklStruktur:IS_EXPANDED,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   A_CalcDetailsForCurrentRecord.Enabled := CanCalcDetailsForCurrentRecord(m_memStklStruktur),
+   A_GeheZuFertigungsAuftraege.Enabled   := A_CalcDetailsForCurrentRecord.Enabled,
+
+   A_GeheZuArtikel.Enabled               :=     not empty(m_oDab010_CurrentlySelectedInStklStruktur)
+                                            and not empty(m_oDab010_CurrentlySelectedInStklStruktur:ARTNR),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SyncGUITerminrasterUndEinzelterminrasterToStrukturMemRecord()
+| cB_POS_LFD_Abgang, nZugangZeilenTyp |
+   DbDisableControls(m_oEinzelTermRastMem),
+   startseq
+      startseq
+         if VarEqual(m_cLastSelectedArtNr, m_memStklStruktur:ARTNR) then
+            exit,
+         endif,
+
+         m_cLastSelectedArtNr := m_memStklStruktur:ARTNR,
+
+         if NoDs(m_memStklStruktur) then
+            DbScope({Chr(255)}, {Chr(255)}, m_oDab010_CurrentlySelectedInStklStruktur),
+         else
+            DbScope({m_cLastSelectedArtNr}, {m_cLastSelectedArtNr}, m_oDab010_CurrentlySelectedInStklStruktur),
+         endif,
+
+         Rebuild_GUI_EinzelTerminraster(m_oGUI_DM, m_cLastSelectedArtNr, m_memStklStruktur),
+
+      always
+         // 1. Markieren des Zugangs im Einzel-Terminraster-Browser
+         nZugangZeilenTyp := 0, // = 0, damit die Markierung wieder aufgehoben wird, wenn es keine TYP-20-Zeile ist
+         if m_memStklStruktur:TYP = 20 then
+            nZugangZeilenTyp := m_memStklStruktur:ZEILEN_TYP,
+         endif,
+         VPU_ETR_GUI_MarkiereZugang(m_oEinzelTermRastMem, nZugangZeilenTyp, m_memStklStruktur:DATENSATZ_ID_ETR),
+
+         // 2. Markieren des Abgangs im Einzel-Terminraster-Browser
+         cB_POS_LFD_Abgang := '',
+
+         if m_memStklStruktur:TYP = 20 and not empty(m_memStklStruktur:ZUGANG_FUER_B_POS_LFD) then
+            cB_POS_LFD_Abgang := m_memStklStruktur:ZUGANG_FUER_B_POS_LFD,
+         else
+            cB_POS_LFD_Abgang := m_memStklStruktur:B_POS_LFD,
+         endif,
+
+         VPU_ETR_GUI_MarkiereAbgang_Via_B_POS_LFD(m_oEinzelTermRastMem, cB_POS_LFD_Abgang),
+
+      stopseq,
+   always
+      DbEnableControls(m_oEinzelTermRastMem),
+   stopseq,
+end,
+
+//******************************************************************************
+// Übergabeparameter verarbeiten (werden per UserDefinedEvent übergeben, nicht als P4!)
+//
+// @Result: keine Rückgabe
+//******************************************************************************
+function ParseUserDefinedEventParams(aParamArray)
+|
+   nLen, i, aParam,
+   PARAM_ORDER_WA,
+   PARAM_ORDER_NO,
+   PARAM_PRUEF_MODE
+|
+   PARAM_ORDER_WA      := 'ORDER_WA',
+   PARAM_ORDER_NO      := 'ORDER_NO',
+   PARAM_PRUEF_MODE    := 'PRUEF_MODE',
+
+   // Default-Werte initialisieren
+   m_nOrder_Workarea       := waDab035,
+   m_nOrder_No             := '',
+   m_nPruefMode            := 20, // 20 = 'Terminprüfung / Terminfindung'
+
+   // Test-Filter:
+//   aParamArray := {
+//      {'ORDER_WA',   waDab035  },
+//      {'ORDER_NO',   '600015  '},
+//      {'PRUEF_MODE', 200       }
+//   },
+
+   // Nur Arrays als Parameter zulassen
+   if not ValType(aParamArray) = 'A' then
+      Exit,
+   endif,
+
+   nLen := ALen(aParamArray),
+   for i := 1 to nLen do
+      if ValType(aParamArray[i]) = 'A' and ALen(aParamArray[i]) = 2 then
+         aParam := aParamArray[i],
+         case aParam[1]
+            of PARAM_ORDER_WA      :: m_nOrder_Workarea   := aParam[2],
+            of PARAM_ORDER_NO      :: m_nOrder_No         := aParam[2],
+            of PARAM_PRUEF_MODE    :: m_nPruefMode        := aParam[2],
+         endcase,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Funktion aktualisiert die Oberfläche auf Basis der bereits "extrahierten" Übergabe-Parameter
+// => Funktion "ParseUserDefinedEventParams()" muss direkt zuvor aufgerufen worde sein
+// @Result: keine Rückgabe
+//******************************************************************************
+function RefreshGuiByUsedDefinedParams()
+   if not empty(m_nOrder_Workarea) then // wird hier abgeprüft, damit eine leere Parameter-Übergabe auch möglich ist und nichts auslöst
+      case m_nOrder_Workarea
+         of waDab035 :: edt_FA.Text             := m_nOrder_No,
+                        cmb_PruefModus.Value    := m_nPruefMode,
+                        ActionExecute(A_Calc),
+
+         otherwise      SetError('workarea ' + Str(m_nOrder_Workarea) + ' not implemented'),
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion zur Reaktion auf eine Änderung des Prüfmodus in der GUI
+// @Result: null
+//******************************************************************************
+function HandlePruefModusChange()
+| nPruefModus |
+
+  if not m_bPruefModusSetByCode then
+     nPruefModus := Val(cmb_PruefModus.Value),
+     if nPruefModus > 0 then
+        // Einstellungen zum Prüfmodus in die Memtable laden
+        VPU_Options_LoadOptionsByPruefModus(m_oOptionsMem, nPruefModus),
+
+        // Wenn der Modus "<freie Einstellung>" über die GUI vom User gewählt
+        // wurde, dann direkt das Optionen-Fenster öffnen
+        if nPruefModus = gl_VPU_Pruefmodus_FreieEinstellung then
+           ActionExecute(A_ShowPruefModusOptionsDialog),
+        endif,
+     endif,
+  endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+// Event: Beim Auslösen des "User-Defined-Events" für das eigene Formular
+//        => Wird genutzt, um die Parameter-Übergabe auch für ein bereits
+//           geöffnetes MDI-Child zu realisieren.
+//******************************************************************************
+function OwnForm_CbUserDefinedEvent( Sender, cKey, uParams )
+| cBestPosNr |                                                                  Prs('OwnForm_CbUserDefinedEvent()', {ClassName(Sender), cKey, uParams}),
+   startseq
+      case cKey
+         of 'CHECK_VERFUEG_PARAMS' ::
+            ParseUserDefinedEventParams(uParams),
+            RefreshGuiByUsedDefinedParams(),
+      endcase,
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Verarbeitung der Übergabe-Parameter.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Bei Scroll der GUI-Dab010 (wird über die Struktur-MemTable positioniert und dient als Grundlage für das Terminraster & Einzelterminraster)
+//******************************************************************************
+function ds_Dab010_CurrentlySelectedInStklStrukturScroll_Update( Sender )
+   edt_Dab010_BEZ.Text := AllTrim(AllTrim(m_oDab010_CurrentlySelectedInStklStruktur:BEZ1) + ' ' + AllTrim(m_oDab010_CurrentlySelectedInStklStruktur:BEZ2)),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function ds_StklStrukturScroll_Update( Sender )
+  ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: bei Auswahl einer Einstellungs-Option
+//******************************************************************************
+function cmb_PruefModusChange( Sender )
+   HandlePruefModusChange(),
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Ergebnis-Browser
+//******************************************************************************
+function grid_StklStrukturDblClick( Sender )
+  ActionExecute(A_CalcDetailsForCurrentRecord),
+end,
+
+//******************************************************************************
+// Event: Handler für Filter-Felder (3x CheckBox an der GUI)
+//******************************************************************************
+function chk_RefreshFilter( Sender )
+   RefreshMemStklStrukturFilter(),
+end,
+
+//******************************************************************************
+// Event: Beim Scroll in der Strukur-Memtabel => Einzelterminraster aktualisieren
+//******************************************************************************
+function m_memStklStrukturAfterScroll( Sender )
+   if m_bRefreshTermRaster then
+      SyncGUITerminrasterUndEinzelterminrasterToStrukturMemRecord(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Prüfmodus-Optionen-Fenster öffnen
+//******************************************************************************
+function A_ShowPruefModusOptionsDialogExecute( Sender )
+| aResult, nModalResult, nNewPruefModus |
+   // Optionen-Fenster öffnen und Rückgabe übernehmen
+   aResult := GFU_ShowModal_CustomInfo(nil, 'Produktion\Verfuegbarkeitspruefung\Options\GUI',
+                                        {
+                                           {'PRUEFMODE',       m_oOptionsMem:MODUS},
+                                           {'OPTIONSMEMTABLE', m_oOptionsMem}
+                                        }),
+
+   nModalResult   := aResult[1],
+   if nModalResult = mrOK then
+      nNewPruefModus := aResult[2],
+
+      // An diese Stelle muss nur noch die Combobox eingestellt werden, die @m_oOptionsMem
+      // ist schon aktuell, da diese vom Optionen-Dialog aktualisiert wurde (falls das
+      // Optionen-Fenster mit "OK" bestätigt wurde)
+
+      m_bPruefModusSetByCode  := true,
+      cmb_PruefModus.Value    := nNewPruefModus,
+      m_bPruefModusSetByCode  := false,
+   endif,
+end,
+
+//******************************************************************************
+// Action: "Gehe zu: Fertigungsauftrag"
+//******************************************************************************
+function A_GeheZuFertigungsAuftraegeExecute( Sender )
+| cBestPosNr, oProdOrdersForm, oClearFilterAction |
+   startseq
+      if (m_memStklStruktur:TYP = 20) and not empty(m_memStklStruktur:ZUGANG_BESTPOSNR) then
+         cBestPosNr := m_memStklStruktur:ZUGANG_BESTPOSNR,
+         if not empty(cBestPosNr) then
+            // Das Fenster wird erst angezeigt, dann wird der ggf. vorhandene Anzeige-Filter
+            // geleert, dann wird versucht, den FA zu positionieren.
+            // -> Macht man das nicht so, kommt erstens ggf. die Meldung "Auftrag befindet
+            //    sich nicht in aktueller Auswahl!" und zweitens kommt anschließend
+            //    eine Fehlermeldung.
+            oProdOrdersForm := ShowBeWindow(bwProduction, ),
+            if not empty(oProdOrdersForm) then
+               oClearFilterAction := FindObject(oProdOrdersForm, 'A_ClearFilter'),
+               if not empty(oClearFilterAction) then
+                  ActionExecute(oClearFilterAction),
+                  ShowBeWindow(bwProduction, cBestPosNr),
+               endif,
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Sprung zum Fertigungsauftrag.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: In den Artikelstamm springen
+//******************************************************************************
+function A_GeheZuArtikelExecute( Sender )
+   if not empty(m_oDab010_CurrentlySelectedInStklStruktur:ARTNR) then
+      ShowBeWindow(bwArticle, m_oDab010_CurrentlySelectedInStklStruktur:ARTNR),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Erste Ebene des selektierten FA's auflösen
+//******************************************************************************
+function A_CalcExecute( Sender )
+   startseq,
+      if Search_FA() then
+         CheckVerfuegbarkeit_GUI(m_oDab035_SelectedFa:BESTPOSNR, false),
+
+         m_cLastSelectedArtNr := '', // Sicherstellen, dass die Artikel-Detailtabelle neu sync. wird (auch bei gleich bleibendem Artikel)
+         m_memStklStrukturAfterScroll( Sender ),
+         
+         ActionsEnabled(),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Verfügbarkeitsprüfung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "Aktuelle Selektion weiter auflösen"
+//******************************************************************************
+function A_CalcDetailsForCurrentRecordExecute( Sender )
+   startseq,
+
+      // Auflösung eines "Zugangs-Kopfs"
+      if CanCalcDetailsForCurrentRecord(m_memStklStruktur) then
+         // Zugangs-Kopf-Zeile auflösen und in der Memtable an der aktuellen Position "einfügen":
+         CheckVerfuegbarkeit_GUI(m_memStklStruktur:ZUGANG_BESTPOSNR, true),
+         ActionsEnabled(),
+      endif,
+
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Verfügbarkeitsprüfung (Auflösung der aktuellen Selektion)', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Individuelle Onlinehilfe anzeigen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_VPU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Calc                                    := FindObject(oForm, "A_Calc"),
+   A_CalcDetailsForCurrentRecord             := FindObject(oForm, "A_CalcDetailsForCurrentRecord"),
+   A_GeheZuArtikel                           := FindObject(oForm, "A_GeheZuArtikel"),
+   A_GeheZuFertigungsAuftraege               := FindObject(oForm, "A_GeheZuFertigungsAuftraege"),
+   A_ShowIndiHelp                            := FindObject(oForm, "A_ShowIndiHelp"),
+   A_ShowPruefModusOptionsDialog             := FindObject(oForm, "A_ShowPruefModusOptionsDialog"),
+   actions                                   := FindObject(oForm, "actions"),
+   BeBarButton1                              := FindObject(oForm, "BeBarButton1"),
+   BeBarButton3                              := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4                              := FindObject(oForm, "BeBarButton4"),
+   BeBarDockControl1                         := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager                              := FindObject(oForm, "BeBarManager"),
+   BeBarManager1Bar1                         := FindObject(oForm, "BeBarManager1Bar1"),
+   BeBitBtn1                                 := FindObject(oForm, "BeBitBtn1"),
+   BeInfoPanel2                              := FindObject(oForm, "BeInfoPanel2"),
+   BePanel1                                  := FindObject(oForm, "BePanel1"),
+   BePanel2                                  := FindObject(oForm, "BePanel2"),
+   BePanel3                                  := FindObject(oForm, "BePanel3"),
+   bepnl_InfoHeader                          := FindObject(oForm, "bepnl_InfoHeader"),
+   btn_ShowPruefModusOptionsDialog           := FindObject(oForm, "btn_ShowPruefModusOptionsDialog"),
+   btn_StartCalc                             := FindObject(oForm, "btn_StartCalc"),
+   chk_Ausblenden_BedarfDurchLagerGedeckt    := FindObject(oForm, "chk_Ausblenden_BedarfDurchLagerGedeckt"),
+   chk_Ausblenden_Kaufteile                  := FindObject(oForm, "chk_Ausblenden_Kaufteile"),
+   chk_Ausblenden_KeineBedarfsmenge          := FindObject(oForm, "chk_Ausblenden_KeineBedarfsmenge"),
+   cmb_PruefModus                            := FindObject(oForm, "cmb_PruefModus"),
+   ds_Dab010_CurrentlySelectedInStklStruktur := FindObject(oForm, "ds_Dab010_CurrentlySelectedInStklStruktur"),
+   ds_EinzelTerminraster                     := FindObject(oForm, "ds_EinzelTerminraster"),
+   ds_StklStruktur                           := FindObject(oForm, "ds_StklStruktur"),
+   edt_Dab010_ARTNR                          := FindObject(oForm, "edt_Dab010_ARTNR"),
+   edt_Dab010_BEZ                            := FindObject(oForm, "edt_Dab010_BEZ"),
+   edt_Dab035ARTNR                           := FindObject(oForm, "edt_Dab035ARTNR"),
+   edt_Dab035BEZ                             := FindObject(oForm, "edt_Dab035BEZ"),
+   edt_Datum                                 := FindObject(oForm, "edt_Datum"),
+   edt_FA                                    := FindObject(oForm, "edt_FA"),
+   edt_Menge                                 := FindObject(oForm, "edt_Menge"),
+   gotobtn_Article                           := FindObject(oForm, "gotobtn_Article"),
+   grid_EinzelTerminraster                   := FindObject(oForm, "grid_EinzelTerminraster"),
+   grid_StklStruktur                         := FindObject(oForm, "grid_StklStruktur"),
+   Label1                                    := FindObject(oForm, "Label1"),
+   Label3                                    := FindObject(oForm, "Label3"),
+   Label9                                    := FindObject(oForm, "Label9"),
+   lbl_Dab035ARTNR                           := FindObject(oForm, "lbl_Dab035ARTNR"),
+   lbl_Datum                                 := FindObject(oForm, "lbl_Datum"),
+   lbl_FA                                    := FindObject(oForm, "lbl_FA"),
+   lbl_menge                                 := FindObject(oForm, "lbl_menge"),
+   lbl_PresetMode                            := FindObject(oForm, "lbl_PresetMode"),
+   pctl_Terminraster                         := FindObject(oForm, "pctl_Terminraster"),
+   pnl_background                            := FindObject(oForm, "pnl_background"),
+   pnl_BaseInput                             := FindObject(oForm, "pnl_BaseInput"),
+   pnl_GuiFilterOptions                      := FindObject(oForm, "pnl_GuiFilterOptions"),
+   pnl_InfoHeader                            := FindObject(oForm, "pnl_InfoHeader"),
+   pnl_Modus                                 := FindObject(oForm, "pnl_Modus"),
+   pnl_StrukturAlt                           := FindObject(oForm, "pnl_StrukturAlt"),
+   pnl_Terminraster                          := FindObject(oForm, "pnl_Terminraster"),
+   pnl_Terminraster_Info                     := FindObject(oForm, "pnl_Terminraster_Info"),
+   ts_EinzelTerminraster                     := FindObject(oForm, "ts_EinzelTerminraster"),
+   ts_terminraster                           := FindObject(oForm, "ts_terminraster"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt                                 := 'Verfügbarkeitsprüfung',
+   bepnl_InfoHeader.Caption                       := oForm.OrigCapt,
+   oForm.ImageIndex                               := 569,  // Image-Index für den Window-Navigator setzen
+
+   VPU_Options_GUI_LoadOptionsToCombo(cmb_PruefModus),
+
+   // Filter voreinstellen
+   chk_Ausblenden_KeineBedarfsmenge.Checked       := true,
+   chk_Ausblenden_BedarfDurchLagerGedeckt.Checked := false,
+
+   edt_FA.Text                                    := '',
+   edt_Datum.Text                                 := '',
+   edt_Menge.Text                                 := '',
+   edt_Dab035BEZ.Text                             := '',
+   edt_Dab035ARTNR.Text                           := '',
+
+
+   // für's leichtere Entwicklen:
+   if EditorMode() then
+      edt_FA.Text := '600015  ',
+   endif,
+
+   pctl_Terminraster.ActivePage := ts_EinzelTerminraster,
+
+   // Event registrieren um Parameter-Übergabe zu realisieren
+   AssignEvent(oForm.CbHelper, 'OnCbUserDefinedEvent', 'OwnForm_CbUserDefinedEvent'),
+end,
+
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+   MyFocusControl(oForm, edt_FA),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   CreateAndShowTerminRasterForm(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   LoadGUISettings(),
+   ShowGUI(),
+   SaveGUISettings(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

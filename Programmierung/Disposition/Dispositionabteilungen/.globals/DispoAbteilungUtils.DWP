@@ -1,0 +1,47 @@
+|
+
+  gl_DATU_DispoAbteilungsTyp_MMTabellenID:_N:=0 // MM-Tabelle "Dispositions-Abteilung Typ"
+
+|
+
+//******************************************************************************
+// Funktion liefert einen Filter-String für Produktions- bzw. Einkaufsabteilungen
+//
+//    Die Funktion gibt einen String zurück, der für Filter benutzt werden kann.
+//    Man übergibt den Typ (10 = Produktion, 20 = Einkauf), den Feldnamen für die
+//    Produktions-/Einkaufsabteilung und die Disponenten/Einkäufernummer nach der
+//    gefiltert werden soll.
+//
+// @Result: String - Filterstring, z.B. "()"
+//******************************************************************************
+function _DATU_GetAbteilungFilterForDisponent(nTyp, cAbtFieldName, cDispoUserNo, bExactCompare)
+| oDM, oKDNDAT, cCompareText |
+
+  // Fehler erzeugen
+   SetErrorIf(nTyp <> 10 and nTyp <> 20, 'Der Typ muss 10 oder 20 sein!'),
+   SetErrorIf(empty(cAbtFieldName), 'Der Abteilnugs-Feldname darf nicht leer sein!'),
+   SetErrorIf(Empty(cDispoUserNo), 'Es muss ein User übergeben werde!'),
+
+   Result := '',
+
+   oKDNDAT := BeOpen(waKdnDAT, 'TYP_DISPONENT', ),
+   startseq,
+      DBScope({nTyp, cDispoUserNo}, {nTyp, cDispoUserNo}, oKDNDAT),
+      DBGoTop(oKDNDAT),
+      while not EoF(oKDNDAT) do
+         if bExactCompare then
+            cCompareText := oKDNDAT:ABTEILUNG,
+         else
+            cCompareText := AllTrim(oKDNDAT:ABTEILUNG),
+         endif,
+         Result += cAbtFieldName + ' = ''' + cCompareText + ''' OR ',
+         DBSkip(1, oKDNDAT),
+      end,
+      // Das letzte "OR" wieder entfernen
+      if not Empty(Result) then
+         Result := '(' + Left(Result, Len(Result) - 4) + ')',
+      endif,
+   always
+      BeClose(oKDNDAT),
+   stopseq,
+end,

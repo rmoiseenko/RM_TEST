@@ -1,0 +1,96 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm versendet Nechrichten
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion versendet Nachrichten
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function SendMessages(oDM:O, oErrorCallback:O, oProgressCallback:O)
+| oEDIMSG, aProcessResult, nSucceededCount, nFailedCount, cEDITRCHScript |
+
+   nSucceededCount := 0,
+   nFailedCount    := 0,
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, 'EDIMSG_TASK'),
+   oEDIMSG.CbIndexName := 'ID',
+
+   oEDIMSG.CbFilter := "PROC_STEP=" + str(gl_EDI_ProcessStep_EDIMSG_Outbound_Created)
+                        + " AND DIRECTION=" + str(gl_EDI_ProcessDirection_Outbound),
+   oEDIMSG.Filtered := True,
+   startseq
+      oEDIMSG.CbFirst(),
+      while not oEDIMSG.CbEof do
+         startseq
+            cEDITRCHScript := LookUp(waEDITRCH, 'ID', {{oEDIMSG:EDITRCH_ID}}, 'SCRIPT_TRA'),
+            if Empty(cEDITRCHScript) then
+               SetError('No selected script for sending messages.'),
+            else
+               aProcessResult := EDI_Message_Send(
+                  oDM,
+                  cEDITRCHScript,
+                  oEDIMSG:ID,
+                  oProgressCallback
+               ),
+            endif,
+            if EDI_ProcessResult_IsSuccess(aProcessResult) then
+               nSucceededCount++,
+            else
+               nFailedCount++,
+               EDI_Process_UpdateError(oErrorCallback, 'Message-ID ' + str(oEDIMSG:ID) + ': ' + EDI_ProcessResult_GetErrorMessage(aProcessResult)),
+            endif,
+         onerror
+            EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+         stopseq,
+
+         oEDIMSG.CbNext(),
+      end,
+   always
+      oEDIMSG.Filtered := False,
+   stopseq,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSucceededCount + nFailedCount),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSucceededCount),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nFailedCount),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := SendMessages(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aTaskResult

@@ -1,0 +1,17 @@
+// Die Oberfläche für das package 'volltext-suche' liegt jetzt im
+//     package Ordner 'Suchen\volltext-suche\' -> 'gui'
+//
+// Hier erfolgt eine Umleitung, damit nach package-update alte Aufruf-Stellen weiterhin funktionieren
+
+|
+   // Aufruf-Parameter
+   m_nWorkArea:P1       := 1,
+   m_cFTSField:P2       := 'SUCHE',
+   m_cSelectField:P3    := 'ID',
+   m_cBrowserID:P4      := 'CUS_FIN',
+   m_cPositionSaveId:P5 := '@FD001'
+
+|
+
+Call('Suchen\volltext-suche\gui',
+     m_nWorkArea, m_cFTSField, m_cSelectField, m_cBrowserID, m_cPositionSaveId)

@@ -1,0 +1,231 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inbound Transport
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet den ausgehenden Transport-Prozess für das
+//   Datenübertragungsprotokoll "SFTP" ab.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDITRCHId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function SFTP_CreateDirectoriesIfNotExist(oSFTP:O, cDirectoryString:C)
+| aArrayOfPaths, cParent, i, bCreated |
+
+   //***************************************************************************
+   function SetCorrectPathSeparator(cDirectoryString:R)
+      cDirectoryString := StrTran(cDirectoryString, '\', '/'),
+   end,
+
+   //***************************************************************************
+   function DirectoryPathToArr(cDirectoryString:C)
+   | nPathSeparator, i |
+      result := {''},
+      nPathSeparator := TokenCount(cDirectoryString, '/'),
+      for i := 1 to nPathSeparator do
+         AAdd(result, Token(cDirectoryString, '/', i)),
+      next,
+   end,
+
+   //***************************************************************************
+   function ExistsDirectory(oSFTP:O, cParentDirectory:C, cDirectoryName:C)
+   | aDirectoryFiles, i |
+
+      result          := false,
+      aDirectoryFiles := oSFTP.OpenDirectory(cParentDirectory),
+      for i := 1 to ALen(aDirectoryFiles) do
+          if aDirectoryFiles[i, 1] == ('<' + cDirectoryName + '>') then
+             result := true,
+             break,
+          endif,
+      next,
+   end,
+
+   bCreated := false,
+   SetCorrectPathSeparator(cDirectoryString),
+   aArrayOfPaths := DirectoryPathToArr(cDirectoryString),
+   for i := 2 to ALen(aArrayOfPaths) do   //index 1 = root path
+      if cParent <> "" then
+        cParent += '/',
+      endif,
+      cParent += aArrayOfPaths[i-1],
+      if bCreated or not ExistsDirectory(oSFTP, cParent, aArrayofPaths[i]) then
+         oSFTP.CreateDir(cParent + '/' + aArrayOfPaths[i]),
+         bCreated = True,
+      endif,
+   next,
+end,     
+
+//******************************************************************************
+// Diese Funktion archiviert die Datei mit dem übergebenen Dateipfad in einem
+// Unterverzeichnis (z.B.: .\imported\2018-05-04).
+//
+// @result: boolean - Datei konnte in das Archiv-Verzeichnis verschoben werden
+//******************************************************************************
+function ArchiveFile(oSFTP:O, cRemotePath:C, cFileName:C)
+| cImportPath, aFileList |                               
+
+   cImportPath := cRemotePath + "imported/" + FormatDateTime('YYYY-MM-DD', Today()),
+
+   aFileList := oSFTP.OpenDirectory(cImportPath),
+   if not EDI_Transport_FileNameExistsInDirArray(aFileList, cFileName) then
+      oSFTP.RenameFIle(cRemotePath + cFileName, cImportPath + '/' + cFileName),
+   else
+      SetError('File <' + cFileName + '> is already imported.'),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liest genau eine Datei ein.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportInbound_SFTP_SingleFile(oDM:O,
+                                          nEDITRCHId:N,
+                                          cRemotePath:C,
+                                          cLocalFullFileName:C,
+                                          cFileName:C,
+                                          nFileSize:N,
+                                          dtFileChangeDate:DT,
+                                          nTotalFileCount:N,
+                                          nFileIndex:N,
+                                          oSFTP:O,
+                                          oProgressCallback:O)
+| oEDIMessage, oEDIMSG |
+
+   oEDIMessage := EDI_Message_Inbound_Create(oDM, nEDITRCHId),
+   startseq
+      startseq
+         EDI_Message_SetContentFromFile(oEDIMessage, cLocalFullFileName),
+
+         if not empty(cFileName) then
+            ArchiveFile(oSFTP, cRemotePath, cFileName),
+            EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Read),
+         endif,
+
+         // ggf. Fortschritt-Callback ausführen
+         EDI_Process_UpdateProgress(oProgressCallback, nFileIndex, nTotalFileCount, cFileName),
+      onerror
+         EDI_Message_LogErrorAndSave(oEDIMessage, GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function TransportInbound_SFTP(oDM:O, nEDITRCHId:N, oProgressCallback:O)
+|
+   oEDIMSG, oEDITRCH,
+   oSFTP,
+   cRemoteFullFileName, cLocalFullFileName, cURI, cSourcePath, cDestinationPath,
+   aEdiFiles, aFile, aExtensions, aSkippedFilesList, nProcessedFilesCount, i
+|
+
+   result := nil,
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindKey({nEDITRCHId}), 'EDITRCH record not found: ' + str(nEDITRCHId)), 
+
+   cURI             := oEDITRCH:URI,
+   cSourcePath      := EDI_Transport_URI_EnsureTrailingPathSeperator(EDI_Transport_URI_GetResource(cURI)),
+   cDestinationPath := GetTempPath() + FormatDateTime('YYYY-MM-DD_HH-NN-SS-ZZZ', Now()) + '\',
+
+   ForceDirectories(cDestinationPath),    
+
+   oSFTP := EDI_Transport_SFTP_Create(
+      EDI_Transport_URI_GetHost(cURI),
+      EDI_Transport_URI_GetPort(cURI, 22),                                      // TODO: Globale Konstante für Standard-Port
+      EDI_Transport_SFTP_CreateAuthenticationInfo(oEDITRCH)
+   ),
+
+   startseq
+      oSFTP.Connect(),
+      startseq
+         SFTP_CreateDirectoriesIfNotExist(oSFTP, cSourcePath + 'imported/' +
+                                          FormatDateTime('YYYY-MM-DD', Now())),
+         aEDIFiles := oSFTP.OpenDirectory(cSourcePath),
+         aEDIFiles := EDI_Transport_Inbound_FilterFilesFromDirArray(
+            aEDIFiles,
+            EDI_Transport_Inbound_GetExtensionsAsArray(oEDITRCH:MASK, aExtensions),
+            aExtensions),
+
+         for i := 1 to ALen(aEDIFiles) do
+            aFile := aEDIFiles[i],
+            cRemoteFullFileName := cSourcePath + aFile[1],
+            cLocalFullFileName  := cDestinationPath + aFile[1],
+            oSFTP.DownloadFile(cRemoteFullFileName, cLocalFullFileName, false),
+            startseq
+               oDM.CbTransaction_Begin(),
+               startseq
+                  TransportInbound_SFTP_SingleFile(oDM,
+                                                   oEDITRCH:ID,
+                                                   cSourcePath,
+                                                   cLocalFullFileName,
+                                                   aFile[1],
+                                                   aFile[2],
+                                                   aFile[3],
+                                                   ALen(aEDIFiles),
+                                                   i,
+                                                   oSFTP,
+                                                   oProgressCallback),
+
+                  DeleteFile(cDestinationPath + aFile[1]),
+                  nProcessedFilesCount++,
+                  oDM.CbTransaction_Commit(),
+               always
+                  if oDM.CbTransaction_TryRollback() then
+                     DbResetDM(oDM),
+                  endif,
+               stopseq,
+            onerror
+               AAdd(aSkippedFilesList, {cRemoteFullFileName, StrTran(GetErrorText(GetErrorObj()), CRLF, ' ') + ArrToStr(GetErrorStack(true))}),
+            stopseq,
+         next,
+      always
+         oSFTP.Disconnect(),
+      stopseq,
+   always
+      DestroyObject(oSFTP),
+   stopseq,
+
+   KVU_Set(result, 'processedFilesCount', nProcessedFilesCount),
+   KVU_Set(result, 'skippedFilesList',    aSkippedFilesList),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+ TransportInbound_SFTP(m_oDM, m_nEDITRCHId, m_oProgressCallback)

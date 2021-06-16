@@ -1,0 +1,270 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Transport-Hilfe-Funktionen
+//##############################################################################
+//##############################################################################
+     
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion liefert die Host-IP-Adresse aus der URI zurück.
+//
+// @Result: String - Host-IP
+//******************************************************************************
+function _EDI_Transport_URI_GetHost(cURI:C)
+| cConnectionPart |
+
+   if TokenCount(cURI, '/') > 1 then
+      cConnectionPart := Token(cURI, '/', 1),
+   else
+      cConnectionPart := cURI,
+   endif,
+
+   if TokenCount(cConnectionPart, ':') > 1 then
+      result := Token(cConnectionPart, ':', 1),
+   else
+      result := cConnectionPart,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liefert das Portnummer aus der URI zurück. Wenn sie nicht
+// angegeben ist, wird das Default-Port benutzt.
+//
+// @Result: Integer - Portnummer
+//******************************************************************************
+function _EDI_Transport_URI_GetPort(cURI:C, nDefaultPort:N)
+| cConnectionPart, cPortPart |
+
+   if TokenCount(cURI, '/') > 1 then
+      cConnectionPart := Token(cURI, '/', 1),
+   else
+      cConnectionPart := cURI,
+   endif,
+
+   if TokenCount(cConnectionPart, ':') > 1 then
+      cPortPart := Token(cConnectionPart, ':', 2),
+      result    := val(cPortPart),
+   else
+      result := nDefaultPort,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liest das Remote-Pfad aus der URI und liefert es zurück.
+//
+// @Result: String - Remote-Pfad
+//******************************************************************************
+function _EDI_Transport_URI_GetResource(cURI:C)
+| nResourcePartPosition |
+
+   result := '',
+   nResourcePartPosition := At('/', cURI),
+   if nResourcePartPosition > 0 then
+      result := SubStr(cURI, nResourcePartPosition + 1),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion sichert, dass das übergegebene URI Path für FTP/SFTP mit einem
+// '/' endet.
+//
+// @result: String - Path mit einem gesicherten / am Ende
+//******************************************************************************
+function _EDI_Transport_URI_EnsureTrailingPathSeperator(cPath:C)
+   result := iif(right(cPath, 1) == '/', cPath, cPath + '/'),
+end,
+
+//******************************************************************************
+// Diese Funktion nimmt das Feld 'Dateinameneundung(en)' und gibt es als ein
+// Array zurück.
+//
+// @result: boolean - Dateinamenendung(en) vorhanden
+//******************************************************************************
+function _EDI_Transport_Inbound_GetExtensionsAsArray(cExtensionList:C, aArray:R)
+| i, cExtension |
+   result := false,
+   aArray := {},
+   if not Empty(cExtensionList) then
+      result := true,
+      for i := 1 to TokenCount(cExtensionList, ',') do
+         cExtension := AllTrim(Token(cExtensionList, ',', i)),
+         AAdd(aArray, cExtension),
+      next,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion filtert die Dateien in einem DirArray mit die
+// Dateinamenendung(en), die in der Tabelle stehen. Die Funktion wird in die
+// SFTP und FTP Transport-Skripte benutzt.
+//
+// @result: Array - gefilterte Dateien
+//******************************************************************************
+function _EDI_Transport_Inbound_FilterFilesFromDirArray(aDirArray:A,
+                                                        bIsExtensionFilterDefined:L:=false,
+                                                        aExtArray:A:=nil)
+| aFileItem, aResultArray, i |
+
+   //***************************************************************************
+   function IsFile(cFileName:C)
+      result := not (left(cFileName, 1) == '<' and right(cFileName, 1) == '>'),
+   end,
+
+   //***************************************************************************
+   function FileMatchesExtensionFilter(cFileName:C, cExtension:C)
+      result := lower(right(cFileName, Len(cExtension) + 1)) == '.' + lower(cExtension),
+   end,
+
+   result    := {},
+   foreach aFileItem in aDirArray do
+      if IsFile(aFileItem[1]) then
+         if bIsExtensionFilterDefined then
+            for i := 1 to ALen(aExtArray) do
+               if FileMatchesExtensionFilter(aFileItem[1], aExtArray[i]) then
+                  AAdd(result, aFileItem),
+                  break,
+               endif,
+            next,
+         else
+            AAdd(result, aFileItem),
+         endif,
+      endif,
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion speichert die temporäre Datei, die im FTP/SFTP Outbound-
+// Transport-Prozess hochgeladen werden soll.
+//
+// @result: String - Dateiname mit die Pfadangabe
+//******************************************************************************
+function _EDI_Transport_Outbound_SaveTempFile(cFileName:C, cContent:C, oEDIMSG:O)
+| cTempDirectory, oFile |
+
+   cTempDirectory := GetTempPath() + '\be_edi\outbound_transport\',
+
+   result := cTempDirectory + cFileName,
+
+   ForceDirectories(cTempDirectory),
+
+   oFile := FOpen(result, FO_CREATE),
+   startseq
+      FWrite(oFile, cContent),
+      oEDIMSG.CbEdit(),
+      oEDIMSG:FILE_SIZE := oFile.Size,
+      oEDIMSG.CbPost(),
+   always
+      FClose(oFile),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion nutzt die Daten aus der Transportkanal-Tabelle, um ein
+// Key-Value Array für die SFTP-Verbindung zu erstellen.
+//
+// @result: array
+//******************************************************************************
+function _EDI_Transport_SFTP_CreateAuthenticationInfo(oEDITRCH:O)
+   result := {},
+   KVU_Set(result, 'sftpAuth.type', gl_EDI_Transport_SFTP_AuthenticationType_Normal),
+   KVU_Set(result, 'sftpAuth.username', oEDITRCH:URI_LOGIN),
+   KVU_Set(result, 'sftpAuth.password', oEDITRCH:URI_PASS),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt mithilfe der übergegebenen Informationen eine
+// SFTP-Verbindung.
+//
+// @result: TBeCbSFTP-Objekt
+//******************************************************************************
+function _EDI_Transport_SFTP_Create(cHostName:C,
+                                    nPort:N,
+                                    aAuthenticationInfo:A)
+| nAuthenticationType |
+
+   result := CreateObject('TBeCbSFTP'),
+   startseq
+      result.HostName := cHostName,
+      result.Port     := nPort,
+
+      nAuthenticationType := KVU_GetAssert(aAuthenticationInfo, 'sftpAuth.type'),
+      case nAuthenticationType
+         of gl_EDI_Transport_SFTP_AuthenticationType_Normal ::
+            result.User     := KVU_GetAssert(aAuthenticationInfo, 'sftpAuth.username'),
+            result.Password := KVU_GetAssert(aAuthenticationInfo, 'sftpAuth.password'),
+
+         otherwise
+            SetError('SFTP authentication type not implemented: ' + str(nAuthenticationType)),
+      endcase,
+   onerror
+      DestroyObject(result),
+      Raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion nutzt die Daten aus der Transportkanal-Tabelle, um ein
+// Key-Value Array für die FTP-Verbindung zu erstellen.
+//
+// @result: nil - keine Rückgabe
+//******************************************************************************
+function _EDI_Transport_FTP_SetAuthenticationInfo(oAuthenticationInfo:R, oEDITRCH:O, cURI:C),
+   oAuthenticationInfo := {},
+   KVU_Set(oAuthenticationInfo, 'AuthenticationInfo.host',     EDI_Transport_URI_GetHost(cURI)),
+   KVU_Set(oAuthenticationInfo, 'AuthenticationInfo.port',     EDI_Transport_URI_GetPort(cURI, gl_EDI_Transport_FTP_DefaultPort)),
+   KVU_Set(oAuthenticationInfo, 'AuthenticationInfo.passive',  true),
+   KVU_Set(oAuthenticationInfo, 'AuthenticationInfo.username', oEDITRCH:URI_LOGIN),
+   KVU_Set(oAuthenticationInfo, 'AuthenticationInfo.password', oEDITRCH:URI_PASS),
+end,
+
+//******************************************************************************
+// Diese Funktion übergibt die Parametern die Daten aus dem Key-Value Array für
+// die FTP-Verbindung.
+//
+// @result: nil - keine Rückgabe
+//******************************************************************************
+function _EDI_Transport_FTP_GetAuthenticationInfo(oAuthenticationInfo:O, cHost:R, nPort:R, cUserName:R, cPassword:R, bPassive:R),
+   cHost     := KVU_GetAssert(oAuthenticationInfo, 'AuthenticationInfo.host'),
+   nPort     := KVU_GetAssert(oAuthenticationInfo, 'AuthenticationInfo.port'),
+   bPassive  := KVU_GetAssert(oAuthenticationInfo, 'AuthenticationInfo.passive'),
+   cUserName := KVU_GetAssert(oAuthenticationInfo, 'AuthenticationInfo.username'),
+   cPassword := KVU_GetAssert(oAuthenticationInfo, 'AuthenticationInfo.password'),
+end,
+
+//******************************************************************************
+// Diese Funktion triggert eine Exception, wenn das FTP-Result ungleich 0
+// (Kein-Fehler-Stand) zurückliefert.
+//
+// @result: nil - keine Rückgabe
+//******************************************************************************
+function _EDI_Transport_FTP_CheckForErrors(nFTPResult:N, cFunctionName:C)
+   case nFTPResult
+      of 0 :: ,// Kein Fehler
+      of -1 :: SetError(cFunctionName + ': Fehler bei der Verbindung mit dem FTP-Server!', nFTPResult),
+      of -2 :: SetError(cFunctionName + ': Fehler beim Verzeichniswechsel!', nFTPResult),
+      of -3 :: SetError(cFunctionName + ': Datei nicht gefunden! Fehler bei der Erstellung von die temporäre lokale Datei!', nFTPResult),
+      of -5 :: SetError(cFunctionName + ': Vorgang abgebrochen!', nFTPResult),
+      otherwise
+         SetError(cFunctionName + ': Unbekannter Fehler', nFTPResult),
+   endcase,
+end,
+
+//******************************************************************************
+// Prüft, ob das DirArray die Dateiname enthält.
+//
+// @result: boolean - Datei in der Liste vorhanden
+//******************************************************************************
+function _EDI_Transport_FileNameExistsInDirArray(aFileList:A, cFileName:C)
+| aFile |
+   result := false,
+   foreach aFile in aFileList do
+      if lower(aFile[1]) == lower(cFileName) then
+         result := true,
+      endif,
+   end,
+end,

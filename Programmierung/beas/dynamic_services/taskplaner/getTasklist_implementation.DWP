@@ -1,0 +1,202 @@
+//******************************************************************************
+// oUserSession    Klasse: TBeasCbUserSession
+// oContext        Klasse: TBeasCbContext
+// oInputParam     Klasse: TBeasCbDynamicServiceInput
+//                            oInputParam.CbParams    Klasse: TBeasCbServiceInputParam
+// oOutputParam    Klasse: TBeasCbDynamicServiceOutput
+//                            oOutputParam.CbParams   Klasse: TBeasCbServiceOutputParam
+//******************************************************************************
+
+|
+   oUserSession:P1, oContext:P2, oInputParam:P3, oOutputParam:P4,
+   // lokale Variablen
+   m_nFilterType, m_cSqlString, m_cSqlStringAll, m_oQuery, m_oMemtable,
+   m_oTaskCountParam, m_oTaskStateParam, m_nLanguageID
+|
+
+//******************************************************************************
+// Funktionen
+//******************************************************************************
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetTaskStatusGUIColor(nTaskStatusGUI:N)
+   Result := Trim(Lookup(waDABMDT, 'WERT', {{gl_TSKPL_Config_AttributeTableID_TaskStatusGUI, Str(nTaskStatusGUI)}}, 'BEZ3', '')),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FillMissingMemTableData(oMemTable:O)
+   oMemTable.CbFirst(),
+   while not oMemTable.CbEof do
+      BU_Log_Info('Task: ' + ToString(oMemTable:ID)),
+      MyEdit(oMemTable),
+      oMemTable:TSK_STAT_GUI   := TSKPL_GetTaskStatusGui(oMemTable:ID, TSKPL_GetTaskStatus(oMemTable:ID)),
+      oMemTable:TSK_STAT_STR   := AttribTranslate(gl_TSKPL_Config_AttributeTableID_TaskStatusGUI, Str(oMemTable:TSK_STAT_GUI), m_nLanguageID),
+      oMemTable:TSK_STAT_CLR   := GetTaskStatusGUIColor(oMemTable:TSK_STAT_GUI),
+      oMemTable:START_TYPE_STR := AttribTranslate(gl_TSKPL_Config_AttributeTableID_StartType, Str(oMemTable:START_TYPE), m_nLanguageID),
+      oMemTable:START_OPT_STR  := TSKPL_StartOptionsArrayToText(oMemTable:START_TYPE, StrToArr(oMemTable:START_OPT)),
+      MyPost(oMemTable),
+      oMemTable.CbNext(),
+   end,
+end,
+
+
+//******************************************************************************
+// Hauptprogramm
+//******************************************************************************
+
+BU_Log_ResetLogLevel(),
+BU_Log_Start('SERVICE cb_taskplaner_getTasklist'),
+
+// Sprache ermitteln
+m_nLanguageID := TSKPL_LocaleToBeLanguage(oContext.CbLocale),
+BU_Log_Info('Language mapping: "' + oContext.CbLocale + '" => ' + Str(m_nLanguageID)),
+
+m_cSqlString  := '',
+m_nFilterType := 0,
+startseq
+   m_nFilterType := oInputParam.CbParams.ParamValue('filter'),
+onerror
+   // Wenn der Parameter "filter" nicht existiert -> Fehler ignorieren
+stopseq,
+ m_cSqlString := 'SELECT TSKPLTASK.ID, TSKPLTASK.NAME, TSKPLTASK.STATUS, TSKPLTASK.START_NEXT, TSKPLTASK.ACTIVE, TSKPLTASK.START_TYPE, TSKPLTASK.START_OPT, ' + CRLF +
+                           '   TSKPLSCHED.ID AS SCHED_ID, ' + CRLF +
+                           '   TSKPLSCHED.NAME AS SCHED_NAME, ' + CRLF +
+                           '   TSKPLSCHED.STATUS AS SCHED_STAT ' + CRLF +
+                           '   FROM ' + DbSqlTableName(waTSKPLTASK) + ' TSKPLTASK' + CRLF +
+                           '   LEFT JOIN ' + DbSqlTableName(waTSKPLSCHED) + ' TSKPLSCHED' + CRLF +
+                           '   ON TSKPLTASK.SCHEDUL_ID = TSKPLSCHED.ID',
+
+if not Empty(m_cSqlString) then
+   m_oQuery := CreateObject('TBeADSQuery'),
+   startseq
+      BU_Log_Info('SQL: [' + CRLF + m_cSqlString + CRLF + ']'),
+      m_oQuery.SQL    := m_cSqlString,
+      m_oQuery.Active := True,
+      m_oMemtable := CreateObject('TBeMemTable'),                                                                      
+      startseq
+         m_oMemtable.CbAddField('ID',             ftInteger,  0),
+         m_oMemtable.CbAddField('NAME',           ftMemo,     0),
+         m_oMemtable.CbAddField('STATUS',         ftInteger,  0),
+         m_oMemtable.CbAddField('TSK_STAT_GUI',   ftInteger,  0),
+         m_oMemtable.CbAddField('TSK_STAT_STR',   ftMemo,     0),
+         m_oMemtable.CbAddField('TSK_STAT_CLR',   ftString,   7),
+         m_oMemtable.CbAddField('ACTIVE',         ftBoolean,  0),
+         m_oMemtable.CbAddField('START_TYPE',     ftInteger,  0),
+         m_oMemtable.CbAddField('START_TYPE_STR', ftString,   15),
+         m_oMemtable.CbAddField('START_NEXT',     ftDateTime, 0),
+         m_oMemtable.CbAddField('START_OPT',      ftMemo,     0),
+         m_oMemtable.CbAddField('START_OPT_STR',  ftMemo,     0),
+         m_oMemtable.CbAddField('SCHED_ID',       ftInteger,  0),
+         m_oMemtable.CbAddField('SCHED_NAME',     ftMemo,     0),
+         m_oMemtable.CbAddField('SCHED_STAT',     ftInteger,  0),
+//         m_oMemtable.CbAddField('SCHED_STAT_STR', ftMemo,     0),
+//         m_oMemtable.CbAddField('SCHED_STAT_CLR', ftString,   7),
+         m_oMemtable.Active := True,
+         m_oMemtable.CbLoadFromDataSet(m_oQuery, False),
+         FillMissingMemTableData(m_oMemtable),
+         BU_Log_Info('Records: ' + Str(m_oMemtable.CbRecordCount)),
+
+//         m_oTaskCountParam := oOutputParam.CbParams.AddComplexParam('taskcount'),
+         m_oTaskCountParam := oOutputParam.CbParams.AddComplexParam('taskcount'),
+         // Anzahl Tasks (Alle)
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('all'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCount),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_INACTIVE_TASKINACTIVE)), //Die Farbe von Inaktiv benutzt
+
+         // Anzahl Tasks (nur Ready/Bereit)
+         m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_READY),
+         m_oMemtable.CbFiltered := True,
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('ready'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCountFiltered),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_READY)),
+         m_oMemtable.CbFiltered := False,
+
+         // Anzahl Tasks (nur deaktivierte)
+         m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_SCHEDULERDEACTIVATED) + ' OR ' +
+                                   'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_SCHEDULERTERMINATED) + ' OR ' +
+                                   'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_TASKINACTIVE),
+         m_oMemtable.CbFiltered := True,
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('inactive'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCountFiltered),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_INACTIVE_TASKINACTIVE)),
+         m_oMemtable.CbFiltered := False,
+
+         // Anzahl Tasks (nur Fehler)
+         m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_ERROR_SCHEDULERHASTORUN) + ' OR ' +
+                                   'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_ERROR_SCHEDULERTERMINATED),
+         m_oMemtable.CbFiltered := True,
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('error'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCountFiltered),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_ERROR_SCHEDULERTERMINATED)),
+         m_oMemtable.CbFiltered := False,
+
+         // Anzahl Tasks (nur verpasste)
+         m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_MISSED),
+         m_oMemtable.CbFiltered := True,
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('missed'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCountFiltered),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_MISSED)),
+         m_oMemtable.CbFiltered := False,
+
+         // Anzahl Tasks (nur laufende)
+         m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_RUNNING),
+         m_oMemtable.CbFiltered := True,
+         m_oTaskStateParam := m_oTaskCountParam.AddComplexElement('running'),
+         m_oTaskStateParam.AddElement('count', m_oMemtable.CbRecordCountFiltered),
+         m_oTaskStateParam.AddElement('color', GetTaskStatusGUIColor(GL_TSKPL_TASKSTATUSGUI_RUNNING)),
+         m_oMemtable.CbFiltered := False,
+
+         case m_nFilterType
+            // Alle  Tasks
+            of 1 ::  m_oMemtable.CbFiltered := False,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+            // Alle Ready/Bereit Tasks
+            of 2 ::  m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_READY),
+                     m_oMemtable.CbFiltered := True,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+            // Alle laufende Tasks
+            of 3 ::  m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_RUNNING),
+                     m_oMemtable.CbFiltered := True,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+            // Alle deaktivierte Tasks
+            of 4 ::  m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_SCHEDULERDEACTIVATED) + ' OR ' +
+                                               'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_SCHEDULERTERMINATED)  + ' OR ' +
+                                               'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_INACTIVE_TASKINACTIVE),
+                     m_oMemtable.CbFiltered := True,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+            // Alle Tasks mit Fehlern
+            of 5 ::  m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_ERROR_SCHEDULERHASTORUN) + ' OR ' +
+                                               'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_ERROR_SCHEDULERTERMINATED),,
+                     m_oMemtable.CbFiltered := True,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+            // Alle verpasste Tasks
+            of 6 ::  m_oMemtable.CbFilter   := 'TSK_STAT_GUI = ' + Str(GL_TSKPL_TASKSTATUSGUI_MISSED),
+                     m_oMemtable.CbFiltered := True,
+                     BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+
+         otherwise
+            BU_DataSetToJSON(oOutputParam, m_oMemtable, 'tasks', {}),
+         endcase,
+         m_oMemtable.CbFiltered := False,
+
+      always
+         DestroyObject(m_oMemtable),
+      stopseq,
+   always
+      DestroyObject(m_oQuery),
+   stopseq,
+endif,
+
+BU_Log_End('SERVICE cb_taskplaner_getTasklist'),
+

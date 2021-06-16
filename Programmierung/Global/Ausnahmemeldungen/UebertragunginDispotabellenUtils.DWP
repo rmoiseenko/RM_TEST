@@ -1,0 +1,465 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Disposition Ausnahmemeldungen"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'DAMU' steht für 'D'isposition 'A'usnahme'm'eldungen 'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+// Auf Basis der Gesamt-Liste aller Ausnahmen (KdnDAM) die entspr. Dispo-Tabellen
+// befüllen
+
+//******************************************************************************
+//
+//
+//  TODO: Umstellung auf DbDelete() ?
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_DispoHintRecords_DeleteAll(oDM, nWorkarea, cOnlyArtNr, cOnlyProdAbt)
+| cDeleteSQL |
+
+   //***************************************************************************
+   // Funktion berechne Lösch-SQL für eine Dispo-Workarea
+   // @Result: string
+   //***************************************************************************
+   function CalcDeleteSQL(nWorkarea)
+      Result     := 'DELETE FROM ' + DbSqlTableName(nWorkarea) + crlf +
+                    '  WHERE ' + crlf +
+                    '        X_AUSN_PRI > 0 '                 + crlf +
+                    '    AND ' + iif(nWorkarea = waDab220, 'MENGE', 'DISPO') + ' = 0' + crlf + // diese Bedingung ist "zur Sicherheit" drin, dass garantiert nur Sätze selektiert werden, die kein Terminraster / Grobplanung haben können(!)
+                    '    AND STANDORT = ' + Str(mStandort) + crlf,
+
+      if not empty(cOnlyArtNr) then
+         Result +=
+                    '    AND ARTNR    = ''' + cOnlyArtNr  + ''''  + crlf,
+      endif,
+
+      if not empty(cOnlyProdAbt) then
+         case nWorkarea
+            of waDab220 ::
+               Result +=
+                    '    AND X_PROD_ABT = ''' + cOnlyProdAbt + '''' + crlf,
+            of waDab215 ::
+               Result +=
+                    '    AND   PROD_ABT = ''' + cOnlyProdAbt + '''' + crlf,
+         endcase,
+      endif,
+
+      WriteLn(Result),
+   end,
+
+   //***************************************************************************
+   // Funktion berechne Lösch-SQL für eine Dispo-Workarea
+   // @Result: string
+   //***************************************************************************
+   function ExecDeleteSql(cSQL)
+   | oQuery |
+      oQuery := CreateObject('TBeAdsQuery', , oDM),
+      startseq
+         oQuery.SQL    := cSQL,
+         DbExecSql(oQuery),
+      always
+         DestroyObject(oQuery),
+      stopseq,
+   end,
+
+
+   SetErrorIf(    nWorkarea <> -1
+              and nWorkarea <> waDab220
+              and nWorkarea <> waDab215
+              and nWorkarea <> waDab315, 'nToWorkarea must be -1 (all workareas), waDab220, waDab215 or waDab315'),
+
+   cOnlyArtNr := PadR(cOnlyArtNr, mBeArtNoLen),
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+   cDeleteSQL := '',
+
+   case nWorkarea
+
+      of -1       ::
+         ExecDeleteSql( CalcDeleteSQL(waDab220) ),
+         ExecDeleteSql( CalcDeleteSQL(waDab215) ),
+         ExecDeleteSql( CalcDeleteSQL(waDab315) ),
+
+      of waDab220 ::
+         ExecDeleteSql( CalcDeleteSQL(waDab220) ),
+
+      of waDab215 ::
+         ExecDeleteSql( CalcDeleteSQL(waDab215) ),
+
+      of waDab315 ::
+         ExecDeleteSql( CalcDeleteSQL(waDab315) ),
+
+   endcase,
+
+end,
+
+//******************************************************************************
+// Funktion überträgt fertig berechnete Ausnahmemeldungen aus der KdnDAM in
+//   die Dispo-Tabellen.
+//
+// Hinweise / Hintergrund zum Vorgehen bei der Übertragung:
+// -----------------------------------------------------------------------------
+//   - Ziel der Implementierung ist es, möglichst wenig Datensätze in die
+//     Dispo-Tabellen zu schreiben.
+//     Warum: Weil zu viele "Hinweise" nicht gerade die Übersichtlichkeit
+//            erhöhen - und auch nicht die Lust des Disponenten, sich um diese
+//            Hinweise (=Ausnahmemeldungen) zu kümmern.
+//   - Daher wird je Artikel nur maximal ein Datensatz in der Dispo-Tabelle erzeugt.
+//     Dieser Datensatz hat den Charakter von "schau mal, es gibt Ausnahme(n) für den Artikel".
+//     In diesem Datensatz wird der Ausnahme-Typ mit der höchsten Priorität unter
+//     allen für diesen Artikel aufgetreten Ausnahmen hinterlegt.
+//     -> Somit kann der Disponent seine Jobliste nach den jeweils "größten Problemen" abarbeiten.
+//        Betrachtet er einen konkreten Artikel, so kann er über eine Detail-Docking-Fenster
+//        die Liste aller (!) Ausnahmen sehen, die für diesen Artikel aufgetreten sind.
+//
+// Parameter:
+//    bTransferToProdDispo     : Sollen Hinweise für die Produktion übertragen werden?
+//    nProdDispoWorkarea       : Wo sollen Prod.-Hinweise eingestellt werden - in Dab220 oder in Dab215?
+//    bTransferToPurchaseDispo : Sollen Hinweise für den Einkauf übertragen werden? (Ziel ist immer Dab315)
+//    cOnlyArtnr               : Filterung auf eine Artikel-Nr., leer = alle
+//    cOnlyProdAbt             : Filterung auf eine Produktions-Abteilung, leer = alle
+//    aOnlyAusnahmeTypen       : Filterung auf ein Array von Ausnahme-Typen, leer = alle Ausnahmetypen
+//
+//  TODO: Funktion "updatet" wenn "cOnlyArtNr" gegeben ist, sonst macht Sie nur append() - immer "update-fähig" machen?
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_Transfer_Hints_To_DispoTables( oDM,
+                                             bTransferToProdDispo,
+                                             nProdDispoWorkarea,
+                                             bTransferToPurchaseDispo,
+                                             cOnlyArtNr,
+                                             cOnlyProdAbt,
+                                             aOnlyAusnahmeTypen )
+| cSQL, oKdnDamQuery, oDabProdDispo, oDab315, cOnlyAusnahmeTypen, i,
+  cPlanungsModus, aCounterArray, dBisWiedervorlageZeitpunkt |
+
+   //***************************************************************************
+   // Fürs Logging / Debugging: Funktion zum Zählen der Änderungen...
+   //   nModus: 1 = hinzugefügt
+   //           2 = aktualisiert
+   //           3 = gelöscht
+   //***************************************************************************
+   function AddChangeToLogCounter(nWorkarea, nModus)
+   | nArrayPos |
+      // WriteLn(nWorkarea, nModus),
+
+      nArrayPos := -1,
+      case nWorkArea
+         of waDab220 :: nArrayPos := 1,
+         of waDab215 :: nArrayPos := 2,
+         of waDab315 :: nArrayPos := 3,
+      endcase,
+
+      aCounterArray[nArrayPos, nModus+1] += 1,
+   end,
+
+   //***************************************************************************
+   // "Inhalt" des Logging-Zählers als Text ausgeben
+   //***************************************************************************
+   function CounterLogToText()
+
+      //************************************************************************
+      function CounterElemToText(nWorkAreaArrayPos)
+      | aElem |
+         aElem  := aCounterArray[nWorkAreaArrayPos],
+         Result := PadL(aElem[2], 5) + ' hinzugefügt, ' + PadL(aElem[3], 5) + ' aktualisiert, ' + PadL(aElem[4], 5) + ' gelöscht',
+      end,
+
+
+      Result := '',
+
+      Result += Replicate('#', 80) + crlf,
+      Result += 'Änderungen an Dispo-Tabellen: ' + crlf + crlf,
+
+      Result += '   waDab220: ' + CounterElemToText(1) + crlf,
+      Result += '   waDab215: ' + CounterElemToText(2) + crlf,
+      Result += '   waDab315: ' + CounterElemToText(3) + crlf,
+      Result += crlf,
+
+      Result += Replicate('#', 80) + crlf,
+   end,
+
+
+   // TODO: Die Entscheidung "Einkauf oder Produktion" sollte eigentlich schon
+   //       zum Zeitpunkt der Ausnahmen-Erstellung getroffen worden sein, nicht
+   //       erst hier
+
+   Result        := nil,
+   aCounterArray := { {waDab220, 0, 0, 0},
+                      {waDab215, 0, 0, 0},
+                      {waDab315, 0, 0, 0} },
+
+   //***************************************************************************
+   // 1. Variablen-Init / Parameter-Prüfung
+   //***************************************************************************
+   cSQL               := '',
+   cOnlyArtNr         := PadR(cOnlyArtNr, mBeArtNoLen),
+   cOnlyAusnahmeTypen := '',
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   if bTransferToProdDispo then
+      SetErrorIf(    nProdDispoWorkarea <> waDab220
+                 and nProdDispoWorkarea <> waDab215, 'nProdDispoWorkarea must be waDab220 or waDab215'),
+      case nProdDispoWorkarea
+         of waDab220 :: oDabProdDispo := DbGetTable(oDM, waDab220),
+         of waDab215 :: oDabProdDispo := DbGetTable(oDM, waDab215),
+      endcase,
+   else
+      nProdDispoWorkarea := -1,
+   endif,
+
+   if bTransferToPurchaseDispo then
+      oDab315 := DbGetTable(oDM, waDab315),
+   else
+      oDab315 := nil,
+   endif,
+
+   for i := 1 to ALen(aOnlyAusnahmeTypen) do
+      cOnlyAusnahmeTypen := ConcatTrenner(cOnlyAusnahmeTypen, Str(aOnlyAusnahmeTypen[i]), ', '),
+   next,
+
+   //***************************************************************************
+   // 2. Verdichtung der Ausnahmen-Quell-Tabelle (KdnDAM) nach Artikel-Nr.
+   //    unter Berücksichtigung der übergebenen Filter
+   //
+   //    -> dieses SQL selektiert unter allen Ausnahmen eines Artikels
+   //       die Ausnahme mit der höchsten Priorität
+   //    -> Außerdem errechnet es die Anzahl der Ausnahmen, die für den
+   //       Artikel insgesamt aufgetreten sind
+   //       -> Hierfür werden die übergebenen Filter nicht(!) berücksichtigt,
+   //          denn das ist eine Information, die dadurch nicht verfälscht
+   //          werden sollte.
+   //***************************************************************************
+   cSQL := 'SELECT ' + crlf +
+           '      KDNDAM.ARTTYP, DAB010.BESTELLEH, ' + crlf +
+           '      ( SELECT SUM(1) AS ANZAHL FROM ' + DbSqlTableName(waKdnDAM) + ' KDNDAM_SUM WHERE KDNDAM_SUM.DAB010_ID = KDNDAM.DAB010_ID AND KDNDAM_SUM.STANDORT  = ' + Str(mStandort) + ') AS ANZAHL_AUSNAHMEN, ' + crlf +
+           '      KDNDAM.*'                                                                + crlf +
+           '   FROM ' + DbSqlTableName(waKdnDAM)      + ' KDNDAM '                         + crlf +
+           '   LEFT JOIN ' + DbSqlTableName(waDAB010) + ' DAB010 '                         + crlf +
+           '      ON (DAB010.ARTNR = KDNDAM.ARTNR AND DAB010.STANDORT = KDNDAM.STANDORT)'  + crlf +
+           '   WHERE '                                                                     + crlf +
+           '           KDNDAM.STANDORT = ' + Str(mStandort)                                + crlf,
+
+   if not empty(cOnlyAusnahmeTypen) then
+   cSQL += '       AND KDNDAM.AUSN_TYP IN (' + cOnlyAusnahmeTypen + ')'                             + crlf,
+   endif,
+
+   if not empty(cOnlyArtNr) then
+   cSQL += '       AND KDNDAM.ARTNR = ''' + cOnlyArtNr + ''''                                       + crlf,
+   endif,
+
+   if not empty(cOnlyProdAbt) then
+   cSQL += '       AND KDNDAM.PROD_ABT = ''' + cOnlyProdAbt + ''''                                  + crlf,
+   endif,
+
+   // Wenn eine Ausnahme-Meldung eine noch nicht fällige (in der Zukunft liegende)
+   //   Wiedervorlage hat, dann soll diese nicht in die Dispo-Tabelle als Hinweis
+   //   übertragen werden.
+   dBisWiedervorlageZeitpunkt := Trunc(GetAdsServerTime()) + 1,
+
+   cSQL += '       AND KDNDAM.ID IN'                                                                + crlf +
+           '             ( SELECT TOP 1 KDNDAM_INNER.ID'                                            + crlf +
+           '                  FROM ' + DbSqlTableName(waKdnDAM) + ' KDNDAM_INNER'                   + crlf +
+           '                  WHERE '                                                               + crlf +
+           '                         KDNDAM_INNER.DAB010_ID = KDNDAM.DAB010_ID'                     + crlf +
+           '                     AND KDNDAM_INNER.STANDORT  = ' + Str(mStandort)                    + crlf +
+           '                     AND (    KDNDAM_INNER.WV_TS < ''' + FormatDateTime('YYYY-MM-DD HH:MM:SS', dBisWiedervorlageZeitpunkt) + '''' + crlf +
+           '                           OR KDNDAM_INNER.WV_TS IS NULL ) '                                                                      + crlf +
+           '                  ORDER BY PRIORI, KDNDAM_INNER.ID  )'                                  + crlf +
+           '   ORDER BY KDNDAM.ARTNR, KDNDAM.PRIORI'                                                + crlf,
+    writeln(cSQL),
+   //***************************************************************************
+   // 3. Ausnahmen in Dispo-Tabelle übertragen
+   //***************************************************************************
+   oKdnDamQuery := CreateObject('TBeAdsQuery', , oDM),
+   startseq
+      oKdnDamQuery.SQL    := cSQL,
+      oKdnDamQuery.Active := true,
+      DbGoTop(oKdnDamQuery),
+
+      // Im "nur ein Artikel"-Modus:
+      // -> leeres Query, d.h. der Artikel hat keine Ausnahme?
+      //    -> eine ggf. zuvor vorhandene Ausnahme muss gelöscht werden!
+      // => TODO-1: Sonder-Logik für den Aufruf mit "nur einem Artikel"
+      //            -> wird genutzt aus dem Ausnahmen-Docking-GUI heraus
+      //            -> Verallgemeinern
+      if     not empty(cOnlyArtNr)
+         and (EoF(oKdnDamQuery) and Bof(oKdnDamQuery)) then
+
+         // Hier unterscheiden wir nicht nach Planungsbereich ('E' bzw. 'F'), da
+         //   es darum geht, alte Hinweis-Sätze zu löschen.
+         //   -> Wenn der Modus sich inzwischen z.B. von 'F' auf 'E' geändert hat,
+         //      dann soll ein alter 'F'-Hinweis-Satz (in Dab220 oder Dab215) dennoch
+         //      gelöscht werden.
+
+         // Löschen aus der Fertigungs-Dispo
+         if bTransferToProdDispo then
+            DbFilter('ARTNR == ''' + cOnlyArtNr + ''' AND X_AUSN_PRI > 0', oDabProdDispo),
+            if not (EoF(oDabProdDispo) and BoF(oDabProdDispo)) then
+               BeginSuspend(oDabProdDispo),
+               startseq
+                  MyDelete(oDabProdDispo),
+                  AddChangeToLogCounter(oDabProdDispo.Workarea, 3),
+               always
+                  EndSuspend(oDabProdDispo),
+               stopseq,
+            endif,
+            DbFilter('', oDabProdDispo),
+         endif,
+
+         // Löschen aus der Einkaufs-Dispo
+         if bTransferToPurchaseDispo then
+            DbFilter('ARTNR == ''' + cOnlyArtNr + ''' AND X_AUSN_PRI > 0', oDab315),
+            if not (EoF(oDab315) and BoF(oDab315)) then
+               BeginSuspend(oDab315),
+               startseq
+                  MyDelete(oDab315),
+                  AddChangeToLogCounter(oDab315.Workarea, 3),
+               always
+                  EndSuspend(oDab315),
+               stopseq,
+            endif,
+            DbFilter('', oDab315),
+         endif,
+
+      endif,
+
+      // Für jeden Artikel, der Ausnahmen enthält
+      while not EoF(oKdnDamQuery) do
+
+         // Wird der Artikel im 'E'inkauf oder 'F'ertigung disponiert?
+         cPlanungsModus := DPU_GetPlanungsModusForArtikel(oDM, oKdnDamQuery:ARTNR, Date()),
+
+         // TODO: Abgleichs-logik geht nur, wenn links und rechts eine "Liste" ist
+         //      -> 'F' oder 'E' muss schon in KDNDAM stehen
+         //         -> Damit könnte man dann sogar für einen Artikel Ausnahmen in beide
+         //            Richtungen "schicken"
+         //      ->    aber dann brauchen wir dort ein neues Feld....
+
+         case cPlanungsModus
+            // Einkauf
+            of 'E' ::
+               if bTransferToPurchaseDispo and (not gl_DAMU_IgnoreKaufteileBestellEhMinus1 or oKdnDamQuery:BESTELLEH <> -1) then
+                  //************************************************************
+                  // Übertragung in Dab315
+                  //************************************************************
+                  BeginSuspend(oDab315),
+                  startseq
+                     // Gibt es in der Dispo-Tabelle schon einen "Träger-satz" für diese Artikel-Nr.?
+                     // -> dann diesen aktualisieren und keinen neuen anlegen
+                     // => TODO-1: Sonder-Logik für den Aufruf mit "nur einem Artikel"
+                     //            -> wird genutzt aus dem Ausnahmen-Docking-GUI heraus
+                     //            -> verallgemeinern
+                     if not empty(cOnlyArtNr) then
+                        DbFilter('ARTNR == ''' + cOnlyArtNr + ''' AND X_AUSN_PRI > 0', oDab315),
+                        if not (Eof(oDab315) and BoF(oDab315)) then
+                           MyEdit(oDab315),
+                           AddChangeToLogCounter(oDab315.Workarea, 2),
+                        else
+                           MyAppend(oDab315),
+                           AddChangeToLogCounter(oDab315.Workarea, 1),
+                        endif,
+                     else
+                        MyAppend(oDab315),
+                        AddChangeToLogCounter(oDab315.Workarea, 1),
+                     endif,
+
+                     oDab315:ARTNR      := oKdnDamQuery:ARTNR,
+                     //       Hier sollte in oDAB315:LIEFNR der Hauptlieferant drin stehen, sofern es nicht einen
+                     //       Dab315-Datensatz für den Artikel mit einem anderen Lieferanten gibt.
+                     //       Warum überhaupt eine Liefernante-Nr.?
+                     //          Weil man die Ausnahme sonst nicht sieht, wenn man in der
+                     //          Dispoliste "nur Lieferant" filtert.
+                     oDAB315:LIEFNR     := lookup(waDab510, 'DAB515', {{EKU_Dab510_GetMainSupplierConditionID(oKdnDamQuery:ARTNR, date())}}, 'LINR', 0),
+                     oDab315:DISPO      := 0,
+                     oDab315:TERMIN     := '',
+
+                     oDab315:X_AUSN_ANZ := oKdnDamQuery:ANZAHL_AUSNAHMEN,
+                     oDab315:X_AUSN_PRI := oKdnDamQuery:AUSN_TYP,
+
+                     // TODO: - Standard-konforme Einkaufs-Abteilungs-Logik fehlt (aus Dab010 bzw. Dab310)
+                     //       - Ist es notwendig, dass Felder wie "Dab315:WAEKZ, PE, ..." gefüllt werden?
+                     //         -> wenn eine :LIEFNR gesetzt wird, wäre es vmtl. "konsistent"
+                     oDab315:ABTEILUNG  := 0,
+
+                     MyPost(oDab315),
+
+                     DbFilter('', oDab315), // Filter könnte oben gesetzt worden sein...
+                  always
+                     EndSuspend(oDab315),
+                  stopseq,
+
+               endif,
+
+            // Fertigung
+            of 'F' ::
+               if bTransferToProdDispo then
+                  case nProdDispoWorkarea
+
+                     //*********************************************************
+                     // Übertragung in Dab220
+                     //*********************************************************
+                     of waDab220 :: SetError('waDab220 not implemented'),
+                        // TODO: Dieser Zweig kann vmtl. einfach weg (da oDabProdDispo allgemein)
+                        //       -> aber noch Feld-Namen-Unterscheidung für Dab220 vs. Dab215 notwendig!
+
+                     //*********************************************************
+                     // Übertragung in Dab215
+                     //*********************************************************
+                     of waDab215 ::
+                        BeginSuspend(oDabProdDispo),
+                        startseq
+                           // Gibt es in der Dispo-Tabelle schon einen "Träger-satz" für diese Artikel-Nr.?
+                           // -> dann diesen aktualisieren und keinen neuen anlegen
+                           // => TODO-1: Sonder-Logik für den Aufruf mit "nur einem Artikel"
+                           //            -> wird genutzt aus dem Ausnahmen-Docking-GUI heraus
+                           //            -> verallgemeinern
+                           if not empty(cOnlyArtNr) then
+                              DbFilter('ARTNR == ''' + cOnlyArtNr + ''' AND X_AUSN_PRI > 0', oDabProdDispo),
+                              if not (Eof(oDabProdDispo) and BoF(oDabProdDispo)) then
+                                 MyEdit(oDabProdDispo),
+                                 AddChangeToLogCounter(oDabProdDispo.Workarea, 2),
+                              else
+                                 MyAppend(oDabProdDispo),
+                                 AddChangeToLogCounter(oDabProdDispo.Workarea, 1),
+                              endif,
+                           else
+                              MyAppend(oDabProdDispo),
+                              AddChangeToLogCounter(oDabProdDispo.Workarea, 1),
+                           endif,
+
+                           oDabProdDispo:ARTNR      := oKdnDamQuery:ARTNR,
+                           oDabProdDispo:PROD_ABT   := oKdnDamQuery:PROD_ABT,
+                           oDabProdDispo:LIEFNR     := -1,
+                           oDabProdDispo:DISPO      := 0,
+                           oDabProdDispo:TERMIN     := '',
+
+                           oDabProdDispo:X_AUSN_ANZ := oKdnDamQuery:ANZAHL_AUSNAHMEN,
+                           oDabProdDispo:X_AUSN_PRI := oKdnDamQuery:AUSN_TYP,
+
+                           MyPost(oDabProdDispo),
+
+                           DbFilter('', oDabProdDispo), // Filter könnte oben gesetzt worden sein...
+                        always
+                           EndSuspend(oDabProdDispo),
+                        stopseq,
+
+                  endcase,
+               endif,
+         endcase,
+
+         DbSkip(1, oKdnDamQuery),
+      end,
+
+   always
+      DestroyObject(oKdnDamQuery),
+   stopseq,
+
+   WriteLn(CounterLogToText()),
+end,

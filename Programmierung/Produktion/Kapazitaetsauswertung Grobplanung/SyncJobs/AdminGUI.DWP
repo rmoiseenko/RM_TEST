@@ -1,0 +1,406 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//  Oberfläche zur Administration der "Kapazitätsauswertung Grobplanung Aufgaben"
+//
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM_GUI,
+   m_cFormID, m_cWinPosSaveId,
+
+   m_oPGKSYA, m_cSyncJobsBrowserID,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_DeleteJob, A_ReactivateJob, A_ShowIndiHelp, actions, BeBarButton1,
+   BeBarButton2, BeBarDockControl1, BeBarManager, BeBarManagerBar1,
+   bipnl_TopInfo, btn_ShowIndiHelp, ds_SyncJobs, edt_ErrorLog, grid_SyncJobs,
+   pc_Main, pnl_TopInfo, ts_SyncJobs
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                    := "@PGKUSJ",
+m_cWinPosSaveId              := "@PGKUSJ",
+
+m_cSyncJobsBrowserID         := '@PGKU_TI', // Achtung: Identisch mit Browser in der "TimerGFUBatch"
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM_GUI := CreateObject('TBeDbGet', '', oForm),
+
+   // notwendige Tabelle(n) öffnen
+
+   // Synchronisationsaufgaben PGKSYA.ADT
+   m_oPGKSYA                     := DbGetTable(m_oDM_GUI, waPGKSYA),
+   ds_SyncJobs.DataSet           := m_oPGKSYA,
+   grid_SyncJobs.DataSource      := ds_SyncJobs,
+   grid_SyncJobs.RegisterDataSet := m_oPGKSYA,
+   grid_SyncJobs.ID              := m_cSyncJobsBrowserID,
+   grid_SyncJobs.ReadWriteProps  := False,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bHasData, bJobNotActive |
+   bHasData                := not empty(m_oPGKSYA) and not NoDs(m_oPGKSYA),
+   bJobNotActive           := bHasData and not m_oPGKSYA:BEARBEITEN,
+
+   A_ReactivateJob.Enabled := bJobNotActive,
+   A_DeleteJob.Enabled     := bHasData,
+end,
+
+//******************************************************************************
+// Funktion erstellt Aufgaben für alle aktuell vorhandenen Dispositionsvorschläge
+// @Result: null
+//******************************************************************************
+function CreateJobsForAllDispoOrders(oDM)
+   | oDab215 |
+
+   oDab215 := DbGetTable(oDM, waDab215),
+
+   DbGoTop(oDab215),
+   while not EoF(oDab215) do
+      PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab215(oDab215, false),
+      DbSkip(1, oDab215),
+   end,
+end,
+
+//******************************************************************************
+// Funktion erstellt Aufgaben für alle aktuell offenen Fertigungsaufträge
+// @Result: null
+//******************************************************************************
+function CreateJobsForAllFAs(oDM)
+   | oDab035 |
+
+   oDab035 := DbGetTable(oDM, waDab035),
+   DbFilter('LIEFNR = -1', oDab035),
+
+   DbGoTop(oDab035),
+   while not EoF(oDab035) do
+      PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab035(oDab035, false),
+      DbSkip(1, oDab035),
+   end,
+end,
+
+//******************************************************************************
+// Funktion erstellt Aufgaben für alle abgeschlossenen offenen Fertigungsaufträge
+// @Result: null
+//******************************************************************************
+function CreateJobsForAllFinishedFAs(oDM, nFromYear)
+   | oDab020, oDab035, oDab240, cBestPosNr |
+
+   oDab035           := DbGetTable(oDM, waDab035),
+   oDab035.IndexName := 'DAB036', // LIEFNR;BESTPOSNR;TERM_INDEX
+
+   oDab240           := DbGetTable(oDM, waDab240),
+   oDab240.IndexName := 'DAB241', // B_POS_LFD
+
+   // Basis ist die Liste aller Fertigmeldungs-Buchungen
+   oDab020           := DbGetTable(oDM, waDab020),
+   oDab020.IndexName := 'DAB022', // Ausdruck: "BUART;PERSNR;STANDORT;DATUM"
+   DbScope({'F', 0, mStandort, EncodeDate(nFromYear, 1, 1)},
+           {'F', 0, mStandort, Date()                     }, oDab020),
+   startseq
+      DbGoTop(oDab020),
+      while not Eof(oDab020) do
+         cBestPosNr := Left(oDab020:B_POS_LFD, 8),
+         // Wenn der Dab035-Satz noch vorhanden ist, dann wurde der Auftrag noch nicht abgeschlossen
+         if not DbSeek({-1, cBestPosNr}, oDab035) then
+            D240_Findhead(oDab240, cBestPosNr),
+            PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab240(oDab240),
+         endif,
+
+         DbSkip(1, oDab020),
+      end,
+   always
+      DbScope(, oDab020),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_SyncJobsScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Aufgaben für alle Dispoaufträge erzeugen
+//******************************************************************************
+function A_CreateJobsForAllDispoOrdersExecute( Sender )
+| nOldCursor |
+   startseq
+      if Jn('Aufgaben für alle Dispositionsvorschläge erzeugen?') then
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            CreateJobsForAllDispoOrders(m_oDM_GUI),
+            DbRefresh(m_oPGKSYA),
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Erstellen der Aufgaben.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aufgaben für alle offenen Fertigungsaufträge erzeugen
+//******************************************************************************
+function A_CreateJobsForAllOpenFAsExecute( Sender )
+| nOldCursor |
+   startseq
+      if Jn('Aufgaben für alle offenen Fertigungsaufträge erzeugen?') then
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            CreateJobsForAllFAs(m_oDM_GUI),
+            DbRefresh(m_oPGKSYA),
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Erstellen der Aufgaben.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aufgaben für alle abgeschlossenen Fertigungsaufträge erzeugen
+//******************************************************************************
+function A_CreateJobsForAllFinishedFAsExecute( Sender )
+| nOldCursor, nFromYear |
+   startseq
+      if Jn('Aufgaben für alle abgeschlossenen (Endfertigmeldung vorhanden) Fertigungsaufträge erzeugen?') then
+
+         nFromYear := Val( InputBox('Aufgaben für abgeschlossene Aufträge erzeugen', 'Aufträge erzeugen ab Fertigstellungsjahr', '' )),
+         if not empty(nFromYear) then
+            if nFromYear < 1990 then
+               MessageDlg('Ungültige Eingabe für Jahreszahl. Geben Sie einen Wert >= 1990 an.'),
+            else
+               nOldCursor := SetCursor(crHourglass),
+               startseq
+                  CreateJobsForAllFinishedFAs(m_oDM_GUI, nFromYear),
+                  DbRefresh(m_oPGKSYA),
+               always
+                  SetCursor(nOldCursor),
+               stopseq,
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Erstellen der Aufgaben.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aktualisieren
+//******************************************************************************
+function A_RefreshExecute( Sender )
+   DbRefresh(m_oPGKSYA),
+end,
+
+//******************************************************************************
+// Action: Aufgabe "löschen"
+//******************************************************************************
+function A_DeleteJobExecute( Sender )
+   startseq
+      if Jn('Aufgabe löschen?') then
+         MyDelete(m_oPGKSYA),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Reaktivieren der Aufgabe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aufgabe "reaktivieren"
+//******************************************************************************
+function A_ReactivateJobExecute( Sender )
+   startseq
+      MyEdit(m_oPGKSYA),
+      m_oPGKSYA:BEARBEITEN :=  true,
+      MyPost(m_oPGKSYA),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Reaktivieren der Aufgabe.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Aufgabe "Alle reaktivieren"
+//******************************************************************************
+function A_ReactiveAllJobsExecute( Sender )
+| oPGKSYA |
+   startseq
+      if Jn('Alle Aufgaben zur Bearbeitung markieren?') then
+         oPGKSYA := DbGetTable(m_oDM_GUI, waPGKSYA, 'PGKSYA_REACTIVATE'),
+
+         DbGoTop(oPGKSYA),
+         while not EoF(oPGKSYA) do
+            if DbEdit(oPGKSYA) then // Aufgabe könnte gerade gesperrt sein...
+               oPGKSYA:BEARBEITEN :=  true,
+               MyPost(oPGKSYA),
+            endif,
+            DbSkip(1, oPGKSYA),
+         end,
+         MyRefresh(m_oPGKSYA, true),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Reaktivieren der Aufgaben.', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_PGKU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_DeleteJob       := FindObject(oForm, "A_DeleteJob"),
+   A_ReactivateJob   := FindObject(oForm, "A_ReactivateJob"),
+   A_ShowIndiHelp    := FindObject(oForm, "A_ShowIndiHelp"),
+   actions           := FindObject(oForm, "actions"),
+   BeBarButton1      := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2      := FindObject(oForm, "BeBarButton2"),
+   BeBarDockControl1 := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager      := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1  := FindObject(oForm, "BeBarManagerBar1"),
+   bipnl_TopInfo     := FindObject(oForm, "bipnl_TopInfo"),
+   btn_ShowIndiHelp  := FindObject(oForm, "btn_ShowIndiHelp"),
+   ds_SyncJobs       := FindObject(oForm, "ds_SyncJobs"),
+   edt_ErrorLog      := FindObject(oForm, "edt_ErrorLog"),
+   grid_SyncJobs     := FindObject(oForm, "grid_SyncJobs"),
+   pc_Main           := FindObject(oForm, "pc_Main"),
+   pnl_TopInfo       := FindObject(oForm, "pnl_TopInfo"),
+   ts_SyncJobs       := FindObject(oForm, "ts_SyncJobs"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Funktion initialisiert die Oberfläche
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt        := 'Kapazitätsauswertung Grobplanung - Aufgaben',
+   bipnl_TopInfo.Caption := oForm.OrigCapt,
+   oForm.ImageIndex      := 217,
+end,
+
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

@@ -1,0 +1,67 @@
+|
+// globale Variable für die Möglichkeit Dokumente permanent zu löschen
+gl_DMSU_bCanDeletePermanently:_L       := true,
+
+//  F12-Formular-Klasse 
+gl_DMSU_cRightsClassID:_C     :=  '@DMS_RGHTS',
+
+// globale Variable für die maximale Seitenlänge eines Thumbnails
+gl_DMSU_nThumbnailSize:_N           := 100,
+
+// globale Variablen für die MM-Tabellen (wird derzeit noch nicht benutzt, die Zuordnung steht in der Felddefinition )
+gl_DMSU_MMTabellenID_Art:_N         := 7000,
+gl_DMSU_MMTabellenID_Status:_N      := 7001,
+gl_DMSU_MMTabellenID_StatusFGB:_N   := 7002,
+gl_DMSU_MMTabellenID_Verwendung:_N  := 7003,
+gl_DMSU_MMTabellenID_Kategorie:_N   := 7006,
+gl_DMSU_MMTabellenID_Zugriff_Kat:_N := 7007,
+gl_DMSU_MMTabellenID_Vertraulich:_N := 7008,
+gl_DMSU_MMTabellenID_Verantwortl:_N := 7009,
+
+// globale Variablen für die möglichen Zustände von DMSVER:ART
+gl_DMSU_DokumentenArt_File:_N      := 100,
+gl_DMSU_DokumentenArt_Filelink:_N  := 200,
+gl_DMSU_DokumentenArt_Hyperlink:_N := 300,
+
+// Gloable Variable der Versionierungslogik für Status
+gl_DMSU_Param_Status_Logic:_N                       := 2,  // Werte s. REQ 787
+// globale Variablen für die möglichen Zustände von DMSVER:STATUS
+gl_DMSU_DokumentenStatus_zurUeberpruefung:_N        := 100,
+gl_DMSU_DokumentenStatus_inBearbeitung:_N           := 200,
+gl_DMSU_DokumentenStatus_aktuelleVersion:_N         := 300,
+gl_DMSU_DokumentenStatus_Veraltet:_N                := 400,
+
+// Gloable Variable der Freigabe
+gl_DMSU_Param_StatusFGB_Logic:_N                    := 2,  // Werte s. REQ 787
+// globale Variablen für die möglichen Zustände von DMSVER:STATUS_FGB
+gl_DMSU_DokumentenStatusFGB_keineFreigabe:_N        := 100,
+gl_DMSU_DokumentenStatusFGB_freigegeben:_N          := 200,
+gl_DMSU_DokumentenStatusFGB_gesperrt:_N             := 300,
+
+// globale Variablen für die möglichen Zustände von DMSVER:VERWENDUNG
+gl_DMSU_DokumentenVerwendung_ArtikelbildIntern:_N        := 100,
+gl_DMSU_DokumentenVerwendung_ArtikelbildAngebot:_N       := 200,
+gl_DMSU_DokumentenVerwendung_ArtikelbildBestellung:_N    := 300,
+gl_DMSU_DokumentenVerwendung_ArtikelbildProdAuftKarte:_N := 400,
+gl_DMSU_DokumentenVerwendung_VersandMitAngebot:_N        := 500,
+gl_DMSU_DokumentenVerwendung_VersandMitAuftBestaet:_N    := 600,
+
+// Individual-Menü-ID für das Dokumente-Docking
+gl_DMSU_DockingIndiMenuId:_N                             := -1,
+
+// globale Variablen zur Automatik bei neuer Version für Status und Freigabestatus
+gl_DMSU_Param_Status_NewVersion:_L                       := false,
+gl_DMSU_Param_Status_NewVersion_Kategorie:_U             := {},
+gl_DMSU_Set_FBGStatus_like_Status:_L                     := false,
+
+// globale Variablen für die Logik beim Hochzählen der Versionsbezeichnung
+gl_DMSU_VersBez_Hochzaehlen:_L                           := false,
+gl_DMSU_VersBez_LimitFormat:_L                           := false,
+
+// globale Variable für standortübergreifende Anzeige aller Dokumente zu einem Artikel
+gl_DMSU_ShowAllDocsForArtNr:_L                           := false,
+
+// globale Variable zur Auswahl der individuellen Online-Hilfe-Memos (z.B: MEMO_ID = 12345), leer -> keine Hilfe
+gl_DMSU_HilfeSQL:_C                                      := ''
+|
+true

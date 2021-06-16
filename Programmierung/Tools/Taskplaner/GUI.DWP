@@ -1,0 +1,2462 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzeroberfläche für Taskplaner
+//##############################################################################
+//##############################################################################
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_cFormID,
+   m_cPositionSaveID,
+   m_cBrowserID_Logs,
+   m_oDM,
+
+   m_oMainTable,
+   m_oTSKPLTASK,
+   m_oTSKPLLOG,
+   m_oTSKPLLOG_ALL,
+   m_cSchedulerSet,
+
+   m_cStartKind_None,
+   m_cStartType_None,
+
+   m_SqlTask,
+   m_SqlSchedule,
+   m_SqlTaskLog,
+
+   m_bMainTableExplicitPost,
+   m_bTaskTableExplicitPost,
+   m_bAutomaticSearch,
+   m_bToTimeFilterEdited,
+   m_nTSKPLTASKState,
+   m_bStartTypeManualChange,
+   m_bDoNotEditMode,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CalcNextExecutions, A_Cancel, A_ChooseFilterProgram,
+   A_ChooseProgram, A_CreateTask, A_Delete, A_FilterExecute, A_HelpContent,
+   A_ResetFilter, A_Save, A_SchedulerDelete, A_SchedulerEdit, A_ScheduleRefresh,
+   A_SchedulerHasToRun, A_SchedulerLock, A_SchedulerNew, A_SchedulerRelease,
+   A_Settings, A_TaskActivate, A_TaskDeactivate, A_TaskExecute, A_TaskRefresh,
+   Actions, bar_Scheduler, bar_TaskEdit, bardock_logs, bardock_Scheduler,
+   bardock_Task, barmgr_Main, barmgr_MainBar1, bbtn_Cancel, bbtn_CreateTask,
+   bbtn_Delete, bbtn_LogsResetFilter, bbtn_LogsShowFilter, bbtn_ManuelExecute,
+   bbtn_Save, bbtn_SchedulerDelete, bbtn_SchedulerEdit, bbtn_SchedulerNew,
+   bbtn_TaskActivate, bbtn_TaskDeactivate, BeBarButton1, BeBarButton2,
+   beBtn_CalcNextExecutions, BeSplitter1, BeSplitter2, btn_EtChooseProgram,
+   btn_LogsChooseProgram, btn_RefreshSchedule, btn_RefreshTask,
+   chk_PeBlockInner, chk_WeEvery, chkl_DaDays, chkl_PeDays, cmb_EtDepartment,
+   cmb_EtLocation, cmb_EtProgramm, cmb_EtScheduler, cmb_EtStartKind,
+   cmb_EtStartType, cmb_EtUser, cmb_LogsDepartment, cmb_LogsLocation,
+   cmb_LogsProgram, cmb_LogsSchedulers, cmb_LogsStartKind, cmb_LogsTasks,
+   cmb_LogsType, cmb_LogsUser, cmb_MoWhen, cmb_PeBlockInner, cmb_PeTime,
+   cmb_ToleranceUnit, cmb_WeDays, cmb_YeDays, cmb_YeMonths, ds_ALLLOGS,
+   ds_SqlSchedule, ds_SqlTask, ds_SqlTaskLog, ds_TSKPLLOG, ds_TSKPLSCHED,
+   ds_TSKPLTASK, dtp_DaAt, dtp_EtStartsAt, dtp_EtStopsAt, dtp_LogsFromDate,
+   dtp_LogsFromTime, dtp_LogsToDate, dtp_LogsToTime, dtp_MoUm, dtp_OnAm,
+   dtp_OnUm, dtp_PeTo, dtp_PeUp, dtp_StartPeriodic, dtp_WeUm, dtp_YeAt,
+   edt_EtInformation, edt_EtParameter, edt_EtTaskName, edt_MaxDuration,
+   edt_MoSpecialDay, edt_PeEvery, edt_ToleranceAmount, edt_WeWeeks, grd_AllLogs,
+   grd_Logs, grd_Schedulers, grd_Tasks, ipnl_AllLogs, ipnl_Scheduler, ipnl_Task,
+   lbl_DaAm, lbl_DaAt, lbl_EndDate, lbl_EtDepartment, lbl_EtInformation,
+   lbl_EtLocation, lbl_EtParameter, lbl_EtProgramm, lbl_EtScheduler,
+   lbl_EtStartKind, lbl_EtTaskName, lbl_EtTimetable, lbl_EtUser,
+   lbl_LogsDepartment, lbl_LogsFrom, lbl_logsLocation, lbl_LogsProgramm,
+   lbl_LogsSchedulers, lbl_LogsStartKind, lbl_LogsTasks, lbl_LogsTo,
+   lbl_LogsType, lbl_LogsUser, lbl_MaxDuration, lbl_MoAm, lbl_MoDays, lbl_MoUm,
+   lbl_OnAm, lbl_OnUm, lbl_PeAm, lbl_PeEvery, lbl_PeriodStartTime,
+   lbl_StartDate, lbl_StartKindDescription, lbl_TimePlanInfo, lbl_Tolerance,
+   lbl_WeAm, lbl_WeUm, lbl_WeWeeks, lbl_YeAt, lbl_YeOnDay, lbl_YeOnMonth,
+   pc_Main, pc_Task, pnl_4, pnl_5, pnl_6, pnl_ContainerTimePlanInfo,
+   pnl_LogsFilterCenter, pnl_LogsFilterLeft, pnl_LogsFilterRight, pnl_LogsTop,
+   pnl_Main, pnl_Scheduler, pnl_TaskDetails, pnl_TaskDetailsLeft, pnl_Tasks,
+   pnl_TasksGrid, pnl_TimePlanAnnualy, pnl_TimePlanBasics, pnl_TimePlanDaily,
+   pnl_TimePlanMonthly, pnl_TimePlanOnce, pnl_TimePlanPeriodic,
+   pnl_TimePlanWeekly, pnl_Top, rbtn_MoErsten, rbtn_MoLetzten, rbtn_MoSpecial,
+   t_SchedulerRefreshTimer, tm_NextExecutions, ts_LogsAll, ts_LogsTask,
+   ts_Overview, ts_TaskDefinition, ts_TaskTimeSettings
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@TSKPLGUI',
+m_cPositionSaveID := '@TSCONFIGP',
+m_cBrowserID_Logs := '@TSKPLALOG',
+m_cStartType_None := '0',
+m_cStartKind_None := '0',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ersätzt die Indexen der Tagen mit Sonntag als ersten Tag
+// @Result: Array mit entsprechenden ControlIndex für Tages
+//******************************************************************************
+function ControlIndexToDayIndex(aCheckedDays:A)
+| i, nTemp |
+
+   for i := 1 to ALen(aCheckedDays) do
+      nTemp := aCheckedDays[i] + 1,
+      if nTemp = 8 then
+         nTemp := 1,
+      endif,
+      aCheckedDays[i] := nTemp,
+   next,
+   Result := aCheckedDays,
+end,
+
+//******************************************************************************
+// Validierung der Kontrolen vor der Speicherung
+// @Result: null
+//******************************************************************************
+function ValidateControls(cErrorText:R)
+|
+  oFocusControl
+|
+   Result := true,
+   case Val(cmb_EtStartType.Value)
+      of gl_TSKPL_StartType_Once     ::
+         if Empty(dtp_OnAm.Date) then
+            Result        := false,
+            cErrorText    := 'Datum "am" muss gesetzt sein!',
+            oFocusControl := dtp_OnAm,
+         endif,
+         if Result and ((dtp_OnAm.Date + dtp_OnUm.Time) < GetAdsServerTime()) and EditModes(m_oTSKPLTASK) then
+            Result        := false,
+            cErrorText    := iif(Result, '', 'Datum darf nicht in der Vergangenheit liegen!'),
+            oFocusControl := dtp_OnAm,
+         endif,
+      of gl_TSKPL_StartType_Daily    ::
+         if ALen(chkl_DaDays.CheckedItems) = 0 then
+            Result        := false,
+            cErrorText    := 'Tage "am" müssen gesetzt sein!',
+            oFocusControl := chkl_DaDays,
+         endif,
+      of gl_TSKPL_StartType_Weekly   ::
+         if cmb_WeDays.ItemIndex = -1 then
+            Result       := false,
+            cErrorText   := 'Tag "am" muss gesetzt sein!',
+            oFocusControl := chkl_PeDays,
+         endif,
+         if Result and chk_WeEvery.Checked
+            and Empty(edt_WeWeeks.Text)
+            then
+            Result        := false,
+            cErrorText    := 'Anzalh der Wochen muss gesetzt sein!',
+            oFocusControl := chk_WeEvery,
+         endif,
+      of gl_TSKPL_StartType_Monthly  ::
+         if rbtn_MoSpecial.Checked
+            and Empty(edt_MoSpecialDay.Text)
+            then
+            Result        := false,
+            cErrorText    := 'Tag des Monats "am" muss gesetzt sein!',
+            oFocusControl := edt_MoSpecialDay,
+         endif,
+         if Result and rbtn_MoSpecial.Checked
+            and ( Val(edt_MoSpecialDay.Text) > 20
+               or Val(edt_MoSpecialDay.Text) < 0)
+            then
+            Result        := false,
+            cErrorText    := 'Tag des Monats muss zwischen <0;20> sein!',
+            oFocusControl := edt_MoSpecialDay,
+         endif,
+         if Result and rbtn_MoSpecial.Checked
+            and cmb_MoWhen.ItemIndex = -1
+            then
+            Result        := false,
+            cErrorText    := 'Grenze des Monats muss gesetzt sein!',
+            oFocusControl := cmb_MoWhen,
+         endif,
+      of gl_TSKPL_StartType_Yearly   ::
+         if cmb_YeMonths.ItemIndex = -1 then
+            Result        := cmb_YeMonths.ItemIndex > -1,
+            cErrorText    := 'Monat "im" muss gesetzt sein!',
+            oFocusControl := cmb_YeMonths,
+         endif,
+      of gl_TSKPL_StartType_Periodic ::
+         if Empty(edt_PeEvery.Text) then
+            Result        := false,
+            cErrorText    := 'Wert "alle" muss gesetzt sein!',
+            oFocusControl := edt_PeEvery,
+         endif,
+         if Result and (Val(edt_PeEvery.Text) > 60
+            or Val(edt_PeEvery.Text) < 0)
+            then
+            Result        := false,
+            cErrorText    := 'Wert "alle" muss zwischen <0;60> sein!',
+            oFocusControl := edt_PeEvery,
+         endif,
+         if Result and cmb_PeTime.ItemIndex = -1 then
+            Result        := false,
+            cErrorText    := 'Einheit "alle" muss gesetzt sein!',
+            oFocusControl := cmb_PeTime,
+         endif,
+         if Result and chk_PeBlockInner.Checked and
+            cmb_PeBlockInner.ItemIndex = -1
+            then
+            Result        := false,
+            cErrorText    := 'Auswähl der "Beschränkung" muss gesetzt sein!',
+            oFocusControl := cmb_PeBlockInner,
+         endif,
+         if Result and ALen(chkl_PeDays.CheckedItems) = 0 then
+            Result        := false,
+            cErrorText    := 'Tage "am" müssen gesetzt sein!',
+            oFocusControl := chkl_PeDays,
+         endif,
+      otherwise
+         Result        := false,
+         cErrorText    := 'Ungültiger Start-Typ <' + cmb_EtStartType.Value + '>',
+         oFocusControl := cmb_EtStartType,
+   endcase,
+
+   if not Result and oForm.Visible and oFocusControl <> nil then
+      MyFocusControl(oForm, oFocusControl),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: Matrix mit Zeiten
+//******************************************************************************
+function GetTimeBound(tTimeUp:DT, tTimeTo:DT)
+| nH, nM, nS, nMs |
+   Result := {{0, 0}, {0, 0}}, // Array[2, 2] erstellen
+
+   DecodeTime(tTimeUp, nH, nM, nS, nMs),
+   Result[1,1] := nH,
+   Result[1,2] := nM,
+
+   DecodeTime(tTimeTo, nH, nM, nS, nMs),
+   Result[2,1] := nH,
+   Result[2,2] := nM,
+end,
+
+//******************************************************************************
+// Liefert zurück die restliche Nummern von 1 bis 7, die sich in dem Input-Array
+// nicht befinden
+// @Result: null
+//******************************************************************************
+function GetIncludedDays(aArray:A)
+| i |
+
+   Result := {},
+   for i := 1 to 7 do
+      if SeekInArray(i, aArray) = -1 then
+         AAdd(Result, i),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Startoptionen für einmalige ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Once()
+   Result := {},
+   KVU_Set(Result, 'execution.Date', Int(dtp_OnAm.Date)),
+   KVU_Set(Result, 'execution.Time', Frac(dtp_OnUm.Time)),
+   KVU_Set(result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_OnUm.Time)),
+end,
+
+//******************************************************************************
+// Startoptionen für tägliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Daily()
+|
+   dtNow
+|
+   Result := {},
+   KVU_Set(Result, 'execution.ExceptDays', GetIncludedDays(ControlIndexToDayIndex(chkl_DaDays.CheckedItems))),
+   KVU_Set(Result, 'execution.Time',       Frac(dtp_DaAt.Time)),
+   dtNow := GetAdsServerTime(),
+   if (Int(dtp_EtStartsAt.Date) + Frac(dtp_DaAt.Time)) <= dtNow then
+      KVU_Set(result, 'execution.StartFirst', Int(dtNow) + Frac(dtNow)),
+   else
+      KVU_Set(result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_DaAt.Time)),
+   endif,
+end,
+
+//******************************************************************************
+// Startoptionen für wöchentliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Weekly()
+   Result := {},
+   KVU_Set(Result, 'execution.Weekday',      Val(cmb_WeDays.Value)),
+   KVU_Set(Result, 'execution.WeekRotation', iif(chk_WeEvery.Checked, Val(edt_WeWeeks.Text), 0)),
+   KVU_Set(Result, 'execution.Time',         Frac(dtp_WeUm.Time)),
+   KVU_Set(Result, 'execution.StartFirst',   Int(dtp_EtStartsAt.Date) + Frac(dtp_WeUm.Time)),
+end,
+
+//******************************************************************************
+// Startoptionen für monatliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Monthly()
+| nDayOfMonth, mMonthSpecial |
+
+   Result      := {},
+   nDayOfMonth := 0,
+
+   if rbtn_MoErsten.Checked then
+      mMonthSpecial := gl_TSKPL_Algorithm_MonthSpecialType_BoM,
+   endif,
+   if rbtn_MoLetzten.Checked then
+      mMonthSpecial := gl_TSKPL_Algorithm_MonthSpecialType_EoM,
+   endif,
+   if rbtn_MoSpecial.Checked then
+      if cmb_MoWhen.Value = gl_TSKPL_MonthOffset_AfterBegin then
+         mMonthSpecial := gl_TSKPL_Algorithm_MonthSpecialType_BoM_WithOffset,
+      else
+         mMonthSpecial := gl_TSKPL_Algorithm_MonthSpecialType_EoM_WithOffset,
+      endif,
+      nDayOfMonth := Val(edt_MoSpecialDay.Text),
+   endif,
+
+   KVU_Set(Result, 'execution.DayOfMonth',   nDayOfMonth),
+   KVU_Set(Result, 'execution.MonthSpecial', mMonthSpecial),
+   KVU_Set(Result, 'execution.Time',         Frac(dtp_MoUm.Time)),
+   KVU_Set(result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_MoUm.Time)),
+end,
+
+//******************************************************************************
+// Startoptionen für jährliche ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Yearly()
+   Result := {},
+   KVU_Set(Result, 'execution.Day',   cmb_YeDays.Value),
+   KVU_Set(Result, 'execution.Month', cmb_YeMonths.Value),
+   KVU_Set(Result, 'execution.Time',  Frac(dtp_YeAt.Time)),
+   KVU_Set(result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_YeAt.Time)),
+end,
+
+//******************************************************************************
+// Startoptionen für zyklische ausführung ermitteln
+// @Result: array - Startoptionen
+//******************************************************************************
+function SetStartOptions_Periodic()
+| cIntervalUnit |
+   Result        := {},
+   cIntervalUnit := '',
+
+   if cmb_PeTime.ItemIndex = 0 then
+      cIntervalUnit := 'm',
+   else
+      cIntervalUnit := 'h',
+   endif,
+   KVU_Set(Result, 'execution.Interval',     Val(edt_PeEvery.Text)),
+   KVU_Set(Result, 'execution.IntervalUnit', cIntervalUnit),
+   KVU_Set(Result, 'execution.ExceptDays',   GetIncludedDays(ControlIndexToDayIndex(chkl_PeDays.CheckedItems))),
+   KVU_Set(Result, 'execution.BlockInner',   iif(cmb_PeBlockInner.ItemIndex = 0, True, False)),
+   if chk_PeBlockInner.Checked then
+      KVU_Set(Result, 'execution.TimeBound', GetTimeBound(Frac(dtp_PeUp.Time), Frac(dtp_PeTo.Time))),
+   else
+      KVU_Set(Result, 'execution.TimeBound', {}),
+   endif,
+   KVU_Set(Result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_StartPeriodic.Time)),
+end,
+
+//******************************************************************************
+// Validiert die notwendigen Daten für einen Zeitplan. Wenn alles
+// passt (und der Datensatz im Edit-Mode ist), wird der erste Ausführungs-Zeitpunkt
+// des Tasks in die Datenbank geschrieben (TskPlTask:STARTFIRST)
+// Rückgabe: Boolean, true wenn Validierung der Zeitplan-Optionen erfolgreich
+//******************************************************************************
+function SetTimePlanSettings(bSave:L:=false)
+|
+   aStartOptions, cErrorText, aCalcStartOptions, dtCalcNextStart, i, dtNow,
+   aYear, aMonth, aDay, aHour, aMin, aSec, aMSec, dtStartFirst, aLastStart,
+   aValue
+|
+   Result := false,
+   if not InsertMode(m_oTSKPLTASK) or bSave then
+      cErrorText    := '',
+      aStartOptions := {},
+      if ValidateControls(cErrorText) then
+         case Val(cmb_EtStartType.Value)
+            of gl_TSKPL_StartType_Once     :: aStartOptions := SetStartOptions_Once(),
+            of gl_TSKPL_StartType_Daily    :: aStartOptions := SetStartOptions_Daily(),
+            of gl_TSKPL_StartType_Weekly   :: aStartOptions := SetStartOptions_Weekly(),
+            of gl_TSKPL_StartType_Monthly  :: aStartOptions := SetStartOptions_Monthly(),
+            of gl_TSKPL_StartType_Yearly   :: aStartOptions := SetStartOptions_Yearly(),
+            of gl_TSKPL_StartType_Periodic :: aStartOptions := SetStartOptions_Periodic(),
+            otherwise
+              MessageDlg('Fehler beim Rechnen:' + CRLF + 'Unbekannter Zeitplan', mtError),
+              MyFocusControl(oForm, cmb_EtStartType),
+              Exit,
+         endcase,
+      else
+         MessageDlg('Fehler beim Rechnen:' + CRLF + cErrorText, mtError),
+         Exit,
+      endif,
+
+      Result       := true,
+      dtStartFirst := KVU_GetAssert(aStartOptions, 'execution.StartFirst'),
+      dtNow        := GetADSServerTime(),
+
+      if (dtStartFirst > dtNow) then
+         aLastStart := ConvertDateTimeToArray(dtStartFirst),
+      else
+         aLastStart := ConvertDateTimeToArray(dtNow),
+      endif,
+      KVU_Set(aStartOptions, 'execution.LastStart',  aLastStart),
+
+      // nur wenn in edit mode
+      if EditModes(m_oTSKPLTASK) then
+         if cmb_EtStartType.Value == gl_TSKPL_StartType_Once then
+            m_oTSKPLTASK:STARTFIRST := nil,
+            m_oTSKPLTASK:START_LAST := nil,
+         endif,
+
+         startseq
+            aValue := Val(edt_ToleranceAmount.Text),
+         onerror
+            aValue := 0,
+         stopseq,
+
+         if aValue < 1 then
+            edt_ToleranceAmount.Text := '',
+         endif,
+
+         if (not Empty(cmb_ToleranceUnit.Value)) and (not Empty(edt_ToleranceAmount.Text)) then
+            KVU_Set(aStartOptions, 'execution.ToleranceUnit',   cmb_ToleranceUnit.Value),
+            KVU_Set(aStartOptions, 'execution.ToleranceAmount', edt_ToleranceAmount.Text),
+         else
+            KVU_Set(aStartOptions, 'execution.ToleranceUnit',   ''),
+            KVU_Set(aStartOptions, 'execution.ToleranceAmount', ''),
+         endif,
+
+         m_oTSKPLTASK:START_OPT   := ArrToStr(aStartOptions),
+         aStartOptions            := StrToArr(m_oTSKPLTASK:START_OPT),
+         m_oTSKPLTASK:STARTFIRST  := Int(dtp_EtStartsAt.Date),
+         case Val(cmb_EtStartType.Value)
+            of gl_TSKPL_StartType_Once     :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_OnUm.Time),
+            of gl_TSKPL_StartType_Daily    :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_DaAt.Time),
+            of gl_TSKPL_StartType_Weekly   :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_WeUm.Time),
+            of gl_TSKPL_StartType_Monthly  :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_MoUm.Time),
+            of gl_TSKPL_StartType_Yearly   :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_YeAt.Time),
+            of gl_TSKPL_StartType_Periodic :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_StartPeriodic.Time),
+            otherwise
+              MessageDlg('Fehler beim Rechnen:' + CRLF + 'Unbekannter Zeitplan', mtError),
+              MyFocusControl(oForm, cmb_EtStartType),
+         endcase,
+      endif,
+   endif,                                                                       // WriteLn('SetTimePlanSettings', Result),
+end,
+
+//******************************************************************************
+// Ersätzt die Indexen der Tagen mit Montag als ersten Tag
+// @Result: Array mit entsprechenden ControlIndex für Tages
+//******************************************************************************
+function DayIndexToControlIndex(aUncheckedDays:A)
+| i, nTemp |
+
+   for i := 1 to ALen(aUncheckedDays) do
+      nTemp := aUncheckedDays[i] - 1,
+      if nTemp = 0 then
+         nTemp := 7,
+      endif,
+      aUncheckedDays[i] := nTemp,
+   next,
+   Result := aUncheckedDays,
+end,
+
+//******************************************************************************
+function LoadTaskTimePlanDefaults()
+| aDays, aDaysWithValues, aMonths, i, aDayValues, aStartOptionsArray |
+
+   m_bDoNotEditMode := true,
+
+   aDayValues := {2, 3, 4, 5, 6, 7, 1},
+   aDays      := {},
+   for i := 1 to ALen(aDayValues) do
+      AAdd(aDays, LongDayNames(aDayValues[i])),
+   next,
+
+   aDaysWithValues := {},
+   for i := 1 to ALen(aDayValues) do
+      AAdd(aDaysWithValues, LongDayNames(aDayValues[i]) + Chr(9) + Str(aDayValues[i])),
+   next,
+
+   aMonths := {
+      'Januar' + Chr(9) + '1',
+      'Februar' + Chr(9) + '2',
+      'März' + Chr(9) + '3',
+      'April' + Chr(9) + '4',
+      'Mai' + Chr(9) + '5',
+      'Juni' + Chr(9) + '6',
+      'Juli' + Chr(9) + '7',
+      'August' + Chr(9) + '8',
+      'September' + Chr(9) + '9',
+      'Oktober' + Chr(9) + '10',
+      'November' + Chr(9) + '11',
+      'Dezember' + Chr(9) + '12'
+   },
+
+   cmb_ToleranceUnit.Items  := {'Minute(n)' + Chr(9) + 'm', 'Stunde(n)' + Chr(9) + 'h', 'Tag(e)' + Chr(9) + 'd'},
+   chkl_DaDays.Items    := aDays,
+   cmb_WeDays.Items     := aDaysWithValues,
+   cmb_MoWhen.Items     := {'nach Monatsbeginn' + Chr(9) + Str(gl_TSKPL_MonthOffset_AfterBegin),
+                            'vor Monatsende'    + Chr(9) + Str(gl_TSKPL_MonthOffset_BeforeEnd)},
+   cmb_YeMonths.Items   := aMonths,
+   cmb_PeTime.Items     := {'Minuten' + Chr(9) + 'm', 'Stunden' + Chr(9) + 'h'},
+   cmb_PeBlockInner.Items := {'nicht zwischen', 'nur zwischen'},
+   chkl_PeDays.Items    := aDays,
+
+
+   aStartOptionsArray       := StrToArr(m_oTSKPLTASK:START_OPT),
+   cmb_ToleranceUnit.Value  := KVU_Get(aStartOptionsArray, 'execution.ToleranceUnit',   -1),
+   edt_ToleranceAmount.Text := KVU_Get(aStartOptionsArray, 'execution.ToleranceAmount', ''),
+
+   case Val(cmb_EtStartType.Value)
+      of gl_TSKPL_StartType_Once     ::
+         dtp_OnAm.Date      := KVU_Get(aStartOptionsArray, 'execution.Date', 0),
+         dtp_OnUm.Time      := KVU_Get(aStartOptionsArray, 'execution.Time', 0),
+      of gl_TSKPL_StartType_Daily    ::
+         dtp_DaAt.Time            := KVU_Get(aStartOptionsArray, 'execution.Time', 0),
+         chkl_DaDays.CheckedItems := GetIncludedDays(DayIndexToControlIndex(KVU_Get(aStartOptionsArray, 'execution.ExceptDays', {}))),
+      of gl_TSKPL_StartType_Weekly   ::
+         cmb_WeDays.Value     := KVU_Get(aStartOptionsArray, 'execution.Weekday', 2),
+         edt_WeWeeks.Text     := iif(Val(KVU_Get(aStartOptionsArray, 'execution.WeekRotation', 0)) > 1, KVU_Get(aStartOptionsArray, 'execution.WeekRotation', 0), ''),
+         chk_WeEvery.Checked  := not Empty(edt_WeWeeks.Text),
+         dtp_WeUm.Time        := KVU_Get(aStartOptionsArray, 'execution.Time', 0),
+
+      of gl_TSKPL_StartType_Monthly  ::
+         dtp_MoUm.Time         := KVU_Get(aStartOptionsArray, 'execution.Time', 0),
+         case KVU_Get(aStartOptionsArray, 'execution.MonthSpecial', gl_TSKPL_Algorithm_MonthSpecialType_BoM)
+            of gl_TSKPL_Algorithm_MonthSpecialType_BoM ::
+               rbtn_MoErsten.Checked  := True,
+            of gl_TSKPL_Algorithm_MonthSpecialType_EoM ::
+               rbtn_MoLetzten.Checked := True,
+            of gl_TSKPL_Algorithm_MonthSpecialType_BoM_WithOffset ::
+               rbtn_MoSpecial.Checked := True,
+               edt_MoSpecialDay.Text  := Str(KVU_Get(aStartOptionsArray, 'execution.DayOfMonth', '0')),
+               cmb_MoWhen.Value       := gl_TSKPL_MonthOffset_AfterBegin,
+            of gl_TSKPL_Algorithm_MonthSpecialType_EoM_WithOffset ::
+               rbtn_MoSpecial.Checked := True,
+               edt_MoSpecialDay.Text  := Str(KVU_Get(aStartOptionsArray, 'execution.DayOfMonth', '0')),
+               cmb_MoWhen.Value       := gl_TSKPL_MonthOffset_BeforeEnd,
+            otherwise
+         endcase,
+      of gl_TSKPL_StartType_Yearly   ::
+         dtp_YeAt.Time         := KVU_Get(aStartOptionsArray, 'execution.Time', 0),
+         cmb_YeMonths.Value    := Val(KVU_Get(aStartOptionsArray, 'execution.Month', '1')),
+         cmb_YeDays.Value      := Val(KVU_Get(aStartOptionsArray, 'execution.Day', '1')),
+      of gl_TSKPL_StartType_Periodic ::
+         edt_PeEvery.Text            := ToString(KVU_Get(aStartOptionsArray, 'execution.Interval', '')),
+         cmb_PeTime.Value            := KVU_Get(aStartOptionsArray, 'execution.IntervalUnit', 'm'),
+         chkl_PeDays.CheckedItems    := GetIncludedDays(DayIndexToControlIndex(KVU_Get(aStartOptionsArray, 'execution.ExceptDays', {}))),
+
+         dtp_StartPeriodic.Time      := Frac(m_oTSKPLTASK:STARTFIRST),
+         if ALen(KVU_Get(aStartOptionsArray, 'execution.TimeBound', {})) > 0 then
+            chk_PeBlockInner.Checked    := True,
+            cmb_PeBlockInner.ItemIndex  := iif(KVU_Get(aStartOptionsArray, 'execution.BlockInner', False), 0, 1),
+            dtp_PeUp.Time := TSKPL_GetTimeFromTimeBoundArray(KVU_Get(aStartOptionsArray, 'execution.TimeBound', {{0,0},{0,0}}), 1),
+            dtp_PeTo.Time := TSKPL_GetTimeFromTimeBoundArray(KVU_Get(aStartOptionsArray, 'execution.TimeBound', {{0,0},{0,0}}), 2),
+         else
+            chk_PeBlockInner.Checked    := False,
+            cmb_PeBlockInner.ItemIndex  := -1,
+         endif,
+      otherwise
+   endcase,
+
+   m_bDoNotEditMode := false,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+|
+   bSchedulerAvailable, bSchedulerInEditMode, bSchedulerIsRunning,
+   nSchedulerState,
+   bTasksAvailable, bTaskInEditMode, bCanEditTask
+|
+
+   bSchedulerAvailable  := m_oMainTable.CbDataAvailable,
+   bSchedulerInEditMode := EditModes(m_oMainTable),
+   nSchedulerState      := iif(bSchedulerAvailable, TSKPL_GetSchedulerStatus(m_oMainTable:ID), gl_TSKPL_SchedulerStatus_Inactive),
+   bSchedulerIsRunning  := nSchedulerState = gl_TSKPL_SchedulerStatus_Running,
+   bTasksAvailable      := m_oTSKPLTASK.CbDataAvailable,
+   bTaskInEditMode      := EditModes(m_oTSKPLTASK),
+   bCanEditTask         := not m_oTSKPLTASK:ACTIVE,
+
+   // Actions für Task
+   A_CreateTask.Enabled      := bSchedulerAvailable and not bTaskInEditMode,
+   A_Save.Enabled            := bTaskInEditMode,
+   A_Cancel.Enabled          := bTaskInEditMode,
+   A_Delete.Enabled          := bTasksAvailable and not bTaskInEditMode and bCanEditTask,
+   A_Settings.Enabled        := bTasksAvailable and bCanEditTask,
+   A_ChooseProgram.Enabled   := bTasksAvailable and bCanEditTask,
+   A_TaskActivate.Enabled    := bTasksAvailable and not bTaskInEditMode and not m_oTSKPLTASK:ACTIVE,
+   A_TaskDeactivate.Enabled  := bTasksAvailable and not bTaskInEditMode and m_oTSKPLTASK:ACTIVE,
+   A_TaskExecute.Enabled     := bTasksAvailable and not bTaskInEditMode,
+   A_TaskRefresh.Enabled     := bTasksAvailable and not bTaskInEditMode,
+   A_ScheduleRefresh.Enabled := bTasksAvailable and not bTaskInEditMode,
+
+   // Actions für Scheduler
+   A_SchedulerNew.Enabled      := not bSchedulerInEditMode and not bTaskInEditMode,
+   A_SchedulerDelete.Enabled   := bSchedulerAvailable and not bSchedulerInEditMode and not bTaskInEditMode and not bSchedulerIsRunning,
+   A_SchedulerEdit.Enabled     := bSchedulerAvailable and not bSchedulerInEditMode and not bTaskInEditMode and not bSchedulerIsRunning,
+   A_SchedulerRelease.Enabled  := bSchedulerAvailable and not bSchedulerInEditMode and not bTaskInEditMode and not m_oMainTable:HASTORUN,
+   A_SchedulerLock.Enabled     := bSchedulerAvailable and not bSchedulerInEditMode and not bTaskInEditMode and m_oMainTable:HASTORUN,
+end,
+
+//******************************************************************************
+// Steuerung der Kontrollen
+// @Result: null
+//******************************************************************************
+function RefreshControls()
+| nCurrentStartType, bExecutionOnce, bCanEditTask, bNoMonthSpecial, oPanel |
+
+   nCurrentStartType := Val(cmb_EtStartType.Value),
+   bExecutionOnce    := nCurrentStartType = gl_TSKPL_StartType_Once,
+   bCanEditTask      := m_oTSKPLTASK.CbDataAvailable and not m_oTSKPLTASK:ACTIVE,
+
+   bNoMonthSpecial   := not rbtn_MoSpecial.Checked,
+
+   Control_SetReadOnly(edt_EtTaskName,    not bCanEditTask),
+   Control_SetReadOnly(cmb_EtScheduler,   not bCanEditTask),
+   Control_SetReadOnly(edt_EtInformation, not bCanEditTask),
+   Control_SetReadOnly(cmb_EtStartKind,   not bCanEditTask),
+   Control_SetReadOnly(edt_EtParameter,   not bCanEditTask or Val(cmb_EtStartKind.Value) = gl_TSKPL_StartKind_Codeblock),
+   Control_SetReadOnly(cmb_EtLocation,    not bCanEditTask),
+   Control_SetReadOnly(cmb_EtDepartment,  not bCanEditTask),
+   Control_SetReadOnly(cmb_EtUser,        not bCanEditTask),
+   Control_SetReadOnly(edt_MaxDuration,   not bCanEditTask),
+   Control_SetReadOnly(dtp_EtStartsAt,    bExecutionOnce),
+   Control_SetReadOnly(dtp_EtStopsAt,     bExecutionOnce),
+   Container_SetReadOnly(ts_TaskTimeSettings, not bCanEditTask),
+
+   edt_EtInformation.Enabled := bCanEditTask,
+
+   lbl_StartKindDescription.Caption :=
+      iif(Val(cmb_EtStartKind.Value) = gl_TSKPL_StartKind_BeInstance,
+          'Startet eine neue Instanz von be und führt das Programm aus. Der Scheduler wird in der Ausführung nicht blockiert.',
+          'Startet das angegebene Programm in der aktuellen be-Instanz. Dadurch wird die Ausführung des Schedulers während der Programmausführung blockiert.'
+      ),
+
+
+   Control_SetReadOnly(edt_WeWeeks, not chk_WeEvery.Checked),
+   Control_SetReadOnly(edt_MoSpecialDay, bNoMonthSpecial),
+   Control_SetReadOnly(cmb_MoWhen, bNoMonthSpecial),
+   if bNoMonthSpecial then
+      edt_MoSpecialDay.Text := '',
+      cmb_MoWhen.ItemIndex  := -1,
+   endif,
+
+   Control_SetReadOnly(cmb_PeBlockInner, not chk_PeBlockInner.Checked),
+   Control_SetReadOnly(dtp_PeUp, not chk_PeBlockInner.Checked),
+   Control_SetReadOnly(dtp_PeTo, not chk_PeBlockInner.Checked),
+end,
+
+//******************************************************************************
+// Steuerung der Kontrollen für Logs-Filter
+// @Result: null
+//******************************************************************************
+function RefreshLogsControls()
+| bTaskSelected |
+   //***************************************************************************
+   function Control_SetReadOnly(oControl:O, bReadOnly:L)
+      oControl.ReadOnlyStateFromField := not bReadOnly,
+      oControl.ReadOnly               := bReadOnly,
+   end,
+
+   bTaskSelected := iif(cmb_LogsTasks.Value > 0, True, False),
+   Control_SetReadOnly(cmb_LogsLocation,   bTaskSelected),
+   Control_SetReadOnly(cmb_LogsDepartment, bTaskSelected),
+   Control_SetReadOnly(cmb_LogsUser,       bTaskSelected),
+   btn_LogsChooseProgram.Enabled    := not bTaskSelected,
+   if Empty(dtp_LogsFromDate.Date) then
+      dtp_LogsFromTime.Time := 0,
+   endif,
+   if bTaskSelected then
+      cmb_LogsLocation.Value   := -1,
+      cmb_LogsDepartment.Value := -1,
+      cmb_LogsUser.Value       := -1,
+      cmb_LogsProgram.Value    := -1,
+   endif,
+end,
+
+//******************************************************************************
+// Combobox für Tasks bei Logs-Tab befüllen
+// @Result: null
+//******************************************************************************
+function FillComboTasks_Logs()
+| aItems, oQuery, cSqlString |
+
+   aItems := {'<Alle Tasks>' + Chr(9) + '0'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   cSqlString := 'SELECT NAME, ID FROM "TSKPLTASK.ADT"',
+   if Val(cmb_LogsSchedulers.Value) > 0 then
+      cSqlString := cSqlString + ' WHERE SCHEDUL_ID = ' + cmb_LogsSchedulers.Value,
+   endif,
+   startseq
+      oQuery.SQL    := cSqlString,
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems, Trim(oQuery:NAME) + Chr(9) + Str(oQuery:ID)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_LogsTasks.Items     := aItems,
+   cmb_LogsTasks.ItemIndex := 0,
+end,
+
+//******************************************************************************
+// Combobox für Schedulers befüllen
+// @Result: null
+//******************************************************************************
+function FillComboScheduler()
+| aItems, aItemsLogs, oQuery |
+
+   aItems     := {'<Scheduler auswählen>' + Chr(9) + '0'},
+   aItemsLogs := {'<Alle Schedulers>'     + Chr(9) + '0'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT NAME, ID FROM "TSKPLSCHED.ADT"',
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems,     Trim(oQuery:NAME) + Chr(9) + Str(oQuery:ID)),
+         AAdd(aItemsLogs, Trim(oQuery:NAME) + Chr(9) + Str(oQuery:ID)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_EtScheduler.Items        := aItems,
+   cmb_LogsSchedulers.Items     := aItemsLogs,
+   cmb_LogsSchedulers.ItemIndex := 0,
+end,
+
+//******************************************************************************
+// Combobox für Programme befüllen
+// @Result: null
+//******************************************************************************
+function FillComboPrograms()
+| aItems, oQuery |
+
+   aItems := {'kein Programm gewählt' + Chr(9) + '0'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT BEZ, PROGNR FROM "DABPRG.ADT"',
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems, Trim(oQuery:BEZ) + Chr(9) + Str(oQuery:PROGNR)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_EtProgramm.Items  := aItems,
+end,
+
+//******************************************************************************
+// Combobox für Start-Kind befüllen
+// @Result: null
+//******************************************************************************
+function FillComboStartKind()
+| aItems, aItemsLogs |
+   aItems := {
+      'Aufruf in aktueller be-Instanz' + Chr(9) + Str(gl_TSKPL_StartKind_Codeblock),
+      'Aufruf in neuer be-Instanz'   + Chr(9) + Str(gl_TSKPL_StartKind_BeInstance)
+   },
+   cmb_EtStartKind.Items := aItems,
+   AInsert(aItems, 1, '<Alle Starttypen>' + Chr(9) + m_cStartKind_None),
+   cmb_LogsStartKind.Items := aItems,
+   cmb_LogsStartKind.ItemIndex := 0,
+end,
+
+//******************************************************************************
+// Combobox für Standorte befüllen
+// @Result: null
+//******************************************************************************
+function FillComboLocation()
+| aItems, oQuery |
+
+   aItems := {'kein Standort ausgewählt' + Chr(9) + '-1'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT "USER", STANDORT FROM "DABPAR.ADT" WHERE ABTEILUNG = 0',
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems, ConcatTrenner(StrZero(oQuery:STANDORT, 3), Trim(oQuery:USER), ' - ') + Chr(9) + Str(oQuery:STANDORT)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_EtLocation.Items   := aItems,
+   cmb_LogsLocation.Items := aItems,
+end,
+
+//******************************************************************************
+// Combobox für Abteilungen befüllen
+// @Result: array - Items
+//******************************************************************************
+function FillComboDepartment(nLocation:N)
+| oQuery, nDepartment, cDepName |
+
+   Result := {'keine Abteilung ausgewählt' + Chr(9) + '-1'},
+   if nLocation >= 0 then
+      oQuery:= CreateObject('TBeAdsQuery'),
+      startseq
+         oQuery.SQL    := 'SELECT "USER", ABTEILUNG FROM "DABPAR.ADT" WHERE STANDORT = ' + Str(nLocation),
+         oQuery.Active := True,
+         while not oQuery.CbEof do
+            nDepartment := oQuery:ABTEILUNG,
+            cDepName    := oQuery:USER,
+
+            if nDepartment = 0 then
+               cDepName := 'Global-Abt.',
+            else
+               cDepName := oQuery:USER
+            endif,
+            if Empty(Trim(cDepName)) then
+               cDepName := 'Abteilung ' + Str(nDepartment),
+            endif,
+            AAdd(Result, ConcatTrenner(Str(nDepartment), Trim(cDepName), ' - ') + Chr(9) + Str(nDepartment)),
+            oQuery.CbNext(),
+         end,
+      always
+         DestroyObject(oQuery),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Synchronizierung des Tasks-Liste abhängig von dem Scheduler_ID
+// @Result: null
+//******************************************************************************
+function SynchronizeBrowser()
+   if m_oMainTable.CbDataAvailable and m_oTSKPLTASK.CbDataAvailable then
+     m_SqlTask.CbRefresh(),
+     m_oMainTable.CbFindKey({m_SqlSchedule:ID}),
+   endif,
+end,
+
+//******************************************************************************
+// Synchronizierung des Log-Liste abhängig von dem Scheduler_ID
+// @Result: null
+//******************************************************************************
+function SynchronizeLogs()
+| nOldRecNo |
+
+   if m_oMainTable.CbDataAvailable and m_oTSKPLTASK.CbDataAvailable then
+      nOldRecNo := m_oTSKPLLOG.CbRecNo,
+      m_oTSKPLLOG.CbDisableControls(),
+      startseq
+         m_oTSKPLLOG.CbSetRangeEx({m_oTSKPLTASK:ID}),
+         if not m_oTSKPLLOG.CbGoTo(nOldRecNo) then
+            m_oTSKPLLOG.CbFirst(),
+         endif,
+      always
+         m_oTSKPLLOG.CbEnableControls(),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Setzt die Tage im Combobox
+// @Result: null
+//******************************************************************************
+function FillCombo_YeDays()
+| aDays, nEomDay, i |
+   aDays := {},
+   if cmb_YeMonths.Value > 0 then
+      nEomDay := Day(EoM(EncodeDate(2015, cmb_YeMonths.Value, 1))),
+      for i := 1 to nEomDay do
+         AAdd(aDays, i ),
+      next,
+      cmb_YeDays.Items := aDays,
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID            := m_cPositionSaveID,
+   oForm.OrigCapt                  := 'Taskplaner',
+   t_SchedulerRefreshTimer.Enabled := True,
+   m_bAutomaticSearch              := True,
+   m_bToTimeFilterEdited           := False,
+
+   pc_Main.ActivePage            := ts_Overview,
+   pc_Task.ActivePage            := ts_TaskDefinition,
+   btn_EtChooseProgram.Caption   := '',
+   btn_LogsChooseProgram.Caption := '',
+
+   cmb_EtUser.Enabled   := False,
+   lbl_EtUser.Enabled   := False,
+   cmb_LogsUser.Enabled := False,
+   lbl_LogsUser.Enabled := False,
+
+   FillComboScheduler(),
+   FillComboPrograms(),
+   FillComboStartKind(),
+   FillComboLocation(),
+
+   edt_EtTaskName.DataSource    := ds_TSKPLTASK,
+   edt_EtTaskName.DataField     := 'NAME',
+   cmb_EtScheduler.DataSource   := ds_TSKPLTASK,
+   cmb_EtScheduler.DataField    := 'SCHEDUL_ID',
+   edt_EtInformation.DataSource := ds_TSKPLTASK,
+   edt_EtInformation.DataField  := 'INFO',
+   dtp_EtStartsAt.DataSource    := ds_TSKPLTASK,
+   dtp_EtStartsAt.DataField     := 'STARTFIRST',
+   dtp_EtStopsAt.DataSource     := ds_TSKPLTASK,
+   dtp_EtStopsAt.DataField      := 'START_LAST',
+   cmb_EtProgramm.DataSource    := ds_TSKPLTASK,
+   cmb_EtProgramm.DataField     := 'START_PROG',
+   cmb_EtStartKind.DataSource   := ds_TSKPLTASK,
+   cmb_EtStartKind.DataField    := 'START_KIND',
+   edt_EtParameter.DataSource   := ds_TSKPLTASK,
+   edt_EtParameter.DataField    := 'STARTPARAM',
+   cmb_EtStartType.DataSource   := ds_TSKPLTASK,
+   cmb_EtStartType.DataField    := 'START_TYPE',
+   cmb_EtLocation.DataSource    := ds_TSKPLTASK,
+   cmb_EtLocation.DataField     := 'LOCATION',
+   cmb_EtDepartment.DataSource  := ds_TSKPLTASK,
+   cmb_EtDepartment.DataField   := 'DEPARTMENT',
+   cmb_EtUser.DataSource        := ds_TSKPLTASK,
+   cmb_EtUser.DataField         := 'USER',
+   edt_MaxDuration.DataSource   := ds_TSKPLTASK,
+   edt_MaxDuration.DataField    := 'MAX_DUR',
+
+   FillComboTasks_Logs(),
+   cmb_LogsType.BeAttributeID := gl_TSKPL_Config_AttributeTableID_LogType,
+   dtp_LogsFromDate.Date := Today() - 7,
+   dtp_LogsFromTime.Time := 0,
+
+   // anpassung zwischen 6.5 und 7.1
+   ipnl_Scheduler.ColorMode    := ipcmError,
+   ipnl_Task.ColorMode         := ipcmError,
+   ipnl_AllLogs.ColorMode      := ipcmError,
+   ipnl_Scheduler.ColorMode    := ipcmInfo,
+   ipnl_Task.ColorMode         := ipcmInfo,
+   ipnl_AllLogs.ColorMode      := ipcmInfo,
+
+   LoadTaskTimePlanDefaults(),
+
+   RefreshControls(),
+   SynchronizeBrowser(),
+   SynchronizeLogs(),
+end,
+
+//******************************************************************************
+// Name des aktuellen Tasks ermitteln
+// @Result: string - Name des Tasks
+//******************************************************************************
+function TSKPLTASK_GetName()
+   Result := Trim(m_oTSKPLTASK:NAME),
+end,
+
+//******************************************************************************
+// Task aktivieren/deaktivieren
+// @Result: boolean - Aktivieren/Deaktivierung erfolgreich
+//******************************************************************************
+function TSKPLTASK_SetTaskActive(bActive:L)
+| nEventCode, cActiveText |
+
+   Result := DbEdit(m_oTSKPLTASK),
+   if Result then
+      if bActive then
+         nEventCode  := gl_TSKPL_EventCode_TaskActivated,
+         cActiveText := 'aktiviert',
+      else
+         nEventCode  := gl_TSKPL_EventCode_TaskDeactivated,
+         cActiveText := 'deaktiviert',
+      endif,
+      m_oTSKPLTASK:ACTIVE      := bActive,
+      m_bTaskTableExplicitPost := True,
+      Result                   := DbPost(m_oTSKPLTASK),
+
+      // Nach erfolgreicher De-/Aktivierung entsprechenden Log-Eintrag schreiben
+      if Result then
+         TSKPL_WriteLog_Task(m_oTSKPLTASK:ID, nEventCode, 'Task wurde ' + cActiveText),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// InputDialog für Schedulername einzugeben oder ändern
+// @Result: null
+//******************************************************************************
+function SetSchedulerName(oTable:O, bNewFlag:L)
+| aDialogResult, cName, bInsertState, nId |
+
+   m_bMainTableExplicitPost := True,
+   bInsertState             := InsertMode(oTable),
+
+   aDialogResult := DU_InputDialog(
+      'Scheduler Name eingeben',
+      '',
+      {DU_InputDialog_CreateInputControlDefinition('NAME', 'Name', gl_DU_InputControlType_String, '', 0, iif(bNewFlag, '', Trim(oTable:NAME)), True)},
+      {DU_InputDialog_CreateButtonDefinition('OK', 'Ok', mrOK, 7, True), mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cName := DU_InputDialogResult_GetInputValue(aDialogResult, 'Name'),
+      if Trim(oTable:NAME) == cName then
+         DbCancel(oTable),
+      else
+         if Lookup(waTSKPLSCHED, 'NAME', {{cName}}, 'ID', -1) <> -1 then
+            MessageDlg('Scheduler mit dem Namen <' +  cName + '> existiert bereits!', mtError),
+            DbCancel(oTable),
+         else
+            oTable:NAME := cName,
+            nId         := oTable:ID,
+            if DbPost(oTable) then
+               if bInsertState then
+                  TSKPL_WriteLog_Scheduler(oTable:ID, gl_TSKPL_EventCode_SchedulerCreated, 'Der Scheduler <' + Trim(oTable:NAME) + '> wurde erfolgreich erstellt.'),
+                  m_SqlSchedule.CbRefresh(),
+                  oTable.CbFindKey({nID}),
+                  m_SqlSchedule.CbGoTo(oTable.CbRecNo),
+               endif,
+               FillComboScheduler(),
+            else
+               MessageDlg('Scheduler <' +  cName + '> konnte nicht gespeichert werden!', mtError),
+            endif,
+         endif,
+      endif,
+   else
+      DbCancel(oTable),
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion ist von dem Button (Scheduler unbenennen) und von dem Doppelklick
+// auf dem Scheduler-Grid aufgeruft.
+// Ruft die Funktion SetSchedulerName(m_oMainTable, False) auf
+// @Result: null
+//******************************************************************************
+function EditSchedulerName(),
+   if DbEdit(m_oMainTable) then
+      ActionsEnabled(),
+      SetSchedulerName(m_oMainTable, False),
+   else
+      MessageDlg('Schedulername kann nicht geändert werden!', mtError),
+   endif,
+   FillComboScheduler(),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LogsFilterExecute()
+| i, cFilter, aTaskIDs, aTaskIdsForLocation, bAutomaticSearchTemp |
+
+   //***************************************************************************
+   function FilterDateString(dDate)
+      Result := 'STOTS("' + FormatDateTime('YYYYMMDD HH:NN:SS', dDate) + '")',
+   end,
+
+   //***************************************************************************
+   function GetAdvantageFilterTaskIDs(cLocationValue:C, cDepartmentValue:C, cUserValue:C, cProgramValue:C, cStartKindValue:C)
+   |
+      oQuery, cSqlStr, cWhere, bHasFilters, aIDs,
+      nLocation, nDepartment, nProgramm, nStartKind
+   |
+
+      Result := {False, {}},
+      aIDs   := {},
+      cWhere := '',
+      if not Empty(cLocationValue) then
+         nLocation := Val(cLocationValue),
+         cWhere    := iif(nLocation > -1, 'LOCATION = ' + Str(nLocation), ''),
+      endif,
+      if not Empty(cDepartmentValue) then
+         nDepartment := Val(cDepartmentValue),
+         cWhere      := ConcatTrenner(cWhere, iif(nDepartment > -1, 'DEPARTMENT = ' + Str(nDepartment), ''), ' AND '),
+      endif,
+      if not Empty(cUserValue) and Val(cUserValue) > 0 then
+         cWhere := ConcatTrenner(cWhere, '"USER" = ' + "'" + PadL(cUserValue, 3, '0') + "'", ' AND '),
+      endif,
+      if not Empty(cProgramValue) and Val(cProgramValue) > 0 then
+         nProgramm := Val(cProgramValue),
+         cWhere    := ConcatTrenner(cWhere, 'START_PROG = ' + Str(nProgramm), ' AND '),
+      endif,
+      if not Empty(cStartKindValue) and Val(cStartKindValue) > 0 then
+         nStartKind := Val(cStartKindValue),
+         cWhere     := ConcatTrenner(cWhere, 'START_KIND = ' + Str(nStartKind), ' AND '),
+      endif,
+      bHasFilters := not Empty(cWhere),
+      if bHasFilters then
+         Result[1] := bHasFilters,
+         cSqlStr := 'SELECT ID FROM "TSKPLTASK.ADT" WHERE ' + cWhere,
+         oQuery := CreateObject('TBeAdsQuery'),
+         startseq
+            oQuery.SQL := cSqlStr,
+            oQuery.Active := True,
+            while not oQuery.CbEof do
+               AAdd(aIDs, oQuery:ID),
+               oQuery.CbNext(),
+            end,
+            Result[2] := aIDs,
+         always
+            DestroyObject(oQuery),
+         stopseq,
+      endif,
+   end,
+
+   //***************************************************************************
+   function AddTaskIdFilter(cFilter:C, aTaskIDs:A)
+   | i, cIDFilter |
+      Result := cFilter,
+      if ALen(aTaskIDs) > 0 then
+         cIDFilter := '',
+         for i := 1 to ALen(aTaskIDs) do
+            cIDFilter := ConcatTrenner(cIDFilter, 'TASK_ID = ' + Str(aTaskIDs[i]) , ' OR '),
+         next,
+         Result := ConcatTrenner(Result, '(', '  AND '),
+         Result += cIDFilter,
+         Result += ')',
+      else
+         Result := ConcatTrenner(Result, 'False', ' AND '),
+      endif,
+   end,
+
+   aTaskIDs := {},
+   aTaskIdsForLocation := {},
+   cFilter  := '',
+   cFilter  := ConcatTrenner(cFilter, '', ' AND '),
+
+   if not Empty(dtp_LogsFromDate.Date) then
+      if not Empty(dtp_LogsFromTime.Time) or dtp_LogsFromTime.Time = 0 then
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT >= ' + FilterDateString(dtp_LogsFromDate.Date + dtp_LogsFromTime.Time), ' AND '),
+      else
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT >= ' + FilterDateString(dtp_LogsFromDate.Date), ' AND '),
+      endif,
+   endif,
+
+   if not Empty(dtp_LogsToDate.Date) then
+      if not Empty(dtp_LogsToTime.Time) or dtp_LogsToTime.Time = 0 then
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT <= ' + FilterDateString(dtp_LogsToDate.Date + dtp_LogsToTime.Time), ' AND '),
+      else
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT <= ' + FilterDateString(dtp_LogsToDate.Date + GetAdsServerTime()), ' AND '),
+      endif,
+   endif,
+
+   if Val(cmb_LogsType.Value) > 0 then
+      cFilter := ConcatTrenner(cFilter, 'TYPE = ' + cmb_LogsType.Value, ' AND '),
+   endif,
+   if Val(cmb_LogsSchedulers.Value) > 0 then
+      cFilter := ConcatTrenner(cFilter, 'SCHEDUL_ID = ' + cmb_LogsSchedulers.Value, ' AND '),
+   endif,
+   if Val(cmb_LogsTasks.Value) > 0 then
+      cFilter := ConcatTrenner(cFilter, 'TASK_ID = ' + cmb_LogsTasks.Value, ' AND '),
+      bAutomaticSearchTemp := m_bAutomaticSearch,
+      startseq
+         m_bAutomaticSearch := False,
+         RefreshLogsControls(),
+      always
+         m_bAutomaticSearch := bAutomaticSearchTemp,
+      stopseq,
+   else
+      aTaskIDs := GetAdvantageFilterTaskIDs(cmb_LogsLocation.Value,
+                                            cmb_LogsDepartment.Value,
+                                            cmb_LogsUser.Value,
+                                            cmb_LogsProgram.Value,
+                                            cmb_LogsStartKind.Value),
+      if aTaskIDs[1] then
+         cFilter := AddTaskIdFilter(cFilter, aTaskIDs[2]),
+      endif,
+   endif,
+
+   if Empty(cFilter) then
+      m_oTSKPLLOG_ALL.Filtered := False,
+      m_oTSKPLLOG_ALL.Filter   := '',
+   else
+      m_oTSKPLLOG_ALL.Filtered := False,
+      m_oTSKPLLOG_ALL.Filter   := cFilter,
+      m_oTSKPLLOG_ALL.Filtered := True,
+   endif,
+   DbRefresh(m_oTSKPLLOG_ALL),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ChangeSchedulerHasToRun()
+| cMessagePart |
+   if not m_oMainTable:HASTORUN then
+      cMessagePart := 'zur Ausführung freigeben',
+   else
+      cMessagePart := 'sperren',
+   endif,
+   if Jn('Scheduler <' + Trim(m_oMainTable:NAME) + '> ' + cMessagePart + '?', False) then
+      MyEdit(m_oMainTable),
+      m_oMainTable:HASTORUN    := not m_oMainTable:HASTORUN,
+      m_bMainTableExplicitPost := True,
+      if DbPost(m_oMainTable) then
+         // Änderung des Ausführungszustands in Log schreiben
+         if m_oMainTable:HASTORUN then
+            TSKPL_WriteLog_Scheduler(m_oMainTable:ID, gl_TSKPL_EventCode_SchedulerEnabledHasToRun, 'Scheduler wurde freigegeben'),
+         else
+            TSKPL_WriteLog_Scheduler(m_oMainTable:ID, gl_TSKPL_EventCode_SchedulerDisabledHasToRun, 'Scheduler wurde gesperrt'),
+         endif,
+      else
+         DbCancel(m_oMainTable),
+         MessageDlg('Fehler beim Ändern des erwarteten Ausführungszustands des Schedulers <' + Trim(m_oMainTable:NAME) + '> !', mtError),
+      endif,
+   else
+      DbCancel(m_oMainTable),
+   endif,
+   RefreshControls(),
+end,
+
+//******************************************************************************
+function CalculateNextTenExecutions(dtNextStart, aCalcStartOptions)
+|
+   i, dtTaskStop, nExecType,
+   dtPrevExecution, aLastStart, aStartFirst
+|
+   lbl_TimePlanInfo.Visible          := true,
+   tm_NextExecutions.Enabled         := true,
+
+   nExecType := KVU_Get(aCalcStartOptions, 'execution.Type', 0),
+   if nExecType = gl_TSKPL_StartType_Once then
+      pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführung',
+   else
+      pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführungen',
+   endif,
+   lbl_TimePlanInfo.Caption := '',
+
+   dtTaskStop := dtp_EtStopsAt.Date,
+   // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+   // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
+   if (dtTaskStop = 0) then
+      dtTaskStop := GetDayEnd(GetAdsServerTime() + (365 * 12)),
+   else
+      dtTaskStop := GetDayEnd(dtTaskStop),
+   endif,
+
+   aLastStart := KVU_Get(aCalcStartOptions, 'execution.LastStart', ConvertDateTimeToArray(dtNextStart)),
+   KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
+   if Empty(KVU_Get(aCalcStartOptions, 'execution.StartFirst', nil)) then
+      KVU_Set(aCalcStartOptions, 'execution.StartFirst', dtp_EtStartsAt.Date),
+   endif,
+   dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
+   dtPrevExecution := dtNextStart,
+   aStartFirst     := KVU_Get(result, 'execution.StartFirst', dtNextStart),
+
+   for i := 1 to 10 do
+      if (dtNextStart < dtTaskStop) then
+         if (aStartFirst <= dtNextStart) then
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + FormatDateTime('dd.MM.yyyy HH:mm:ss', dtNextStart)
+                                        + ' ('+ ShortDayNames(DoW(dtNextStart)) + ')' + crlf,
+         else
+            // dtCalcNextStart ist wahrsheinlich 0
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
+            break,
+         endif,
+      else
+         if (aStartFirst <= dtNextStart) then
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Finale Ausführung wäre am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtPrevExecution),
+         else
+            // dtCalcNextStart ist wahrsheinlich 0
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
+         endif,
+         break,
+      endif,
+
+      if nExecType = gl_TSKPL_StartType_Once then
+         break,
+      endif,
+
+      dtPrevExecution := dtNextStart,
+      dtNextStart := dtNextStart + EncodeTime(0, 0, 0, 1),
+      aLastStart := ConvertDateTimeToArray(dtNextStart),
+      KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
+      KVU_SET(aCalcStartOptions, 'execution.CalcBase', dtNextStart),
+      dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
+   end,
+
+end,
+
+//******************************************************************************
+// Berechnet die "nächsten Ausführungen" (Informativ) für den User in der GUI
+// @Result: keine Rückgabe
+//******************************************************************************
+function RefreshNextTenExecutionsInfo()
+| aTempStartOptions, dtNextStart, dtTaskStop, dtNow |
+
+   dtNow      := GetAdsServerTime(),
+   dtTaskStop := dtp_EtStopsAt.Date,
+   // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+   // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
+   if (dtTaskStop = 0) then
+      dtTaskStop := dtNow + (365 * 12),
+   endif,
+
+   lbl_TimePlanInfo.Caption := '',
+   if (m_SqlTask.CbDataAvailable) then
+
+      // SetTimePlanSettings() -> Hier: Validiert nur, ob die Zeitplan-Einstellungen stimmig sind, ändert nichts, weil nicht in EditModes()
+      if SetTimePlanSettings() then
+
+         // nächsten Ausführungszeitpunkt für Task initial berechnen
+         aTempStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
+         KVU_Set(aTempStartOptions, 'execution.Type',       cmb_EtStartType.Value),
+         KVU_Set(aTempStartOptions, 'execution.RunUntil',   dtp_EtStopsAt.Date),
+
+         if dtTaskStop > dtNow then
+            case Val(cmb_EtStartType.Value)
+               of {gl_TSKPL_StartType_Periodic, gl_TSKPL_StartType_Weekly,
+                  gl_TSKPL_StartType_Daily, gl_TSKPL_StartType_Monthly} ::
+                  dtNextStart := m_oTSKPLTASK:START_NEXT,
+               otherwise
+                  dtNextStart := dtNow,
+            endcase,
+
+            CalculateNextTenExecutions(dtNextStart, aTempStartOptions),
+         else
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Letzte Ausführung war am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtTaskStop),
+         endif,
+
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Timer 'nächste Ausführungen' -> blendet die Liste der nächsten Ausführungen aus, sobald eine gewisse Zeit vergangen ist
+//******************************************************************************
+function tm_NextExecutionsTimer( Sender )
+   tm_NextExecutions.Enabled         := false,
+   lbl_TimePlanInfo.Visible          := false,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_TSKPLTASKDataChange( Sender )
+  grd_Tasks.Enabled := not(EditModes(m_oTSKPLTASK)),
+  grd_Schedulers.Enabled := not(EditModes(m_oTSKPLTASK)),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function pc_TaskChange( Sender )
+   if pc_Task.ActivePage = ts_TaskTimeSettings and m_oTSKPLTASK.CbDataAvailable then
+      SetTimePlanSettings(),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function SetTaskInEditMode( Sender )
+   if not m_bDoNotEditMode and not InsertMode(m_oTSKPLTASK) then
+      MyEdit(m_oTSKPLTASK),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_ToleranceUnitChange( Sender )
+   if empty(cmb_ToleranceUnit.Value) then
+      edt_ToleranceAmount.Text := '',
+   endif,
+   SetTaskInEditMode(Sender),
+end,
+
+//******************************************************************************
+// Event: Steuerung der Zeiten bei Zykliche-Zeitplan
+//******************************************************************************
+function chk_PeBlockInnerClick( Sender )
+   RefreshControls(),
+   SetTaskInEditMode(Sender),
+   if not chk_PeBlockInner.Checked then
+      cmb_PeBlockInner.ItemIndex := -1,
+      dtp_PeUp.Time := 0,
+      dtp_PeTo.Time := 0,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Steuerung der Rotaion bei Wöchentliche Zeitplan
+//******************************************************************************
+function chk_WeEveryClick( Sender )
+   SetTaskInEditMode(Sender),
+   RefreshControls(),
+   if not chk_WeEvery.Checked then
+      edt_WeWeeks.Text := '',
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_YeMonthsChange( Sender )
+   SetTaskInEditMode(Sender),
+   if cmb_YeMonths.Value > 0 then
+      cmb_YeDays.Enabled := True,
+      cmb_YeDays.Value   := 1,
+      FillCombo_YeDays(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Bei alle RadioButtons ist das selbe Event aufgerufen
+//******************************************************************************
+function RadioButton_OnClick( Sender )
+   SetTaskInEditMode(Sender),
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function t_SchedulerRefreshTimerTimer( Sender )
+   if EditModes(m_oTSKPLTASK) then
+      exit,
+   endif,
+
+   startseq
+      // Timer ausschalten bis alles erledigt ist
+      t_SchedulerRefreshTimer.Enabled := False,
+      if not EditModes(m_oMainTable) and not EditModes(m_oTSKPLTASK) then
+         DbRefresh(m_oMainTable),
+      endif,
+   always
+      // Timer neu Starten
+      t_SchedulerRefreshTimer.Enabled := True,
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function controls_LogsChange( Sender )
+   // Bei Änderung des "bis"-Datums die "bis"-Zeit - sofern diese nicht gesetzt
+   // ist - auf 23:59 Uhr setzen, damit alle Log-Einträge des gewählten Datums
+   // zu sehen sind.
+   if Sender = dtp_LogsToDate and dtp_LogsToTime.Time = 0 then
+      dtp_LogsToTime.Time := EncodeTime(23, 59, 59, 999),
+   endif,
+
+   if m_bAutomaticSearch then
+      LogsFilterExecute(),
+   endif,
+   RefreshLogsControls(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_LogsLocationChange( Sender )
+   if not Empty(cmb_LogsLocation.Value) then
+      cmb_LogsDepartment.Items := FillComboDepartment(Val(cmb_LogsLocation.Value)),
+   endif,
+   cmb_LogsDepartment.Value := -1,
+
+   if m_bAutomaticSearch then
+      LogsFilterExecute(),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_EtLocationChange( Sender )
+   if not Empty(cmb_EtLocation.Value) then
+      cmb_EtDepartment.Items := FillComboDepartment(Val(cmb_EtLocation.Value)),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_LogsSchedulersChange( Sender )
+   FillComboTasks_Logs(),
+   if m_bAutomaticSearch then
+      LogsFilterExecute(),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function chk_EtTaskActiveValidateValue( Sender )
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Bei StartKind Combobox Änderung
+//******************************************************************************
+function cmb_EtStartKindChange( Sender )
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Der Formular kann nicht geschlossen werden, wenn manche von den
+//        Tabelen in EditModes sich befinden
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := not EditModes(m_oMainTable) and
+                not EditModes(m_oTSKPLTASK),
+   if not bCanClose then
+      MessageDlg('Es sind nicht gespeicherte Änderungen vorhanden.' + CRLF +
+                 'Formular kann nicht geschlossen werden.'),
+   else
+      t_SchedulerRefreshTimer.Enabled := False,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Zeitplan Combobox Änderung
+//******************************************************************************
+function cmb_EtStartTypeChange( Sender )
+| oZeitplanPanel |
+   lbl_TimePlanInfo.Caption := '',
+
+   pnl_TimeplanDaily.Visible    := false,
+   pnl_TimeplanWeekly.Visible   := false,
+   pnl_TimeplanOnce.Visible     := false,
+   pnl_TimeplanMonthly.Visible  := false,
+   pnl_TimeplanAnnualy.Visible  := false,
+   pnl_TimeplanPeriodic.Visible := false,
+
+   case Val(cmb_EtStartType.Value)
+      of gl_TSKPL_StartType_Once     :: pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführung',
+      otherwise                         pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführungen',
+   endcase,
+
+   case Val(cmb_EtStartType.Value)
+      of gl_TSKPL_StartType_Once     :: oZeitplanPanel                 := pnl_TimeplanOnce,
+      of gl_TSKPL_StartType_Daily    :: oZeitplanPanel                 := pnl_TimeplanDaily,
+      of gl_TSKPL_StartType_Weekly   :: oZeitplanPanel                 := pnl_TimeplanWeekly,
+      of gl_TSKPL_StartType_Monthly  :: oZeitplanPanel                 := pnl_TimeplanMonthly,
+      of gl_TSKPL_StartType_Yearly   :: oZeitplanPanel                 := pnl_TimeplanAnnualy,
+      of gl_TSKPL_StartType_Periodic :: oZeitplanPanel                 := pnl_TimeplanPeriodic,
+      otherwise                         oZeitplanPanel := nil,
+   endcase,
+
+   if not empty(oZeitplanPanel) then
+      oZeitplanPanel.Left    := 15,
+      oZeitplanPanel.Top     := 195,
+      oZeitplanPanel.Caption := cmb_EtStartType.Text,
+      oZeitplanPanel.Visible := true,
+   endif,
+
+   if not m_bStartTypeManualChange then
+      if Val(cmb_EtStartType.Value) = gl_TSKPL_StartType_Once then
+         dtp_EtStartsAt.Date                   := nil,
+         dtp_EtStartsAt.ReadOnlyStateFromField := False,
+         dtp_EtStartsAt.ReadOnly               := True,
+      endif,
+      ActionsEnabled(),
+      RefreshControls(),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrolling des Schedulers
+//******************************************************************************
+function ds_TSKPLSCHEDScroll_Update( Sender )
+   if not EditModes(m_oMainTable) and not EditModes(m_oTSKPLTASK) then
+      m_SqlTask.Active := False,
+      m_SqlTask.SQL    := 'Select * From "TSKPLTASK.ADT" WHERE SCHEDUL_ID = ' + Str(m_SqlSchedule:ID),
+      m_SqlTask.Active := True,
+
+      m_oMainTable.CbFindKey({m_SqlSchedule:ID}),
+      SynchronizeBrowser(),
+      SynchronizeLogs(),
+      ActionsEnabled(),
+      RefreshControls(),
+      grd_Logs.GridOrder := 'ERSTELLT DESC',
+   else
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrolling des Tasks
+// @Result: null
+//******************************************************************************
+function ds_TSKPLTASKScroll_Update(Sender)
+
+   if not EditModes(m_oMainTable) and not EditModes(m_oTSKPLTASK) then
+      m_SqlTaskLog.Active := False,
+      m_SqlTaskLog.Sql := 'Select * From "TSKPLLOG.ADT" WHERE TASK_ID = ' + Str(m_SqlTask:ID) +
+                          ' AND SCHEDUL_ID = ' + Str(m_SqlTask:SCHEDUL_ID),
+      m_SqlTaskLog.Active := True,
+      m_oTSKPLTASK.CbSetRangeEx({m_SqlTask:SCHEDUL_ID,m_SqlTask:ID}),
+      LoadTaskTimePlanDefaults(),
+      SynchronizeLogs(),
+      ActionsEnabled(),
+      RefreshControls(),
+      RefreshNextTenExecutionsInfo(),
+      grd_Logs.GridOrder := 'ERSTELLT DESC',
+   else
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor dem Scheduler-Posten
+//******************************************************************************
+function MainTable_BeforePost( Sender )
+   if m_bMainTableExplicitPost then
+      m_bMainTableExplicitPost := False,
+   else
+      Abort(True),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Nach dem Scheduler-Posten
+//******************************************************************************
+function MainTable_AfterPost( Sender )
+  m_SqlSchedule.CbRefresh(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Task-Posten
+//******************************************************************************
+function TaskTable_BeforePost( Sender )
+   if m_bTaskTableExplicitPost then
+      m_bTaskTableExplicitPost := False,
+   else
+      Abort(True),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Nach dem Task-Posten
+//******************************************************************************
+function TaskTable_AfterPost( Sender )
+   m_SqlTask.CbRefresh(),
+end,
+
+
+//******************************************************************************
+// Event: Beim Wechsel des Status der Task-Tabelle wird in der Scheduler-Tabelle
+//        der NoRecordMove-Modus gesetzt.
+//******************************************************************************
+function ds_TSKPLTASK_StateChange( Sender )
+   ActionsEnabled(),
+
+   if m_oTSKPLTASK.CbState <> m_nTSKPLTASKState then
+      m_nTSKPLTASKState := m_oTSKPLTASK.CbState,
+      if EditModes(m_oTSKPLTASK) then
+         m_oMainTable.CbBeginNoRecordMove(),
+      else
+         m_oMainTable.CbEndNoRecordMove(),
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Nächste Ausführungen berechnen (Informativ)
+//******************************************************************************
+function A_CalcNextExecutionsExecute( Sender )
+  RefreshNextTenExecutionsInfo(),
+end,
+
+//******************************************************************************
+// Action: Task Refresh
+//******************************************************************************
+function A_TaskRefreshExecute( Sender )
+  m_SqlTask.CbRefresh(),
+end,
+
+//******************************************************************************
+// Action: Schedule Refresh
+//******************************************************************************
+function A_ScheduleRefreshExecute( Sender )
+  m_SqlSchedule.CbRefresh(),
+end,
+
+//******************************************************************************
+// Action: Task deaktivieren
+//******************************************************************************
+function A_TaskDeactivateExecute( Sender )
+| cTaskName |
+
+   cTaskName := TSKPLTASK_GetName(),
+   if Jn('Task <' + cTaskName + '> deaktivieren?', False) then
+      if not TSKPLTASK_SetTaskActive(False) then
+         MessageDlg('Fehler beim Deaktivieren von Task <' + cTaskName + '> !', mtError),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Task aktivieren
+//******************************************************************************
+function A_TaskActivateExecute( Sender )
+| cTaskName |
+
+   cTaskName := TSKPLTASK_GetName(),
+   if Jn('Task <' + cTaskName + '> aktivieren?', False) then
+      if not TSKPLTASK_SetTaskActive(True) then
+         MessageDlg('Fehler beim Aktivieren von Task <' + cTaskName + '> !', mtError),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SchedulerLockExecute( Sender )
+   ChangeSchedulerHasToRun(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SchedulerReleaseExecute( Sender )
+   ChangeSchedulerHasToRun(),
+end,
+
+//******************************************************************************
+// Task-Programm für die Filterung der Logs auswählen
+//******************************************************************************
+function A_ChooseFilterProgramExecute( Sender )
+| aItems |
+   aItems := {},
+   startseq
+      aItems := Call('Tools\Taskplaner\ProgramChooser\GUI', m_oDM, 0),
+      if ALen(aItems) >  0 then
+         cmb_LogsProgram.Items     := {Trim(aItems[2]) + Chr(9) + Str(aItems[1])},
+         cmb_LogsProgram.ItemIndex := 0,
+      else
+         cmb_LogsProgram.Items := {'' + Chr(9) + '-1'},
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Auswählen des Task-Programms!', getErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ResetFilterExecute( Sender )
+
+   dtp_LogsFromDate.Date    := Today() - 7,
+   dtp_LogsToDate.Date      := nil, // GetAdsServerTime(),
+   dtp_LogsFromTime.Time    := 0,
+   dtp_LogsToTime.Time      := nil, //GetAdsServerTime(),
+   cmb_LogsType.Value       := 0,
+   cmb_LogsSchedulers.Value := 0,
+   cmb_LogsTasks.Value      := 0,
+   cmb_LogsStartKind.Value  := m_cStartKind_None,
+   cmb_LogsLocation.Value   := -1,
+   cmb_LogsDepartment.Value := -1,
+   cmb_LogsUser.Value       := -1,
+   cmb_LogsProgram.Value    := -1,
+
+   RefreshLogsControls(),
+
+   m_oTSKPLLOG_ALL.CbRefresh(),
+   m_oTSKPLLOG_ALL.CbFirst(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_FilterExecuteExecute( Sender )
+   LogsFilterExecute(),
+   m_oTSKPLLOG_ALL.CbRefresh(),
+   m_oTSKPLLOG_ALL.CbFirst(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_TaskExecuteExecute( Sender )
+| aTaskDefinition |
+
+   aTaskDefinition := TSKPL_TaskDefinition_Create(
+      m_oTSKPLTASK:ID,
+      m_oTSKPLTASK:NAME,
+      m_oTSKPLTASK:INFO,
+      m_oTSKPLTASK:START_PROG,
+      m_oTSKPLTASK:START_KIND,
+      m_oTSKPLTASK:STARTPARAM,
+      m_oTSKPLTASK:START_TYPE,
+      m_oTSKPLTASK:START_OPT,
+      Today(),//m_oTSKPLTASK:STARTFIRST,
+      Today() + 1,//m_oTSKPLTASK:START_LAST,
+      m_oTSKPLTASK:START_NEXT,
+      m_oTSKPLTASK:ACTIVE,
+      m_oTSKPLTASK:LOCATION,
+      m_oTSKPLTASK:DEPARTMENT,
+      m_oTSKPLTASK:USER
+   ),
+   TSKPL_TaskDefinition_Execute(aTaskDefinition),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SchedulerEditExecute( Sender )
+   EditSchedulerName(),
+end,
+
+//******************************************************************************
+// Aktion: Scheduler ändern/löschen - Aufruf von dem Scheduler-Übersicht GUI
+//******************************************************************************
+function A_SchedulerDeleteExecute( Sender )
+| oDM, cSchedulerName, nSchedulerId |
+
+   startseq
+      cSchedulerName := Trim(m_oMainTable:NAME),
+      nSchedulerId   := m_oMainTable:ID,
+      if TSKPL_GetSchedulerStatus(m_oMainTable:ID) <> gl_TSKPL_SchedulerStatus_Running then
+         if m_oTSKPLTASK.CbDataAvailable then
+            m_oDM.CbTransaction_Begin(),
+            startseq
+               if GFU_ShowModal_CustomInfo(m_oMainTable, 'Tools\Taskplaner\DeleteSchedulerGUI', {m_oDM, m_oMainTable:ID}) then
+                  m_oDM.CbTransaction_Commit(),
+               endif,
+            always
+               m_oDM.CbTransaction_TryRollback(),
+            stopseq,
+         else
+            if Jn('Scheduler <' + cSchedulerName + '> löschen?', False) then
+               oDM := CreateObject('TBeDbGet'),
+               startseq
+                  oDM.CbTransaction_Begin(),
+                  startseq
+                     TSKPL_WriteLog_Scheduler_DM(oDM, nSchedulerId, gl_TSKPL_EventCode_SchedulerDeleted, 'Scheduler <' + cSchedulerName + '> wurde gelöscht.'),
+                     if DbDelete(m_oMainTable) then
+                        oDM.CbTransaction_Commit(),
+                     else
+                        MessageDlg('Scheduler <' + cSchedulerName + '> konnte nicht gelöscht werden!', mtError),
+                     endif,
+                  always
+                     if oDM.CbTransaction_TryRollback() then
+                        DbResetDM(oDM),
+                     endif,
+                  stopseq,
+               always
+                  DestroyObject(oDM),
+               stopseq,
+            endif,
+         endif,
+         m_oMainTable.CbRefresh(),
+         m_oTSKPLTASK.CbRefresh(),
+         SynchronizeBrowser(),
+         SynchronizeLogs(),
+         FillComboScheduler(),
+      else
+         MessageDlg('Scheduler <' + cSchedulerName + '> darf nicht gelöscht werden, weil sich dieser in Ausführung befindet!', mtError),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Löschen des Schedulers <' + cSchedulerName + '>', mtError),
+   stopseq,
+
+   m_SqlSchedule.CbRefresh(),
+end,
+
+//******************************************************************************
+// Aktion: Neuen Scheduler hinzufügen - Aufruf von dem Scheduler-Übersicht GUI
+//******************************************************************************
+function A_SchedulerNewExecute( Sender )
+   pc_Task.ActivePage = ts_TaskDefinition,  //immer zum ersten tab //Wenn MyFocusControl Gefixed wird, sollte es keine Probleme mehr geben
+   if m_oMainTable.CbAppend() then
+      m_oMainTable:STATUS   := gl_TSKPL_SchedulerStatus_Inactive,
+      m_oMainTable:HASTORUN := False,
+      SetSchedulerName(m_oMainTable, True),
+   else
+      MessageDlg('Anlegen eines neuen Scheduler nicht möglich!', mtError),
+   endif,
+   FillComboScheduler(),
+end,
+
+//******************************************************************************
+// Action: Task-Programm auswählen
+//******************************************************************************
+function A_ChooseProgramExecute( Sender )
+| nProg, bExplicitEdit |
+   bExplicitEdit := False,
+   nProg         := {},
+   startseq
+      // Wenn Tabelle noch nicht im Edit-Modus ...
+      bExplicitEdit := not EditModes(m_oTSKPLTASK),
+      if bExplicitEdit then
+         MyEdit(m_oTSKPLTASK),
+      endif,
+      nProg := Call(
+         'Tools\Taskplaner\ProgramChooser\GUI',
+         m_oDM, m_oTSKPLTASK:START_PROG
+      ),
+      if nProg[1] = 0 then
+         if bExplicitEdit then
+            DbCancel(m_oTSKPLTASK),
+         endif,
+      else
+         m_oTSKPLTASK:START_PROG := nProg[1],
+      endif,
+   onerror
+       MessageDlg('Auswähl des Program nicht möglich!', mtError),
+   stopseq
+end,
+
+//******************************************************************************
+// Aktion: Task löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+| oDM, cTaskName, aTaskID |
+
+   cTaskName := TSKPLTASK_GetName(),
+
+   // Task kann nur gelöscht werden, wenn entweder der Scheduler nicht
+   // ausgeführt wird oder der Task inaktiv ist
+   if TSKPL_GetSchedulerStatus(m_oMainTable:ID) = gl_TSKPL_SchedulerStatus_Inactive or not m_oTSKPLTASK:ACTIVE then
+      if Jn('Task <' + cTaskName + '> löschen?', False) then
+         oDM := CreateObject('TBeDbGet'),
+         startseq
+            oDM.CbTransaction_Begin(),
+            startseq
+               aTaskID := m_oTSKPLTASK:ID,
+               if DbDelete(m_oTSKPLTASK) then
+                  oDM.CbTransaction_Commit(),
+                  TSKPL_WriteLog_Internal(oDM, m_oMainTable:ID, aTaskID, gl_TSKPL_EventCode_TaskDeleted, 'Der Task <' + cTaskName + '> wurde gelöscht.'),
+               else
+                  MessageDlg('Task <' + cTaskName + '> konnte nicht gelöscht werden!', mtError),
+               endif,
+            always
+               if oDM.CbTransaction_TryRollback() then
+                  DbResetDM(oDM),
+               endif,
+            stopseq,
+         always
+            DestroyObject(oDM),
+         stopseq,
+         m_oTSKPLTASK.CbRefresh(),
+      endif,
+   else
+      MessageDlg('Task <' + cTaskName + '> darf nicht gelöscht werden, weil sich der Scheduler in Ausführung befindet!', mtError),
+   endif,
+
+   m_SqlTask.CbRefresh(),
+end,
+
+//******************************************************************************
+// Aktion: Änderung abbrechen bei Task
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', False) then
+      t_SchedulerRefreshTimer.Enabled := true,
+      m_SqlTaskLog.Active             := true,
+      grd_Logs.Enabled                := true,
+
+      m_oTSKPLTASK.CbCancel(),
+      RefreshControls(),
+      LoadTaskTimePlanDefaults(),
+   endif,
+end,
+
+//******************************************************************************
+// Aktion: Task speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+|
+   bInsertMode, bTaskTransfered, bAlgorithmError,
+   nTaskID, nNewSchedulerID, nCurrentSchedulerID,
+   aTempStartOptions, dtNextStart, dtTaskStop
+|
+
+   //***************************************************************************
+   // Scheduler-Namen anhand dessen ID ermitteln
+   // @Result: string - Scheduler-Name
+   //***************************************************************************
+   function GetSchedulerName(nSchedulerID:N)
+      Result := Lookup(waTSKPLSCHED, 'ID', {{nSchedulerID}}, 'Trim(NAME)', '<unbekannt>'),
+   end,
+
+   if TSKPL_StartType_IsValid(m_oTSKPLTASK:START_TYPE) then
+      m_bTaskTableExplicitPost := True,
+      nTaskID                  := m_oTSKPLTASK:ID,
+      nNewSchedulerID          := cmb_EtScheduler.Value,
+      nCurrentSchedulerID      := m_oTSKPLTASK:SCHEDUL_ID,
+      bTaskTransfered          := nCurrentSchedulerID <> nNewSchedulerID,
+      bInsertMode              := InsertMode(m_oTSKPLTASK),
+
+      // Setzt noetige Einstellungen in m_'TSKPLTASK:START_OPT' und schreibt den den ersten Startzeitpunkt in 'TSKPLTASK:STARTFIRST'
+      if SetTimePlanSettings(true) then
+         startseq
+            // nächsten Ausführungszeitpunkt für Task initial berechnen
+            aTempStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
+            KVU_Set(aTempStartOptions, 'execution.Type',       cmb_EtStartType.Value),
+
+            dtTaskStop := dtp_EtStopsAt.Date,
+            // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+            // "Jetzt + 1 Jahr" ermitteln
+            if (dtTaskStop = 0) then
+               dtTaskStop := GetAdsServerTime() + 365,
+            endif,
+            dtTaskStop := GetDayEnd(dtTaskStop),
+
+            if dtTaskStop > GetAdsServerTime() then
+               KVU_Set(aTempStartOptions, 'execution.RunUntil', dtp_EtStopsAt.Date),
+               dtNextStart                       := TSKPL_CalculateStart(aTempStartOptions, GetAdsServerTime()),
+               bAlgorithmError                   := not((ValType(dtNextStart) = 'N') or (ValType(dtNextStart) = 'D')),
+
+               CalculateNextTenExecutions(dtNextStart, aTempStartOptions),
+            else
+               KVU_Set(aTempStartOptions, 'execution.RunUntil', 0),
+               dtNextStart := 0,
+            endif,
+
+            if bAlgorithmError then
+               m_oTSKPLTASK:START_NEXT := nil,
+            else
+               m_oTSKPLTASK:START_NEXT := dtNextStart,
+            endif,
+
+            // Änderungen speichern
+            if DbPost(m_oTSKPLTASK) then
+               if bInsertMode then
+                  m_oMainTable.CbFindKey({nNewSchedulerID}),
+                  m_SqlSchedule.CbGoTo(m_oMainTable.CbRecNo),
+                  m_oTSKPLTASK.CbCancelRange(),
+                  m_oTSKPLTASK.CbFindKey({nNewSchedulerID,nTaskID}),
+                  m_SqlTask.CbGoTo(m_oTSKPLTASK.CbRecNo),
+               endif,
+
+               m_oTSKPLTASK.CbRefresh(),
+               m_SqlTaskLog.Active := true,
+               grd_Logs.Enabled    := true,
+
+               if bAlgorithmError then
+                  TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_AlgorithmError,
+                                    'Algorithmus ist fehlerhaft -> Nächster Start undefiniert!'),
+               endif,
+
+               // Log-Einträge schreiben:
+               //  * bei Insert-Mode                    -> gl_TSKPL_EventCode_TaskCreated
+               //  * bei Übertrag auf anderen Scheduler -> gl_TSKPL_EventCode_TaskTransferred
+               //  * bei Task Aktivierung/Deaktivierung -> gl_TSKPL_EventCode_TaskActivated
+               if bInsertMode then
+                  TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskCreated,
+                                    'Task wurde erfolgreich erstellt'),
+               else
+                  if bTaskTransfered then
+                     TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskTransferred,
+                        'Task wurde von Scheduler <' + GetSchedulerName(nCurrentSchedulerID) +
+                        '> nach Scheduler <' + GetSchedulerName(nNewSchedulerID) + '> übertragen'),
+                  endif,
+               endif,
+            else
+               MessageDlg('Task <' + TSKPLTASK_GetName() + '> konnte nicht gespeichert werden!', mtError),
+            endif,
+            t_SchedulerRefreshTimer.Enabled := true,
+         onerror
+            GU_ShowStdErrorMessage('Fehler beim Speichern des Tasks', GetErrorObj()),
+         stopseq,
+      endif,
+   else
+      MessageDlg('Ungültiger Ausführplan <' + Str(m_oTSKPLTASK:START_TYPE) + '> für Task <' + TSKPLTASK_GetName() + '>!', mtError),
+      MyFocusControl(oForm, cmb_EtStartType),
+   endif,
+end,
+//******************************************************************************
+// Aktion: Neue Task erstellen
+//******************************************************************************
+function A_CreateTaskExecute( Sender )
+   m_bStartTypeManualChange := True,
+   startseq
+      if DbAppend(m_oTSKPLTASK) then
+         t_SchedulerRefreshTimer.Enabled := False,
+         m_SqlTaskLog.Active             := false,
+         grd_Logs.Enabled                := false,
+
+         m_oTSKPLTASK:ACTIVE     := False,
+         m_oTSKPLTASK:SCHEDUL_ID := m_oMainTable:ID,
+         m_oTSKPLTASK:STATUS     := gl_TSKPL_TaskStatus_Ready,
+         m_oTSKPLTASK:START_PROG := 0,
+         m_oTSKPLTASK:START_TYPE := 0,
+         m_oTSKPLTASK:START_KIND := gl_TSKPL_StartKind_BeInstance,
+         m_oTSKPLTASK:LOCATION   := -1,
+         m_oTSKPLTASK:DEPARTMENT := -1,
+      else
+         MessageDlg('Fehler beim erstellen eines neuen Tasks!', mtError),
+      endif,
+   always
+      m_bStartTypeManualChange := False,
+      RefreshControls(),
+      pc_Task.ActivePage = ts_TaskDefinition,  //immer zum ersten tab //Wenn MyFocusControl Gefixed wird, sollte es keine Probleme mehr geben
+      MyFocusControl(oForm, edt_EtTaskName),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+
+   m_bMainTableExplicitPost := False,
+   m_bTaskTableExplicitPost := False,
+
+   // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
+   // muss
+   m_oDM := CreateObject('TBeDbGet', 'DM_TSKPL_SchedulerOverview', oForm),
+
+   // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
+   m_oMainTable            := DbGetTable(m_oDM, waTSKPLSCHED),
+   m_oMainTable.IndexName  := 'ID',
+   GU_LinkTableToGUI(m_oMainTable, ds_TSKPLSCHED, grd_Schedulers, '@TSKPLSHBR', True),
+
+   m_SqlSchedule           := CreateObject('TBeAdsQuery', '', m_oDM),
+   m_SqlSchedule.AliasName := 'TSKPLSCHED',
+   m_SqlSchedule.SQL       := 'SELECT * FROM "TSKPLSCHED.ADT"',
+   m_SqlSchedule.Active    := True,
+   GU_LinkTableToGUI(m_SqlSchedule, ds_SqlSchedule, grd_Schedulers, '@TSKPLSHBR', True),
+
+   // Task-Tabelle
+   m_oTSKPLTASK           := DbGetTable(m_oDM, waTSKPLTASK),
+   m_oTSKPLTASK.IndexName := 'SCHEDUL_ID_ID',
+   GU_LinkTableToGUI(m_oTSKPLTASK, ds_TSKPLTASK, grd_Tasks, '@TSKPLNTBR', True),
+   m_nTSKPLTASKState      := DbState(m_oTSKPLTASK),
+
+   m_SqlTask := CreateObject('TBeAdsQuery', '', m_oDM),
+   m_SqlTask.AliasName := 'TSKPLTASK',
+   m_SqlTask.SQL := 'Select * From "TSKPLTASK.ADT" WHERE SCHEDUL_ID = ' + Str(m_SqlSchedule:ID),
+   m_SqlTask.Active := True,
+   GU_LinkTableToGUI(m_SqlTask, ds_SqlTask, grd_Tasks, '@TSKPLNTBR', True),
+
+   // Log-Tabelle (wird immer auf aktuellen Task gefiltert)
+   m_oTSKPLLOG           := DbGetTable(m_oDM, waTSKPLLOG),
+   m_oTSKPLLOG.IndexName := 'TASK_ID_ID_DESC',
+   DbFilter('TASK_ID > 0', m_oTSKPLLOG),
+   GU_LinkTableToGUI(m_oTSKPLLOG, ds_TSKPLLOG, grd_Logs, m_cBrowserID_Logs, True),
+
+   m_SqlTaskLog              := CreateObject('TBeAdsQuery', '', m_oDM),
+   m_SqlTaskLog.AliasName    := 'TSKPLALOG',
+   m_SqlTaskLog.SQL          := 'Select * From "TSKPLLOG.ADT" WHERE TASK_ID = ' + Str(m_SqlTask:ID),
+   m_SqlTaskLog.Active      := True,
+   GU_LinkTableToGUI(m_SqlTaskLog, ds_SqlTaskLog, grd_Logs, m_cBrowserID_Logs, True),
+
+   // Log-Tabelle (zeigt alle Log-Einträge)
+   m_oTSKPLLOG_ALL           := DbGetTable(m_oDM, waTSKPLLOG, 'TSKPLLOG_ALL'),
+   m_oTSKPLLOG_ALL.IndexName := 'ERSTELLT_DESC',
+   GU_LinkTableToGUI(m_oTSKPLLOG_ALL, ds_ALLLOGS, grd_AllLogs, m_cBrowserID_Logs, True),
+
+   // Tabellen- und DataSource-Events zuweisen
+   AssignEvent(ds_SqlSchedule, 'OnScroll_Update', 'ds_TSKPLSCHEDScroll_Update'),
+   AssignEvent(ds_SqlTask,     'OnScroll_Update', 'ds_TSKPLTASKScroll_Update'),
+   AssignEvent(ds_TSKPLTASK,   'OnStateChange',   'ds_TSKPLTASK_StateChange'),
+   AssignEvent(m_oMainTable,   'BeforePost',      'MainTable_BeforePost'),
+   AssignEvent(m_oTSKPLTASK,   'BeforePost',      'TaskTable_BeforePost'),
+   AssignEvent(m_oMainTable,   'AfterPost',       'MainTable_AfterPost'),
+   AssignEvent(m_oTSKPLTASK,   'AfterPost',       'TaskTable_AfterPost'),
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CalcNextExecutions      := FindObject(oForm, "A_CalcNextExecutions"),
+   A_Cancel                  := FindObject(oForm, "A_Cancel"),
+   A_ChooseFilterProgram     := FindObject(oForm, "A_ChooseFilterProgram"),
+   A_ChooseProgram           := FindObject(oForm, "A_ChooseProgram"),
+   A_CreateTask              := FindObject(oForm, "A_CreateTask"),
+   A_Delete                  := FindObject(oForm, "A_Delete"),
+   A_FilterExecute           := FindObject(oForm, "A_FilterExecute"),
+   A_HelpContent             := FindObject(oForm, "A_HelpContent"),
+   A_ResetFilter             := FindObject(oForm, "A_ResetFilter"),
+   A_Save                    := FindObject(oForm, "A_Save"),
+   A_SchedulerDelete         := FindObject(oForm, "A_SchedulerDelete"),
+   A_SchedulerEdit           := FindObject(oForm, "A_SchedulerEdit"),
+   A_ScheduleRefresh         := FindObject(oForm, "A_ScheduleRefresh"),
+   A_SchedulerHasToRun       := FindObject(oForm, "A_SchedulerHasToRun"),
+   A_SchedulerLock           := FindObject(oForm, "A_SchedulerLock"),
+   A_SchedulerNew            := FindObject(oForm, "A_SchedulerNew"),
+   A_SchedulerRelease        := FindObject(oForm, "A_SchedulerRelease"),
+   A_Settings                := FindObject(oForm, "A_Settings"),
+   A_TaskActivate            := FindObject(oForm, "A_TaskActivate"),
+   A_TaskDeactivate          := FindObject(oForm, "A_TaskDeactivate"),
+   A_TaskExecute             := FindObject(oForm, "A_TaskExecute"),
+   A_TaskRefresh             := FindObject(oForm, "A_TaskRefresh"),
+   Actions                   := FindObject(oForm, "Actions"),
+   bar_Scheduler             := FindObject(oForm, "bar_Scheduler"),
+   bar_TaskEdit              := FindObject(oForm, "bar_TaskEdit"),
+   bardock_logs              := FindObject(oForm, "bardock_logs"),
+   bardock_Scheduler         := FindObject(oForm, "bardock_Scheduler"),
+   bardock_Task              := FindObject(oForm, "bardock_Task"),
+   barmgr_Main               := FindObject(oForm, "barmgr_Main"),
+   barmgr_MainBar1           := FindObject(oForm, "barmgr_MainBar1"),
+   bbtn_Cancel               := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_CreateTask           := FindObject(oForm, "bbtn_CreateTask"),
+   bbtn_Delete               := FindObject(oForm, "bbtn_Delete"),
+   bbtn_LogsResetFilter      := FindObject(oForm, "bbtn_LogsResetFilter"),
+   bbtn_LogsShowFilter       := FindObject(oForm, "bbtn_LogsShowFilter"),
+   bbtn_ManuelExecute        := FindObject(oForm, "bbtn_ManuelExecute"),
+   bbtn_Save                 := FindObject(oForm, "bbtn_Save"),
+   bbtn_SchedulerDelete      := FindObject(oForm, "bbtn_SchedulerDelete"),
+   bbtn_SchedulerEdit        := FindObject(oForm, "bbtn_SchedulerEdit"),
+   bbtn_SchedulerNew         := FindObject(oForm, "bbtn_SchedulerNew"),
+   bbtn_TaskActivate         := FindObject(oForm, "bbtn_TaskActivate"),
+   bbtn_TaskDeactivate       := FindObject(oForm, "bbtn_TaskDeactivate"),
+   BeBarButton1              := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2              := FindObject(oForm, "BeBarButton2"),
+   beBtn_CalcNextExecutions  := FindObject(oForm, "beBtn_CalcNextExecutions"),
+   BeSplitter1               := FindObject(oForm, "BeSplitter1"),
+   BeSplitter2               := FindObject(oForm, "BeSplitter2"),
+   btn_EtChooseProgram       := FindObject(oForm, "btn_EtChooseProgram"),
+   btn_LogsChooseProgram     := FindObject(oForm, "btn_LogsChooseProgram"),
+   btn_RefreshSchedule       := FindObject(oForm, "btn_RefreshSchedule"),
+   btn_RefreshTask           := FindObject(oForm, "btn_RefreshTask"),
+   chk_PeBlockInner          := FindObject(oForm, "chk_PeBlockInner"),
+   chk_WeEvery               := FindObject(oForm, "chk_WeEvery"),
+   chkl_DaDays               := FindObject(oForm, "chkl_DaDays"),
+   chkl_PeDays               := FindObject(oForm, "chkl_PeDays"),
+   cmb_EtDepartment          := FindObject(oForm, "cmb_EtDepartment"),
+   cmb_EtLocation            := FindObject(oForm, "cmb_EtLocation"),
+   cmb_EtProgramm            := FindObject(oForm, "cmb_EtProgramm"),
+   cmb_EtScheduler           := FindObject(oForm, "cmb_EtScheduler"),
+   cmb_EtStartKind           := FindObject(oForm, "cmb_EtStartKind"),
+   cmb_EtStartType           := FindObject(oForm, "cmb_EtStartType"),
+   cmb_EtUser                := FindObject(oForm, "cmb_EtUser"),
+   cmb_LogsDepartment        := FindObject(oForm, "cmb_LogsDepartment"),
+   cmb_LogsLocation          := FindObject(oForm, "cmb_LogsLocation"),
+   cmb_LogsProgram           := FindObject(oForm, "cmb_LogsProgram"),
+   cmb_LogsSchedulers        := FindObject(oForm, "cmb_LogsSchedulers"),
+   cmb_LogsStartKind         := FindObject(oForm, "cmb_LogsStartKind"),
+   cmb_LogsTasks             := FindObject(oForm, "cmb_LogsTasks"),
+   cmb_LogsType              := FindObject(oForm, "cmb_LogsType"),
+   cmb_LogsUser              := FindObject(oForm, "cmb_LogsUser"),
+   cmb_MoWhen                := FindObject(oForm, "cmb_MoWhen"),
+   cmb_PeBlockInner          := FindObject(oForm, "cmb_PeBlockInner"),
+   cmb_PeTime                := FindObject(oForm, "cmb_PeTime"),
+   cmb_ToleranceUnit         := FindObject(oForm, "cmb_ToleranceUnit"),
+   cmb_WeDays                := FindObject(oForm, "cmb_WeDays"),
+   cmb_YeDays                := FindObject(oForm, "cmb_YeDays"),
+   cmb_YeMonths              := FindObject(oForm, "cmb_YeMonths"),
+   ds_ALLLOGS                := FindObject(oForm, "ds_ALLLOGS"),
+   ds_SqlSchedule            := FindObject(oForm, "ds_SqlSchedule"),
+   ds_SqlTask                := FindObject(oForm, "ds_SqlTask"),
+   ds_SqlTaskLog             := FindObject(oForm, "ds_SqlTaskLog"),
+   ds_TSKPLLOG               := FindObject(oForm, "ds_TSKPLLOG"),
+   ds_TSKPLSCHED             := FindObject(oForm, "ds_TSKPLSCHED"),
+   ds_TSKPLTASK              := FindObject(oForm, "ds_TSKPLTASK"),
+   dtp_DaAt                  := FindObject(oForm, "dtp_DaAt"),
+   dtp_EtStartsAt            := FindObject(oForm, "dtp_EtStartsAt"),
+   dtp_EtStopsAt             := FindObject(oForm, "dtp_EtStopsAt"),
+   dtp_LogsFromDate          := FindObject(oForm, "dtp_LogsFromDate"),
+   dtp_LogsFromTime          := FindObject(oForm, "dtp_LogsFromTime"),
+   dtp_LogsToDate            := FindObject(oForm, "dtp_LogsToDate"),
+   dtp_LogsToTime            := FindObject(oForm, "dtp_LogsToTime"),
+   dtp_MoUm                  := FindObject(oForm, "dtp_MoUm"),
+   dtp_OnAm                  := FindObject(oForm, "dtp_OnAm"),
+   dtp_OnUm                  := FindObject(oForm, "dtp_OnUm"),
+   dtp_PeTo                  := FindObject(oForm, "dtp_PeTo"),
+   dtp_PeUp                  := FindObject(oForm, "dtp_PeUp"),
+   dtp_StartPeriodic         := FindObject(oForm, "dtp_StartPeriodic"),
+   dtp_WeUm                  := FindObject(oForm, "dtp_WeUm"),
+   dtp_YeAt                  := FindObject(oForm, "dtp_YeAt"),
+   edt_EtInformation         := FindObject(oForm, "edt_EtInformation"),
+   edt_EtParameter           := FindObject(oForm, "edt_EtParameter"),
+   edt_EtTaskName            := FindObject(oForm, "edt_EtTaskName"),
+   edt_MaxDuration           := FindObject(oForm, "edt_MaxDuration"),
+   edt_MoSpecialDay          := FindObject(oForm, "edt_MoSpecialDay"),
+   edt_PeEvery               := FindObject(oForm, "edt_PeEvery"),
+   edt_ToleranceAmount       := FindObject(oForm, "edt_ToleranceAmount"),
+   edt_WeWeeks               := FindObject(oForm, "edt_WeWeeks"),
+   grd_AllLogs               := FindObject(oForm, "grd_AllLogs"),
+   grd_Logs                  := FindObject(oForm, "grd_Logs"),
+   grd_Schedulers            := FindObject(oForm, "grd_Schedulers"),
+   grd_Tasks                 := FindObject(oForm, "grd_Tasks"),
+   ipnl_AllLogs              := FindObject(oForm, "ipnl_AllLogs"),
+   ipnl_Scheduler            := FindObject(oForm, "ipnl_Scheduler"),
+   ipnl_Task                 := FindObject(oForm, "ipnl_Task"),
+   lbl_DaAm                  := FindObject(oForm, "lbl_DaAm"),
+   lbl_DaAt                  := FindObject(oForm, "lbl_DaAt"),
+   lbl_EndDate               := FindObject(oForm, "lbl_EndDate"),
+   lbl_EtDepartment          := FindObject(oForm, "lbl_EtDepartment"),
+   lbl_EtInformation         := FindObject(oForm, "lbl_EtInformation"),
+   lbl_EtLocation            := FindObject(oForm, "lbl_EtLocation"),
+   lbl_EtParameter           := FindObject(oForm, "lbl_EtParameter"),
+   lbl_EtProgramm            := FindObject(oForm, "lbl_EtProgramm"),
+   lbl_EtScheduler           := FindObject(oForm, "lbl_EtScheduler"),
+   lbl_EtStartKind           := FindObject(oForm, "lbl_EtStartKind"),
+   lbl_EtTaskName            := FindObject(oForm, "lbl_EtTaskName"),
+   lbl_EtTimetable           := FindObject(oForm, "lbl_EtTimetable"),
+   lbl_EtUser                := FindObject(oForm, "lbl_EtUser"),
+   lbl_LogsDepartment        := FindObject(oForm, "lbl_LogsDepartment"),
+   lbl_LogsFrom              := FindObject(oForm, "lbl_LogsFrom"),
+   lbl_logsLocation          := FindObject(oForm, "lbl_logsLocation"),
+   lbl_LogsProgramm          := FindObject(oForm, "lbl_LogsProgramm"),
+   lbl_LogsSchedulers        := FindObject(oForm, "lbl_LogsSchedulers"),
+   lbl_LogsStartKind         := FindObject(oForm, "lbl_LogsStartKind"),
+   lbl_LogsTasks             := FindObject(oForm, "lbl_LogsTasks"),
+   lbl_LogsTo                := FindObject(oForm, "lbl_LogsTo"),
+   lbl_LogsType              := FindObject(oForm, "lbl_LogsType"),
+   lbl_LogsUser              := FindObject(oForm, "lbl_LogsUser"),
+   lbl_MaxDuration           := FindObject(oForm, "lbl_MaxDuration"),
+   lbl_MoAm                  := FindObject(oForm, "lbl_MoAm"),
+   lbl_MoDays                := FindObject(oForm, "lbl_MoDays"),
+   lbl_MoUm                  := FindObject(oForm, "lbl_MoUm"),
+   lbl_OnAm                  := FindObject(oForm, "lbl_OnAm"),
+   lbl_OnUm                  := FindObject(oForm, "lbl_OnUm"),
+   lbl_PeAm                  := FindObject(oForm, "lbl_PeAm"),
+   lbl_PeEvery               := FindObject(oForm, "lbl_PeEvery"),
+   lbl_PeriodStartTime       := FindObject(oForm, "lbl_PeriodStartTime"),
+   lbl_StartDate             := FindObject(oForm, "lbl_StartDate"),
+   lbl_StartKindDescription  := FindObject(oForm, "lbl_StartKindDescription"),
+   lbl_TimePlanInfo          := FindObject(oForm, "lbl_TimePlanInfo"),
+   lbl_Tolerance             := FindObject(oForm, "lbl_Tolerance"),
+   lbl_WeAm                  := FindObject(oForm, "lbl_WeAm"),
+   lbl_WeUm                  := FindObject(oForm, "lbl_WeUm"),
+   lbl_WeWeeks               := FindObject(oForm, "lbl_WeWeeks"),
+   lbl_YeAt                  := FindObject(oForm, "lbl_YeAt"),
+   lbl_YeOnDay               := FindObject(oForm, "lbl_YeOnDay"),
+   lbl_YeOnMonth             := FindObject(oForm, "lbl_YeOnMonth"),
+   pc_Main                   := FindObject(oForm, "pc_Main"),
+   pc_Task                   := FindObject(oForm, "pc_Task"),
+   pnl_4                     := FindObject(oForm, "pnl_4"),
+   pnl_5                     := FindObject(oForm, "pnl_5"),
+   pnl_6                     := FindObject(oForm, "pnl_6"),
+   pnl_ContainerTimePlanInfo := FindObject(oForm, "pnl_ContainerTimePlanInfo"),
+   pnl_LogsFilterCenter      := FindObject(oForm, "pnl_LogsFilterCenter"),
+   pnl_LogsFilterLeft        := FindObject(oForm, "pnl_LogsFilterLeft"),
+   pnl_LogsFilterRight       := FindObject(oForm, "pnl_LogsFilterRight"),
+   pnl_LogsTop               := FindObject(oForm, "pnl_LogsTop"),
+   pnl_Main                  := FindObject(oForm, "pnl_Main"),
+   pnl_Scheduler             := FindObject(oForm, "pnl_Scheduler"),
+   pnl_TaskDetails           := FindObject(oForm, "pnl_TaskDetails"),
+   pnl_TaskDetailsLeft       := FindObject(oForm, "pnl_TaskDetailsLeft"),
+   pnl_Tasks                 := FindObject(oForm, "pnl_Tasks"),
+   pnl_TasksGrid             := FindObject(oForm, "pnl_TasksGrid"),
+   pnl_TimePlanAnnualy       := FindObject(oForm, "pnl_TimePlanAnnualy"),
+   pnl_TimePlanBasics        := FindObject(oForm, "pnl_TimePlanBasics"),
+   pnl_TimePlanDaily         := FindObject(oForm, "pnl_TimePlanDaily"),
+   pnl_TimePlanMonthly       := FindObject(oForm, "pnl_TimePlanMonthly"),
+   pnl_TimePlanOnce          := FindObject(oForm, "pnl_TimePlanOnce"),
+   pnl_TimePlanPeriodic      := FindObject(oForm, "pnl_TimePlanPeriodic"),
+   pnl_TimePlanWeekly        := FindObject(oForm, "pnl_TimePlanWeekly"),
+   pnl_Top                   := FindObject(oForm, "pnl_Top"),
+   rbtn_MoErsten             := FindObject(oForm, "rbtn_MoErsten"),
+   rbtn_MoLetzten            := FindObject(oForm, "rbtn_MoLetzten"),
+   rbtn_MoSpecial            := FindObject(oForm, "rbtn_MoSpecial"),
+   t_SchedulerRefreshTimer   := FindObject(oForm, "t_SchedulerRefreshTimer"),
+   tm_NextExecutions         := FindObject(oForm, "tm_NextExecutions"),
+   ts_LogsAll                := FindObject(oForm, "ts_LogsAll"),
+   ts_LogsTask               := FindObject(oForm, "ts_LogsTask"),
+   ts_Overview               := FindObject(oForm, "ts_Overview"),
+   ts_TaskDefinition         := FindObject(oForm, "ts_TaskDefinition"),
+   ts_TaskTimeSettings       := FindObject(oForm, "ts_TaskTimeSettings"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   beBtn_CalcNextExecutions.Caption  := '',
+   beBtn_CalcNextExecutions.ShowHint := true,
+
+   pnl_ContainerTimePlanInfo.Top   := 195,
+   tm_NextExecutions.Interval      := 30000, // So lange wird die Info "nächste Ausführungen" angezeigt und danach ausgeblendet
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ActionsEnabled(),
+   ShowGUI(),
+   if Empty(m_oOwner) then
+      DestroyObject(oForm),
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

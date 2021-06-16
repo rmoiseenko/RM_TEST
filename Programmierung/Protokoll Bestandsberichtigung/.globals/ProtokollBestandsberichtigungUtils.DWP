@@ -1,0 +1,384 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Funktionen für Bestandsberichtigungs-Protokollierung
+//##############################################################################
+//##############################################################################
+
+|
+   gl_BBPU_ModusMMTabelle:_N:=7004,                    // ID der Merkmalstabelle "Modus Bestandsberichtigung"
+   gl_BBPU_IndiOnlineHelp_SQLWhere:_C:='MEMO_ID = -1', // Aufruf-Filter für die Individuelle Online-Hilfe aus der GUI heraus
+   gl_BBPU_EventAfterLogging_Active:_L:=false,         // Custom Codeblock-Event "nach Protokollierung" ausführen
+   gl_BBPU_WriteDetailTable:_L:=true                   // Detail-Tabelle KDNBBPD schreiben (diese Tabelle wurde für eine einfache Auswertung per SQL hinzugefügt)
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet aus dem Werte-Array der Fertigmeldung die Gesamtwerte des
+// Lagerzugangs in den Summen "Wert", "Zuschläge" und "Gesamtwert"
+//
+// @Result: {Summe Wert, Summe Zuschläge, Summe Gesamtwert}
+//******************************************************************************
+function _BBPU_CalcFertigmeldungsWertSumme(cWertArray)
+| aWertArray, aCurZeile, i, nSummeWert, nSummeZuschlaege, nSummeGesamtWert |
+
+   nSummeWert       := 0,
+   nSummeZuschlaege := 0,
+   nSummeGesamtWert := 0,
+
+   aWertArray := StrToArr(cWertArray),
+   for i := 1 to ALen(aWertArray) do
+      aCurZeile := aWertArray[i],
+      // gelöschte Dab240-Positionen ignorieren, bei diesen wird ein leeren Array-Element (NIL) übergeben
+      if ALen(aCurZeile) > 0 then
+         nSummeWert       += aCurZeile[3],
+         nSummeZuschlaege += aCurZeile[4],
+         nSummeGesamtWert += aCurZeile[3] + aCurZeile[4],
+      endif,
+   next,
+
+   Result := {nSummeWert, nSummeZuschlaege, nSummeGesamtWert},
+end,
+
+//******************************************************************************
+// Funktion erzeugt ein Array aller Dab240-Datensätze eines Fertigungsauftrags
+//   (inkl. Kopfsatz)
+// @Result: Array of Dab240-Records
+//******************************************************************************
+function _BBPU_D240_AllRecordsAsArray(oDab240, cBestPosNr)
+| aAllRecords, aCurDab240Record |
+
+   aAllRecords := {},
+
+   D240_SetScopeOnOrder(oDab240, cBestPosNr, true),
+   while not Eof(oDab240) do
+      aCurDab240Record := oDab240.RecAsArray,
+      ReDim(aAllRecords, ALen(aAllRecords) + 1),
+      aAllRecords[ALen(aAllRecords)] := aCurDab240Record,
+      DbSkip(1, oDab240),
+   end,
+   DbScope(, oDab240),
+
+   // eine Länge von 0 muss ein Fehler sein, denn mind. der Kopf-Satz + eine
+   // Position sind immer vorhanden
+   if ALen(aAllRecords) = 0 then
+      SetError('BBPU_D240_AllRecordsAsArray() -> ALen(aAllRecords) = 0'),
+   endif,
+
+   Result := aAllRecords,
+end,
+
+//******************************************************************************
+// Erstellt einen oder mehrere Datensätze der Detailtabelle von KDNBBP
+// @Result: null
+//******************************************************************************
+function _BBPU_Fill_KDNBBPD(oDM, oKDNBBP)
+   | oKDNBBPD, i, j,
+     aWertA,     // KDNBBP:WERT_A
+     aRecN, aRecV,      // KDNBBP:D240_REC_N, KDNBBP:D240_REC_V
+     aRecNi,aRecVi,     // eine Arrayelement von aRecN, gleich eine Auftragsposition
+     cRS,        // R_S Rüsten, Stücken oder was anderes
+     nSollTotal, // SOLL aus dem Null-Datensatz
+     nSoll, nSollFix, // Soll aus den Auftragspositionen
+     nSollStandard    // nach Standardlogik berechnetes Soll einer Position
+     |
+   oKDNBBPD        := MyGetTable(oDM, waKDNBBPD,),
+   aWertA          := StrToArr(oKDNBBP:WERT_A), writeln(aWertA),
+   aRecN           := StrToArr(oKDNBBP:D240_REC_N), writeln(aRecN),
+   aRecNi          := aRecN[1], writeln(aRecNi),
+   aRecV           := StrToArr(oKDNBBP:D240_REC_V), writeln(aRecV),
+   aRecVi          := aRecV[1], writeln(aRecVi),
+   nSollTotal      := KVU_Get(aRecNi, 'SOLL', 0), writeln(nSollTotal),
+   j := 1,
+   for i := 1 to aLen(aWertA) do
+      if not empty(aWertA[i]) then
+         MyAppend(oKDNBBPD),
+         oKDNBBPD:KDNBBP_ID  := oKDNBBP:ID,
+         oKDNBBPD:ARTNR1     := oKDNBBP:ARTNR,
+         oKDNBBPD:ARTNR_E    := aWerta[i,2],
+         oKDNBBPD:B_POS_LFD  := aWerta[i,1],
+         oKDNBBPD:EK_WERT    := aWerta[i,3],
+         oKDNBBPD:EK_ZUSCH   := aWerta[i,4],
+         aRecNi := aRecN[j],
+         aRecVi := aRecV[j],
+         while aWerta[i,1] <> KVU_Get(aRecNi, 'B_POS_LFD', '') do
+            j++,
+            aRecNi := aRecN[j],
+            aRecVi := aRecV[j],
+         end,
+         oKDNBBPD:IST_AUSGEB := KVU_Get(aRecNi, 'IST_AUSGEB', 0) - KVU_Get(aRecVi, 'IST_AUSGEB', 0),
+         oKDNBBPD:IST_EKP    := KVU_Get(aRecNi, 'EKP_E', 0),
+         oKDNBBPD:IST_PE     := KVU_Get(aRecNi, 'PE_E', 0),
+         cRS      := KVU_Get(aRecNi, 'R_S', ''),
+         nSoll    := KVU_Get(aRecNi, 'SOLL', 0),
+         nSollFix := KVU_Get(aRecNi, 'FIX_SOLL', 0),
+         case alltrim(cRS)
+               // Rüstposition: SOLL = Soll aus der Position
+            of 'R' :: nSollStandard := nSoll,
+               // Stückposition: SOLL = Soll aus der Position * Gesamtsoll
+            of 'S' :: nSollStandard := nSoll * nSollTotal,
+               // Baugruppen / Kaufteile   wie Stückposition plus FIX-Menge
+            of '' :: nSollStandard := nSollFix + (nSoll * nSollTotal),
+         endcase,
+         oKDNBBPD:SOLL_MENGE := nSollStandard,
+         oKDNBBPD:SOLL_EKP   := KVU_Get(aRecNi, 'EKP', 0),
+         oKDNBBPD:SOLL_PE    := KVU_Get(aRecNi, 'PE', 0),
+         MyPost(oKDNBBPD),
+       endif,
+   next,
+end,
+
+//******************************************************************************
+// Funktion legt einen neuen Protokoll-Datensatz in der KdnBBP an und
+//    dokumentiert so eine Bestands-Berichtigung
+//******************************************************************************
+//
+// Infos aus Event-Kommentar "vor Bestands-Berichtigung"
+//      nMode     : Modus zeigt an, aus welchem Programm der Aufruf erfolgt
+//                  1 = Re.Kontrolle Pos.Berichtigung
+//                  2 = Re.Kontrolle Freigabe
+//                        1+ 2: Rechnungskontrolle, jeweils nachdem DAB020 (WE-Zugangs-Satz) / DAB235 (Rechnungs-Kontroll-Satz) korrigiert wurden,
+//                              aber bevor die Wertberichtigung auf den Bestand  (Dab010:DURSCHEK) umgelegt wird (also innerhalb der Transaktion):
+//                              - Bei der Berichtigung einer Position (Menge / Preis / Preiseinheit / Umrechungsfaktor / Zusatzkosten etc.)
+//                              - Beim Rechnungsabschluss (Korrektur aller Positionen, falls Nebenkosten vorhanden)
+//                  3 = Produktions-Verbrauch anonym
+//                  4 = Inventur-Korrektur manuell
+//                  5 = Inventur-Korrektur Stapel
+//                  6 = Produktion Teil-Fertigmeldung
+//                  7 = Produktion End-Fertigmeldung
+//      oDataMod  : Datenmodul oder AdsConnecton
+//      cArtNo    : Artikel-Nummer
+//      cDispoNo  : Dispo-Nummer (Dab020)
+//      nQuantity : Buchungs-Menge +/- (in Modus 1 und 2 = Differenzmenge)
+//      uValue    : Modus 1-2: gesamter Umlagebetrag der Korrektur (+/-)
+//                  Modus 3-5: gesamter Buchungswert (+/-)
+//                  Modus 6-7: Array mit detaillierten Informationen über die Zusammensetzung des
+//                             Gesamt-Zugangswertes der Fertigmeldung. Struktur des Arrays:
+//                             { {B_POS_LFD, ARTNR_E, Gesamtwert (ohne Zuschlag), Zuschlagswert}, {...}, ... }
+//      nCorrValue: umlagefähiger Betrag (nur verfügbar in Modus 1 und 2)
+//      Rückgabe  : nCorrValue (Vorzeichen darf nicht umgekehrt werden, absoluter Wert darf nicht erhöht werden)
+//      HINWEIS   : Transaktion aktiv!
+//
+// @Result: integer - ID des neu angelegten Protokoll-Datensatzes
+//******************************************************************************
+function _BBPU_CreateLogEntry(nMode, oDataMod, cArtNo, cDispoNo, nQuantity, uValue, nCorrValue)
+|
+   nExecutionDuration,
+   oKdnBBP,
+   oDab020_InTrans,
+   oDab010_InTrans, oDab010_OutOfTrans,
+   oDab235_InTrans, oDab235_OutOfTrans,
+   aFertigmeldungSummenWerte,
+   oDab240_InTrans, oDab240_OutOfTrans,
+   cFA_BestPosNr, aD240_Records_Before, aD240_Records_After
+|
+
+   //***************************************************************************
+   // Custom Codeblock-Event "nach Protokollierung" ausführen
+   // @Result: null
+   //***************************************************************************
+   function TriggerCustomCbEvent_AfterLogging(nMode:N, oDM:O, oKdnBBP:O)
+   | cCallbackProgramName |
+
+      cCallbackProgramName := 'Protokoll Bestandsberichtigung\Events\nach Protokollierung',
+      SetErrorIf(Lookup(waDabPRG, 'BEZ', {{cCallbackProgramName}}, 'PROGNR', -1) = -1,
+                 'Das Callback <' + cCallbackProgramName + '> existiert nicht!'),
+      Call(cCallbackProgramName, nMode, oDM, oKdnBBP),
+   end,
+
+   //***************************************************************************
+   // Kostenstelle zu allen Records in einem Records-Array hinzufügen
+   // Die Kostenstelle wird unter dem pseudo Feldnamen "CALC_KOSTENST" in den
+   // Records hinzugefügt.
+   //
+   // @Result: null
+   //***************************************************************************
+   function AddCostCenterToRecords(aRecords:R, nCostCenter:N)
+   | i, aItem |
+
+      for i := 1 to ALen(aRecords) do
+         aItem := aRecords[i],
+         startseq
+            // HINWEIS:
+            //  Offensichtlich liegt hier ein Codeblock-Fehler vor, weil bei
+            //   AAdd(aItem, {'<DUMMY>', 'CALC_KOSTENST', nCostCenter})
+            //  immer das erste Element des hinzuzufügenden Arrays verworfen
+            //  wird.
+            //  Deshalb wird '<DUMMY>' als erstes Element angegeben, damit das
+            //  Array {'CALC_KOSTENST', nCostCenter} hinzugefügt wird.
+            AAdd(aItem, {'<DUMMY>', 'CALC_KOSTENST', nCostCenter}),
+         always
+            aRecords[i] := aItem,
+         stopseq,
+      next,
+   end,
+
+
+   nExecutionDuration := GetExTimer(),
+
+   Result             := -1,
+   oDab010_OutOfTrans := nil,
+   oDab235_OutOfTrans := nil,
+   oDab240_OutOfTrans := nil,
+
+   startseq
+      oKdnBBP := DbGetTable(oDataMod, waKdnBBP),                                // TODO: testen, ob immer in Transaktion geschrieben wird
+
+      oDab020_InTrans := DbGetTable(oDataMod, waDab020, 'CALC020_KDNBBP'),      // Tabelle innerhalb der Transaktion
+      oDab020_InTrans.IndexName := 'DAB021', // ARTNR,DISPONR
+      MySeek({cArtNo, cDispoNo}, oDab020_InTrans),
+
+      oDab010_InTrans := DbGetTable(oDataMod, waDab010, 'CALC010_KDNBBP'),      // Tabelle innerhalb der Transaktion
+      oDab010_InTrans.IndexName := 'DAB011',
+      MySeek({cArtNo}, oDab010_InTrans),
+
+      oDab010_OutOfTrans := BeOpen(waDab010, 'DAB011'),                         // Tabelle außerhalb der Transaktion
+      MySeek({cArtNo}, oDab010_OutOfTrans),
+      DbRefresh(oDab010_OutOfTrans), // TODO: ggf. nicht notwendig?
+
+      case nMode
+         of {1, 2} ::
+            oDab235_InTrans := DbGetTable(oDataMod, waDab235),                  // Tabelle innerhalb der Transaktion. (Diese Dab235 ist positioniert beim Aufruf des Events)
+            // zur Sicherheit checken, dass der Dab235 korrekt positioniert war
+            if AllTrim(oDab235_InTrans:DISPONR) <> AllTrim(cDispoNo) then
+               SetError('AllTrim(oDab235_InTrans:DISPONR) <> AllTrim(cDispoNo)'),
+            endif,
+
+            oDab235_OutOfTrans := BeOpen(waDab235, 'DAB237'), // Index = 'ID'   // Tabelle außerhalb der Transaktion
+            MySeek({oDab235_InTrans:ID}, oDab235_OutOfTrans),
+      endcase,
+
+      MyAppend(oKdnBBP),
+
+      oKdnBBP:STANDORT         := oDab020_InTrans:STANDORT,                     // Standort
+      oKdnBBP:ABTEILUNG        := oDab020_InTrans:ABTEILUNG,                    // Abteilung
+
+      oKdnBBP:MODUS            := nMode,                                        // Modus / Geschäftsprozess
+      oKdnBBP:ARTNR            := cArtNo,                                       // Artikel-Nr.
+      oKdnBBP:DISPONR          := cDispoNo,                                     // Dab020 DispoNr.
+      oKdnBBP:DAB020_ID        := oDab020_InTrans:ID,                           // Dab020 ID
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:LIEFNR     := oDab235_InTrans:LIEFNR,                       // Lieferanten-Nr.
+         of {3, 6, 7} ::
+            oKdnBBP:LIEFNR     := -1,                                           // Lieferanten-Nr. (-1) bei Produktion
+      endcase,
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:LF_NUMMER  := oDab235_InTrans:LF_NUMMER,                    // Lieferschein-Nr.
+      endcase,
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:BESTPOSNR  := oDab235_InTrans:BESTPOSNR,                    // Bestell-Positions-Nr.
+         of {6, 7} ::
+            oKdnBBP:BESTPOSNR  := Left(oDab020_InTrans:B_POS_LFD, 8),           // Fertigungs-Auftrags-Nr. (inkl. Split-Nr.)
+      endcase,
+
+      oKdnBBP:MENGE            := nQuantity,                                    // Menge Bestands-Änderung
+      case nMode
+         of {1, 2, 3, 4, 5} ::
+            oKdnBBP:WERT       := uValue,                                       // Wert Bestands-Änderung
+            oKdnBBP:WERT_A     := '',
+         of {6, 7} ::
+            aFertigmeldungSummenWerte := BBPU_CalcFertigmeldungsWertSumme(ArrToStr(uValue)),
+            oKdnBBP:WERT       := aFertigmeldungSummenWerte[3],
+            oKdnBBP:WERT_A     := ArrToStr(uValue),                             // Wert Bestands-Änderung, Array
+      endcase,
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:WERT_ULF   := nCorrValue,                                   // Wert, umlagefähig       (nur in Modus 1+2)
+            oKdnBBP:WERT_NULF  := uValue - nCorrValue,                          // Wert, nicht umlagefähig (nur in Modus 1+2)
+      endcase,
+
+      oKdnBBP:LAGER_V          := Lager('', oDab010_OutOfTrans, true),          // verfügbarer Lagerbestand (inkl. Reservierungen) vor Berichtigung
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:LAGER_N    := 0, // TODO                                    // verfügbarer Lagerbestand (inkl. Reservierungen) nach Berichtigung
+         of {3, 4, 5, 6, 7} ::
+            oKdnBBP:LAGER_N    := Lager('', oDab010_InTrans, true),             // verfügbarer Lagerbestand (inkl. Reservierungen) nach Berichtigung
+      endcase,
+
+      oKdnBBP:LAGERM           := oDab010_OutOfTrans:LAGERM,                    // Bestand in Vermietung
+      oKdnBBP:LAGERP           := oDab010_OutOfTrans:LAGERP,                    // Bestand in Produktion        // TODO: ändert sich der ggf. bei -2 Prozessen bei Re.Kontrolle?
+      oKdnBBP:LAGERV           := oDab010_OutOfTrans:LAGERV,                    // Bestand in Versand           // TODO: ändert sich der ggf. bei -2 Prozessen bei Re.Kontrolle?
+      oKdnBBP:LAGERW           := oDab010_OutOfTrans:LAGERW,                    // Bestand in Wareneingang
+
+      oKdnBBP:D010_LTEKV       := oDab010_OutOfTrans:LTZTEKP,                   // Ltzt.      EKP (vor Berichtigung)
+      oKdnBBP:D010_DSEKV       := oDab010_OutOfTrans:DURCHSCHEK,                // Durchschn. EKP (vor Berichtigung)
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:D010_LTEKN := 0, // TODO                                    // Ltzt.      EKP (nach Berichtigung)
+            oKdnBBP:D010_DSEKN := 0, // TODO                                    // Durchschn. EKP (nach Berichtigung)
+            oKdnBBP:KOSTENST   := oDab235_InTrans:KOSTENST,                     // Kostenstelle (aus Einkaufs-Position)
+         of {3, 4, 5, 6, 7} ::
+            oKdnBBP:D010_LTEKN := oDab010_InTrans:LTZTEKP,                      // Ltzt.      EKP (nach Berichtigung)
+            oKdnBBP:D010_DSEKN := oDab010_InTrans:DURCHSCHEK,                   // Durchschn. EKP (nach Berichtigung)
+            oKdnBBP:KOSTENST   := oDab020_InTrans:KOSTENST,                     // Kostenstelle (aus Bewegungs-Satz)
+      endcase,
+
+      case nMode
+         of {1, 2} ::
+            oKdnBBP:D235_REC_V := ArrToStr(oDab235_OutOfTrans.RecAsArray),      // Dab235-Record (vorher)
+            oKdnBBP:D235_REC_N := ArrToStr(oDab235_InTrans.RecAsArray),         // Dab235-Record (nachher)
+      endcase,
+
+      case nMode
+         of {6, 7} ::
+
+            oDab240_OutOfTrans := BeOpen(waDab240, 'DAB241'),                       // Tabelle außerhalb der Transaktion
+            oDab240_InTrans    := DbGetTable(oDataMod, waDab240, 'CALC240_KDNBBP'), // Tabelle innerhalb der Transaktion
+            oDab240_InTrans.IndexName := 'DAB241',
+            cFA_BestPosNr      := Left(oDab020_InTrans:B_POS_LFD, 8),
+
+            aD240_Records_Before := BBPU_D240_AllRecordsAsArray(oDab240_OutOfTrans, cFA_BestPosNr), // Dab240-Records (vorher)
+            aD240_Records_After  := BBPU_D240_AllRecordsAsArray(oDab240_InTrans,    cFA_BestPosNr), // Dab240-Records (nachher)
+            // Kostenstelle in die Dab240-Records aufnehmen
+            AddCostCenterToRecords(aD240_Records_Before, oDab020_InTrans:KOSTENST),
+
+            oKdnBBP:D240_REC_V := ArrToStr(aD240_Records_Before),
+            oKdnBBP:D240_REC_N := ArrToStr(aD240_Records_After),
+      endcase,
+
+      oKdnBBP:MAN_VERBU        := false, // TODO                                // manuelle Verbuchung erforderlich?
+
+      nExecutionDuration       := GetExTimer() - nExecutionDuration,
+      oKdnBBP:PROT_TIME        := Trunc(nExecutionDuration * 1000),             // Dauer der Protokoll-Erstellung in mSec
+
+      MyPost(oKdnBBP),
+      if nMode = 6 or nMode = 7 then
+         if gl_BBPU_WriteDetailTable then
+            BBPU_Fill_KDNBBPD(oDataMod, oKdnBBP),
+         endif,
+      endif,
+      if gl_BBPU_EventAfterLogging_Active then
+         TriggerCustomCbEvent_AfterLogging(nMode, oDataMod, oKdnBBP),           // Custom Codeblock-Event "nach Protokollierung" ausführen
+      endif,
+
+      Result := oKdnBBP:ID,
+
+   always
+      if not empty(oDab010_OutOfTrans) then
+         BeClose(oDab010_OutOfTrans),
+      endif,
+      if not empty(oDab235_OutOfTrans) then
+         BeClose(oDab235_OutOfTrans),
+      endif,
+      if not empty(oDab240_OutOfTrans) then
+         BeClose(oDab240_OutOfTrans),
+      endif,
+
+      if EditModes(oKdnBBP) then
+         DbCancel(oKdnBBP),
+      endif,
+   stopseq,
+end,
+

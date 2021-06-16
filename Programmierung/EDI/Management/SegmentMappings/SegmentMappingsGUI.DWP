@@ -1,0 +1,660 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zum Verwalten von sog. "Segment-Mappings".
+//   Ein Segment-Mapping ist die Zuordnung eines EDIFACT-Datenelementbezeichners
+//   (z.B. C002) zu der Position des Datenelements im entsprechenden Segment.
+//
+//   Beispiel:
+//     Gegeben ist folgendes Segment: BGM+351+DES587441+9'
+//     Es soll der Wert für das Datenelement "1004" ausgelesen werden.
+//     Die Spezifikation für das Segment "BGM":
+//       C002       DOCUMENT/MESSAGE NAME                              C            Ebene 1 - Position 1
+//          1001    Document/message name, coded                       C   an1..3     Ebene 2 - Position 1
+//          1131    Code list qualifier                                C   an1..3     Ebene 2 - Position 2
+//          3055    Code list responsible agency, coded                C   an1..3     Ebene 2 - Position 3
+//          1000    Document/message name                              C   an1..35    Ebene 2 - Position 4
+//       1004       DOCUMENT/MESSAGE NUMBER                            C   an1..35  Ebene 1 - Position 2
+//       1225       MESSAGE FUNCTION, CODED                            C   an1..3   Ebene 1 - Position 3
+//       4343       RESPONSE TYPE, CODED                               C   an1..3   Ebene 1 - Position 4
+//     Es ist zu sehen, dass das Datenelement "1004" in der ersten Ebene an der
+//     zweiten Position steht. Das bedeutet, dass der Wert für das
+//     Datenelement "1004" im Segment "BGM" nach dem zweiten Datenelementtrenner
+//     extrahiert werden muss.
+//     Diese Information wird in einem Segment-Mapping Datensatz gespeichert,
+//     um beim Traversieren des abstract syntax tree (AST) über die
+//     Datenelementbezeichner die gewünschten Werte aus den jeweiligen Segmenten
+//     extrahieren zu können.
+//
+// Master-Tabelle
+//   In diesem Docking wird keine Master-Table genutzt. Das Docking wird in der
+//   EDI-Verwaltungs-Maske angedockt.
+//
+// Synchronisierung von Tabellen:
+//   Dieses Programm stützt sich sehr stark auf die durch diese Toobox bereit-
+//   gestellte API und Business-Logik (BL).
+//
+//   Aus diesem Grund sind Anzeige und Verarbeitung von Daten aus der Datenbank
+//   strikt getrennt in zwei separaten Datenmodulen:
+//     * m_oDM:     Nur für Business-Logik (BL)
+//     * m_oDM_GUI: Nur für GUI
+//
+//   Auch die Variablennamen für die Tabellen, welche in den jeweiligen
+//   Datenmodulen enthalten sind, sind entsprechend gekennzeichnet:
+//     * m_o<Tabellenalias>_BL:  Nur für Business-Logik (BL)
+//     * m_o<Tabellenalias>_GUI: Nur für GUI
+//
+//   Damit die Anziege konsistent bleibt, müssen nach jedem API-Call - welcher
+//    die Manipulation von Daten in Tabellen involviert - die entsprechenden
+//   GUI-Tabellen aktulisiert und ggf. neu positioniert werden.
+//
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MANAGEMENT_SEGMENT_MAPPINGS',
+//        self,
+//        'EDI\Management\SegmentMappings\SegmentMappingsGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI,
+   m_oEDISEGM_BL,
+   m_oEDISEGM_GUI,
+
+   m_cPositionSaveId, m_cFormId, m_cBrowserId, m_bOnLoad,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_DeleteSegmentStructure, A_New,
+   A_NewFromSegmentDefinitionString, A_NewFromWeb, A_Save, al_Actions, bar_Top,
+   bardock_Top, barmngr_Main, bbtn_Cancel, bbtn_Delete, bbtn_DeleteGroup,
+   bbtn_DeleteSegmentStructure, bbtn_New, bbtn_NewFromSegmentDefinitionString,
+   bbtn_NewFromWeb, bbtn_NewGroup, bbtn_Save, bipnl_Title,
+   bvl_Details_Row1_Col1, bvl_Details_Row2_Col1, cmb_Standard, ds_EDISEGM,
+   edt_DataElement, edt_Description, edt_FilterSegment, edt_PositionLevel1,
+   edt_PositionsLevel2, edt_Segment, edt_SubElement, grd_EDISEGM,
+   lbl_DataElement, lbl_Details_Row1_Col1_Title, lbl_Details_Row2_Col1,
+   lbl_Positions, lbl_Segment, lbl_Standard, lbl_SubElement, pnl_Description,
+   pnl_Details, pnl_Details_Row1, pnl_Details_Row1_Col1, pnl_Details_Row2,
+   pnl_EDISEGM, pnl_Filter, pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDISEGMPO',
+m_cFormId         := '@EDISEGMUI',
+m_cBrowserId      := '@EDISEGM',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsInEditMode, bIsDataAvailable |
+
+   bIsInEditMode    := EditModes(m_oEDISEGM_GUI),
+   bIsDataAvailable := m_oEDISEGM_GUI.CbDataAvailable,
+
+   grd_EDISEGM.Enabled := not bIsInEditMode,
+
+   // Enabled-Zustand der Actions steuern
+   bbtn_NewGroup.Enabled            := not bIsInEditMode,
+   A_New.Enabled                    := not bIsInEditMode,
+   A_NewFromWeb.Visible             := not bIsInEditMode and mBeSupervisor,
+   A_NewFromSegmentDefinitionString.Enabled := not bIsInEditMode,
+   bbtn_DeleteGroup.Enabled         := bIsDataAvailable and not bIsInEditMode,
+   A_Delete.Enabled                 := bIsDataAvailable and not bIsInEditMode,
+   A_DeleteSegmentStructure.Enabled := bIsDataAvailable and not bIsInEditMode,
+   A_Save.Enabled                   := bIsInEditMode,
+   A_Cancel.Enabled                 := bIsInEditMode,
+
+   // ReadOnly-Zustand der Controls steuern
+   InputControl_SetReadOnlyState(cmb_Standard,        not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_Segment,         not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_DataElement,     not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_SubElement,      not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_PositionLevel1,  not bIsDataAvailable),
+   InputControl_SetReadOnlyState(edt_PositionsLevel2, not bIsDataAvailable),
+
+   // Farbe bei RichEdits manuell je nach ReadOnly-Zustand setzen
+   edt_Description.Color := iif(bIsDataAvailable, edt_Description.DefaultColor, edt_Description.ReadOnlyColor),
+   InputControl_SetReadOnlyState(edt_Description,     not bIsDataAvailable),
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_SegmentMappingsGUI',     oForm), // Datenmodul ausschließlich für Business-Logik
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_SegmentMappingsGUI_GUI', oForm), // Datenmodul ausschließlich für GUI
+
+   // Business-Logik: Tabellen
+   m_oEDISEGM_BL := MyGetTable(m_oDM, waEDISEGM, ''),
+   m_oEDISEGM_BL.CbIndexName   := 'ID',
+   m_oEDISEGM_BL.WriteProtocol := true,
+
+   // GUI: Tabellen
+   m_oEDISEGM_GUI := DbGetTable(m_oDM_GUI, waEDISEGM),
+
+   m_oEDISEGM_GUI.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDISEGM_GUI, ds_EDISEGM, grd_EDISEGM, m_cBrowserId, true),
+
+   // Events zuweisen
+   AssignEvent(ds_EDISEGM, 'OnScroll_Update', 'ds_EDISEGMScroll_Update'),
+end,
+
+//******************************************************************************
+// Synchronisieren der GUI-Tabelle EDISEGM auf Basis der übergebenen ID.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizeEDISEGM_GUI_FromExternalSource(nId:N)
+   m_oEDISEGM_GUI.CbFindKey({nId}),
+end,
+
+//******************************************************************************
+// Diese Funktion aktualisiert nacheinander alle GUI-Tabellen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function RefreshAllGUITables()
+   m_oEDISEGM_GUI.CbRefresh(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Nach Umschalten des Supervisor-Modus
+//******************************************************************************
+function FormExAfterAdminModeChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Eingegebener Text filtert die Segmenttabelle
+//******************************************************************************
+function edt_FilterSegmentChange( Sender )
+| cSearchText, cFilter |
+   cSearchText := edt_FilterSegment.Text,
+
+   if !empty(cSearchText) then
+      cFilter := "ELEMENT = '" + Upper(cSearchtext) +
+                 "*' OR SUB_ELEM ='" + cSearchtext +
+                 "*' OR SEGMENT ='" + Upper(cSearchtext) + "*'",
+      m_oEDISEGM_GUI.CBSetFilter(cFilter),
+   else
+      m_oEDISEGM_GUI.CBSetFilter(""),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDISEGM
+//******************************************************************************
+function ds_EDISEGMScroll_Update()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := true,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDISEGM_GUI.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   m_oEDISEGM_GUI.CbPost(),
+end,
+
+//******************************************************************************
+// Action: Komplette Segment-Struktur inklusive dazugehörigen Mappings löschen
+//******************************************************************************
+function A_DeleteSegmentStructureExecute( Sender )
+|
+   aDialogResult, cSegmentIdentifier, nStandard,
+   cSegmentIdentifier_Preset, nStandard_Preset, aDialogSettings
+|
+
+   cSegmentIdentifier_Preset := m_oEDISEGM_GUI:SEGMENT,
+   nStandard_Preset          := m_oEDISEGM_GUI:STANDARD,
+
+   aDialogSettings := {},
+   KVU_SET(aDialogSettings, "nAnzahlZeilenDescription", 3),
+   aDialogResult := DU_InputDialog(
+      'Segment-Struktur löschen',
+      'Bitte geben Sie den gewünschten EDI-Standard (Directory) sowie den Segmentbezeichner an, für die die zugehörigen Mappings gelöscht werden sollen.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('STANDART', 'Standard',          gl_DU_InputControlType_Attribute, '',     gl_EDI_MMTID_MessageStandard, nStandard_Preset,          true),
+         DU_InputDialog_CreateInputControlDefinition('SEGMENT',  'Segmentbezeichner', gl_DU_InputControlType_String,    '!!!',  0,                            cSegmentIdentifier_Preset, true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOk, 7, true),
+         mrCancel
+      },
+      aDialogSettings
+   ),
+
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+      cSegmentIdentifier := DU_InputDialogResult_GetInputValue(aDialogResult, 'SEGMENT'),
+      nStandard          := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'STANDART')),
+
+      startseq
+         m_oDM.CbTransaction_Begin(),
+         startseq
+            m_oEDISEGM_BL.CbIndexName := 'INDEX_UNIQUE',
+            m_oEDISEGM_BL.CbSetRangeEx({nStandard, cSegmentIdentifier}),
+            startseq
+               while m_oEDISEGM_BL.CbDataAvailable do
+                  m_oEDISEGM_BL.CbDelete(),
+               end,
+            always
+               m_oEDISEGM_BL.CbCancelRange(),
+            stopseq,
+            m_oDM.CbTransaction_Commit(),
+         always
+            if m_oDM.CbTransaction_TryRollback() then
+               DbResetDM(m_oDM),
+            endif,
+         stopseq,
+         RefreshAllGUITables(),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Löschen der Segment-Struktur <' + cSegmentIdentifier + '>', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Segment-Mapping löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   if Jn('Segment-Mapping löschen?', false) then
+      m_oEDISEGM_GUI.CbDelete(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Segment-Struktur aus dem Internet herunterladen
+//******************************************************************************
+function A_NewFromWebExecute( Sender )
+| aDialogResult, cSegmentIdentifier, nStandard, aDialogSettings |
+
+   aDialogSettings := {},
+   KVU_SET(aDialogSettings, "nAnzahlZeilenDescription", 3),
+   aDialogResult := DU_InputDialog(
+      'Segment-Struktur herunterladen',
+      'Bitte geben Sie den gewünschten EDI-Standard (Directory) sowie den Segmentbezeichner an, für die die passende Segment-Struktur heruntergeladen werden soll',
+      {
+         DU_InputDialog_CreateInputControlDefinition('STANDART', 'Standard',          gl_DU_InputControlType_Attribute, '',     gl_EDI_MMTID_MessageStandard, '', true),
+         DU_InputDialog_CreateInputControlDefinition('SEGMENT',  'Segmentbezeichner', gl_DU_InputControlType_String,    '!!!',  0,                            '', true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOk, 7, true),
+         mrCancel
+      },
+      aDialogSettings
+   ),
+
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+      cSegmentIdentifier := DU_InputDialogResult_GetInputValue(aDialogResult, 'SEGMENT'),
+      nStandard          := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'STANDART')),
+
+      startseq
+         m_oDM.CbTransaction_Begin(),
+         startseq
+            Call('EDI\Tools\SegmentImporter', m_oDM, m_oEDISEGM_BL, nStandard, cSegmentIdentifier),
+            m_oDM.CbTransaction_Commit(),
+            SynchronizeEDISEGM_GUI_FromExternalSource(m_oEDISEGM_BL:ID),
+         always
+            if m_oDM.CbTransaction_TryRollback() then
+               DbResetDM(m_oDM),
+            endif,
+         stopseq,
+         RefreshAllGUITables(),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Herunterladen der Segment-Struktur für Segment <' + cSegmentIdentifier + '>', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Segment-Struktur anhand eines Segment-Definitions-Strings erstellen
+//******************************************************************************
+function A_NewFromSegmentDefinitionStringExecute( Sender )
+| aDialogResult, cSegmentIdentifier, nStandard, cSegmentDefinition, aDialogSettings |
+
+   aDialogSettings := {},
+   KVU_SET(aDialogSettings, "nAnzahlZeilenDescription", 4),
+   aDialogResult := DU_InputDialog(
+      'Segment-Struktur herunterladen',
+      'Bitte geben Sie den gewünschten EDI-Standard (Directory), Segmentbezeichner sowie die Segmentdefinition an, für die die Segment-Struktur angelegt werden soll.' + crlf + 'Die Segment-Definition kann von der Website www.edifactory.de abgerufen werden.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('STANDART',   'Standard',          gl_DU_InputControlType_Attribute, '',     gl_EDI_MMTID_MessageStandard, gl_EDI_MessageStandard_EDIFACTD96A, true),
+         DU_InputDialog_CreateInputControlDefinition('SEGMENT',    'Segmentbezeichner', gl_DU_InputControlType_String,    '!!!',  0,                            '', true),
+         DU_InputDialog_CreateInputControlDefinition('DEFINITION', 'Segmentdefinition', gl_DU_InputControlType_Memo,      '',     0,                            '', true)
+      },
+      {
+         DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOk, 7, true),
+         mrCancel
+      },
+      aDialogSettings
+   ),
+
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+      cSegmentIdentifier := DU_InputDialogResult_GetInputValue(aDialogResult, 'SEGMENT'),
+      nStandard          := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'STANDART')),
+      cSegmentDefinition := DU_InputDialogResult_GetInputValue(aDialogResult, 'DEFINITION'),
+
+      startseq
+         m_oDM.CbTransaction_Begin(),
+         startseq
+            Call('EDI\Tools\SegmentImporter', m_oDM, m_oEDISEGM_BL, nStandard, cSegmentIdentifier, RTFToText(cSegmentDefinition)),
+            m_oDM.CbTransaction_Commit(),
+            SynchronizeEDISEGM_GUI_FromExternalSource(m_oEDISEGM_BL:ID),
+         always
+            if m_oDM.CbTransaction_TryRollback() then
+               DbResetDM(m_oDM),
+            endif,
+         stopseq,
+         RefreshAllGUITables(),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Anlegen der Segment-Struktur für Segment <' + cSegmentIdentifier + '>', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Neues Segment-Mapping anlegen
+//******************************************************************************
+function A_NewExecute( Sender )
+|
+   aDialogResult,
+   nMessageStandard, cSegmentIdentifier, cDataElementIdentifier,
+   cSubDataElementIdentifier, nValuePosition_Level1, nValuePosition_Level2,
+   bMandatory, cComment
+|
+
+   startseq
+      aDialogResult := DU_InputDialog(
+         'Segment-Mapping anlegen',
+         '',
+         {
+            DU_InputDialog_CreateInputControlDefinition('STANDARD',       'Standard',                 gl_DU_InputControlType_Attribute, '',      gl_EDI_MMTID_MessageStandard, gl_EDI_MessageStandard_EDIFACTD96A, true),
+            DU_InputDialog_CreateInputControlDefinition('SEGMENT',        'Segmentbezeichner',        gl_DU_InputControlType_String,    '!!!',   0, '',   true),
+            DU_InputDialog_CreateInputControlDefinition('DATA_ELEMENT',   'Composite-Datenelement',   gl_DU_InputControlType_String,    '!!!!!', 0, '',   true),
+            DU_InputDialog_CreateInputControlDefinition('SUB_ELEMENT',    'Datenelement',             gl_DU_InputControlType_String,    '!!!!',  0, '',   false),
+            DU_InputDialog_CreateInputControlDefinition('POS_IN_SEGMENT', 'Position im Segment',      gl_DU_InputControlType_String,    '*#',    0, '1',  true),
+            DU_InputDialog_CreateInputControlDefinition('POS_IN_ELEMENT', 'Position im Datenelement', gl_DU_InputControlType_String,    '*#',    0, '0',  false),
+            DU_InputDialog_CreateInputControlDefinition('COMMENT',        'Beschreibung',             gl_DU_InputControlType_String,    '',      0, '',   false),
+            DU_InputDialog_CreateInputControlDefinition('MANDATORY',      'Pflichtelement',           gl_DU_InputControlType_Logical,   '',      0, true, false)
+         },
+         {
+            DU_InputDialog_CreateButtonDefinition('OK', 'OK', mrOk, 7, true),
+            mrCancel
+         },
+         {}
+      ),
+
+      if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOk then
+         nMessageStandard          := DU_InputDialogResult_GetInputValue(aDialogResult, 'STANDARD'),
+         cSegmentIdentifier        := DU_InputDialogResult_GetInputValue(aDialogResult, 'SEGMENT'),
+         cDataElementIdentifier    := DU_InputDialogResult_GetInputValue(aDialogResult, 'DATA_ELEMENT'),
+         cSubDataElementIdentifier := DU_InputDialogResult_GetInputValue(aDialogResult, 'SUB_ELEMENT'),
+         nValuePosition_Level1     := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'POS_IN_SEGMENT')),
+         nValuePosition_Level2     := val(DU_InputDialogResult_GetInputValue(aDialogResult, 'POS_IN_ELEMENT')),
+         bMandatory                := DU_InputDialogResult_GetInputValue(aDialogResult, 'MANDATORY'),
+         cComment                  := DU_InputDialogResult_GetInputValue(aDialogResult, 'COMMENT'),
+
+         startseq
+            EDI_Edifact_SegmentMapping_Add(
+               m_oDM,
+               m_oEDISEGM_BL,
+               nMessageStandard,
+               cSegmentIdentifier,
+               cDataElementIdentifier,
+               cSubDataElementIdentifier,
+               nValuePosition_Level1,
+               nValuePosition_Level2,
+               bMandatory,
+               cComment
+            ),
+            SynchronizeEDISEGM_GUI_FromExternalSource(m_oEDISEGM_BL:ID),
+         always
+            RefreshAllGUITables(),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anlegen eines Segment-Mappings', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Segment-Mappings',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 817,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                            := FindObject(oForm, "A_Cancel"),
+   A_Delete                            := FindObject(oForm, "A_Delete"),
+   A_DeleteSegmentStructure            := FindObject(oForm, "A_DeleteSegmentStructure"),
+   A_New                               := FindObject(oForm, "A_New"),
+   A_NewFromSegmentDefinitionString    := FindObject(oForm, "A_NewFromSegmentDefinitionString"),
+   A_NewFromWeb                        := FindObject(oForm, "A_NewFromWeb"),
+   A_Save                              := FindObject(oForm, "A_Save"),
+   al_Actions                          := FindObject(oForm, "al_Actions"),
+   bar_Top                             := FindObject(oForm, "bar_Top"),
+   bardock_Top                         := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                        := FindObject(oForm, "barmngr_Main"),
+   bbtn_Cancel                         := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_Delete                         := FindObject(oForm, "bbtn_Delete"),
+   bbtn_DeleteGroup                    := FindObject(oForm, "bbtn_DeleteGroup"),
+   bbtn_DeleteSegmentStructure         := FindObject(oForm, "bbtn_DeleteSegmentStructure"),
+   bbtn_New                            := FindObject(oForm, "bbtn_New"),
+   bbtn_NewFromSegmentDefinitionString := FindObject(oForm, "bbtn_NewFromSegmentDefinitionString"),
+   bbtn_NewFromWeb                     := FindObject(oForm, "bbtn_NewFromWeb"),
+   bbtn_NewGroup                       := FindObject(oForm, "bbtn_NewGroup"),
+   bbtn_Save                           := FindObject(oForm, "bbtn_Save"),
+   bipnl_Title                         := FindObject(oForm, "bipnl_Title"),
+   bvl_Details_Row1_Col1               := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row2_Col1               := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   cmb_Standard                        := FindObject(oForm, "cmb_Standard"),
+   ds_EDISEGM                          := FindObject(oForm, "ds_EDISEGM"),
+   edt_DataElement                     := FindObject(oForm, "edt_DataElement"),
+   edt_Description                     := FindObject(oForm, "edt_Description"),
+   edt_FilterSegment                   := FindObject(oForm, "edt_FilterSegment"),
+   edt_PositionLevel1                  := FindObject(oForm, "edt_PositionLevel1"),
+   edt_PositionsLevel2                 := FindObject(oForm, "edt_PositionsLevel2"),
+   edt_Segment                         := FindObject(oForm, "edt_Segment"),
+   edt_SubElement                      := FindObject(oForm, "edt_SubElement"),
+   grd_EDISEGM                         := FindObject(oForm, "grd_EDISEGM"),
+   lbl_DataElement                     := FindObject(oForm, "lbl_DataElement"),
+   lbl_Details_Row1_Col1_Title         := FindObject(oForm, "lbl_Details_Row1_Col1_Title"),
+   lbl_Details_Row2_Col1               := FindObject(oForm, "lbl_Details_Row2_Col1"),
+   lbl_Positions                       := FindObject(oForm, "lbl_Positions"),
+   lbl_Segment                         := FindObject(oForm, "lbl_Segment"),
+   lbl_Standard                        := FindObject(oForm, "lbl_Standard"),
+   lbl_SubElement                      := FindObject(oForm, "lbl_SubElement"),
+   pnl_Description                     := FindObject(oForm, "pnl_Description"),
+   pnl_Details                         := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1                    := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1               := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row2                    := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_EDISEGM                         := FindObject(oForm, "pnl_EDISEGM"),
+   pnl_Filter                          := FindObject(oForm, "pnl_Filter"),
+   pnl_Main                            := FindObject(oForm, "pnl_Main"),
+   pnl_Top                             := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   m_bOnLoad := true,
+
+   cmb_Standard.DataSource        := ds_EDISEGM,
+   cmb_Standard.DataField         := 'STANDARD',
+   edt_Segment.DataSource         := ds_EDISEGM,
+   edt_Segment.DataField          := 'SEGMENT',
+   edt_DataElement.DataSource     := ds_EDISEGM,
+   edt_DataElement.DataField      := 'ELEMENT',
+   edt_PositionLevel1.DataSource  := ds_EDISEGM,
+   edt_PositionLevel1.DataField   := 'ELEM_POS',
+   edt_PositionsLevel2.DataSource := ds_EDISEGM,
+   edt_PositionsLevel2.DataField  := 'VALUE_POS',
+   edt_Description.DataSource     := ds_EDISEGM,
+   edt_Description.DataField      := 'MEMO',
+
+   edt_SubElement.DataSource      := ds_EDISEGM,
+   edt_SubElement.DataField       := 'SUB_ELEM',
+
+   lbl_Positions.Caption := 'Position Element / Position Wert',
+   lbl_Standard.DataSource           := ds_EDISEGM,
+   lbl_Standard.DataField            := 'STANDARD',
+   lbl_Standard.UseDefaultCaption    := true,
+   lbl_DataElement.DataSource        := ds_EDISEGM,
+   lbl_DataElement.DataField         := 'ELEMENT',
+   lbl_DataElement.UseDefaultCaption := true,
+   lbl_Segment.DataSource            := ds_EDISEGM,
+   lbl_Segment.DataField             := 'SEGMENT',
+   lbl_Segment.UseDefaultCaption     := true,
+
+   lbl_SubElement.DataSource        := ds_EDISEGM,
+   lbl_SubElement.DataField         := 'SUB_ELEM',
+   lbl_SubElement.UseDefaultCaption := true,
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({cmb_Standard, edt_Segment, edt_DataElement, edt_SubElement, edt_PositionLevel1, edt_PositionsLevel2}),
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row2_Col1, lbl_Details_Row1_Col1_Title}),
+
+   SetBrowserBeAttribID(grd_EDISEGM, 'STANDARD', gl_EDI_MMTID_MessageStandard),
+   ActionsEnabled(),
+   DbGoTop(m_oEDISEGM_GUI),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

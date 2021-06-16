@@ -1,0 +1,265 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung: Sammlung globaler Hilfs-Funktionen für das Registrieren von
+//               beas Services.
+//               Der Funktions-Präfix 'BU' steht für 'Beas Utils'.
+//
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Deregistriert einen dynamischen Typen
+//******************************************************************************
+function _BU_Reg_UnRegisterDynamicType(cTypeName)
+   CbUnregisterParameterType(cTypeName),
+   WriteLn('type "' + cTypeName + '" was unregistered successfully'),
+end,
+
+//******************************************************************************
+// Registriert einen dynamischen Composite-Typen im beas
+// => muss serverseitig ausgeführt werden
+//******************************************************************************
+function _BU_Reg_RegisterDynamicType_Composite(cTypeName, cTypeDesc, aFields)
+| oParamRegTypeInfo, i, aField |
+
+   // vor der Registrierung sicherheitshalber erstmal entfernen
+   BU_Reg_UnRegisterDynamicType(cTypeName),
+
+   oParamRegTypeInfo := CreateObject("TBeasCbCompositeParameterTypeInfo"),
+   Startseq,
+     oParamRegTypeInfo.CbTypeName        := cTypeName,
+     oParamRegTypeInfo.CbTypeDescription := cTypeDesc,
+     oParamRegTypeInfo.CbTypeVisibility  := beasDocumented,
+
+     // Felder hinzufügen
+     for i := 1 to ALen(aFields) do
+        aField := aFields[i],
+        oParamRegTypeInfo.CbAddFieldTypeDescription(aField[1], aField[2], aField[3]),
+     next,
+
+     startseq
+        CbRegisterParameterType(oParamRegTypeInfo),
+        WriteLn('type "' + cTypeName + '" was registered successfully'),
+     onerror
+        WriteLn('Error registering Type <' + cTypeName + '> ' + Chr(13)+Chr(10) + GetErrorText() ),
+     stopseq,
+
+   Always,
+      DestroyObject(oParamRegTypeInfo),
+   StopSeq,
+end,
+
+//******************************************************************************
+// Registriert einen dynamischen Composite-Typen im beas
+// => muss serverseitig ausgeführt werden
+//******************************************************************************
+function _BU_Reg_RegisterDynamicType_Array(cTypeName, cTypeDesc, cElementTypeName)
+| oParamRegTypeInfo |
+
+   // vor der Registrierung sicherheitshalber erstmal entfernen
+   BU_Reg_UnRegisterDynamicType(cTypeName),
+
+   oParamRegTypeInfo := CreateObject("TBeasCbArrayParameterTypeInfo"),
+   Startseq,
+     oParamRegTypeInfo.CbTypeName        := cTypeName,
+     oParamRegTypeInfo.CbTypeDescription := cTypeDesc,
+     oParamRegTypeInfo.CbTypeVisibility  := beasDocumented,
+     oParamRegTypeInfo.CbElementTypeName := cElementTypeName,
+
+     startseq
+        CbRegisterParameterType(oParamRegTypeInfo),
+        WriteLn('array type "' + cTypeName + '" was registered successfully'),
+     onerror
+        WriteLn('Error registering Type <' + cTypeName + '> ' + Chr(13)+Chr(10) + GetErrorText() ),
+     stopseq,
+
+   Always,
+      DestroyObject(oParamRegTypeInfo),
+   StopSeq,
+end,
+
+//******************************************************************************
+// Deregistriert eine dynamische Service-Methode
+//******************************************************************************
+function _BU_Reg_UnRegisterDynamicServiceMethod(cMethodGroup, cMethodName)
+| cServiceMethodName, bUnregistered |
+
+  cServiceMethodName := 'cb_' + cMethodGroup + iif(empty(cMethodGroup), '', '_') + cMethodName,
+  bUnregistered := CbUnregisterService(cServiceMethodName), // vor der Registrierung sicherheitshalber erstmal entfernen
+  if bUnregistered then
+     WriteLn('service method "' + cServiceMethodName + '" was unregistered successfully'),
+  endif,
+end,
+
+//******************************************************************************
+// Registriert eine dynamische Service-Methode im beas
+// => muss serverseitig ausgeführt werden
+//******************************************************************************
+function _BU_Reg_RegisterDynamicServiceMethod(cMethodGroup:C,
+                                              cMethodName:C,
+                                              cServiceProgramName:C,
+                                              cServiceMethodDescription:C,
+                                              nServiceTypes:N,
+                                              nContextClass:N,
+                                              aParams:A,
+                                              bEnforceURIQueryParamValuesAsString:L:=false,
+                                              nExecutionTimeout:N:=0,
+                                              nExecutionMode:N:=0)
+| oServiceRegInfo, bUnregistered, cServiceMethodName, i, aParam |
+
+   cServiceMethodName := 'cb_' + cMethodGroup + iif(empty(cMethodGroup), '', '_') + cMethodName,
+
+   // vor der Registrierung sicherheitshalber erstmal entfernen
+   BU_Reg_UnRegisterDynamicServiceMethod(cMethodGroup, cMethodName),
+
+   oServiceRegInfo := CreateObject('TBeasCbServiceRegInfo'),
+   startseq,
+     oServiceRegInfo.CbMethodName          := cServiceMethodName,
+     oServiceRegInfo.CbMethodDescription   := cServiceMethodDescription,
+     oServiceRegInfo.CbServiceTypes        := nServiceTypes,
+     oServiceRegInfo.CbContextClass        := nContextClass, // beasContext / beasMobileContext / beasBeClientContext
+     oServiceRegInfo.CbVisibility          := beasDocumented,
+     oServiceRegInfo.CbProgramName         := cServiceProgramName,
+     if nExecutionTimeout > 0 then
+        oServiceRegInfo.CbExecutionTimeout := nExecutionTimeout
+     endif,
+     oServiceRegInfo.CbExecutionMode       := iif(nExecutionMode = 0, beasSequential, nExecutionMode),
+     if CompareBeVersion(mBeVersion, '6.5.65.223') then
+        oServiceRegInfo.CbEnforceURIQueryParamValuesAsString := bEnforceURIQueryParamValuesAsString,
+     endif,
+
+     // Parameter hinzufügen
+     for i := 1 to ALen(aParams) do
+        aParam := aParams[i],
+        oServiceRegInfo.CbAddParameterInfo(aParam[1], aParam[2], aParam[3], aParam[4], aParam[5]),
+     next,
+
+     startseq
+        CbRegisterService(oServiceRegInfo),
+        WriteLn('service method "' + cServiceMethodName + '" was registered successfully. Implementation codeblock program is "' + cServiceProgramName + '".'),
+     onerror
+        WriteLn('Error registering service method <' + cServiceMethodName + '> ' + Chr(13) + Chr(10) + GetErrorText() ),
+     stopseq,
+
+   always,
+     DestroyObject(oServiceRegInfo),
+   stopseq,
+end,
+
+//******************************************************************************
+// Interne Funktion zur Registrierung eines Codeblock-beas-Services
+//******************************************************************************
+function _BU_Reg_InternalRegisterService(cMethodGroup:C,
+                                         cMethodName:C,
+                                         nBeasServiceContext,
+                                         aParams:A:=nil,
+                                         cServiceMethodDescription:C:='')
+    BU_Reg_RegisterDynamicServiceMethod(
+       cMethodGroup,
+       cMethodName,
+       'beas\dynamic_services\' + cMethodGroup + '\' + cMethodName + '_implementation',
+       cServiceMethodDescription,
+       _Or(beasServiceTypeStandard, beasServiceTypeHttp),
+       nBeasServiceContext,
+       iif(empty(aParams), {}, aParams)
+     ),
+     BU_Log_Info('registered service: ' + cMethodGroup + '_' + cMethodName),
+end,
+
+
+//******************************************************************************
+function _BU_Reg_RegisterService(cMethodGroup:C,
+                                 cMethodName:C,
+                                 aParams:A:=nil,
+                                 cServiceMethodDescription:C:='',
+                                 bTokenContext:L:=true)
+   BU_Reg_InternalRegisterService(cMethodGroup, cMethodName, iif(bTokenContext, beasTokenContext, beasExternalContext), aParams, cServiceMethodDescription),
+end,
+
+//******************************************************************************
+// Registrierung eines beas Service für die Nutzung ab be 7.2.1.2
+//
+// - Implementierungen dürfen auch im Ordner "...\.services\..." liegen
+// - TokenContext ist der Standard
+// - Weitere Parameter können übergeben werden 
+//
+// Parameter:
+//  - cImplementationFolder:     CB-Programme-Ordner, in dem die Implementierung liegt      z.B. 'mein-webshop-package\.services\'
+//  - cMethodGroup:              Name der Service-Gruppe                                    z.B. 'kunden', darf leer übergeben werden
+//  - cMethodName:               Name des Services                                          z.B. 'new'
+//  - cServiceProgramName:       Name des CB-Programms innerhalb des                        z.B. '' -> Name lautet dann 'kunden\new_implementation'
+//                               Implementation-Folders - wenn leer wird der Default-Name
+//                               gebildet aus cMethodGroup und cMethodName
+//  - aParams:                   Array mit Input- und Output-Parameter-Definition,
+//                               kann leer übergeben werden
+//  - cServiceMethodDescription: Beschreibung des Services für die Doku
+//  - nExecutionTimeout:         Individueller Timeout (maximale Laufzeit dieses Requests)
+//                               in mSec. Wenn 0 / nicht definiert wird der beas Default
+//                               angenommen.
+//  - nExecutionMode:            beasSequential (=Default) oder beasConcurrent (=experimentell!!)
+//  - bAllQueryValuesAsString:   (nur relevant bei Aufruf des Servies über /HTTP)
+//                               Alle URL-Query-Parameter (...?param1=123&param2=abc&...) als
+//                               Zeichenketten betrachten.
+//
+// Result: keine Rückgabe, Exception im Fehlerfall
+//******************************************************************************
+function _BU_Reg_RegisterTokenContextService(cImplementationFolder:C,
+                                             cMethodGroup:C,
+                                             cMethodName:C,
+                                             cServiceProgramName:C:='',
+                                             aParams:A:=nil,
+                                             cServiceMethodDescription:C:='',
+                                             nExecutionTimeout:N:=0,
+                                             nExecutionMode:N:=0,
+                                             bAllQueryValuesAsString:L:=false)
+| cFullImplementationName, cServiceMethodName |
+
+   cImplementationFolder := AllTrim(cImplementationFolder),
+   if empty(cImplementationFolder) then
+      cImplementationFolder := 'beas\dynamic_services\',
+   else
+      SetErrorIf(Right(cImplementationFolder, 1) <> '\', 'implementation folder should end with a "\"'),
+      SetErrorIf(not '\.services\' $ cImplementationFolder, 'implementation folder must contain "\.services\"'),
+   endif,
+
+   if not empty(cServiceProgramName) then
+      cFullImplementationName := cImplementationFolder + cServiceProgramName,
+   else
+      cFullImplementationName := cImplementationFolder + cMethodGroup + iif(empty(cMethodGroup), '', '\') + cMethodName + '_implementation',
+   endif,
+
+   BU_Reg_RegisterDynamicServiceMethod(
+      cMethodGroup,
+      cMethodName,
+      cFullImplementationName,
+      cServiceMethodDescription,
+      _Or(beasServiceTypeStandard, beasServiceTypeHttp),
+      beasTokenContext,
+      iif(empty(aParams), {}, aParams),
+      bAllQueryValuesAsString,
+      nExecutionTimeout,
+      nExecutionMode
+    ),
+
+    cServiceMethodName := 'cb_' + cMethodGroup + iif(empty(cMethodGroup), '', '_') + cMethodName,
+    BU_Log_Info('registered token service: ' + cServiceMethodName + ', implementation in: "' + cFullImplementationName + '"'),
+end,
+
+//******************************************************************************
+function _BU_Reg_RegisterMobileService(cMethodGroup:C,
+                                       cMethodName:C,
+                                       aParams:A:=nil,
+                                       cServiceMethodDescription:C:='')
+   BU_Reg_InternalRegisterService(cMethodGroup, cMethodName, beasMobileContext, aParams, cServiceMethodDescription),
+end,
+
+
+
+

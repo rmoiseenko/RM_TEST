@@ -1,0 +1,248 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inhouseformat erstellen
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm erstellt das Inhouse-Format zu einer Belegliste.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIDOCLId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function CountRecords(oTable:O)
+   result := 0,
+
+   oTable.CbFirst(),
+   while not oTable.CbEof do
+      result++,
+      oTable.CbNext(),
+   end,
+   oTable.CbFirst(),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function EDI_InhouseDataArray_Write(aIndividualDataArray:R,
+                                    oSourceTable:O,
+                                    cSourceFieldName:C,
+                                    cFieldAlias:C:='')
+   EDI_InhouseFormat_Set(
+      aIndividualDataArray,
+      iif(empty(cFieldAlias), oSourceTable.AliasName + '.' + cSourceFieldName, cFieldAlias),
+      AsVariant(cSourceFieldName, oSourceTable)
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt das Inhouse-Format zu dem aktuellen Beleg in der
+// oEDIDOC.
+//
+// @result: array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//******************************************************************************
+function Document_CreateInhouseFormat(oDM:O, oEDIDOC:O, oProgressCallback:O)
+|
+   oDab050, oDab055, oEDIHEAD, oEDIPOS,
+   cOrderNumber, nHeaderId,
+   aHeaderData, aPositionData
+|
+
+   //***************************************************************************
+   function InhouseFormatTable_AppendOrInsert(oTable:O, uFindKey:U)
+   | aKey |
+
+      if ValType(uFindKey) <> 'A' then
+         aKey := {uFindkey},
+      else
+         aKey := uFindkey,
+      endif,
+
+      if oTable.CbFindKey(aKey) then
+         oTable.CbEdit(),
+      else
+         oTable.CbAppend(),
+      endif,
+   end,
+
+   result := nil,
+
+   oDab050 := MyGetTable(oDM, waDab050, ''),
+   oDab050.CbIndexName := 'DAB051',
+   SetErrorIf(
+      not oDab050.CbFindKey({oEDIDOC:D700_BELNR}),
+      'Order with number <' + str(oEDIDOC:D700_BELNR) + '> does not exist, it might have been deleted'
+   ),
+   cOrderNumber := oDab050:ANUMMER,
+   aHeaderData  := {},
+   EDI_InhouseDataArray_Write(aHeaderData, oDab050, 'ANUMMER'),
+   EDI_InhouseDataArray_Write(aHeaderData, oEDIDOC, 'D700_BELNR', 'DAB700.BELEG_NR'),
+   EDI_InhouseDataArray_Write(aHeaderData, oDab050, 'TERMIN'),
+   EDI_InhouseDataArray_Write(aHeaderData, oEDIDOC, 'D700_LFDNR', 'DAB700.LFD_NR'),  
+
+   oEDIHEAD := MyGetTable(oDM, waEDIHEAD, ''),
+   oEDIHEAD.CbIndexName := 'EDIDOC_ID',
+   InhouseFormatTable_AppendOrInsert(oEDIHEAD, oEDIDOC:ID),
+   oEDIHEAD:DIRECTION  := gl_EDI_ProcessDirection_Outbound,
+   oEDIHEAD:DAB050_ID  := oDab050:ID,
+   oEDIHEAD:ANUMMER    := cOrderNumber,
+   oEDIHEAD:EDIDOCL_ID := oEDIDOC:EDIDOCL_ID,
+   oEDIHEAD:EDIDOC_ID  := oEDIDOC:ID,
+   oEDIHEAD:EDIPART_ID := oEDIDOC:EDIPART_ID,
+   oEDIHEAD:EDIPART_WA := lookup(waEDIPART, 'ID', {{oEDIDOC:EDIPART_ID}}, 'WORKAREA',  0),
+   oEDIHEAD:EDIPART_RI := lookup(waEDIPART, 'ID', {{oEDIDOC:EDIPART_ID}}, 'RECORD_ID', 0),
+   oEDIHEAD:DATA       := ArrToStr(aHeaderData),
+   oEDIHEAD.CbPost(),
+   nHeaderId := oEDIHEAD:ID,
+
+   oEDIPOS := MyGetTable(oDM, waEDIPOS, ''),
+   oEDIPOS.CbIndexName := 'EDIHEAD_ID_DAB055_ID',
+   oDab055 := MyGetTable(oDM, waDab055, ''),
+   oDab055.CbIndexName := 'DAB056',
+   oDab055.CbSetRange(
+      {PadR(cOrderNumber, 9, ' ')},
+      {PadR(cOrderNumber, 9, 'Z')}
+   ),
+   startseq
+      oDab055.CbFirst(),
+      while not oDab055.CbEof do
+         aPositionData := {},
+         EDI_InhouseDataArray_Write(aPositionData, oDab055, 'ARTNR'),
+         EDI_InhouseDataArray_Write(aPositionData, oDab055, 'BMENGE'),
+         EDI_InhouseDataArray_Write(aPositionData, oDab055, 'EPREIS'),
+         EDI_InhouseDataArray_Write(aPositionData, oDab055, 'TERMIN'),
+
+         InhouseFormatTable_AppendOrInsert(oEDIPOS, {nHeaderId, oDab055:ID}),
+         oEDIPOS:EDIHEAD_ID := nHeaderId,
+         oEDIPOS:DAB055_ID  := oDab055:ID,
+         oEDIPOS:APNUMMER   := oDab055:APNUMMER,
+         oEDIPOS:DATA       := ArrToStr(aPositionData),
+         oEDIPOS.CbPost(),
+
+         oDab055.CbNext(),
+      end,
+   always
+      oDab055.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt das Inhouse-Format für alle Belege einer Belegliste.
+// @result: nil oder array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//******************************************************************************
+function DocumentList_CreateInhouseFormat(oDM:O, nEDIDOCLId:N, oProgressCallback:O)
+| oEDIDOCL, oEDIDOC, nDocumentsCount, i, aResult |
+
+   result := {},
+   EDI_ProcessResult_SetSuccess(result),
+
+
+   oEDIDOCL := MyGetTable(oDM, waEDIDOCL, ''),
+   oEDIDOCL.CbIndexName := 'ID',
+   SetErrorIf(not oEDIDOCL.CbFindKey({nEDIDOCLId}), 'EDIDOCL record with ID <' + str(nEDIDOCLId) + '> not found'),
+
+   oEDIDOC := MyGetTable(oDM, waEDIDOC, ''),
+   oEDIDOC.CbIndexName := 'EDIDOCL_ID',
+   oEDIDOC.CbSetRangeEx({nEDIDOCLId}),
+   startseq
+      oEDIDOC.CbFirst(),
+      i := 1,
+      nDocumentsCount := CountRecords(oEDIDOC),
+      while not oEDIDOC.CbEof do
+         oDM.CbTransaction_Begin(),
+         startseq
+            startseq
+               aResult := Document_CreateInhouseFormat(oDM, oEDIDOC, oProgressCallback),
+               if empty(aResult) then
+                  EDI_ProcessResult_SetSuccess(aResult),
+               endif,
+            onerror
+               EDI_ProcessResult_SetError(aResult, GetErrorText(GetErrorObj())),
+               EDI_ProcessResult_SetError(result, 'One or more documents are erroneous'),
+            stopseq,
+
+            oEDIDOC.CbEdit(),
+            if EDI_ProcessResult_IsSuccess(aResult) then
+               oEDIDOC:PROC_STEP := gl_EDI_ProcessStep_EDIDOC_InhouseFormatCreated,
+            endif,
+            EDI_ProcessResult_WriteStatusToTable(aResult, oEDIDOC),
+            oEDIDOC.CbPost(),
+
+            oDM.CbTransaction_Commit(),
+         always
+            if oDM.CbTransaction_TryRollback() then
+               DbResetDM(oDM),
+            endif,
+         stopseq,
+
+         EDI_Process_UpdateProgress(oProgressCallback, i, nDocumentsCount, 'Inhouse-Format erstellt für Beleg: ' + str(oEDIDOC:D700_BELNR)),
+         i++,
+         oEDIDOC.CbNext(),
+      end,
+   always
+      oEDIDOC.CbCancelRange(),
+   stopseq,
+
+   oEDIDOCL.CbEdit(),
+   if EDI_ProcessResult_IsSuccess(result) then
+      oEDIDOCL:PROC_STEP := gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated,
+   endif,
+   EDI_ProcessResult_WriteStatusToTable(result, oEDIDOCL),
+   oEDIDOCL.CbPost(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, false),
+
+m_aResult := {},
+startseq
+   m_aResult := DocumentList_CreateInhouseFormat(m_oDM, m_nEDIDOCLId, m_oProgressCallback),
+   if empty(m_aResult) then
+      EDI_ProcessResult_SetSuccess(m_aResult),
+   endif,
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult
+

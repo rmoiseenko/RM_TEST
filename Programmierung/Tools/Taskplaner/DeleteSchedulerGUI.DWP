@@ -1,0 +1,317 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzeroberfläche für Scheduler
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+   m_aParams:P4,
+
+   m_oDM,
+   m_nPreset,
+
+   m_cPositionSaveID,
+   m_oMainTable,
+   m_nNewSchedulerId,
+
+   m_bResult,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, Actions, bar_Top, bardock_Top, barmgr_Main,
+   bbtn_Cancel, bbtn_Delete, Bevel1, cmb_Schedulers, lbl_Schedulers, lbl_Tasks,
+   pnl_Main, rdb_TasksDeleteAll, rdb_TasksTransfer
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Combobox für Schedulers befüllen
+// @Result: null
+//******************************************************************************
+function FillComboSchedulers(nExcludeId:N)
+| aItems, oQuery |
+
+   aItems := {},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT NAME, ID FROM "TSKPLSCHED.ADT" WHERE ID <> ' + Str(nExcludeId),
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems, Trim(oQuery:NAME) + Chr(9) + Str(oQuery:ID)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_Schedulers.Items := aItems,
+end,
+
+//******************************************************************************
+// Steuerung der Kontrollen
+// @Result: null
+//******************************************************************************
+function RefreshControls()
+   if rdb_TasksTransfer.Checked then
+      cmb_Schedulers.Enabled := True,
+      lbl_Schedulers.Enabled := True,
+      FillComboSchedulers(m_oMainTable:ID),
+   else
+      cmb_Schedulers.Enabled := False,
+      lbl_Schedulers.Enabled := False,
+   endif,
+end,
+
+//******************************************************************************
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
+   // muss
+   if empty(m_oDM) then
+      m_oDM := CreateObject('TBeDbGet', 'DM_TSKPL_SchedulerDelete', oForm),
+   endif,
+
+   // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
+   m_oMainTable           := DbGetTable(m_oDM, waTSKPLSCHED, 'TSKPLSCHED_DELETE'),
+   m_oMainTable.IndexName := 'ID',
+                        
+   if m_nPreset > 0 then
+      MySeek({m_nPreset}, m_oMainTable),
+   endif,
+end,
+
+//******************************************************************************
+// Alle Tasks von nCurrentSchedulerId löschen
+// @Result: null
+//******************************************************************************
+function DeleteTasks(nCurrentSchedulerId:N)
+| oDM, oTSKPLTASK, aTaskID |
+   result := true,
+   oDM := CreateObject('TBeDbGet'),
+
+   oTSKPLTASK           := DbGetTable(oDM, waTSKPLTASK, 'TSKPLTASK_DELETE'),
+   oTSKPLTASK.IndexName := 'SCHEDUL_ID_ID',
+
+   oTSKPLTASK.CbSetRangeEx({nCurrentSchedulerId}),
+   oTSKPLTASK.CbFirst(),
+   startseq
+      while not oTSKPLTASK.CbEof do
+         oDM.CbTransaction_Begin(),
+         startseq
+            aTaskID := oTSKPLTASK:ID,
+            if oTSKPLTASK.CbDelete() then
+               oDM.CbTransaction_Commit(),
+               TSKPL_WriteLog_Internal(oDM, nCurrentSchedulerId, aTaskID, gl_TSKPL_EventCode_TaskDeleted, 'Der Task <' + Trim(oTSKPLTASK:NAME) + '> wurde gelöscht.'),
+            else
+               MessageDlg('Task <' + Trim(oTSKPLTASK:NAME) + '> konnte nicht gelöscht werden!', mtError),
+               oTSKPLTASK.CbNext(),
+               result := false,
+            endif,
+         onerror
+            result := false,
+            if oDM.CbTransaction_TryRollback() then
+               DbResetDM(oDM),
+            endif,
+            break,
+         stopseq,
+      end,
+   always
+      DestroyObject(oDM),
+   stopseq,
+end,
+
+//******************************************************************************
+// Alle Task von nCurrentSchedulerId unter nNewSchedulerId verschieben
+// @Result: null
+//******************************************************************************
+function TransferTasks(nCurrentSchedulerId:N, nNewSchedulerId:N)
+| oTSKPLTASK |
+
+   oTSKPLTASK           := DbGetTable(m_oDM, waTSKPLTASK, 'TSKPLTASK_DELETE'),
+   oTSKPLTASK.IndexName := 'SCHEDUL_ID_ID',
+
+   while oTSKPLTASK.CbFindKey({nCurrentSchedulerId}) do
+      MyEdit(oTSKPLTASK),
+      oTSKPLTASK:SCHEDUL_ID := nNewSchedulerId,
+      MyPost(oTSKPLTASK),
+      // DataModule muss uebergeben werden, um Transaktion zu beaufsichtigen
+      TSKPL_WriteLog_Task_DM(m_oDM, oTSKPLTASK:ID, gl_TSKPL_EventCode_TaskTransferred,
+         'Der Task: <' + Trim(oTSKPLTASK:NAME) + '> wurde von <' +
+         Trim(Lookup(waTSKPLSCHED, 'ID', {{nCurrentSchedulerId}}, 'NAME')) +
+         '> unter dem Scheduler <' +
+         Trim(Lookup(waTSKPLSCHED, 'ID', {{nNewSchedulerId}}, 'NAME')) + '> erfolgreich übertragen.'),
+   end,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt := 'Scheduler löschen',
+
+   rdb_TasksDeleteAll.Checked := True,
+   MyFocusControl(oForm, rdb_TasksDeleteAll),
+   oForm.Width  := 480,
+   oForm.Height := 180,
+
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Übernimmt die Parameters von vorhärige Maske
+// @Result: null
+//******************************************************************************
+function ParseParams()
+   SetErrorIf(ALen(m_aParams) < 2, 'Anzahl Elemente im Parameter Array muss 2 sein!'),
+   m_oDM     := m_aParams[1],
+   m_nPreset := m_aParams[2],
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim TasksTransfer RadioButton
+//******************************************************************************
+function rdb_TasksTransferClick( Sender )
+   RefreshControls(),
+end,
+
+//******************************************************************************
+// Event: Beim TasksDeleteAll RadioButton
+//******************************************************************************
+function rdb_TasksDeleteAllClick( Sender )
+   RefreshControls(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Aktion: Löschen des Scheduler abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   m_oMainTable.CbCancel(),
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Aktion: Löschen des Scheduler ausführen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+| oDM, nSchedulerId, nNewSchedulerId, cSchedulerName |
+
+   nSchedulerId    := m_oMainTable:ID,
+   nNewSchedulerId := Val(cmb_Schedulers.Value),
+   cSchedulerName  := Trim(m_oMainTable:NAME),
+   if rdb_TasksTransfer.Checked and Empty(nNewSchedulerId) then // Eingaben Validieren
+      MessageDlg('Scheduler muss gewählt sein!', mtError),
+   else
+      if Jn('Scheduler löschen?', False) then
+         if rdb_TasksDeleteAll.Checked then
+            if not DeleteTasks(m_oMainTable:ID) then
+               MessageDlg('Scheduler <' + cSchedulerName + '> konnte nicht gelöscht werden!', mtError),
+               m_bResult := False,
+               exit,
+            endif,
+         else
+            TransferTasks(m_oMainTable:ID, nNewSchedulerId),
+         endif,
+
+         oDM := CreateObject('TBeDbGet'),
+         startseq
+            oDM.CbTransaction_Begin(),
+            startseq
+               TSKPL_WriteLog_Scheduler_DM(oDM, nSchedulerId, gl_TSKPL_EventCode_SchedulerDeleted, 'Scheduler <' + cSchedulerName + '> wurde gelöscht.'),
+               if DbDelete(m_oMainTable) then
+                  oDM.CbTransaction_Commit(),
+                  m_bResult := True,
+               else
+                  MessageDlg('Scheduler <' + cSchedulerName + '> konnte nicht gelöscht werden!', mtError),
+                  m_bResult := False,
+               endif,
+            always
+               if oDM.CbTransaction_TryRollback() then
+                  DbResetDM(oDM),
+               endif,
+            stopseq,
+         always
+            DestroyObject(oDM),
+         stopseq,  
+         CloseForm(oForm),
+      endif,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm              := LoadForm("@TSKPLSCH", Application),
+   A_Cancel           := FindObject(oForm, "A_Cancel"),
+   A_Delete           := FindObject(oForm, "A_Delete"),
+   Actions            := FindObject(oForm, "Actions"),
+   bar_Top            := FindObject(oForm, "bar_Top"),
+   bardock_Top        := FindObject(oForm, "bardock_Top"),
+   barmgr_Main        := FindObject(oForm, "barmgr_Main"),
+   bbtn_Cancel        := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_Delete        := FindObject(oForm, "bbtn_Delete"),
+   Bevel1             := FindObject(oForm, "Bevel1"),
+   cmb_Schedulers     := FindObject(oForm, "cmb_Schedulers"),
+   lbl_Schedulers     := FindObject(oForm, "lbl_Schedulers"),
+   lbl_Tasks          := FindObject(oForm, "lbl_Tasks"),
+   pnl_Main           := FindObject(oForm, "pnl_Main"),
+   rdb_TasksDeleteAll := FindObject(oForm, "rdb_TasksDeleteAll"),
+   rdb_TasksTransfer  := FindObject(oForm, "rdb_TasksTransfer"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   oForm.Position     := poMainFormCenter,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_bResult := False,
+startseq
+   ParseParams(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowModal(oForm),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+m_bResult
+

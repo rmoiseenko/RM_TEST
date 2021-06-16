@@ -1,0 +1,282 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Spezielle Hilfsfunktionen für den Import bzw. Export von
+//               Sachmerkmalsleisten.
+//##############################################################################
+//##############################################################################
+
+|
+   // Logging-Typ Konstanten
+   gl_SML_ImportLogTypeValidationError:_N:=1,
+   gl_SML_ImportLogTypeError:_N:=2,
+   gl_SML_ImportLogTypeUpdate:_N:=3,
+   gl_SML_ImportLogTypeNew:_N:=4,
+   gl_SML_ImportLogTypeDelete:_N:=5,
+   gl_SML_ImportLogTypeRecordSkipped:_N:=6
+|
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermitteln des Feldnamen für ein Merkmal
+//
+// Format des Feldnamen:
+//  * Merkmale, die in der SMLMKM mit einem Schlüssel definiert sind:
+//       M_<Merkmalsschlüssel>
+//  * Merkmale, die nicht in der SMLMKM definiert sind:
+//       MV_<4-Stelliger V-Index mit Nullen aufgefüllt>
+//
+// @Result: string, Feldname
+//******************************************************************************
+function _SML_DetermineAttributeFieldName(nVIndex:N)
+| cAttributeKey |
+   Result        := '',
+   cAttributeKey := Lookup(waSMLMKM, 'V_INDEX', {{nVIndex}}, 'AllTrim(SCHLUESSEL)', nil),
+   if Empty(cAttributeKey) then
+      Result := 'MV_' + StrZero(nVIndex, 4),
+   else
+      Result := 'M_' + cAttributeKey,
+   endif,
+end,
+
+//******************************************************************************
+// Feldinformationen für Merkmals-Felder ermitteln.
+//
+// Format der Feldinformationen:
+//    {
+//       { <Feldname>, { <Feldtyp>, <Feldgröße> } },
+//       { ... }
+//    {
+//
+// @Result: array, Liste aller Merkmalsbezeichnungen
+//******************************************************************************
+function _SML_CollectAttributeFieldInformation(nSMLID:N, cSLMemo:C)
+| aSLMemo, i, aFieldTypeInfo, aFieldInfo |
+
+   //***************************************************************************
+   function SMLDataTypeToFieldDataTypeInfo(nSMLDataType:N)
+      Result := nil,
+      case nSMLDataType
+         of gl_SML_DataTypeText        :: Result := {ftString,   256},
+         of gl_SML_DataTypeNumeric     :: Result := {ftFloat,    0},
+         of gl_SML_DataTypeMemo        :: Result := {ftMemo,     0},
+         of gl_SML_DataTypeArticle     :: Result := {ftString,   mBeArtNoLen},
+         of gl_SML_DataTypeBoolean     :: Result := {ftBoolean,  0},
+         of gl_SML_DataTypeDate        :: Result := {ftDateTime, 0},
+         of gl_SML_DataTypeAttribTable :: Result := {ftString,   256},
+         otherwise
+            SetError('Ungültiger Sachmerkmals-Typ: ' + Str(nSMLDataType)),
+      endcase,
+   end,
+
+   Result  := {},
+   aSLMemo := StrToArr(cSLMemo),
+
+   for i := 1 to ALen(aSLMemo) do
+      // Nur Eingabezeilen verarbeiten
+      if aSLMemo[i, gl_SML_SLMemoRowType] = gl_SML_RowTypeInput then
+         aFieldTypeInfo := SMLDataTypeToFieldDataTypeInfo(aSLMemo[i, gl_SML_SLMemoDataType]),
+         aFieldInfo     := {
+            SML_DetermineAttributeFieldName(aSLMemo[i, gl_SML_SLMemoVIndex]),   // Feldname
+            aFieldTypeInfo[1],                                                  // Feldtyp
+            aFieldTypeInfo[2]                                                   // Feldgröße
+         },
+
+         AAdd(Result, aFieldInfo),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Erstellt und initialisiert eine TBeMemTable für den Import bzw. Export von
+// Sachmerkmalleisten.
+//
+// @Result: object, TBeMemTable
+//******************************************************************************
+function _SML_CreateImportExportMemTable(nSMLID:N)
+| cSLMemo, aFieldInfos, cFieldName, nFieldType, nFieldSize, i |
+
+   // SL_Memo der Sachmerkmalleiste ermitteln
+   cSLMemo := Lookup(waSMLSTM, 'ID', {{nSMLID}}, 'SL_MEMO', nil),
+   SetErrorIf(Empty(cSLMemo), 'Sachmerkmalleiste mit der ID <' + Str(nSMLID) +
+                              '> besitzt kein gültiges SL_MEMO!'),
+   // Feldinformationen ermitteln
+   aFieldInfos := SML_CollectAttributeFieldInformation(nSMLID, cSLMemo),
+
+   // Initialisieren der MemTable
+   Result := CreateObject('TBeMemTable'),
+   Result.CbAddField('ARTNR', ftString, mBeArtNoLen),
+   // Merkmale als Felder anlegen
+   for i := 1 to ALen(aFieldInfos) do
+      cFieldName := aFieldInfos[i, 1],
+      nFieldType := aFieldInfos[i, 2],
+      nFieldSize := aFieldInfos[i, 3],
+      Result.CbAddField(cFieldName, nFieldType, nFieldSize),
+   next,
+   Result.Active := True,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Logging-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Logging-Tabelle erzeugen
+// @Result: object, TBeMemTable
+//******************************************************************************
+function _SML_ImportLog_Create()
+   Result := CreateObject('TBeMemTable'),
+   Result.CbAddField('TYPE',    ftInteger,  0),
+   Result.CbAddField('TIME',    ftDateTime, 0),
+   Result.CbAddField('MESSAGE', ftMemo,     0),
+   Result.CbAddIndex('TYPE', 'TYPE', 0),
+   Result.Active := True,
+end,
+
+//******************************************************************************
+// Logging-Tabelle zerstören
+// @Result: null
+//******************************************************************************
+function _SML_ImportLog_Destroy(oLog:O)
+   DestroyObject(oLog),
+end,
+
+//******************************************************************************
+// Interne Log-Funktion
+// @Result: null
+//******************************************************************************
+function _SML_ImportLog_Internal(oLog:O, nLogType:N, cLogMessage:C)
+   // HINWEIS:
+   // Hier muss TBeMemTable.CbInsert() verwendet werden statt
+   // BeMemTable.CbAppend(), weil die Tabelle sonst nach dem Post auf einem
+   // anderen Datensatz positioniert wird.
+   // Bei einem Append wird immer auf den letzten Datensatz in der Tabelle
+   // positioniert. Wenn nun ein Index die Datensätze anders sortiert, so kann
+   // es sein, dass der neu angelegte Datensatz nicht der letzte Datensatz ist.
+   // -> Tabelle steht bei Append nach dem Post auf einem anderen Datensatz.
+   oLog.CbInsert(),
+   oLog:TIME    := Now(),
+   oLog:TYPE    := nLogType,
+   oLog:MESSAGE := cLogMessage,
+   oLog.CbPost(),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_ValidationError(oLog:O, cMessage:C)
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeValidationError, cMessage),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_Error(oLog:O, cMessage:C)
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeError, cMessage),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_Update(oLog:O, cMessage:C, nChanges:N)
+   cMessage += CRLF + '   -> Anzahl geänderte Merkmale: ' + Str(nChanges),
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeUpdate, cMessage),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_New(oLog:O, cMessage:C)
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeNew, cMessage),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_Delete(oLog:O, cMessage:C)
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeDelete, cMessage),
+end,
+
+//******************************************************************************
+function _SML_ImportLog_RecordSkipped(oLog:O, cMessage:C)
+   SML_ImportLog_Internal(oLog, gl_SML_ImportLogTypeRecordSkipped, cMessage),
+end,
+
+//******************************************************************************
+// Ermittelt die Anzahl eines bestimmten Datensatztypen
+// @Result: integer
+//******************************************************************************
+function _SML_ImportLog_GetCount(oLog:O, nLogType:N)
+   oLog.CbSetRangeEx({nLogType}),
+   startseq
+      Result := oLog.CbRecordCount,
+   always
+      oLog.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Ermittelt die Anzahl der aktualisierten Datensätze
+// @Result: integer
+//******************************************************************************
+function _SML_ImportLog_GetCountUpdated(oLog:O)
+   oLog.CbSetRangeEx({gl_SML_ImportLogTypeUpdate}),
+   startseq
+      Result := oLog.CbRecordCount,
+   always
+      oLog.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Ermittelt die Anzahl der neu angelegten Datensätze
+// @Result: integer
+//******************************************************************************
+function _SML_ImportLog_GetCountNew(oLog:O)
+   oLog.CbSetRangeEx({gl_SML_ImportLogTypeNew}),
+   startseq
+      Result := oLog.CbRecordCount,
+   always
+      oLog.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Ermittelt die Anzahl der übersprungenen Datensätze
+// @Result: integer
+//******************************************************************************
+function _SML_ImportLog_GetCountSkipped(oLog:O)
+   oLog.CbSetRangeEx({gl_SML_ImportLogTypeRecordSkipped}),
+   startseq
+      Result := oLog.CbRecordCount,
+   always
+      oLog.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Rückgabe des aktuellen Log-Datensatzes als formatierten String
+// @Result: string, formatierter Log-Eintrag
+//******************************************************************************
+function _SML_ImportLog_EntryAsString(oLog:O, bFormatted:L)
+
+   //***************************************************************************
+   function LogTypeToString(nLogType:N, bFormatted:L)
+      case nLogType
+         of gl_SML_ImportLogTypeValidationError :: Result := 'Validierung fehlgeschlagen',
+         of gl_SML_ImportLogTypeError           :: Result := 'Fehler',
+         of gl_SML_ImportLogTypeUpdate          :: Result := 'Datensatz Update',
+         of gl_SML_ImportLogTypeNew             :: Result := 'Datensatz Neuanlage',
+         of gl_SML_ImportLogTypeDelete          :: Result := 'Datensatz Löschung',
+         of gl_SML_ImportLogTypeRecordSkipped   :: Result := 'Datensatz übersprungen',
+         otherwise
+            Result := '<unbekannt>',
+      endcase,
+      Result := iif(bFormatted, PadR(Result, 26), Result),
+   end,
+
+   if bFormatted then
+      Result := FormatDateTime('DD-MM-YYYY | hh:nn:ss', oLog:TIME) + '> ' + LogTypeToString(oLog:TYPE, True) + ' ' + oLOG:MESSAGE,
+   else
+      Result := LogTypeToString(oLog:TYPE, False) + ' ' + oLog:MESSAGE,
+   endif,
+end,
+

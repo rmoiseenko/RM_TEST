@@ -1,0 +1,287 @@
+function _ReNr2LiefDatum(cRechNr)
+   // muss später noch korrigiert werden, Zugriff auf dab020 notwendig (über Index Re-Nr.)
+   |cANummer, aLFS, i, cLFS|
+   cANummer:=lookup(15,2,{{cRechNr}}, 'APNUMMER'),
+   if empty(cANummer) then
+      result:='',
+      exit,
+   endif,
+   aLFS:=lookup(3,1,{{cANummer}}, 'LFS_LIST'),
+   i:=tokencount(aLFS, CRLF),
+   cLFS:=strtoken(aLFS, CRLF, i),
+   result:=lookup(7,5,{{cLFS}}, 'LF_DATUM'),
+end,
+
+// Liefert letzte LF-Datum zu einem Auftrag
+function _ANr2LiefDatum(cAnummer)
+   |aLFS, i, cLFS|
+   if empty(cANummer) then
+      result:='',
+      exit,
+   endif,
+   aLFS:=lookup(3,1,{{cANummer}}, 'LFS_LIST'),
+   i:=tokencount(aLFS, CRLF),
+   cLFS:=strtoken(aLFS, CRLF, i),
+   result:=lookup(7,5,{{cLFS}}, 'LF_DATUM'),
+end,
+
+Function _ZBKlartext(oTable)
+  result := "",
+  if empty(oTable:zahlbed) then
+   if oTable:za_fixdat then
+    result += "bis "+ltrim(str(oTable:skontotage,3)),
+    result += ". des "+ltrim(str(oTable:skonto_fm,3))+". Folgemonats ",
+    result += ltrim(str(oTable:skontoproz,6,2))+"% Skonto, bis ",
+    result += ltrim(str(oTable:nettotage,3))+". des ",
+    result += ltrim(str(oTable:netto_fm,3))+". Folgemonats netto",
+   else,
+    if oTable:skontotage>0 then
+     result += ltrim(str(oTable:skontotage,3))+" Tage ",
+     result += ltrim(str(oTable:skontoproz,6,2))+"% Skonto, ",
+    endif,
+    if oTable:skontotag2>0 then
+     result += ltrim(str(oTable:skontotag2,3))+" Tage ",
+     result += ltrim(str(oTable:skontopro2,6,2))+"% Skonto, ",
+    endif,
+    result  += ltrim(str(oTable:nettotage,3))+" Tage netto",
+   endif,
+  endif,
+end,
+
+Function _GetUserName(cPlatz)
+  result := lookup(90,1,{{cPlatz}},"dabpal:m_emailnam"),
+end,
+
+function _GetBez1(oDab010,oDab055)
+
+  if eof(oDab055) .or. "??"$kom_2_apnr(oDab055:kommiss) then
+    Result := rtrim(oDab010:bez1),
+  else,
+    Result := rtrim(oDab055:bez1),
+  endif,
+end,
+
+function _GetBez2(oDab010,oDab055)
+  if eof(oDab055).or. "??"$kom_2_apnr(oDab055:kommiss) then
+    Result := rtrim(oDab010:bez2),
+  else,
+    Result := rtrim(oDab055:bez2),
+  endif,
+end,
+
+Function _CopyAddress(oTable)
+  | cClip |
+
+  cClip := oTable:name1,
+  cClip += if(!empty(oTable:name2),CRLF + oTable:name2,""),
+  cClip += iif(oTable.workarea=16,"",if(!empty(oTable:name3),CRLF + oTable:name3,"")),
+  cClip += CRLF + oTable:strasse,
+  cClip += CRLF+CRLF+ oTable:plzort,
+  cClip += iif(oTable.workarea=16,"",CRLF + lookup(82,1,{{oTable:landnr}},"bez")),
+
+  copytoclipboard(cClip),
+end,
+
+//Enthält allgemein verwendbare Funktonen des Business-Schicht
+
+function _Rabatt055(oDAB055, bRabatt050) //bRabatt050 wird dezeit nicht unterstützt
+   result:=(100-((100-oDAB055:POSRAB)*(100-oDAB055:POSRAB_1)*(100-oDAB055:POSRAB_2)/10000))/100
+end,
+
+function _VK_Wert055(oDAB055, oDAB050, bRabatt050, bRabatt055, bBrutto, nMenge) //Brutto wird derzeit nicht unterstützt
+   //Funktion bezieht sich auf aktuellen Satz in der DAB055, oDAB050 wird per seek positioniert
+   |nFaktor050, nFaktor055, nUST |                                              //writeln('VK_Wert055.Start'),
+   if bRabatt055 then
+      nFaktor055:=1-Rabatt055(oDAB055, false),
+   else
+      nFaktor055:=1,
+   endif,
+                                                                                //writeln('VK_Wert055.CP1'),
+   if bRabatt050 then
+      myseek({PADR(oDAB055:APNUMMER,6)}, oDAB050),
+      nFaktor050:=(100-oDAB050:GESRABATT)*(100-oDAB050:GESRABATT2)/10000,
+   else
+      nFaktor050:=1,
+   endif,
+
+   nUST:=1,
+
+   result:=round(nUST*nFaktor055*nFaktor050*oDAB055:EPREIS*nMenge/e2v(oDAB055:PE, 1),2), //+ME_UMR_PE
+                                                                               //writeln('VK_Wert055.Ende'),
+end,
+
+function _TimetoAnzStd(dDate)
+   |aHour, aMin, aSec, aMSec|
+   Startseq
+      DecodeTime(dDate, aHour, aMin, aSec, aMSec),
+      aMin:=aMin/60,
+      aHour+=aMin,
+      result:=aHour
+   onError
+      SetError('Fehler in TimetoAnzStd:' + GetErrorText()),
+   stopseq,
+end,
+
+// ist aktueller Datensatz der DAB510 gültig ?
+// =============================================================================
+Function _DAB510_GUELTIG(oDAB510)
+  result := (empty(oDAB510:GUELTIGVON) and empty(oDAB510:GUELTIGBIS)) or
+            (empty(oDAB510:GUELTIGVON) and not empty(oDAB510:GUELTIGBIS) and date() <= oDAB510:GUELTIGBIS) or
+            (not empty(oDAB510:GUELTIGVON) and empty(oDAB510:GUELTIGBIS) and date() >= oDAB510:GUELTIGVON) or
+            (not empty(oDAB510:GUELTIGVON) and not empty(oDAB510:GUELTIGBIS) and date() >= oDAB510:GUELTIGVON and date() <= oDAB510:GUELTIGBIS),
+end,
+
+
+// Gültigkeitsstatus des DAB510-Datensatzes
+// 0 = gültig, -1 = alt, 1 = künftig
+// =============================================================================
+Function _DAB510_STATUS(oDAB510)
+  result := if(DAB510_GUELTIG(oDAB510),0,if(empty(oDAB510:GUELTIGBIS),1,-1)),
+end,
+
+
+
+// Funktion zur Bestimmung des Hauptlieferanten
+// liefert ID des Datensatzes zurück, der zum Hauptlieferanten gehört
+// =============================================================================
+
+function _DAB510_ID_MAINSUPPLIER(cArtnr)
+  | oDAB510, cIndexname |
+  Startseq,
+    Startseq,
+      oDAB510 := dbGettable(GL_oDM,28,),
+      cIndexname := oDAB510.indexname,
+      oDAB510.indexname := "DAB511",
+      result := 0,
+      if dbseek({cArtnr},oDAB510) then
+        while not eof(oDAB510) and oDAB510:artnr = cArtnr do
+          if DAB510_GUELTIG(oDAB510) then
+             result := oDAB510:ID,
+             break,
+          endif,
+          dbskip(1,oDAB510),
+        end,
+      endif,
+    Always
+      oDAB510.indexname := cIndexname,
+    stopseq,
+  onerror
+    raise(),
+  stopseq,
+end,
+
+
+// Funktion zur Bestimmung des ersten gültigen Datensatzes der Relation Artikel / Lieferant
+// liefert ID des Datensatzes zurück, der im Index zuerst gefunden wird und gültig ist
+function _DAB510_ID_SUPPLIER(nLinr,cArtnr)
+  | oDAB510, cIndexname |
+  Startseq,
+    Startseq,
+      oDAB510 := dbGettable(GL_oDM,28,),
+      cIndexname := oDAB510.indexname,
+      oDAB510.indexname := "DAB512",
+      result := 0,
+      if dbseek({nLinr,cArtnr},oDAB510) then   // meld(str(nLINR)+'DAB510_ID_SUPPLIER Seek1'),
+        while not eof(oDAB510) and oDAB510:artnr = cArtnr and oDAB510:LINR = nLinr do
+          if DAB510_GUELTIG(oDAB510) then
+             result := oDAB510:ID,
+             break,
+          endif,
+          dbskip(1,oDAB510),
+        end,
+      endif,
+    Always
+      oDAB510.indexname := cIndexname,
+    stopseq,
+  onerror
+    raise(),
+  stopseq,
+end,
+
+
+// ist aktueller Datensatz der DAB040 gültig ?
+// =============================================================================
+Function _DAB040_GUELTIG(oDAB040)
+  result := (empty(oDAB040:GUELTIGVON) and empty(oDAB040:GUELTIGBIS)) or
+            (empty(oDAB040:GUELTIGVON) and not empty(oDAB040:GUELTIGBIS) and date() <= oDAB040:GUELTIGBIS) or
+            (not empty(oDAB040:GUELTIGVON) and empty(oDAB040:GUELTIGBIS) and date() >= oDAB040:GUELTIGVON) or
+            (not empty(oDAB040:GUELTIGVON) and not empty(oDAB040:GUELTIGBIS) and date() >= oDAB040:GUELTIGVON and date() <= oDAB040:GUELTIGBIS),
+end,
+
+
+// Gültigkeitsstatus des DAB040-Datensatzes
+// 0 = gültig, -1 = alt, 1 = künftig
+// =============================================================================
+Function _DAB040_STATUS(oDAB040)
+  result := if(DAB040_GUELTIG(oDAB040),0,if(empty(oDAB040:GUELTIGBIS),1,-1)),
+end,
+
+
+
+// Funktion zur Bestimmung des ersten gültigen Sonderpreis Datensatz
+// liefert ID des Datensatzes zurück, der im Index zuerst gefunden wird und gültig ist
+function _DAB040_ID(cRabSchl)
+| odab040, cIndexname |
+  Startseq,
+    Startseq,
+      odab040 := dbGettable(GL_oDM,6,),
+      cIndexname := odab040.indexname,
+      odab040.indexname := "DAB041",
+      result := 0,
+      if dbseek({cRabSchl},odab040) then
+        while not eof(odab040) and odab040:RabSchl = cRabSchl do
+          if dab040_GUELTIG(odab040) then
+             result := odab040:ID,
+             break,
+          endif,
+          dbskip(1,odab040),
+        end,
+      endif,
+    Always
+      odab040.indexname := cIndexname,
+    stopseq,
+  onerror
+    raise(),
+  stopseq,
+end,
+
+// Prüft ob ein Land zur EU  gehört
+function _istEULand(cLandnr,dDate)
+|oDIA020|
+  oDIA020 := dbgettable(GL_oDM, 82),
+  result := false,
+  if dbseek({cLandnr},oDIA020) then
+    if oDIA020:EG_KZ=='J' and (empty(oDIA020:EG_AB) or oDIA020:EG_AB<=dDate) then
+      result := true,
+    endif,
+  endif,
+end,
+
+//prüft auf Bestand über alle Lager hinweg
+function _Bestand(oTable)
+  |i, aField, cLag, nBestand|
+  result := false,
+  i := 0,
+  while i < 60 do
+    aField := DBField('LAGER' + Str(i), oTable),
+    WriteLn(aField.Fieldname),
+    nBestand := AsNumber(aField.Fieldname, oTable),
+    if nBestand <> 0 then
+     result := true,
+     break,
+    endif,
+    i += 1,
+  end,
+  cLag := 'PVMW',
+  i := 1,
+  while i <= Len(cLag) do
+    aField := DBField('LAGER' + SubStr(cLag, i, 1), oTable),
+    WriteLn(aField.Fieldname),
+    nBestand := AsNumber(aField.Fieldname, oTable),
+    if nBestand <> 0 then
+     result := true,
+     break,
+    endif,
+    i += 1,
+  end,
+end,

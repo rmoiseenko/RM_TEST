@@ -1,0 +1,402 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Das Programm dient zur besseren Verwaltung von Produktions oder
+//               Einkaufsabteilungen.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_cFormID, m_cPositionSaveID, m_oKDNDAT, m_oDabFil,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_IndiHelp, A_New, A_RefreshProd, A_Save, al_Main,
+   bar_Main, bardock_Top, barmngr_Main, btn_Cancel, btn_Delete, btn_IndiHelp,
+   btn_New, btn_Post, btn_RefreshProd, cmb_Disponent, cmb_Type, ds_KDNDAT,
+   edt_Abteilung, edt_Bezeichnung, edt_Kommentar, grd_ArtGroups, ipnl_Caption,
+   lbl_Abteilung, lbl_Bezeichnung, lbl_Disponent, lbl_Kommentar, lbl_Type,
+   pnl_Bottom, pnl_Left, pnl_Rest, pnl_Top
+ // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := "@PRODDISPA",
+m_cPositionSaveID := "@PRODDISPABTPOS",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'DM_DispoDepartments', oForm),
+
+   // Tabelle(n) öffnen
+   m_oKDNDAT                 := DBGetTable(m_oDM, waKDNDAT),
+   m_oKDNDAT.IndexName       := 'TYP_ABTEILUNG',
+   m_oKDNDAT.CheckUserRights := true,
+   ds_KDNDAT.DataSet         := m_oKDNDAT,
+   m_oDabFil                 := DBGetTable(m_oDM, waDabFil),
+   m_oDabFil.IndexName       := 'DABFIL',
+end,
+
+//******************************************************************************
+// Standard-Einstellungen laden
+//******************************************************************************
+function SetDefaults()
+   grd_ArtGroups.DataSource      := ds_KDNDAT,
+   grd_ArtGroups.RegisterDataSet := m_oKDNDAT,
+   grd_ArtGroups.ID              := '@PRODABT',
+   grd_ArtGroups.ReadWriteProps  := False,
+
+   bar_Main.DockControl := bardock_Top,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode |
+
+   bInEditMode      := EditModes(m_oKDNDAT),
+
+   A_New.Enabled    := not bInEditMode,
+   A_Delete.Enabled := not bInEditMode,
+   A_Save.Enabled   := bInEditMode,
+   A_Cancel.Enabled := bInEditMode,
+end,
+
+//******************************************************************************
+// Die Funktion prüft ob die Produktionsabteilungen aus der KDNDAT noch in der
+// DabFil enthalten sind und deaktiviert diese, falls sie nicht mehr existieren.
+//******************************************************************************
+function CheckForDeletedProdAbt()
+   startseq,
+      SetCursor(crHourGlass),
+      startseq
+         DBGoTop(m_oKDNDAT),
+         while not EoF(m_oKDNDAT) do
+            // Nur deaktivieren, falls es sich um eine Produktionsabteilung handelt
+            if m_oKDNDAT:TYP = 10 then
+               if not DBSeek({999, '__PAB__' + m_oKDNDAT:ABTEILUNG}, m_oDabFil) then
+                  DBEdit(m_oKDNDAT),
+                  m_oKDNDAT:AKTIV      := False,
+                  m_oKDNDAT:DFIL_ROWID := '',
+                  DBPost(m_oKDNDAT),
+               endif,
+            endif,
+            DBSkip(m_oKDNDAT),
+         end,
+      always
+         SetCursor(crDefault),
+      stopseq,
+   onerror
+      SetError('Fehler in der Funktion CheckForDeletedProdAbt():' + CrLf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion übernimmt die Produktionsabteilungen aus der DabFil in die
+// KDNDAT.
+// Gelöschte Produktionsabteilungen werden aus der KDNDAT nicht gelöscht,
+// sondern als nicht mehr aktiv angezeigt.
+//******************************************************************************
+function LoadProdAbtToKDNDAT()
+| oQuery, cSQL |
+   startseq
+      oQuery := CreateObject('TBeAdsQuery', 'DabFilQuery'),
+      SetCursor(crHourGlass),
+      startseq
+         cSQL := SQLStr(SELECT ROWID, DATEI, FELD, NAME FROM &.DBSqlTableName(waDabFil)
+                        WHERE DATEI = 999 AND FELD LIKE @FELD@),
+
+
+         cSQL          := StrTran(cSQL, '@FELD@', "'__PAB__%'"),
+         oQuery.SQL    := cSQL,
+         oQuery.Active := True,
+         DBGoTop(oQuery),
+
+         while not EoF(oQuery) do
+            // Datensätze aus der DabFil aktualisieren
+            //if DBLocate('DFIL_ROWID', {oQuery:ROWID}, loCaseInsensitive, m_oKDNDAT) then     // nicht gut, wenn sich ROWID ändert. Lieber auf den echten Index gehen
+            if DBSeek({10, Alltrim(Right(oQuery:FELD, 3))}, m_oKDNDAT) then
+               writeln(oQuery:ROWID,'Edit', Right(oQuery:FELD, 3)),
+               DBEdit(m_oKDNDAT),
+            else
+               writeln(oQuery:ROWID,'Append', Right(oQuery:FELD, 3)),
+               DBAppend(m_oKDNDAT),
+            endif,
+
+            BeginSuspend(m_oKDNDAT),
+            startseq
+               m_oKDNDAT:BEZ       := oQuery:NAME,
+               m_oKDNDAT:TYP       := 10,
+               m_oKDNDAT:ABTEILUNG := Right(oQuery:FELD, 3),
+            always
+               EndSuspend(m_oKDNDAT),
+            stopseq,
+            m_oKDNDAT:DFIL_ROWID := oQuery:ROWID,
+            m_oKDNDAT:AKTIV      := True,
+            DBPost(m_oKDNDAT),
+            DBSkip(1, oQuery),
+         end,
+      always
+         SetCursor(crDefault),
+         DestroyObject(oQuery),
+      stopseq,
+   onerror
+      SetError('Fehler in der Funktion LoadProdAbtToKDNDAT():' + CrLf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+  bCanClose := not EditModes(m_oKDNDAT),
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_KDNDATStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Nach dem Scroll der Tabelle (Datensatz-Wechsel)
+//******************************************************************************
+function m_oDab010AfterScroll()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_RefreshDispExecute( Sender )
+   // Funktionen müssen noch implementiert werden. Siehe LoadProdAbtToKDNDAT()
+   // und CheckForDeletedProdAbt()
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_RefreshProdExecute( Sender )
+   if JN('Produktionsabteilungen aktualisieren?' + CrLf +
+         'Hierbei werden neu hinzugefügte Produktionsabteilungen aus den Festwerten (DabFil) übernommen und ' + CrLf +
+         'inzwischen gelöschte Produktionsabteilungen werden entspr. markiert.' + CrLf +
+         'Zusätzlich wird für alle bestehenden Abteilungen die Bezeichnung aus den Festwerten erneut übernommen.' ) then
+      DBDisableControls(m_oKDNDAT),
+      startseq,
+         // Produktionsabteilungen aus der DabFil laden
+         LoadProdAbtToKDNDAT(),
+
+         // Prüfen ob Produktionsabteilungen gelöscht wurden und diese ggf. in der
+         // KDNDAT deaktivieren
+         CheckForDeletedProdAbt(),
+      always
+         DBEnableControls(m_oKDNDAT),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_IndiHelpExecute( Sender )
+  // ShowIndiDokuForm('MEMO_ID = 53657'),
+end,
+
+//******************************************************************************
+// Action: Neuen Datensatz anlegen
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      DBAppend(m_oKDNDAT),
+      m_oKDNDAT:TYP       := 20,
+      m_oKDNDAT:AKTIV     := true,
+      MyFocusControl(oForm, edt_Bezeichnung),
+   onerror
+      MessageDlg(GetErrorText()),
+   stopseq,        
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   if JN('Produktions-/Einkaufsabteilung löschen?') then
+      DBDelete(m_oKDNDAT),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   DBPost(m_oKDNDAT),
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      DBCancel(m_oKDNDAT),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Abteilungszuordnung Disponenten',
+   oForm.ImageIndex     := 1, // Image-Index für den Window-Navigator setzen
+
+   // Events zuweisen
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel        := FindObject(oForm, "A_Cancel"),
+   A_Delete        := FindObject(oForm, "A_Delete"),
+   A_IndiHelp      := FindObject(oForm, "A_IndiHelp"),
+   A_New           := FindObject(oForm, "A_New"),
+   A_RefreshProd   := FindObject(oForm, "A_RefreshProd"),
+   A_Save          := FindObject(oForm, "A_Save"),
+   al_Main         := FindObject(oForm, "al_Main"),
+   bar_Main        := FindObject(oForm, "bar_Main"),
+   bardock_Top     := FindObject(oForm, "bardock_Top"),
+   barmngr_Main    := FindObject(oForm, "barmngr_Main"),
+   btn_Cancel      := FindObject(oForm, "btn_Cancel"),
+   btn_Delete      := FindObject(oForm, "btn_Delete"),
+   btn_IndiHelp    := FindObject(oForm, "btn_IndiHelp"),
+   btn_New         := FindObject(oForm, "btn_New"),
+   btn_Post        := FindObject(oForm, "btn_Post"),
+   btn_RefreshProd := FindObject(oForm, "btn_RefreshProd"),
+   cmb_Disponent   := FindObject(oForm, "cmb_Disponent"),
+   cmb_Type        := FindObject(oForm, "cmb_Type"),
+   ds_KDNDAT       := FindObject(oForm, "ds_KDNDAT"),
+   edt_Abteilung   := FindObject(oForm, "edt_Abteilung"),
+   edt_Bezeichnung := FindObject(oForm, "edt_Bezeichnung"),
+   edt_Kommentar   := FindObject(oForm, "edt_Kommentar"),
+   grd_ArtGroups   := FindObject(oForm, "grd_ArtGroups"),
+   ipnl_Caption    := FindObject(oForm, "ipnl_Caption"),
+   lbl_Abteilung   := FindObject(oForm, "lbl_Abteilung"),
+   lbl_Bezeichnung := FindObject(oForm, "lbl_Bezeichnung"),
+   lbl_Disponent   := FindObject(oForm, "lbl_Disponent"),
+   lbl_Kommentar   := FindObject(oForm, "lbl_Kommentar"),
+   lbl_Type        := FindObject(oForm, "lbl_Type"),
+   pnl_Bottom      := FindObject(oForm, "pnl_Bottom"),
+   pnl_Left        := FindObject(oForm, "pnl_Left"),
+   pnl_Rest        := FindObject(oForm, "pnl_Rest"),
+   pnl_Top         := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   // Anpassungen für 6.5 Rückwärtskompatibles ReDesign be 7
+   if IsBeDBVersion7() then
+      ipnl_Caption.ColorMode          := ipcmInfo,
+      cmb_Disponent.ParentFont        := true,
+      cmb_Type.ParentFont             := true,
+      edt_Abteilung.ParentFont        := true,
+   endif,
+
+   cmb_Type.BeAttributeId := gl_DATU_DispoAbteilungsTyp_MMTabellenID,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

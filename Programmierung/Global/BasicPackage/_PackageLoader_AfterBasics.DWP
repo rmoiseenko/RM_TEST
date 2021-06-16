@@ -1,0 +1,64 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: PackageLoader "After Basics"
+// -> Verwendet bereits Funktionen, die in "Basics" zuvor compiliert wurden
+// -> z.B. CallIfExists() und CompareBeVersion()
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Kern-Funktionen
+//******************************************************************************
+Call('Global\BasicPackage\KeyValueUtils'),
+Call('Global\BasicPackage\DBCoreUtils'),
+Call('Global\BasicPackage\NameValueUtils'),
+Call('Global\BasicPackage\ObjectUtils'),
+Call('Global\BasicPackage\DebugFunctions'),
+Call('Global\BasicPackage\DbFunctions'),
+Call('Global\BasicPackage\DatabaseUtils'),
+Call('Global\BasicPackage\PackageUtils'),
+Call('Global\BasicPackage\TestFramework'),
+Call('Global\BasicPackage\PDFUtils'),
+Call('Global\BasicPackage\IndividuelleOnlineHilfeUtils'),
+Call('Global\BasicPackage\FileUtils'),
+
+//******************************************************************************
+// GUI Utils
+//******************************************************************************
+Call('Global\BasicPackage\GUIUtils'),
+Call('Global\BasicPackage\GUIFormUtils'),
+Call('Global\BasicPackage\DialogUtils'),
+Call('Global\BasicPackage\ChartUtils'),
+
+//******************************************************************************
+// Fachlogik Utils
+//******************************************************************************
+Call('Global\BasicPackage\ArticleUtils'),
+Call('Global\BasicPackage\GroupwareUtils'),
+Call('Global\BasicPackage\Produktion'),
+Call('Global\BasicPackage\DispoUtils'),
+Call('Global\BasicPackage\EinkaufsUtils'),
+Call('Global\BasicPackage\VerkaufsUtils'),
+Call('Global\BasicPackage\StuecklistenUtils'),
+Call('Global\BasicPackage\LogistikUtils'),
+Call('Global\BasicPackage\UmsatzsteuerHelperUtils'),
+if (Left(mBeVersion, 2) = '6.' and CompareBeVersion(mBeVersion, '6.5.65.241') and mBeBuildId >= '000.002.573') or
+                                  (CompareBeVersion(mBeVersion, '7.1.1.7')    and mBeBuildId >= '000.010.066') then
+   Call('Global\BasicPackage\UmsatzsteuerEventHelperUtils'), // Diese Globals nutzen in be 6.5.65.241 / be 7.1.1.7 neu eingeführte Standard-Funktionen
+endif,
+
+//******************************************************************************
+// beas Utils
+//******************************************************************************
+Call('Global\BasicPackage\beas\BeasUtils'),
+Call('Global\BasicPackage\beas\BeasLoggingUtils'),
+Call('Global\BasicPackage\beas\BeasRegistrationUtils'),
+
+//******************************************************************************
+// Individuelle Konfiguration laden - sofern vorhanden
+//******************************************************************************
+CallIfExists('Global\BasicPackage\_CustomInit_DBCoreUtils'),
+CallIfExists('Global\BasicPackage\_CustomInit_DebugFunctions'),
+CallIfExists('Global\BasicPackage\_CustomInit_ArticleUtils'),
+CallIfExists('Global\BasicPackage\_CustomInit_GroupwareUtils'),
+CallIfExists('Global\BasicPackage\_CustomInit_DialogUtils'),

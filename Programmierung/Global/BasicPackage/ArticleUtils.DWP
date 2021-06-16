@@ -1,0 +1,105 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält Funktionen für Artikel-spezifische Aufgaben.
+//##############################################################################
+//##############################################################################
+
+|
+   // Versionsstatus
+   gl_ARTU_StateOfVersion_discarded:_N    := 20,
+   gl_ARTU_StateOfVersion_old_inactive:_N := 40,
+   gl_ARTU_StateOfVersion_old_active:_N   := 60,
+   gl_ARTU_StateOfVersion_current:_N      := 80,
+   gl_ARTU_StateOfVersion_future:_N       := 90,
+   gl_ARTU_StateOfVersion_new:_N          := 95,
+
+   // Farben für Versionsstatus
+   gl_ARTU_StateOfVersion_Color_discarded:_N,
+   gl_ARTU_StateOfVersion_Color_old_inactive:_N,
+   gl_ARTU_StateOfVersion_Color_old_active:_N,
+   gl_ARTU_StateOfVersion_Color_current:_N,
+   gl_ARTU_StateOfVersion_Color_future:_N,
+   gl_ARTU_StateOfVersion_Color_new:_N,
+
+   // Symbole (Image-Index) für Versionsstatus
+   gl_ARTU_StateOfVersion_ImageIndex_discarded:_N    := 6,   // Papierkorb
+   gl_ARTU_StateOfVersion_ImageIndex_old_inactive:_N := 638, // graue Fahne
+   gl_ARTU_StateOfVersion_ImageIndex_old_active:_N   := 637, // rote Fahne
+   gl_ARTU_StateOfVersion_ImageIndex_current:_N      := 636, // grüne Fahne
+   gl_ARTU_StateOfVersion_ImageIndex_future:_N       := 635, // gelbe Fahne
+   gl_ARTU_StateOfVersion_ImageIndex_new:_N          := 599  // Zahnrad mit Stern
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_ARTU_StateOfVersion_Color_discarded    := GetBeDesignColor(dcbwhite,  dcglevel5),
+gl_ARTU_StateOfVersion_Color_old_inactive := GetBeDesignColor(dcbwhite,  dcglevel3),
+gl_ARTU_StateOfVersion_Color_old_active   := GetBeDesignColor(dcbred,    dcglevel3),
+gl_ARTU_StateOfVersion_Color_current      := GetBeDesignColor(dcbgreen,  dcglevel3),
+gl_ARTU_StateOfVersion_Color_future       := GetBeDesignColor(dcbyellow, dcglevel3),
+gl_ARTU_StateOfVersion_Color_new          := GetBeDesignColor(dcborange, dcglevel3),
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ermittelt - je nach Modus - die entsprechende Information zur
+// aktuellen Artikelversionen der übergbenen Artikelnummer.
+//
+// Versionsstatusrückgabe in Form von Text, Farben oder Symbolen.
+// Die Funktion ist insbesondere zur Verwendung in Browsern, Masken und Layouts
+// gedacht.
+//
+// @result - je nach nResultMode
+//   nResultMode = 1 = string  - Text   (Default)
+//   nResultMode = 2 = integer - Farbe
+//   nResultMode = 3 = integer - Symbol (Image-Index)
+//******************************************************************************
+function _ARTU_StateOfVersion(cArticleNumber:C, nResultMode:N:=1)
+| nVersionState, nVersionState_AttributeTableId |
+
+   nVersionState_AttributeTableId := 102035,
+   nVersionState := lookup(waDAB010, 'DAB011', {{cArticleNumber}}, 'VERS_STAT', 0),
+
+   case nResultMode
+      of 1 ::
+         result := '',
+         if nVersionState > 0 then
+            result := Str(nVersionState) + ' - ' + AttribTranslate(nVersionState_AttributeTableId, Str(nVersionState)),
+         endif,
+
+      of 2 ::
+         result := clNone,
+         case nVersionState
+            of gl_ARTU_StateOfVersion_discarded    :: result := gl_ARTU_StateOfVersion_Color_discarded,
+            of gl_ARTU_StateOfVersion_old_inactive :: result := gl_ARTU_StateOfVersion_Color_old_inactive,
+            of gl_ARTU_StateOfVersion_old_active   :: result := gl_ARTU_StateOfVersion_Color_old_active,
+            of gl_ARTU_StateOfVersion_current      :: result := gl_ARTU_StateOfVersion_Color_current,
+            of gl_ARTU_StateOfVersion_future       :: result := gl_ARTU_StateOfVersion_Color_future,
+            of gl_ARTU_StateOfVersion_new          :: result := gl_ARTU_StateOfVersion_Color_new,
+         endcase,
+
+      of 3 ::
+         result := 0,
+         case nVersionState
+            of gl_ARTU_StateOfVersion_discarded    :: result := gl_ARTU_StateOfVersion_ImageIndex_discarded,
+            of gl_ARTU_StateOfVersion_old_inactive :: result := gl_ARTU_StateOfVersion_ImageIndex_old_inactive,
+            of gl_ARTU_StateOfVersion_old_active   :: result := gl_ARTU_StateOfVersion_ImageIndex_old_active,
+            of gl_ARTU_StateOfVersion_current      :: result := gl_ARTU_StateOfVersion_ImageIndex_current,
+            of gl_ARTU_StateOfVersion_future       :: result := gl_ARTU_StateOfVersion_ImageIndex_future,
+            of gl_ARTU_StateOfVersion_new          :: result := gl_ARTU_StateOfVersion_ImageIndex_new,
+         endcase,
+
+      otherwise
+         SetError('Invalid result-mode (nResultMode) <' + str(nResultMode) + '>. Allowed modes are 1, 2 and 3'),
+   endcase,
+end,
+

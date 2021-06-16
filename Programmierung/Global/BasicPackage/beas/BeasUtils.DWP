@@ -1,0 +1,221 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung: Sammlung globaler Hilfs-Funktionen für die
+//               beas Service-Programmierung.
+//               Der Funktions-Präfix 'BU' steht für 'Beas Utils'.
+//
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion konvertiert einen Delphi-Farbwert in eine HTML konforme
+// Hexadezimal-Schreibweise.
+//
+// Der Parameter cPrefix dient dazu dem Ergebnis einen Präfix (z.B. Raute: #)
+// voranzustellen, um das Ergebnis (z.B.: #FF0000) dann ohne zusätzlicher
+// Modifikation in einer HTML-Seite verwenden zu können.
+//
+// @Result: string - Farbwert in Hexadezimal-Schreibweise
+//******************************************************************************
+function _BU_ConvertBeColorToHTMLColor(nColorValue:N, cDefaultColor:C, cPrefix:C)
+   Result := cDefaultColor,
+   // Keine Farbe? => Übergebene Default-Farbe verwenden
+   if not nColorValue = clNone then
+      // Farbwert in sechsstelligen Hex-Wert konvertieren
+      Result := IntToHex(nColorValue, 6),
+      // Von z.B. 339911 zu 119933 umstellen
+      Result := AllTrim(cPrefix) +
+      SubStr(Result, 5, 2) +
+      SubStr(Result, 3, 2) +
+      SubStr(Result, 1, 2),
+   endif,
+end,
+
+//******************************************************************************
+function _BU_internal_AddRootElement(oOutputParam, cRootElementName, bRootAsArray)
+   | aParams |
+   if ClassOf(oOutputParam, 'TBeasCbServiceOutputParam') then
+      aParams := oOutputParam,
+   else
+      if ClassOf(oOutputParam, 'TBeasCbDynamicServiceOutput') or ClassOf(oOutputParam, 'TBeasCbHttpDynamicServiceOutput') then
+         aParams := oOutputParam.CbParams,
+      else
+         SetError('Parameter oOutputParam must be of type <TBeasCbDynamicServiceOutput> or <TBeasCbServiceOutputParam>'),
+      endif,
+   endif,
+   
+   if bRootAsArray then
+      Result := aParams.AddArrayParam(cRootElementName),
+   else
+      Result := aParams.AddComplexParam(cRootElementName),
+   endif,
+end,
+
+//******************************************************************************
+function _BU_internal_FormatArray(aFieldsOnly:A)
+   | i |
+   Result := '',
+   for i := 1 to ALen(aFieldsOnly) do
+      Result += '/' + aFieldsOnly[i] + '/'
+   next,
+end,
+
+//******************************************************************************
+function _BU_internal_AddRecordToElement(oElement, oDataSet, cFieldsOnly, bIgnoreNullValues)
+   | i, oCurrentField, uFieldValue |
+   
+   for i := 0 to oDataSet.CbFieldCount - 1 do
+      oCurrentField := oDataSet.CbField(i),
+      if not empty(oCurrentField) then // in SQL-Queries (TBeAdsQuery) gibt es kein 0.tes Feld
+         // Ggf. nur Felder, die in aFieldsOnly angegeben sind in das Datensatz-
+         // Element mit aufnehmen.
+         // Folgende Felder werden per Default ignoriert bzw. nicht aufgenommen:
+         //  * REC_NO
+         if (oCurrentField.FieldName <> 'REC_NO') and
+            (Empty(cFieldsOnly) or '/' + oCurrentField.FieldName + '/' $ cFieldsOnly) then
+            uFieldValue := AsVariant(oCurrentField.FieldName, oDataSet),
+            if not bIgnoreNullValues or uFieldValue <> null then
+               oElement.AddElement(oCurrentField.FieldName, uFieldValue),
+            endif,
+         endif,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert beliebiges DataSet (z.B. TBeRightsTable,
+//  TBeAdsQuery, TBeMemTable, etc.) in eine JSON-Objekt-Struktur eines
+// beas-Service Ausgabeparameter-Objekts.
+//
+// Parameter:
+//  * oOutputParam:
+//     beas-Service Ausgabeparameter-Objekt, der das die JSON-Struktur enthält.
+//  * oDataSet:
+//     DataSet das konvertiert werden soll.
+//  * cRootElementName:
+//     Name des JSON-Elements, in dem die Daten des DataSets gespeichert werden.
+//  * aFieldsOnly:
+//     Der Parameter ermöglicht es nur bestimmte Felder in das
+//     Ausgabe-JSON-Objekt zu übernehmen, sofern der Parameter nicht leer ist.
+//     Ist der Parameter leer (leeres Array), werden standardmäßig alle Felder
+//     in das Ausgabe-JSON-Objekt übernommen.
+//
+// @Result: null - Ausgabe ist in oOutputParam enthalten
+//******************************************************************************
+function _BU_DataSetToJSON(oOutputParam:O, oDataSet:O, cRootElementName:C, aFieldsOnly:A, bIgnoreNullValues:=false)
+   | oRootElement, oRecordElement, cFieldsOnly |
+   
+   oRootElement := BU_internal_AddRootElement(oOutputParam, cRootElementName, true),
+   cFieldsOnly  := BU_internal_FormatArray(aFieldsOnly),
+   
+   oDataSet.CbFirst(),
+   while not oDataSet.CbEof do
+      // Neues JSON-Complex-Element für Datensatz hinzufügen
+      oRecordElement := oRootElement.AddComplexElement(''),
+      BU_internal_AddRecordToElement(oRecordElement, oDataSet, cFieldsOnly, bIgnoreNullValues),
+      oDataSet.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert beliebiges Record eines DataSet
+// (z.B. TBeRightsTable, TBeAdsQuery, TBeMemTable, etc.) in eine
+// JSON-Objekt-Struktur eines beas-Service Ausgabeparameter-Objekts.
+//
+// Parameter:
+//  * oOutputParam:
+//     beas-Service Ausgabeparameter-Objekt, der das die JSON-Struktur enthält.
+//  * oDataSet:
+//     DataSet mit dem Record das konvertiert werden soll.
+//  * cRootElementName:
+//     Name des JSON-Elements, in dem die Daten des DataSets gespeichert werden.
+//
+// @Result: null - Ausgabe ist in oOutputParam enthalten
+//******************************************************************************
+function _BU_RecordToJSON(oOutputParam:O, oDataSet:O, cRootElementName:C, aFieldsOnly:A, bIgnoreNullValues:=false)
+   | oRootElement, cFieldsOnly |
+   
+   oRootElement := BU_internal_AddRootElement(oOutputParam, cRootElementName, false),
+   cFieldsOnly  := BU_internal_FormatArray(aFieldsOnly),
+   
+   BU_internal_AddRecordToElement(oRootElement, oDataSet, cFieldsOnly, bIgnoreNullValues),
+end,
+
+//******************************************************************************
+// Konvertiert ein Locale (https://de.wikipedia.org/wiki/Locale) in eine
+// be-Sprachnummer.
+//
+// Input ist typischerweise oContext.CbLocale
+//
+// Quelle: "G_BeTransLanguageID" in "U_GlobalTypes.pas"
+//
+// @Result: numeric - be-Sprachnummer, 4 bei nicht unterstütztem Locale
+//******************************************************************************
+function _BU_LocaleToBeLanguage(cLocale:C:='de')
+   case Lower(Left(cLocale, 2))
+      of 'de' :: Result := 4,  // Deutsch
+      of 'en' :: Result := 6,  // Englisch
+      of 'fr' :: Result := 1,  // Frankreich
+      of 'it' :: Result := 5,  // Italien
+      of 'nl' :: Result := 3,  // Niederlande
+      of 'cs' :: Result := 61, // Tschechisch
+      of 'pl' :: Result := 60, // Polnisch
+      of 'ro' :: Result := 66, // Rumänien
+      of 'sl' :: Result := 67, // Slowenisch
+      of 'tr' :: Result := 52, // Türkisch
+      otherwise
+         Result := 4, // Default-Sprache ist "Deutsch"
+   endcase,
+end,
+
+//******************************************************************************
+// Die Funktion erstellt eine Fehler Response in einem BEAS Output und führt
+// einen RollBack auf ein Datenmodul aus, wenn es übergeben wird
+// @Result: null
+//******************************************************************************
+function _BU_ErrorAndTransactionHandler(oOutputParam, oDM:O:=nil)
+   | oParams, oErrorParam, cErrorText |
+
+   if not Empty(oDM) then
+      BeRollbackTransaction(oDM),
+   endif,
+
+   case ClassName(oOutputParam)
+      of 'TBeasCbDynamicServiceOutput' :: oParams := oOutputParam.CbParams,
+      of 'TBeasCbServiceOutputParam'   :: oParams := oOutputParam,
+      otherwise SetError('Parameter oOutputParam must be of type <TBeasCbDynamicServiceOutput> or <TBeasCbServiceOutputParam>'),
+   endcase,
+
+   oParams.DeleteAllParams(),
+   oErrorParam := oParams.AddComplexParam('error'),
+   
+   // TODO: globale utils für "Fehlermeldungs-Text zusammenbasteln" erstellen und hier nutzen
+   cErrorText := GetErrorText(),
+   cErrorText := strtran(cErrorText, crlf, ' '),
+   cErrorText := strtran(cErrorText, '}', ' '),
+   cErrorText := strtran(cErrorText, '{', ' '),
+   cErrorText := strtran(cErrorText, chr(195), ''),
+   cErrorText := strtran(cErrorText, chr(2), ''),
+   cErrorText := strtran(cErrorText, chr(3), ''),
+   cErrorText := strtran(cErrorText,'Ä' , 'AE'),
+   cErrorText := strtran(cErrorText,'ä' , 'ae'),
+   cErrorText := strtran(cErrorText,'Ü' , 'UE'),
+   cErrorText := strtran(cErrorText,'ü' , 'ue'),
+   cErrorText := strtran(cErrorText,'Ö' , 'OE'),
+   cErrorText := strtran(cErrorText,'ö' , 'oe'),
+   cErrorText := strtran(cErrorText,'ß' , 'ss'),
+   cErrorText := strtoken(cErrorText, "Context: BCT_USER", 1),
+
+   oErrorParam.AddElement('message',  cErrorText),
+   oErrorParam.AddElement('stack',    DebugArr(GetErrorStack(true))),
+   oErrorParam.AddElement('code',     Str(getErrorcode())),
+   oErrorParam.AddElement('progname', trim(Progname())),
+end,
+

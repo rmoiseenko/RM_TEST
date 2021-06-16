@@ -1,0 +1,331 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dialog zur Buchung einer Vorgangsleistung
+// Result: null
+//##############################################################################
+//##############################################################################
+
+|
+   // Parameter
+   oOwner:P1,
+   nProjTaskEffortID:P2:=434, // Datensatz-ID der Vorgangsleistung (DABPVL) auf welche gebucht werden soll
+
+   // Allgemeines
+   m_oDM,
+
+   // BO's
+   m_oProjController, m_oProjBo, m_oProjTaskBO, m_oProjTaskEffortBO,
+
+   // Tabellen
+   m_oDabPRJ, m_oDabPRV, m_oDabPVL, m_oDab020_Grid,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_Cancel, A_CreatePosting, ActionList, bipnl_Top, btn_Cancel, btn_Post, cmb_Resource,
+  ds_Dab020, ds_DabPRJ, ds_DabPRV, ds_DabPVL, dtp_PostingDate, edt_EffortDesc, edt_EffortPosNR, edt_PostingComment,
+  edt_PostingQuantity, edt_PostingQuantityMinutes, edt_ProjectDesc, edt_ProjID, edt_TaskDesc, grd_Dab020, lbl_Comment, lbl_DateOfPost,
+  lbl_Effort, lbl_HoursAsMinutes, lbl_PostHistory, lbl_ProjectDesc, lbl_Quantity, lbl_RessourcePerson, lbl_Task, pnl_Bottom,
+  pnl_Grid, pnl_Main, pnl_Posting, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Buchung der Vorgangsleistung über den TBeProjectBusinessController
+// @Result: null
+//******************************************************************************
+function CreatePosting(dPostingDate, nQuantity, cComment)
+| nOldPostingCountVal |
+   // Die Anzahl der Buchungen merken, vor dem  buchen merken
+   nOldPostingCountVal := m_oProjTaskBO.CbPostingCount,
+
+   m_oProjController.CbCreateEffortPosting( m_oProjBo, m_oProjTaskBO, m_oProjTaskEffortBO,
+                                            dPostingDate, nQuantity, cComment ),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Menge in Minuten validieren
+//******************************************************************************
+function edt_PostingQuantityMinutesValidateValue( Sender )
+| nMinutes |
+   startseq
+      nMinutes := ToFloat(edt_PostingQuantityMinutes.Text),
+      if Frac(Round(nMinutes / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 then
+         SetError('Eingabe nur in ' + FormatFloat('##', gl_ProjectValidPostingsStep) +  '-Minuten-Schritten erlaubt', 53),
+
+         oForm.ActiveControl := edt_PostingQuantityMinutes,
+         exit,
+      endif,
+
+      // Minuten als in Stunden umrechnen und ins H-Feld eintragen
+      edt_PostingQuantity.Text := Round(nMinutes / 60, cPMResMinutePrec),
+   onerror
+      MessageDlg('Fehler beim Validieren der Menge in Minuten' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Menge in Stunden validieren
+//******************************************************************************
+function edt_PostingQuantityValidateValue( Sender )
+| nHours |
+   startseq
+      nHours := ToFloat(edt_PostingQuantity.Text),
+      if Frac(Round((nHours * 60) / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 then
+         SetError('Eingabe nur in ' + FormatFloat('0.##', gl_ProjectValidPostingsStep / 60) +  '-Stunden-Schritten erlaubt'),
+
+
+         oForm.ActiveControl := edt_PostingQuantity,
+         exit,
+      endif,
+
+      edt_PostingQuantityMinutes.Text := Round(nHours * 60, cPMResMinutePrec),
+   onerror
+      MessageDlg('Fehler beim Validieren der Menge in Stunden' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Abbrechen der Buchung -> Schließen des_Dialogs
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Erstellen einer Projekt-Vorgangs-Leistungs-Buchung mit den an der
+// Oberfläche eingegebenen Werten
+//******************************************************************************
+function A_CreatePostingExecute( Sender )
+| dPostingDate, nQuantity, cComment |
+
+   // Eingaben aus GUI holen
+   dPostingDate := dtp_PostingDate.Date,
+   nQuantity    := StrToFloat(edt_PostingQuantityMinutes.Text),
+   cComment     := edt_PostingComment.Text,
+   if empty(RtfToText(cComment)) then
+      cComment  := '',
+   endif,
+
+   // GUI-Validierungen
+   if Frac(Round(nQuantity / gl_ProjectValidPostingsStep * 60, cPMResMinutePrec)) <> 0 then
+      StatusError('Eingabe nur in ' + FormatFloat('##', gl_ProjectValidPostingsStep) +  '-Minuten-Schritten erlaubt'),
+      exit,
+   endif,
+   if nQuantity = 0 then
+      StatusError('Buchungsmenge 0 nicht zulässig.'),
+      exit,
+   endif,
+   if dPostingDate = 0 then
+      StatusError('Leeres Buchungsdatum nicht zulässig.'),
+      exit,
+   endif,
+
+   bipnl_Top.Caption   := 'Buchung läuft...',
+   bipnl_Top.ColorMode := ipcmOK,
+   ProcessMsg(),
+   Sleep(5),
+
+   startseq,
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq,
+         CreatePosting(dPostingDate, nQuantity, cComment),
+         DbCommit(m_oDM.AdsConnection)
+      always,
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection)
+         endif,
+      stopseq,
+
+      CloseForm(oForm),
+   onerror,
+      // Fehler aufgrund fehlender Neuanlage-Rechte in schöne Meldung wandeln
+      if ClassName(GetErrorObj()) = 'EBeCustomDBBoInsertException' then
+         MessageDlg(GetLangText(1505), mtError),
+      else
+         MessageDlg('Fehler beim Buchen der Vorgangsleistung.' + crlf + GetErrorText(), mtError),
+      endif,
+
+      bipnl_Top.Caption   := 'Buchung fehlgeschlagen',
+      bipnl_Top.ColorMode := ipcmError,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      oForm                      := LoadForm( "@PROJPLB", Application ),
+      A_Cancel                   := FindObject( oForm, "A_Cancel" ),
+      A_CreatePosting            := FindObject( oForm, "A_CreatePosting" ),
+      ActionList                 := FindObject( oForm, "ActionList" ),
+      bipnl_Top                  := FindObject( oForm, "bipnl_Top" ),
+      btn_Cancel                 := FindObject( oForm, "btn_Cancel" ),
+      btn_Post                   := FindObject( oForm, "btn_Post" ),
+      cmb_Resource               := FindObject( oForm, "cmb_Resource" ),
+      ds_Dab020                  := FindObject( oForm, "ds_Dab020" ),
+      ds_DabPRJ                  := FindObject( oForm, "ds_DabPRJ" ),
+      ds_DabPRV                  := FindObject( oForm, "ds_DabPRV" ),
+      ds_DabPVL                  := FindObject( oForm, "ds_DabPVL" ),
+      dtp_PostingDate            := FindObject( oForm, "dtp_PostingDate" ),
+      edt_EffortDesc             := FindObject( oForm, "edt_EffortDesc" ),
+      edt_EffortPosNR            := FindObject( oForm, "edt_EffortPosNR" ),
+      edt_PostingComment         := FindObject( oForm, "edt_PostingComment" ),
+      edt_PostingQuantity        := FindObject( oForm, "edt_PostingQuantity" ),
+      edt_PostingQuantityMinutes := FindObject( oForm, "edt_PostingQuantityMinutes" ),
+      edt_ProjectDesc            := FindObject( oForm, "edt_ProjectDesc" ),
+      edt_ProjID                 := FindObject( oForm, "edt_ProjID" ),
+      edt_TaskDesc               := FindObject( oForm, "edt_TaskDesc" ),
+      grd_Dab020                 := FindObject( oForm, "grd_Dab020" ),
+      lbl_Comment                := FindObject( oForm, "lbl_Comment" ),
+      lbl_DateOfPost             := FindObject( oForm, "lbl_DateOfPost" ),
+      lbl_Effort                 := FindObject( oForm, "lbl_Effort" ),
+      lbl_HoursAsMinutes         := FindObject( oForm, "lbl_HoursAsMinutes" ),
+      lbl_PostHistory            := FindObject( oForm, "lbl_PostHistory" ),
+      lbl_ProjectDesc            := FindObject( oForm, "lbl_ProjectDesc" ),
+      lbl_Quantity               := FindObject( oForm, "lbl_Quantity" ),
+      lbl_RessourcePerson        := FindObject( oForm, "lbl_RessourcePerson" ),
+      lbl_Task                   := FindObject( oForm, "lbl_Task" ),
+      pnl_Bottom                 := FindObject( oForm, "pnl_Bottom" ),
+      pnl_Grid                   := FindObject( oForm, "pnl_Grid" ),
+      pnl_Main                   := FindObject( oForm, "pnl_Main" ),
+      pnl_Posting                := FindObject( oForm, "pnl_Posting" ),
+      pnl_Top                    := FindObject( oForm, "pnl_Top" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+
+   dtp_PostingDate.Date                           := Date(),
+   dtp_PostingDate.MinDate                        := Date() - 30,
+   dtp_PostingDate.MaxDate                        := Date() + 5,
+
+   edt_PostingQuantity.Picture.PictureMask        := '[{-,#}][#][#][#][;,[#][#][#][#]]',
+   edt_PostingQuantity.Text                       := '0',
+
+   edt_PostingQuantityMinutes.Picture.PictureMask := '[{-,}]*8[#]',
+   edt_PostingQuantityMinutes.Text                := '0',
+
+   oForm.ActiveControl                            := edt_PostingQuantity,
+
+   if empty(oOwner) then
+      oForm.BorderStyle := bsDialog,
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Öffnen aller benötigten Tabellen und BO's auf der selben Connection
+// @Result: null
+//******************************************************************************
+function OpenDataBase()
+   // Business-Objekte erstellen und auf das selbe DatenModul setzen
+   m_oDM                            := CreateObject('TBeDbGet', 'Posting_DM', oForm, oForm),
+
+   m_oProjController                := CreateObject('TBeProjectBusinessController', 'Posting_Proj_Controller', oForm),
+   m_oProjController.CBDataModule   := m_oDM,
+
+   m_oProjBo                        := CreateObject('TBeProjectBo', 'Posting_Proj_Bo', oForm, oForm),
+   m_oProjBo.CBDataModule           := m_oDM,
+   m_oDabPRJ                        := DBGetTable(m_oDM, waDabPRJ),
+
+   m_oProjTaskBO                    := CreateObject('TBeProjectTaskBO', 'Posting_Task_BO', oForm, oForm),
+   m_oProjTaskBO.CBDataModule       := m_oDM,
+   m_oDabPRV                        := DBGetTable(m_oDM, waDabPRV),
+
+   m_oProjTaskEffortBO              := CreateObject('TBeProjectTaskEffortBO', 'Posting_Effort_BO', oForm, oForm),
+   m_oProjTaskEffortBO.CBDataModule := m_oDM,
+   m_oDabPVL                        := DBGetTable(m_oDM, waDabPVL),
+
+   m_oDab020_Grid                   := DBGetTable(m_oDM, waDAB020, 'DAB020_GRID'), // nicht den Std.Alias, damit keine Interaktion mit dem Buchungs-BO entstehen kann (Vorsichtsmaßnahme)
+   m_oDab020_Grid.IndexName         := 'VORGLS_ID',
+
+   ds_DabPRJ.DataSet                := m_oDabPRJ,
+   ds_DabPRV.DataSet                := m_oDabPRV,
+   ds_DabPVL.DataSet                := m_oDabPVL,
+   ds_Dab020.DataSet                := m_oDab020_Grid,
+   grd_Dab020.RegisterDataSet       := m_oDab020_Grid,
+   grd_Dab020.ID                    := '@PRJPLBCP', // Achtung wird auch in "Gebuchte Vorgangsleistungen" verwendet
+   grd_Dab020.ReadWriteProps        := False,
+end,
+
+//******************************************************************************
+// Positionieren der BusinessObjekte
+// @Result: boolean - alles richtig positioniert
+//******************************************************************************
+function SearchTaskEffort()
+   Result := False,
+   startseq
+      // Vorgangsleistung positionieren
+      m_oProjTaskEffortBO.CbGoToID(nProjTaskEffortID),
+      // Vorgang positionieren
+      m_oProjTaskBO.CbGoToID(m_oProjTaskEffortBO.CbTaskID),
+      // Projekt positionieren
+      m_oProjBo.CbGoToID(m_oProjTaskBO.CbProjectID),
+      // Anzeige der bereits gebuchten Leistungen filtern
+      DbFilter('VORGLS_ID = ' + Str(nProjTaskEffortID), m_oDab020_Grid),
+      DBGoBottom(m_oDab020_Grid),
+      Result := True,
+   onerror
+      SetError('Fehler in SearchTaskEffort()' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   OpenDataBase(),
+   // Nur anzeigen wenn alle BO's richtig positioniert wurden
+   if SearchTaskEffort() then
+      ShowGUI(),
+   endif,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,

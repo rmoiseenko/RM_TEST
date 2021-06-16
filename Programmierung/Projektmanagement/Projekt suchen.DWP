@@ -1,0 +1,839 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Fenster zum Suchen von Projekten
+//##############################################################################
+//##############################################################################
+|
+   oOwner:P1, cSAVEID:P2, nPresetProjectID:P3:=-1, m_nPresetTaskID:P4:=-1,
+   m_aSettingsArray:P5, m_cShowProjectOrTaskMode:P6:='PROJECTSANDTASKS',
+   m_aMainResult, m_cDefaultSaveId, m_aParams,
+
+   // Filter-Array-Namen
+   m_cPRJProjectType, m_cPRJProjectTypeReadOnly,
+   m_cPRJMainResponsiblePerson, m_cPRJMainResponsiblePersonReadOnly,
+   m_cPRJCustomer, m_cPRJCustomerReadOnly,
+   m_cPRJPriority, m_cPRJPriorityReadOnly,
+   m_cPRJProcessState, m_cPRJProcessStateReadOnly,
+   m_cPRJStateTrafficLight, m_cPRJStateTrafficLightReadOnly,
+   m_cPRVProcessState, m_cPRVProcessStateReadOnly,
+
+   // Aufruf-Modi
+   m_cProjectsAndTasks, m_cOnlyProjects, m_cOnlyTasks,
+
+   // Result
+   m_cResultMode, m_cSelectionMode, m_cResultProjectID, m_cResultTaskID, m_cProject,
+
+   // sonstige
+   m_nLastTaskID,
+
+   // Browser
+   m_cProjectBrowser, m_cTaskBrowser,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_Cancel, A_ChooseProject, A_ChooseTask, A_ClearFilter, A_ClearTaskFilter, A_GoTo, A_Search,
+  BeBitBtn1, bipnl_Projects, bipnl_Tasks, btn_Cancel, btn_ChooseProject, btn_ChooseTask, btn_ClearFilter, btn_ClearTaskFilter,
+  btn_GoTo, cmb_Project_MainResponisblePerson, cmb_Project_Priority, cmb_Project_ProcessState, cmb_Project_StateTrafficLight, cmb_Project_Type, cmb_Task_ProcessState, ds_DABPRJ,
+  ds_DABPRV, edt_Project_Customer, edt_Search, edt_SearchTasks, grd_Proj, grd_Tasks, oDABPRJ, oDABPRV,
+  pnl_FilterControls, pnl_MainTaskSearchPanel, pnl_Options, pnl_SearchResult, pnl_TaskFilterPanel
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cDefaultSaveId := 'PRJSEARSAV',
+
+// Filter-Array-Namen
+m_cPRJProjectType                   := 'PRJ_TYP',
+m_cPRJProjectTypeReadOnly           := 'PRJ_TYP_RO',
+m_cPRJMainResponsiblePerson         := 'PRJ_VERANTWORT',
+m_cPRJMainResponsiblePersonReadOnly := 'PRJ_VERANTWORT_RO',
+m_cPRJCustomer                      := 'PRJ_KDNR',
+m_cPRJCustomerReadOnly              := 'PRJ_KDNR_RO',
+m_cPRJPriority                      := 'PRJ_PRIORITAET',
+m_cPRJPriorityReadOnly              := 'PRJ_PRIORITAET_RO',
+m_cPRJProcessState                  := 'PRJ_STATUS',
+m_cPRJProcessStateReadOnly          := 'PRJ_STATUS_RO',
+m_cPRJStateTrafficLight             := 'PRJ_SA_GESAMT',
+m_cPRJStateTrafficLightReadOnly     := 'PRJ_SA_GESAMT_RO',
+m_cPRVProcessState                  := 'PRV_STATUS',
+m_cPRVProcessStateReadOnly          := 'PRV_STATUS_RO',
+
+// Aufruf-Modi
+m_cProjectsAndTasks := 'PROJECTSANDTASKS',
+m_cOnlyProjects     := 'ONLYPROJECTS',
+m_cOnlyTasks        := 'ONLYTASKS',
+
+// Result
+m_cResultMode      := 'RESULTMODE',
+m_cSelectionMode   := 'SELECTIONMODE',
+m_cResultProjectID := 'PROJEKT_ID',
+m_cResultTaskID    := 'VORGANGS_ID',
+m_cProject         := 'PROJECT',
+
+// Browser
+m_cProjectBrowser := '@PROJBRW',
+m_cTaskBrowser    := '@TASKBRW',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion erstellt das Result des Programms in Abhängigkeit des Aufrufs
+//******************************************************************************
+function CreateMainResult(nOKOrCancel, cResultMode)
+   m_aMainResult := {},
+   AAdd(m_aMainResult, {m_cResultMode, nOKOrCancel}),
+   AAdd(m_aMainResult, {m_cSelectionMode, cResultMode}),
+   AAdd(m_aMainResult, {m_cResultProjectID, oDABPRJ:ID}),
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      AAdd(m_aMainResult, {m_cResultTaskID, oDABPRV:ID}),
+   endif,
+end,
+
+//******************************************************************************
+// Öffet die Tabellen
+//******************************************************************************
+function OpenTables()
+   // Tabellen öffnen
+   oDABPRJ.CheckReadAccess := raFilter, // Datensätze ohne Berechtigung automatisch ausfiltern
+   oDABPRJ.Active          := True,
+   grd_Proj.DataSource     := ds_DABPRJ,
+   grd_Proj.ReadWriteProps := False,
+
+   // Die DabPRV muss nicht geöffnet werden, wenn nur die Projekte angezeigt werden
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      oDABPRV.CheckReadAccess  := raFilter, // Datensätze ohne Berechtigung automatisch ausfiltern
+      oDABPRV.Active           := True,
+      oDABPRV.AliasName        := 'DABPRV_Grid',
+      oDABPRV.IndexName        := 'PRJ_ID',
+      grd_Tasks.DataSource     := ds_DABPRV,
+      grd_Tasks.ReadWriteProps := False,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion validiert einen Name-Value-Parameter
+//******************************************************************************
+function ValidateNameValue(aNVArray, cName)
+      if ValType(aNVArray) <> 'A' then
+         SetError('Der erste Parameter der Funktion muss ein Array sein.'),
+      endif,
+
+      if cName <> Upper(cName) then
+         Seterror('Der Bezeichner für den Filter muss groß geschrieben sein.'),
+      endif,
+end,
+
+//******************************************************************************
+// Die Funktion sucht in einem übergebenem Array einen übergenen Wert und
+// liefert diesen zurück falls er gefunden wurde. Konnte der Wert nicht gefunden
+// werden so liefert die Funktion den übergebenen Defaulz-Wert zurük
+// @Result: Variant
+//******************************************************************************
+function GetNameValueDef(aNVArray, cName, uDefaultValue)
+| i |
+   Result := uDefaultValue,
+   startseq
+      if not empty(aNVArray) then
+         ValidateNameValue(aNVArray, cName),
+
+         for i := 1 to ALen(aNVArray) do
+            if aNVArray[i, 1] == cName then
+               Result := aNVArray[i, 2],
+               break,
+            endif,
+         next,
+      endif,
+   onerror
+      SetError('Fehler in der Funktion "GetNameValueDef()"' + CrLf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion fügt einen Wert zu einem Array hinzu, das als
+// Programm-Rückgabe dient
+//******************************************************************************
+function SetNameValue(aNVArray, cName, uValue)
+   ValidateNameValue(aNVArray, cName),
+   AAdd(aNVArray, {cName, uValue}),
+end,
+
+//******************************************************************************
+// Steuert die Verfügbarkeit der Buttons
+//******************************************************************************
+function ActionsEnabled()
+| bEnabled |
+   bEnabled := not empty(oOwner),
+
+   A_GoTo.Enabled := bEnabled and not (eof(oDABPRJ) and bof(oDABPRJ)),
+   A_GoTo.Visible := bEnabled,
+
+   A_ChooseProject.Enabled := not (eof(oDABPRJ) and bof(oDABPRJ)),
+
+   A_ChooseTask.Enabled    := oDABPRV.Active and not (eof(oDABPRV) and bof(oDABPRV)),
+end,
+
+//******************************************************************************
+// Die Funktion erzeugt aus ausgewählten Hauptverantwortlichen einen
+// Filterstring.
+// PrjMgmt_CreateFilter kann hier nicht verwendet werden, da diese Funktion
+// Filter nur für Integer Werte erzeugen kann
+//******************************************************************************
+function CreateCharFilterString()
+| i, cUser |
+   Result := '',
+   for i := 1 to TokenCount(cmb_Project_MainResponisblePerson.Value, '/') do
+      cUser := Trim(Token(cmb_Project_MainResponisblePerson.Value, '/', i)),
+      if not empty(cUser) then
+         Result += iif(empty(Result), '( ', ' OR '),
+         Result += ' VERANTWORT = ''' + cUser + '''',
+      endif,
+   next,
+   if not empty(Result) then
+      Result += ' )',
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion erstellt aus den Werten der Filter Controls und des Suchtextes
+// einen Filter String und filter die DabPRJ nach diesem
+//******************************************************************************
+function FilterProjectTable(cFilterText)
+   Result := '',
+   if not empty(cmb_Project_Type.Value) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += PrjMgmt_CreateFilter(cmb_Project_Type.Value, 'TYP'),
+   endif,
+   if not empty(cmb_Project_MainResponisblePerson.Value) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += CreateCharFilterString(),
+   endif,
+   if not empty(edt_Project_Customer.Text) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += 'KDNR = ' + edt_Project_Customer.Text ,
+   endif,
+   if not empty(cmb_Project_Priority.Value) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += PrjMgmt_CreateFilter(cmb_Project_Priority.Value, 'PRIORITAET'),
+   endif,
+   if not empty(cmb_Project_ProcessState.Value) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += PrjMgmt_CreateFilter(cmb_Project_ProcessState.Value, 'STATUS'),
+   endif,
+   if not empty(cmb_Project_StateTrafficLight.Value) then
+      Result += iif(empty(Result), '', ' AND '),
+      Result += PrjMgmt_CreateFilter(cmb_Project_StateTrafficLight.Value, 'SA_GESAMT'),
+   endif,
+
+   // wenn das Such-Edit und mindestens eines der Filter-Controls gefüllt sind,
+   // müssen die Filter-Strings duch ein "AND" verbunden werden
+   if (cFilterText <> '') and (not empty(Result)) then
+      Result := ' AND ' + Result,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion erstellt aus den Werten des Filter-Controls und des Suchtextes
+// einen Filter-String
+//******************************************************************************
+function CreateTaskTableFilter()
+   Result := '',
+   if not empty(cmb_Task_ProcessState.Value) then
+      Result := ' AND ' + PrjMgmt_CreateFilter(cmb_Task_ProcessState.Value, 'STATUS'),
+   endif,
+end,
+
+//******************************************************************************
+// Filtert die Projekttabelle mit Hilfe des FTS-Index auf das SUCHE-Feld
+//******************************************************************************
+function SearchProject()
+| cOrgSearchText, cOptiSearchText, oErrObj, nOldProjectID, nOldTaskId |
+   startseq
+      nOldProjectID   := oDABPRJ:ID,
+      cOrgSearchText  := edt_Search.Text,
+      cOptiSearchText := PrepareTextforFTSSearch(waDabPrj,
+                                                 'SUCHE',
+                                                 cOrgSearchText,
+                                                 'SUCHE_FTS',
+                                                 True,
+                                                 True,
+                                                 'AND',
+                                                 True),
+
+      // Inhalt der Controls zu dem Filter hinzufügen
+      cOptiSearchText += FilterProjectTable(cOptiSearchText),
+      Prs('SearchProject()', 'SearchText: ' + cOptiSearchText),
+
+      // Id des aktuellen Vorgangs merken
+      if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+         nOldTaskId := oDABPRV:ID,
+      endif,
+
+      // Filter aufheben - setzen - aktivieren
+      startseq
+         oDABPRJ.Filtered := False,
+         oDABPRJ.Filter   := cOptiSearchText,
+         oDABPRJ.Filtered := True,
+
+         // Wieder auf das alte Projekt und Vorgang positionieren
+         DBSeek({nOldProjectID}, oDABPRJ),
+         if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+            DBLocate('ID', {nOldTaskID}, 0, oDABPRV)
+         endif,
+      onerror
+         oErrObj := GetErrorObj(),
+         // Ads-Filter Exception abfangen und verschlucken
+         if ClassName(oErrObj) = 'EADSDatabaseError' and
+            At('oDabPRJ: Error 7103', GetErrorText()) >= 0 then
+            Prs('SearchProject()', 'Error: ' + GetErrorText()),
+            exit,
+         else
+            SetError(GetErrorText()),
+         endif,
+      stopseq,
+   onerror
+      SetError('Fehler beim Setzen des Suchfilters' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Volltextsuche für Vorgänge
+//******************************************************************************
+function SearchTask()
+   | cSearchText, oErrObj, cFilter |
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      startseq
+         cFilter     := 'PRJ_ID = ' + Str(oDABPRJ:ID),
+         cSearchText := edt_SearchTasks.Text,
+         if not empty(cSearchText) then
+            cSearchText := PrepareTextforFTSSearch(waDabPRV,
+                                                   'SUCHE',
+                                                   cSearchText,
+                                                   'SUCHE_FTS',
+                                                   True,
+                                                   True,
+                                                   'AND',
+                                                   True),
+             cFilter += ' AND ' + cSearchText,
+          endif,
+         // Inhalt der Controls zu dem Filter hinzufügen
+         cFilter += CreateTaskTableFilter(),
+         Prs('SearchTask()', 'Filter: ' + cFilter),
+
+         // Filter aufheben - setzen - aktivieren
+         startseq
+            oDABPRV.Filtered := False,
+            oDABPRV.Filter   := cFilter,
+            oDABPRV.Filtered := True,
+         onerror
+            oErrObj := GetErrorObj(),
+            // Ads-Filter Exception abfangen und verschlucken
+            if ClassName(oErrObj) = 'EADSDatabaseError' and
+               At('oDabPRV: Error 7103', GetErrorText()) >= 0 then
+               Prs('SearchTask()', 'Error: ' + GetErrorText()),
+               exit,
+            else
+               SetError(GetErrorText()),
+            endif,
+         stopseq,
+      onerror
+         SetError('Fehler beim Setzen des Suchfilters' + crlf + GetErrorText()),
+      stopseq
+   endif,
+end,
+
+//******************************************************************************
+// Filtert die DabPRV
+//******************************************************************************
+function FilterTaskGrid()
+| nOldTaskID |
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      startseq
+         if oDABPRV.Active then
+            nOldTaskID       := oDABPRV:ID,
+            oDABPRV.Filtered := False,
+            oDABPRV.Filter   := 'PRJ_ID = ' + Str(oDABPRJ:ID) + CreateTaskTableFilter(),
+            oDABPRV.Filtered := True,
+            DBLocate('ID', {nOldTaskID}, 0, oDABPRV)
+         endif,
+      onerror
+         SetError('Fehler in FilterTaskGrid()' + crlf + GetErrorText()),
+      stopseq,
+      ActionsEnabled(),
+   endif,
+end,
+
+//******************************************************************************
+// Bestätigt die Auswahl und schließt das Fenster
+//******************************************************************************
+function CommitChoice(cResultMode)
+   if not empty(oDABPRJ:ID) then
+      CreateMainResult(mrOK, cResultMode),
+      CloseForm(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion leert die Filter-Controls und hebt den Filter auf die DabPRJ auf
+//******************************************************************************
+function ClearFilter()
+   // Hier muss nun der ReadOnly-Status der einzelen Filter gesetzt werden
+   if not GetNameValueDef(m_aSettingsArray, m_cPRJProjectTypeReadOnly, false) then
+      cmb_Project_Type.Value := '',
+   endif,
+
+   if not GetNameValueDef(m_aSettingsArray , m_cPRJMainResponsiblePersonReadOnly, false) then
+      cmb_Project_MainResponisblePerson.Value := '',
+   endif,
+
+   if not GetNameValueDef(m_aSettingsArray, m_cPRJCustomerReadOnly, false) then
+      edt_Project_Customer.Text := '',
+   endif,
+
+   if not GetNameValueDef(m_aSettingsArray, m_cPRJPriorityReadOnly, false) then
+      cmb_Project_Priority.Value := '',
+   endif,
+
+   if not GetNameValueDef(m_aSettingsArray, m_cPRJProcessStateReadOnly, false) then
+      cmb_Project_ProcessState.Value := '',
+   endif,
+
+   if not GetNameValueDef(m_aSettingsArray, m_cPRJStateTrafficLightReadOnly, false) then
+      cmb_Project_StateTrafficLight.Value := '',
+   endif,
+
+   // Suche neu ausführen
+   SearchProject(),
+end,
+
+//******************************************************************************
+// Die Funktion leert die Filter-Controls und hebt den Filter auf die DabPRV auf
+//******************************************************************************
+function ClearTaskFilter()
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      if not GetNameValueDef(m_aSettingsArray, m_cPRVProcessStateReadOnly, false) then
+         cmb_Task_ProcessState.Value := '',
+      endif,
+
+      // Neu Filtern und Suchen
+      FilterTaskGrid(),
+      SearchTask(),
+   endif,
+end,
+
+//******************************************************************************
+// Initialisiert die Filter-Controls und setzt die ReadOnly-Stati
+//******************************************************************************
+function InitFilterSettings()
+   // ggf. die Werte aus dem übergebenen Arrays in die Filter-Controls eintragen
+   cmb_Project_Type.Value                  := GetNameValueDef(m_aSettingsArray, m_cPRJProjectType, ''),
+   cmb_Project_MainResponisblePerson.Value := GetNameValueDef(m_aSettingsArray, m_cPRJMainResponsiblePerson, ''),
+   edt_Project_Customer.Text               := GetNameValueDef(m_aSettingsArray, m_cPRJCustomer, ''),
+   cmb_Project_Priority.Value              := GetNameValueDef(m_aSettingsArray, m_cPRJPriority, ''),
+   cmb_Project_ProcessState.Value          := GetNameValueDef(m_aSettingsArray, m_cPRJProcessState, ''),
+   cmb_Project_StateTrafficLight.Value     := GetNameValueDef(m_aSettingsArray, m_cPRJStateTrafficLight, ''),
+   cmb_Task_ProcessState.Value             := GetNameValueDef(m_aSettingsArray, m_cPRVProcessState, ''),
+
+   // Hier muss ggf. der ReadOnly-Status der einzelen Filter gesetzt werden
+   cmb_Project_Type.Enabled                  := not GetNameValueDef(m_aSettingsArray, m_cPRJProjectTypeReadOnly, false),
+   cmb_Project_MainResponisblePerson.Enabled := not GetNameValueDef(m_aSettingsArray, m_cPRJMainResponsiblePersonReadOnly, false),
+   edt_Project_Customer.Enabled              := not GetNameValueDef(m_aSettingsArray, m_cPRJCustomerReadOnly, false),
+   cmb_Project_Priority.Enabled              := not GetNameValueDef(m_aSettingsArray, m_cPRJPriorityReadOnly, false),
+   cmb_Project_ProcessState.Enabled          := not GetNameValueDef(m_aSettingsArray, m_cPRJProcessStateReadOnly, false),
+   cmb_Project_StateTrafficLight.Enabled     := not GetNameValueDef(m_aSettingsArray, m_cPRJStateTrafficLightReadOnly, false),
+   cmb_Task_ProcessState.Enabled             := not GetNameValueDef(m_aSettingsArray, m_cPRVProcessStateReadOnly, false),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Bestätigen der Auswahl per Enter
+//******************************************************************************
+function grd_TasksKeyDown( Sender, aKey )
+   if aKey = 13 and oDABPRV:ID > 0 then
+      CommitChoice(m_cProjectsAndTasks),
+      aKey := 0,
+   endif,
+end,
+
+//******************************************************************************
+// Beim Doppelklick auf den Browser, Auswahl bestätigen
+//******************************************************************************
+function grd_TasksDblClick( Sender )
+   if oDABPRV:ID > 0 then
+      CommitChoice(m_cProjectsAndTasks),
+   endif,
+end,
+
+//******************************************************************************
+// Bestätigen der Auswahl per Enter
+//******************************************************************************
+function grd_ProjKeyDown( Sender, aKey )
+   if aKey = 13 then
+      CommitChoice(m_cProject),
+      aKey := 0,
+   endif,
+end,
+
+//******************************************************************************
+// Bestätigen der Auswahl per Enter
+//******************************************************************************
+function edt_SearchKeyPress( Sender, aKey )
+   if aKey = chr(13) then
+      CommitChoice(m_cProject),
+   endif,
+end,
+
+//******************************************************************************
+// Wenn Pfeiltasten gedrückt werden soll sich dies auf den Browser auswirken.
+//******************************************************************************
+function edt_SearchKeyDown( Sender, aKey )
+   case aKey
+      of 38 :: DBSkip(-1, oDABPRJ),
+      of 40 :: DBSkip(1, oDABPRJ),
+   endcase
+end,
+
+//******************************************************************************
+// Setzt den GoTo-Button sichtbar oder unsichtbar
+//******************************************************************************
+function ds_DABPRJDataChange( Sender )
+   ActionsEnabled(),
+   FilterTaskGrid(),
+end,
+
+//******************************************************************************
+// Beim Doppelklick auf den Browser, Auswahl bestätigen
+//******************************************************************************
+function grd_ProjDblClick( Sender )
+   CommitChoice(m_cProject),
+end,
+
+//******************************************************************************
+// Positionierungen merken
+//******************************************************************************
+function FormExCloseQuery( Sender )
+| cParam |
+   startseq
+      if not empty(cSAVEID) then
+         cParam := cSAVEID,
+      else
+         cParam := m_cDefaultSaveId,
+      endif,
+
+      m_aParams := {},
+      AAdd(m_aParams, oDABPRJ:ID),             // Speichern der ID
+      SetBeParam(cParam, ArrToStr(m_aParams)), // Parameterarray speichern
+   onerror
+      MessageDlg('Fehler beim Setzen der SaveID' + crlf + crlf +
+                 GetErrorText(), mtError),
+   stopseq
+end,
+
+//******************************************************************************
+// Suche ausführen
+//******************************************************************************
+function edt_SearchSearchExecute( Sender )
+   SearchProject(),
+end,
+
+//******************************************************************************
+// Führt die Suche bei jeder Änderung in einer der ComboBoxen aus
+//******************************************************************************
+function OnFilterControllChange()
+   SearchProject(),
+end,
+
+//******************************************************************************
+// Führt die Suche in den Vorgängen erneut aus
+//******************************************************************************
+function cmb_Task_ProcessStateChange( Sender )
+   FilterTaskGrid(),
+end,
+
+//******************************************************************************
+// Wenn Pfeiltasten gedrückt werden soll sich dies auf den Browser auswirken.
+//******************************************************************************
+function edt_SearchTasksKeyDown( Sender, aKey )
+   case aKey
+      of 38 :: DBSkip(-1, oDABPRV),
+      of 40 :: DBSkip(1, oDABPRV),
+   endcase
+end,
+
+//******************************************************************************
+// Bestätigen der Auswahl per Enter
+//******************************************************************************
+function edt_SearchTasksKeyPress( Sender, aKey )
+   if aKey = chr(13) and oDABPRV:ID > 0 then
+      CommitChoice(m_cProjectsAndTasks),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Such-Feld per Strg+F wieder auswählen
+//******************************************************************************
+function A_SearchExecute( Sender )
+  oForm.ActiveControl := edt_Search,
+end,
+
+//******************************************************************************
+// Öffnet das aktuell markierte Projekt im Projekt-Stamm
+//******************************************************************************
+function A_GoToExecute( Sender )
+   ProjMgmtGUI_ShowProjectManagement(Sender, oDABPRJ:ID)
+end,
+
+//******************************************************************************
+// Bestätigen des Dialogs -> Rückgabe der ausgewählten Projekt-ID
+//******************************************************************************
+function A_ChooseProjectExecute( Sender )
+   CommitChoice(m_cProject),
+end,
+
+//******************************************************************************
+// Bestätigen des Dialogs -> Rückgabe der ausgewählten Projekt-ID und Vorgans-ID
+//******************************************************************************
+function A_ChooseTaskExecute( Sender )
+   CommitChoice(m_cProjectsAndTasks),
+end,
+
+//******************************************************************************
+// Abbrechen des Fensters
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Alle aktuellen Projekt-Filter leeren
+//******************************************************************************
+function A_ClearFilterExecute()
+   ClearFilter(),
+end,
+
+//******************************************************************************
+// Alle aktuellen Vorgangs-Filter leeren
+//******************************************************************************
+function A_ClearTaskFilterExecute( Sender )
+   ClearTaskFilter(),
+end,
+
+//******************************************************************************
+// Vorgangs-Suche ausführen
+//******************************************************************************
+function edt_SearchTasksSearchExecute( Sender )
+   SearchTask(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion zeigt je nach Modus nur die entsprechenden Teile der Make an
+// Die verschiedenen Modi sind:
+//   - cProjectsAnsTasks
+//   - cOnlyProjects
+//   - cOnlyTasks
+//******************************************************************************
+function SetShowOptions()
+   startseq
+      // Den Grids die BrowserIDs zuweisen
+      grd_Proj.ID               := m_cProjectBrowser,
+      grd_Proj.ReadWriteProps   := False,
+      grd_Tasks.ID              := m_cTaskBrowser,
+      grd_Tasks.ReadWriteProps  := False,
+
+      case m_cShowProjectOrTaskMode
+        of m_cProjectsAndTasks ::
+           btn_ChooseProject.Caption := 'Projekt wählen',
+           btn_ChooseTask.Caption    := 'Vorgang wählen',
+           MyFocusControl(oForm, edt_Search),
+
+        of m_cOnlyProjects ::
+           pnl_MainTaskSearchPanel.Visible := False,
+           pnl_SearchResult.Align          := alClient,
+           btn_ChooseTask.Visible          := False,
+           MyFocusControl(oForm, edt_Search),
+
+        of m_cOnlyTasks ::
+              // Wenn keine Projekt-ID übergeben wird => Fehler
+              if empty(nPresetProjectID) or nPresetProjectID <= 0 then
+                 SetError('Es wurde keine Projekt-ID übergeben.'),
+              endif,
+
+              // Wenn die Projekt-ID nicht gefunden werden kann => Fehler
+              if not DBSeek({nPresetProjectID}, oDABPRJ) then
+                 SetError('Das Projekt <' + Str(nPresetProjectID) + '> konnte nicht gefunden werden.'),
+              endif,
+
+              // Maske richtig anzeigen, falls keine Fehler aufgetreten sind
+              pnl_SearchResult.Visible      := False,
+              pnl_MainTaskSearchPanel.Align := alClient,
+              btn_ChooseProject.Visible     := False,
+              MyFocusControl(oForm, edt_SearchTasks),
+
+        // Falls der Übergabemodus nicht existiert oder klein geschrieben wurde
+        // Exception auslösen
+        otherwise SetError('Der übergebene Modus existiert nicht oder wurde klein geschrieben.'),
+      endcase,
+
+      // Vorgänge filtern
+      FilterTaskGrid(),
+
+      // Da die "Filter löschen" Buttons immer die Caption der Action annehmen,
+      // muss hier die Caption der Buttons entfernt werden
+      btn_ClearFilter.Caption     := '',
+      btn_ClearTaskFilter.Caption := '',
+   onerror
+      SetError('Fehler beim Anzeigen der Suche:' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Setzt die Optionen wie Margins, Hints, etc. für die Controls
+//******************************************************************************
+function SetOptions()
+| nProject, i, aArr |
+   nProject      := -1,
+   m_aMainResult := {{m_cResultMode, mrCancel}, {m_cResultProjectID, -1}, {m_cResultTaskID, -1}},
+   m_aParams     := Dim(1), // Gespeicherte Parameter leer setzen
+
+   startseq
+      // Wenn eine SaveID übergeben wurde dann diese nutzen ansonsten die Default ID
+      if empty(cSAVEID) then
+         m_aParams := StrToArr(GetBeParam(m_cDefaultSaveId)),
+      else
+         m_aParams := StrToArr(GetBeParam(cSAVEID)),
+      endif,
+   onerror // Fehler bezüglich der SaveID ignorieren
+   stopseq,
+
+   // Wenn ID gespeichert wurde auf zuletzt positioniertes Projekt springen
+   if nPresetProjectID <= 0 then
+      if ALen(m_aParams) > 0 and not empty(m_aParams[1]) then
+         nProject := m_aParams[1],
+      endif,
+   else
+      nProject := nPresetProjectID,
+   endif,
+
+   if not DBSeek({nProject}, oDABPRJ) then
+      DBGoTop(oDABPRJ),
+   endif,
+
+   if not m_cShowProjectOrTaskMode = m_cOnlyProjects then
+      DBLocate('ID', {m_nPresetTaskID}, 0, oDABPRV),
+   endif,
+
+   InitFilterSettings(), // Werte und ReadOnly-Status der Filter-Controls setzen
+   SearchProject(),      // Projekt-Filterung durchführen
+   FilterTaskGrid(),     // Vorgangs-Filterung durchführen
+end,
+
+//******************************************************************************
+// Lädt das Form in Abhängigkeit des Owners
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm := LoadForm("@PROJSUCHE", Application),
+   else
+      oForm := LoadForm("@PROJSUCHE", oOwner),
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_Cancel                          := FindObject( oForm, "A_Cancel" ),
+      A_ChooseProject                   := FindObject( oForm, "A_ChooseProject" ),
+      A_ChooseTask                      := FindObject( oForm, "A_ChooseTask" ),
+      A_ClearFilter                     := FindObject( oForm, "A_ClearFilter" ),
+      A_ClearTaskFilter                 := FindObject( oForm, "A_ClearTaskFilter" ),
+      A_GoTo                            := FindObject( oForm, "A_GoTo" ),
+      A_Search                          := FindObject( oForm, "A_Search" ),
+      BeBitBtn1                         := FindObject( oForm, "BeBitBtn1" ),
+      bipnl_Projects                    := FindObject( oForm, "bipnl_Projects" ),
+      bipnl_Tasks                       := FindObject( oForm, "bipnl_Tasks" ),
+      btn_Cancel                        := FindObject( oForm, "btn_Cancel" ),
+      btn_ChooseProject                 := FindObject( oForm, "btn_ChooseProject" ),
+      btn_ChooseTask                    := FindObject( oForm, "btn_ChooseTask" ),
+      btn_ClearFilter                   := FindObject( oForm, "btn_ClearFilter" ),
+      btn_ClearTaskFilter               := FindObject( oForm, "btn_ClearTaskFilter" ),
+      btn_GoTo                          := FindObject( oForm, "btn_GoTo" ),
+      cmb_Project_MainResponisblePerson := FindObject( oForm, "cmb_Project_MainResponisblePerson" ),
+      cmb_Project_Priority              := FindObject( oForm, "cmb_Project_Priority" ),
+      cmb_Project_ProcessState          := FindObject( oForm, "cmb_Project_ProcessState" ),
+      cmb_Project_StateTrafficLight     := FindObject( oForm, "cmb_Project_StateTrafficLight" ),
+      cmb_Project_Type                  := FindObject( oForm, "cmb_Project_Type" ),
+      cmb_Task_ProcessState             := FindObject( oForm, "cmb_Task_ProcessState" ),
+      ds_DABPRJ                         := FindObject( oForm, "ds_DABPRJ" ),
+      ds_DABPRV                         := FindObject( oForm, "ds_DABPRV" ),
+      edt_Project_Customer              := FindObject( oForm, "edt_Project_Customer" ),
+      edt_Search                        := FindObject( oForm, "edt_Search" ),
+      edt_SearchTasks                   := FindObject( oForm, "edt_SearchTasks" ),
+      grd_Proj                          := FindObject( oForm, "grd_Proj" ),
+      grd_Tasks                         := FindObject( oForm, "grd_Tasks" ),
+      oDABPRJ                           := FindObject( oForm, "oDABPRJ" ),
+      oDABPRV                           := FindObject( oForm, "oDABPRV" ),
+      pnl_FilterControls                := FindObject( oForm, "pnl_FilterControls" ),
+      pnl_MainTaskSearchPanel           := FindObject( oForm, "pnl_MainTaskSearchPanel" ),
+      pnl_Options                       := FindObject( oForm, "pnl_Options" ),
+      pnl_SearchResult                  := FindObject( oForm, "pnl_SearchResult" ),
+      pnl_TaskFilterPanel               := FindObject( oForm, "pnl_TaskFilterPanel" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      // Muss hier manuell gesetzt werden, da es sonst in Delphi zur Indexüberschreitung
+      // kommt, falls in der Benutzerverwaltung ein neuer Mitarbeiter angelegt
+      // wird. Memo-ID: 36508
+      cmb_Project_MainResponisblePerson.DataField := 'PARAM',
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),       // Formular laden
+   LoadGUI(),        // Oberflächenkomponenten laden
+   OpenTables(),
+   SetShowOptions(),
+   SetOptions(),
+   ShowModal(oForm), // Formular anzeigen
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + crlf + GetErrorText(), mtError),
+   DestroyObject(oForm),
+stopseq,
+m_aMainResult
+

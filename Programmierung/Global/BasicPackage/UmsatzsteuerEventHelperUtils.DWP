@@ -1,0 +1,237 @@
+//##############################################################################
+// Sammlung von 'U'msatzsteuer'E'vent'H'elper'U'tils - hilfreiche Funktionen für die
+//    Umsetzung des Konjunktur-Pakets 2020
+//##############################################################################
+
+//##############################################################################
+// Für das Event "Validierung Rechnungskontroll-Abschluss"
+//##############################################################################
+
+//******************************************************************************
+// Funktion für den Einsatz im Event "Validierung Rechnungskontroll-Abschluss"
+//  inkl. GUI-Handling
+//******************************************************************************
+function _UEHU_RechnungskontrollValidierung_LeistungsDatumValidieren_WarnMessage_GUI(nDab100_LINR, cLastDeliveryNo, lUseNewVATKey)
+| cWarnMessage |
+
+   //***************************************************************************
+   // Funktion zum Einsatz im Events "Validierung Rechnungskontroll-Abschluss" (ohne GUI)
+   //   Validiert das Lieferschein-Datum (=Leistungsdatum) gegen die Entscheidung
+   //   "neue Steuersätze nutzen ja/nein"
+   //   und gibt einen Warnungs-Text zurück, sofern die Angaben nicht zusammen passen.
+   //***************************************************************************
+   function UHU_RechnungskontrollValidierung_LeistungsDatumValidieren(nLieferant, cLieferscheinNummer, bNeueSteuerSaetzeNutzen)
+   | dLieferscheinDatum, nVATMappingState, bLeistungsDatumInMapping |
+
+     function GetLieferscheinDatumFromLieferscheinNummer(nLieferant, cLieferscheinNummer)
+     | oQuery, cSQL, nOldCursor |
+
+       SetErrorIf(empty(nLieferant),          'empty nLieferant'),
+       SetErrorIf(empty(cLieferscheinNummer), 'empty cLieferscheinNummer'),
+
+       cSQL := 'SELECT TOP 1 LF_DATUM FROM ' + DbSqltableName(waDab020, false) +
+               "  WHERE BUART = 'E' AND PERSNR = " + Str(nLieferant) + " AND LF_NUMMER = '" + cLieferscheinNummer + "'",
+
+       nOldCursor := SetCursor(crHourGlass),
+       startseq
+          oQuery := CreateObject('TBeAdsQuery'),
+          startseq
+             oQuery.Sql    := cSQL,
+             oQuery.Active := true,
+             Result        := oQuery:LF_DATUM,
+          always
+             DestroyObject(oQuery),
+          stopseq,
+       always
+         SetCursor(nOldCursor),
+       stopseq,
+     end,
+
+     // Lieferschein-Datum ermitteln
+     dLieferscheinDatum := GetLieferscheinDatumFromLieferscheinNummer(nLieferant, cLieferscheinNummer),
+     SetErrorIf(empty(dLieferscheinDatum), 'Lieferschein-Datum konnte für Lieferschein "' + cLieferscheinNummer + '" + bei Lieferant ' + Str(nLieferant) + ' nicht ermittelt werden.'),
+
+     // In welchem Zeitraum liegt das Leistungs-Datum?
+     nVATMappingState         := VATMappingState(dLieferscheinDatum, true),
+     bLeistungsDatumInMapping := (nVATMappingState = vatmMapping),
+
+     // Wenn Leistungsdatum im Umstellungs-Zeitraum aber "neue Sätze" NICHT gesetzt => komisch
+     if bLeistungsDatumInMapping and not bNeueSteuerSaetzeNutzen then
+        Result := 'Das Lieferschein-Datum (' + DToC(dLieferscheinDatum) + ') für den Lieferschein "' + cLieferscheinNummer + '", Lieferant #' + Str(nLieferant) + ' liegt NACH dem Umstellungsdatum der Umsatzsteuer. ' + crlf +
+                  'Folglich sollte die Buchung im Regelfall mit den "neuen" Steuersätzen erfolgen.' + crlf + crlf + crlf +
+                  'Die Einstellung "Neue USt.Sätze" ist im Kontroll-Dialog jedoch NICHT gesetzt, die Rechnung würde folglich mit den "bisherigen" Steuersätzen gebucht.',
+     else
+        // Wenn das Leistungsdatum NICHT im Mapping-Zeitraum liegt aber dennoch "neue Sätze" genutzt werden soll => komisch
+        if not bLeistungsDatumInMapping and bNeueSteuerSaetzeNutzen then
+           Result := 'Das Lieferschein-Datum (' + DToC(dLieferscheinDatum) + ') für den Lieferschein "' + cLieferscheinNummer + '", Lieferant #' + Str(nLieferant) + ' liegt ' +
+                         iif(nVATMappingState = vatmBeforeMapping, 'VOR dem Umstellungsdatum', 'NACH dem Ende des Umstellungszeitraums') + ' der Umsatzsteuer. ' + crlf +
+                     'Folglich sollte die Buchung im Regelfall mit den "bisherigen" Steuersätzen erfolgen.' + crlf + crlf + crlf +
+                     'Die Einstellung "Neue USt.Sätze" ist im Kontroll-Dialog jedoch gesetzt, die Rechnung würde folglich mit den "neuen" Steuersätzen gebucht.',
+        else
+           Result := '',
+        endif,
+     endif,
+   end,
+
+   // ***
+
+   startseq
+
+     cWarnMessage := UHU_RechnungskontrollValidierung_LeistungsDatumValidieren(nDab100_LINR, cLastDeliveryNo, lUseNewVATKey),
+     if empty(cWarnMessage) then
+        Result := true,
+     else
+        Result := true, // Meldung nicht ausgeben, da im Standard-Re-Kontroll-Dialog mit build 6.5.65.2580 / 7.1.1.7 10.073 die Meldung schon existiert
+                        // -> Nur Protokolllieren
+     endif,
+
+     Log(ProgName() + crlf + cWarnMessage + crlf + Replicate('-', 80) + crlf + 'Entscheidung: ' + ToString(Result), llError),
+
+   onerror
+     // Im Fehlerfall (z.B. konzeptioneller Fehler in der Implementierung) die Fehlemeldung anzeigen und danach den User entscheiden lassen...
+     cWarnMessage := GU_ShowStdErrorMessage('Es ist ein Fehler bei der Validierung des Rechnungs-Kontroll-Abschluss aufgetreten.' + crlf +
+                                              'Bitte setzen Sie sich mit Ihrem System-Administrator in Kontakt, bevor Sie fortfahren' + crlf + crlf, GetErrorObj(), true),
+     cWarnMessage += crlf + crlf + 'Wollen Sie die Rechnungs-Freigabe dennoch durchführen?',
+     Result       := true, // Meldung nicht ausgeben, da im Standard-Re-Kontroll-Dialog mit build 6.5.65.2580 / 7.1.1.7 10.073 die Meldung schon existiert
+                           // -> Nur Protokolllieren
+
+     Log(ProgName() + crlf + cWarnMessage + crlf + Replicate('-', 80) + crlf + 'Entscheidung: ' + ToString(Result), llError),
+   stopseq,
+end,
+
+
+//##############################################################################
+// Für das Event "Events\vor Übernahme DabDF-Datensatz"
+//##############################################################################
+function _UEHU_FiBu_EingangsRechnungsUebernahme_LeistungsDatumValidieren(cBookingType, oDabDF, lIsEU, lIsReverseChargeTaxCodeUsed, aEStArray, aVEStArray, aMwstArray, nKorrekterSteuerSatzOhneMapping, nKorrekterSteuerSatzMitMapping)
+| cErrorMessage |
+
+   function GetLieferscheinDatumFromEingangsRechnungsNummer(nLieferant, cEingangsRechnungsNummer)
+   | oQuery, cSQL, nOldCursor |
+
+     SetErrorIf(empty(nLieferant),               'empty nLieferant'),
+     SetErrorIf(empty(cEingangsRechnungsNummer), 'empty cEingangsRechnungsNummer'),
+
+     // Hinweis: Hier wird vereinfachend nur das Datum des ersten Lieferscheins genutzt
+     //          Theoretisch könnten mit einer Eingangs-Rechnung mehrere Lieferscheine gebucht worden sein.
+     //          -> Wenn die aber dann unterschiedliche Steuer-Situationen enthalten, hat der
+     //             Lieferant Mist gebaut...
+
+     cSQL := 'SELECT MIN(LF_DATUM) as LF_DATUM FROM ' + DbSqltableName(waDab020, false) +
+             "  WHERE BUART = 'E' AND PERSNR = " + Str(nLieferant) + " AND RE_NUMMER = '" + cEingangsRechnungsNummer + "'",             WriteLn(cSQL),
+
+     nOldCursor := SetCursor(crHourGlass),
+     startseq
+        oQuery := CreateObject('TBeAdsQuery'),
+        startseq
+           oQuery.Sql    := cSQL,
+           oQuery.Active := true,
+           Result        := oQuery:LF_DATUM,
+        always
+           DestroyObject(oQuery),
+        stopseq,
+     always
+       SetCursor(nOldCursor),
+     stopseq,
+   end,
+
+   function Get_DFPar_SteuerSatzData(nSchluessel)
+   | oDFPar |
+      SetErrorIf(nSchluessel < 1 or nSchluessel > 9, 'nSchluessel out of range'),
+
+      // hier nicht die Konstante 'waDFPar' = 70 nutzen, damit diese Codeblock auch in einem System ohne FiBu compiliert
+      oDFPar := BeOpen(70),
+      startseq
+         oDFPar.CbFirst(), // Erster Datensatz ist der Einstellungen-Datensatz
+
+         Result := {},
+         KVU_Set(Result, 'SATZ',         AsVariant('MWST' + Str(nSchluessel),          oDFPar)),
+         KVU_Set(Result, 'BEZ',  AllTrim(AsVariant('MWST' + Str(nSchluessel) + '_BEZ', oDFPar))),
+      always
+         BeClose(oDFPar),
+      stopseq,
+   end,
+
+   function InternalValidate()
+   | cEingangsRechnungsNummer, dLieferscheinDatum, nLieferant, aUsedErwerbssteuerSchluessel, aErwerbsSteuerSaetze, aRes, nSchluessel, nSatz, cSatzBez, i, bLeistungsDatumInMapping, cErrorLine, nVATMappingState |
+      Result := '',
+
+      //************************************************************************
+      // Bei Übernahme von Eingangs-Rechnungen mit EU-Import oder Reverse-Charge
+      //************************************************************************
+      if cBookingType = 'R' and (lIsReverseChargeTaxCodeUsed or lIsEU) then
+         nLieferant               := oDabDF:LINR,            SetErrorIf(empty(nLieferant),               'empty DabDF:LINR'),
+         cEingangsRechnungsNummer := AllTrim(oDabDF:NUMMER), SetErrorIf(empty(cEingangsRechnungsNummer), 'empty DabDF:NUMMER'),
+
+         // Aus der Eingangs-Rechnung auf den Eingangs-Lieferschein rückschließen => so bekommen wir das Leistungsdatum
+         dLieferscheinDatum       := GetLieferscheinDatumFromEingangsRechnungsNummer(nLieferant, cEingangsRechnungsNummer),
+
+         // In welchem Zeitraum liegt das Leistungs-Datum?
+         nVATMappingState         := VATMappingState(dLieferscheinDatum, true), // <-- true = Einkauf
+         bLeistungsDatumInMapping := (nVATMappingState = vatmMapping),
+
+         // Prüfen, auf welchen FiBu-Steuerschlüsseln Erwerbssteuer gebucht werden soll
+         //   (bei EU-Import und Reverse-Charge Modus 1 und 2 wird jeweils )
+         //   Nicht das Vorsteuer-Array prüfen, denn bei Reverse-Charge Modus 1 wird nur Erwerbssteuer gebucht, keine Vorsteuer
+         aUsedErwerbssteuerSchluessel := {},
+         for i := 1 to ALen(aEStArray) do
+           if aEStArray[i] <> 0 then
+             AAdd(aUsedErwerbssteuerSchluessel, i - 1), // <<--- ACHTUNG: Die übergebenen Steuer-Arrays haben 10 Elemente, d.h. Steuersatz 1 steht im 2ten Eintrag :-)
+           endif,
+         next,
+
+         // Für alle zu bebuchenden Erwerbssteuer-Schlüssel prüfen, ob die aktuelle Einstellung
+         //   des Steuersatzes zum Leistungsdatum der Lieferung passt
+         Result := '',
+
+         aErwerbsSteuerSaetze := {},
+         for i := 1 to ALen(aUsedErwerbssteuerSchluessel) do
+            nSchluessel := aUsedErwerbssteuerSchluessel[i],
+            aRes        := Get_DFPar_SteuerSatzData(nSchluessel),
+            nSatz       := KVU_GetAssert(aRes, 'SATZ'),
+            cSatzBez    := KVU_GetAssert(aRes, 'BEZ'),
+            AAdd(aErwerbsSteuerSaetze, {nSchluessel, nSatz, cSatzBez}),
+
+            cErrorLine := '',
+            if bLeistungsDatumInMapping and nSatz <> nKorrekterSteuerSatzMitMapping then
+               cErrorLine       := 'Steuerschlüssel ' + Str(nSchluessel) + ' (' + AllTrim(cSatzBez) + ') steht aktuell auf ' + Str(nSatz) + '%. Für die Übernahme dieser Eingangs-Rechnung muss der Satz auf ' + Str(nKorrekterSteuerSatzMitMapping)  + '% stehen.',
+            else
+               if not bLeistungsDatumInMapping and nSatz <> nKorrekterSteuerSatzOhneMapping then
+                  cErrorLine    := 'Steuerschlüssel ' + Str(nSchluessel) + ' (' + AllTrim(cSatzBez) + ') steht aktuell auf ' + Str(nSatz) + '%. Für die Übernahme dieser Eingangs-Rechnung muss der Satz auf ' + Str(nKorrekterSteuerSatzOhneMapping) + '% stehen.',
+               endif,
+            endif,
+            Result     := ConcatTrenner(Result, cErrorLine, crlf),
+
+         next,
+
+         // Fehler erkannt? Dann Detail-Infos in die Nachricht für den User...
+         if not empty(Result) then
+            Result := 'Eingangs-Rechnung "' + cEingangsRechnungsNummer + '" von Lieferant #' + Str(nLieferant) + ', Lieferschein vom ' + DToC(dLieferscheinDatum) + ' kann nicht übernommen werden.' + crlf +
+                      'Reverse-Charge: ' + iif(lIsReverseChargeTaxCodeUsed, 'Ja', 'Nein') + ' / ' + 'EU-Import: ' + iif(lIsEU, 'Ja', 'Nein') + crlf + crlf +
+                      'Grund:' + crlf +
+                      Result + crlf + crlf +
+                      'Die Eingangs-Rechnung wird übersprungen.',
+
+            Log(ProgName() + crlf + Result, llError),
+         endif,
+      else
+         Result := '',
+      endif,
+
+   end,
+
+   // ****
+
+   startseq
+     cErrorMessage := InternalValidate(),
+   onerror
+     // Im Fehlerfall (z.B. konzeptioneller Fehler in der Implementierung) die Fehlermeldung als Rückgabe-Text zurück geben, damit die Buchung nicht übernommen wird
+     cErrorMessage := GU_ShowStdErrorMessage('Es ist ein Fehler bei der Validierung der Eingangsrechnung "' + AllTrim(oDabDF:NUMMER) + '" von Lieferant #' + Str(oDabDF:LINR) + ' aufgetreten.' + crlf +
+                                             'Bitte setzen Sie sich mit Ihrem System-Administrator / Key-User in Verbindung.' + crlf + crlf, GetErrorObj(), true),
+     cErrorMessage := cErrorMessage + crlf + crlf +
+                      'Die Zeile wird übersprungen.',
+     Log(ProgName() + crlf + cErrorMessage, llError),
+   stopseq,
+
+   Result := cErrorMessage,
+end,

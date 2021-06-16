@@ -1,0 +1,271 @@
+//******************************************************************************
+// Globale Funktion zur Berechnung von "Zusatzinformationen" im Zuge eines
+// E-Mail-Versands (z.B. E-Mail-Adresse, E-Mail-Text, Betreff, Anhänge)
+//
+// - diese Funktion wird üblicherweise im Programm-Modul
+//   "PrintManager -> Druckerzuweisungen" jeder Druckerzuweisung als sog.
+//   "E-Mail-Einstellungen" Codeblock zugewiesen. Somit kann hier zentral das
+//   Verhalten gesteuert werden.
+// - Info: Druckerzuweisungen werden in der Tabelle DabR30 abgelegt, die
+//         E-Mail-Einstellungen im Feld 'EMAILCB' (Memo)
+// - Die zu berechnenden Informationen werden üblicherweise je nach
+//   Belegtyp / Adresse / Abteilung / Standort unterschieden
+//
+// - Je nach E-Mail-Modus des Benutzers handelt es sich beim übergebenen
+//   BatchMail-Objekt (oBatchMail) um eine Instanz der Klasse
+//   'TMAPIBatchMail' oder 'TSMTPBatchMail'
+//
+// @Result: null
+//******************************************************************************
+function EMailFunc(oBatchMail)
+| cBelegBez, nSprache, cBelegNr, cBelegText, cSenderUser,
+  nAnummer,
+  nAuftragsKontaktId, cAuftragsKontaktEMailAdresse,
+  cMessageBody |
+
+   //***************************************************************************
+   // Übersetzte Beleg-Bezeichnung ermitteln
+   // @Result: Beleg-Bezeichung
+   //***************************************************************************
+   function BelegBezeichnung(nBelegTyp, nSprache)
+
+     case nBelegTyp
+        of  10  :: Result := 'Angebot                    | Offer',
+        of  20  :: Result := 'Auftragsbestätigung        | Order Confirmation',
+        of  30  :: Result := 'Proforma-Rechnung          | Proforma-Invoice',
+        of  40  :: Result := 'Kommissionierschein        | ',
+        of  60  :: Result := 'Lieferschein               | Delivery note',
+        of  80  :: Result := 'Sammel-Lieferschein        | Delivery note',
+        of  90  :: Result := 'Vermiet-Lieferschein       | ',
+        of 100  :: Result := 'Vermietungs-Rückgabeschein | ',
+
+        of 160  :: Result := 'Rechnung                   | Invoice',
+        of 170  :: Result := 'Teil-Rechnung              | Part-Invoice',
+        of 180  :: Result := 'Abschlags-Rechnung         | Invoice',
+        of 190  :: Result := 'Sammel-Rechnung            | Invoice',
+        of 200  :: Result := 'Miet-Zwischenrechnung      | ',
+        of 210  :: Result := 'Mahnung                    | Reminder',
+        of 211  :: Result := 'Mahnung                    | Reminder', // Mahnung auf Rechnungskopie
+        of 220  :: Result := 'Preisanfrage               | Inquiry',
+
+        of 230  :: Result := 'Bestellung                 | Order',
+        of 240  :: Result := 'Abruf-Einteilung           | Call off',
+        of 250  :: Result := 'Bestell-Mahnung            | Reminder',
+        of 550  :: Result := 'Auftragsbestätigung        | Order Confirmation', // für Service-Aufträge
+        of 560  :: Result := 'Bestell-Storno             | Cancellation of Order',
+
+        // ggf. vorhandene individuelle Beleg-Typen hier ergänzen
+
+     otherwise
+        Result := '',
+     endcase,
+
+     Result := AllTrim( Token(Result, '|', nSprache + 1) ),
+
+   end,
+
+   //***************************************************************************
+   // Diese Funktion ermittelt anhand des Belegtyps und der Belegnummer die
+   // Auftragsnummer des dazugehörigen Auftrags.
+   //
+   // @result: integer - Auftragsnummer
+   //***************************************************************************
+   function DetermineOrderNo(nReceiptType:N, nReceiptNo:N)
+   | oDM, oDab020, oDab600 |
+
+      result := -1,
+      oDM    := DbGetDataModuleFromPool('DM_EMailFunc_OrdNo'),
+      startseq
+         case nReceiptType
+            of 60  :: // Auftragsnummer für Lieferschein ermitteln
+               oDab020 := DbGetTable(oDM, waDab020),
+               oDab020.CbIndexName := 'DAB025',
+               oDab020.CbSetRangeEx({nReceiptNo}),
+               startseq
+                  if oDab020.CbDataAvailable then
+                     result := oDab020:ANUMMER,
+                  endif,
+               always
+                  oDab020.CbCancelRange(),
+               stopseq,
+
+            of 160 :: // Auftragsnummer für Rechnung ermitteln
+               oDab600 := DbGetTable(oDM, waDab600),
+               oDab600.CbIndexName := 'DAB602',
+               oDab600.CbSetRangeEx({nReceiptNo}),
+               startseq
+                  if oDab600.CbDataAvailable then
+                     result := val(Left(oDab600:APNUMMER, 6)),
+                  endif,
+               always
+                  oDab600.CbCancelRange(),
+               stopseq,
+         endcase,
+      always
+         DbReturnDataModuleToPool(oDM),
+      stopseq,
+   end,
+
+   //***************************************************************************
+   // Prüfen, ob der BelegTyp als Datenquelle die Dab050 (Kundenauftrag) hat
+   // @Result: boolean
+   //***************************************************************************
+   function IsDab050BelegType(nBelegTyp)
+      Result := StrZero(nBelegTyp, 3) $ '010,020,030,040,060,090,100,160,170,180,200,550',
+   end,
+
+   //***************************************************************************
+   // Wert eines lokalen Parameters für einen angegebenen User ermitteln
+   // @Result: entspechend Feld-Typ
+   //***************************************************************************
+   function GetLocalParamValue(cUser, cFieldName)
+      Result := LookUp(waDabPAL, 'DABPAL', {{cUser}}, cFieldName, ''),
+   end,
+
+   //***************************************************************************
+   // Kopf-Teil des Message-Bodies berechnen
+   // @Result: String
+   //***************************************************************************
+   function MessageBodyHead(nSprache)
+     // Info: Dieser Vorlagen-Text kann natürlich auch per Textbaustein definiert werden
+     case nSprache
+        of 0 ::
+           Result := 'Sehr geehrte Damen und Herren, '         + crlf + crlf +
+                     'im Anhang erhalten Sie @BELEGTEXT@.'     + crlf +
+                     'Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.',
+        of 1 ::
+           Result := 'Dear Sir,'                          + crlf +
+                     'Dear Madame,'                       + crlf + crlf +
+                     'please find enclosed @BELEGTEXT@.'  + crlf +
+                     'If you have any questions, please feel free to contact us for further information.',
+     otherwise
+        Result := '',
+     endcase,
+   end,
+
+   //***************************************************************************
+   // Signatur für Nachrichten-Text zusammensetzen
+   // @Result: String
+   //***************************************************************************
+   function MessageSignature(nSprache)
+     // Info: Dieser Vorlagen-Text kann natürlich auch per Textbaustein definiert werden
+     Result := '',
+     case nSprache
+        of 0 ::
+           Result += 'Mit freundlichen Grüßen' + crlf,
+        of 1 ::
+           Result += 'Best regards'            + crlf,
+     endcase,
+
+     Result += '@SENDER_NAME@'              + crlf,
+     Result += '@SENDER_EMAIL@'             + crlf,
+     Result += 'Dontenwill AG'              + crlf,
+     Result += 'Oberanger 42'               + crlf,
+     Result += '80331 München'              + crlf,
+   end,
+
+   //***************************************************************************
+   // E-Mail-Adresse einer Kunden-Kontakt-Person berechnen
+   // @Result: String
+   //***************************************************************************
+   function CalcAuftragsKontaktEMailAdresse(nKontaktId)
+     | oLookUp005, oLookUp000 |
+      Result := '',
+
+      if nKontaktId > 0 then
+         oLookUp005 := BeOpen(waDab005, 'DAB007'),
+         oLookUp000 := BeOpen(waDab000, 1), // Index-Angabe per Nummer für FiBu-Kompatibilität
+         startseq
+            if not DbSeek({nKontaktId}, oLookUp005) then
+               exit,
+            endif,
+            MySeek({oLookUp005:PERSNR}, oLookUp000),
+            Result := D005_EMail(oLookUp005, oLookUp000),
+         always
+            BeClose(oLookUp005),
+            BeClose(oLookUp000),
+         stopseq,
+      endif,
+   end,
+
+   //###########################################################################
+   //###########################################################################
+
+   // Fürs Debugging:
+   //Meld('BelegTyp : ' + Str(oBatchMail.BelegTyp) + crlf +
+   //     'KeyNr    : ' + ToString(oBatchMail.KeyNr) ),
+
+   // Gemeinsam genutzte Variablen berechnen
+   cSenderUser        := c_usr,
+   nSprache           := 0, // verfügbare Sprachen: 0 = deutsch, 1 = englisch
+
+   if IsDab050BelegType(oBatchMail.BelegTyp) then
+      // INFO:
+      //   oBatchMail.KeyNr enthält die Nummer des Vorgangs (Aufrag bzw. Bestellung)
+      //   Wird der Beleg jedoch aus dem Archiv gedruckt bzw. per E-Mail versandt,
+      //   gibt oBatchMail.KeyNr 0 zurück.
+      //   In diesem Fall muss mithilfe des Workarounds DetermineOrderNo() die
+      //   Vorgangsnummer ermittelt werden.
+      nAnummer := oBatchMail.KeyNr,
+      if empty(nAnummer) then
+         nAnummer := DetermineOrderNo(oBatchMail.BelegTyp, oBatchMail.BelegNr),
+      endif,
+   else
+      nAnummer := -1,
+   endif,
+
+   nSprache           := iif( nAnummer > 0,
+                              LookUp(waDab050, 'DAB051', {{nAnummer}}, 'SPRACHE', 0),
+                              nSprache ), // TODO: Sprache auch für Bestellungen dynamisch ermitteln
+
+   cBelegBez          := BelegBezeichnung(oBatchMail.BelegTyp, nSprache),
+   cBelegNr           := Str(oBatchMail.BelegNr),
+   cBelegText         := cBelegBez + ' ' + cBelegNr,
+
+   // Name des (PDF)Belegs im Anhang definieren
+   oBatchMail.ExportFileName := cBelegText,
+
+   // Betreff definieren
+   oBatchMail.Subject := cBelegText,
+
+   // Nachrichten-Text definieren
+   cMessageBody       := MessageBodyHead(nSprache) + crlf + crlf,
+   cMessageBody       += MessageSignature(nSprache),
+   cMessageBody       := StrTran(cMessageBody, '@BELEGTEXT@',    cBelegText),
+   cMessageBody       := StrTran(cMessageBody, '@SENDER_NAME@',  GetLocalParamValue(cSenderUser, 'M_USERNAM')),   // lokaler Parameter "Bearbeiter-Name"
+   cMessageBody       := StrTran(cMessageBody, '@SENDER_EMAIL@', GetLocalParamValue(cSenderUser, 'M_EMAILADR')),  // lokaler Parameter "E-Mail Adresse"
+   oBatchMail.Message := cMessageBody,
+
+   // E-Mail-Empfänger definieren, sofern möglich
+   // => für Verkaufs-Prozesse per Dab050:KONTAKT_ID
+   nAuftragsKontaktId           := iif( nAnummer <> -1,
+                                        LookUp(waDab050, 'DAB051', {{nAnummer}}, 'KONTAKT_ID', 0),
+                                        0 ),
+
+   cAuftragsKontaktEMailAdresse := CalcAuftragsKontaktEMailAdresse(nAuftragsKontaktId),
+
+   // Auch eine "leere" E-Mail-Adresse (z.B. weil kein Kontakt vorhanden) muss in das
+   // 'oBatchMail'-Objekt gesetzt werden, da das Objekt z.B: beim Stapeldruck "weiterlebt"
+   // und sonst die letzte gesetzte Adresse weiter nutzt.
+   oBatchMail.SendTo.Strings    := "('" + cAuftragsKontaktEMailAdresse + "')",
+
+   //***************************************************************************
+   // Info: Weitere typische "Anpassungen" im Zuge dieses Codeblocks:
+   //***************************************************************************
+   // - Anhängen von Dokumenten (AGBs, Dokumente aus Artikeln)
+   //     => AttachmentAdd(oBatchMail, '\\server\share\...\agb-deutsch.pdf')-Funktion nutzen
+   //
+   // - Definition des E-Mail-Absenders - abweichend von der Vorgabe
+   //     => oBatchMail.From & oBatchMail.UserName setzen
+   //
+   // - Erstellen eines Memos, welches das "gesendete E-Mail" darstellt
+   //     => Erstellung per TBeMemoBo, Verknüpfung vom Memo zum Beleg herstellen
+   //
+   // - Definition der Adresse, für die im E-Mail-Dialog die Kontaktpersonen angezeigt werden
+   //     => notwendig z.B. für Individual-Belege, die per E-Mail versandt werden
+   //     => oBatchMail.WorkArea z.B. auf waDab100 setzen für die Anzeige der
+   //        Lieferanten-Kontakte des Lieferants oBatchMail.PersNr
+   //***************************************************************************
+
+end,
+

@@ -1,0 +1,648 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//
+//   GUI für die "Verfügbarkeitsübersicht" für einen Artikel nach ATP-Logik
+//
+//   Parameter:  Die Übergabe der Parameter erfolgt über den 4. Parameter (P4)
+//               als Array. So ist es möglich die GFU_*_CustomInfo()-
+//               Funktionen zu nutzen.
+//               Das Array besteht aus 2-dimensionalen Arrays, die nach dem
+//               Key-Value-Prinzip funktionieren.
+//               Das Array kann beispielsweise folgendermaßen aussehen:
+//               {
+//                  {'ARTNR',        'MUTTER M4'           }, // Artikel-Nr.
+//                  {'PRUEFMODE',        100               }  // Prüfmodus, der ausgewählt werden soll
+//               }
+//
+//   Rückgabe:
+//      ...
+//
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_aParams:P4,
+   m_cParamArtnr,
+   m_nParamPruefMode,
+
+   m_cFormID, m_cWinPosSaveId, m_cDefaultSaveId,
+   m_cETR_ATP_BrowserID,
+   m_cLiefertermine_ATP_BrowserID,
+
+   m_oGUI_DM,
+   m_oVPU_OptionsMem,
+   m_oETR_ATP_Mem,
+   m_oLiefertermineATP_Mem,
+
+   m_bPruefModusSetByCode,
+
+
+   // Übergabe-Parameter
+   m_cArtnr_Param,
+
+
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_GeheZuArtikel, A_LiefertermineAnzeigen, A_Refresh,
+   A_SetTodayAsWunschTermin, A_ShowIndiHelp, A_ShowPruefModusOptionsDialog,
+   A_ShowSimulation, actions, BeBarButton1, BeBarButton2, BeBarButton3,
+   BeBarButton4, BeBarButton5, BeBarDockControl1, BeBarManager,
+   BeBarManagerBar1, beipnl_Liefertermine, BeSpeedButton1,
+   btn_ShowPruefModusOptionsDialog, cmb_PruefModus, ds_ETR_ATP,
+   ds_Liefertermine, edt_Artnr, edt_ME, edt_SimulierteMenge,
+   edt_SimulierterWunschTermin, grid_ETR_ATP, grid_Liefertermine, lbl_Artnr,
+   lbl_HinweiseEinschraenkungen, lbl_ME, lbl_PresetMode, lbl_Simulationscaption,
+   lbl_SimulierteMenge, lbl_SimulierterWunschTermin, pnl_Liefertermine,
+   pnl_Main, pnl_SimulierteBewegung, pnl_Top, pnl_TopBackground
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                      := "@VPUUATP",
+m_cWinPosSaveId                := "@VPUUATP",
+m_cDefaultSaveId               := "@VPUUATP",
+m_cETR_ATP_BrowserID           := '@ETR_ATP',
+m_cLiefertermine_ATP_BrowserID := '@LFT_ATP',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+
+   m_oGUI_DM                      := CreateObject('TBeDbGet', '', oForm), // eigenes Datenmodul für die GUI erstellen
+
+   // Memtable für die Prüfmodus-Einstellungen
+   m_oVPU_OptionsMem := VPU_Options_CreateOptionsMem(oForm),
+
+   // Memtable für das Einzel-Terminraster mit ATP-Erweiterungen
+   m_oETR_ATP_Mem := ETRU_CreateMem_NewMem(oForm, true),
+   GU_LinkTableToGui(m_oETR_ATP_Mem, ds_ETR_ATP, grid_ETR_ATP, m_cETR_ATP_BrowserID, false),
+
+   // Memtable für die Liefertermine zum Ausgewählten Abgang
+   m_oLiefertermineATP_Mem := VPU_CreateLiefertermineATPMem(oForm),
+   GU_LinkTableToGui(m_oLiefertermineATP_Mem, ds_Liefertermine, grid_Liefertermine, m_cLiefertermine_ATP_BrowserID, false),
+end,
+
+//******************************************************************************
+// GUI-Einstellungen (z.B. Splitter-Position) speichern
+//******************************************************************************
+function SaveGUISettings()
+| aArr |
+   aArr := {},
+   // SetBeParam(m_cDefaultSaveId, ArrToStr(aArr)), // Parameterarray speichern
+end,
+
+//******************************************************************************
+// GUI-Einstellungen (z.B. Splitter-Position) laden
+//******************************************************************************
+function LoadGUISettings()
+   // ...
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   // A_GeheZuArtikel.Enabled
+end,
+
+//******************************************************************************
+// Funktion zur Reaktion auf eine Änderung des Prüfmodus in der GUI
+// @Result: null
+//******************************************************************************
+function HandlePruefModusChange()
+| nPruefModus |
+
+  if not m_bPruefModusSetByCode then
+     nPruefModus := Val(cmb_PruefModus.Value),
+     if nPruefModus > 0 then
+        // Einstellungen zum Prüfmodus in die Memtable laden
+        VPU_Options_LoadOptionsByPruefModus(m_oVPU_OptionsMem, nPruefModus),
+
+        // Wenn der Modus "<freie Einstellung>" über die GUI vom User gewählt
+        // wurde, dann direkt das Optionen-Fenster öffnen
+        if nPruefModus = gl_VPU_Pruefmodus_FreieEinstellung then
+           ActionExecute(A_ShowPruefModusOptionsDialog),
+        else
+           ActionExecute(A_Refresh),
+        endif,
+     endif,
+  endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Reload_ETR_ATPMem(oDM, oETR_ATP_Mem, cArtnr)
+| oETR_ATPMem_Buf, aZeilenTypen, bEinlastungsPruefung, nEinlastungsMenge, cEinlastungsTermin, nEinlastungsZeilenTyp, nEinlastungsDatensatzID |
+
+   oETR_ATPMem_Buf := VPU_ETR_GetEinzelTermRastMem_NewMem(oDM, cArtnr, true, true),
+   startseq
+
+      aZeilenTypen         := VPU_Options_GetZeilenTypenFromMemOptions(m_oVPU_OptionsMem),
+
+
+      nEinlastungsZeilenTyp   := 0,
+      nEinlastungsDatensatzID := 0,
+      nEinlastungsMenge       := Val(edt_SimulierteMenge.Text) * -1,
+      cEinlastungsTermin      := AllTrim(edt_SimulierterWunschTermin.Text),
+      bEinlastungsPruefung    := nEinlastungsMenge < 0 and not empty(cEinlastungsTermin) and A_ShowSimulation.Checked,
+
+      if bEinlastungsPruefung then
+         nEinlastungsZeilenTyp   := gl_ETRU_Typ_VerkaufAbgang,
+         nEinlastungsDatensatzID := ETRU_CreateSimulierteBewegung(oETR_ATPMem_Buf, cArtnr, nEinlastungsZeilenTyp, cEinlastungsTermin, nEinlastungsMenge),
+      endif,
+
+      VPU_ETR_CalcATP(oETR_ATPMem_Buf,
+                      aZeilenTypen,
+                      nEinlastungsZeilenTyp,
+                      nEinlastungsDatensatzID,
+                      bEinlastungsPruefung,
+                      m_oVPU_OptionsMem:PRUEFHORZ_WBZ,
+                      iif(m_oVPU_OptionsMem:PRUEFHORZ_WBZ, ETRU_CalcEndeDerWBZ(oDM, cArtnr), null)),
+
+
+      oETR_ATP_Mem.CbLoadFromDataSet(oETR_ATPMem_Buf, true),
+
+      // Eingelastete Zeile markieren
+      if bEinlastungsPruefung then
+         ETRU_FindRecordByTypeAndID(oETR_ATP_Mem, nEinlastungsZeilenTyp, nEinlastungsDatensatzID, true),
+         MyEdit(oETR_ATP_Mem),
+         oETR_ATP_Mem:MARKIERUNG_ABGANG := true,  // für optische Hervorhebung
+         MyPost(oETR_ATP_Mem),
+      endif,
+
+
+   always
+      DestroyObject(oETR_ATPMem_Buf),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion baut die Liefertermine-Details-Memtable auf Basis des aktuell
+//   gewählten ETR-Abgangs auf
+// @Result: null
+//******************************************************************************
+function RebuildLieferterminATPMemTable()                                       prs(ProgName(), 'RebuildLieferterminATPMemTable()'),
+   m_oLiefertermineATP_Mem.CbDisableControls(),
+   startseq
+      m_oLiefertermineATP_Mem.CbEmptyTable(),
+
+      if m_oETR_ATP_Mem:IST_ABGANG and m_oETR_ATP_Mem:ATP_ISTRELEVANT then
+         VPU_LieferterminMemtable_FillForETRAbgang(m_oLiefertermineATP_Mem, m_oETR_ATP_Mem),
+      endif,
+
+   always
+      m_oLiefertermineATP_Mem.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Set_edt_SimulierteMenge_PictureMask()
+| cArtNr, nNKStellen |
+
+   nNKStellen := 0,
+   cArtNr     := PadR(edt_Artnr.Text, mBeArtNoLen),
+
+   if LookUp(waDab010, 'DAB011', {{cArtNr}}, 'not EoF()', false) then
+      nNKStellen                              := LookUp(waDab010, 'DAB011', {{cArtNr}}, 'NKSTELLEN', 0),
+   endif,
+
+   edt_SimulierteMenge.Picture.PictureMask := GU_BuildBeEditPictureMask(13, nNKStellen, false),
+end,
+
+//******************************************************************************
+// Warnhinweis-Text ein / ausblenden.
+//
+//    Vmtl. gibt es überhaupt nichts Spezielles
+//    zu beachten für Artikel mit VK-Prognose oder Absatzplanung, aber
+//    bisher wurde das nicht durchdacht...
+// @Result: null
+//******************************************************************************
+function RefreshHinweiseUndEinschraenkungen(cArtNr)
+| bVisible, oDab010, nCurrentMindBest |
+
+   oDab010 := BeOpen(waDab010, 'DAB011'),
+   startseq
+      MySeek({cArtNr}, oDab010),
+
+      lbl_HinweiseEinschraenkungen.Visible :=    oDab010:MINDBEST > 0
+                                              or (oDab010:MINDBEST = 0 and Mind_Best( , , , , , , oDab010) > 0 )
+                                              or oDab010:FORE_FHG = 'J',
+   always
+      BeClose(odab010),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function FormExResize( Sender )
+   lbl_HinweiseEinschraenkungen.AutoSize := false,
+   lbl_HinweiseEinschraenkungen.AutoSize := true, // macht man diesen Trick nicht, dann passt sich die Höhe des Labels nicht an, wenn der Text nicht mehr komplett rein passt
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function edt_SimulierterWunschTerminValidateValue( Sender, bValid )
+  bValid := DateChk(edt_SimulierterWunschTermin.Text)
+end,
+
+//******************************************************************************
+// Event: Änderung der Artikelnr.
+//******************************************************************************
+function edt_ArtnrChange( Sender )
+   Set_edt_SimulierteMenge_PictureMask(),
+end,
+
+//******************************************************************************
+// Event: Scroll Update in der Einzelterminraster-Memtable
+//******************************************************************************
+function ds_ETR_ATPScroll_Update( Sender )
+| nOldCursor |
+   if not empty(m_oLiefertermineATP_Mem) and not empty(m_oETR_ATP_Mem) then
+      startseq,
+         nOldCursor := SetCursor(crHourglass),
+         startseq
+            RebuildLieferterminATPMemTable(),
+         always
+            SetCursor(nOldCursor),
+         stopseq,
+      onerror
+         GU_ShowStdErrorMessage('Fehler bei der Aktualisierung der Liefertermin-Details', GetErrorObj()),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Event: bei Auswahl einer Einstellungs-Option
+//******************************************************************************
+function cmb_PruefModusChange( Sender )
+   HandlePruefModusChange(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_LiefertermineAnzeigenExecute( Sender )
+  A_LiefertermineAnzeigen.Checked := not A_LiefertermineAnzeigen.Checked,
+  pnl_Liefertermine.Visible       := A_LiefertermineAnzeigen.Checked,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ShowSimulationExecute( Sender )
+   A_ShowSimulation.Checked       := not A_ShowSimulation.Checked,
+   pnl_SimulierteBewegung.Visible := A_ShowSimulation.Checked,
+
+   if A_ShowSimulation.Checked and not A_LiefertermineAnzeigen.Checked then // "Liefertermine anzeigen" auch aktivieren, wenn Simulation aktiviert wurde
+      ActionExecute(A_LiefertermineAnzeigen),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SetTodayAsWunschTerminExecute( Sender )
+   edt_SimulierterWunschTermin.Text := DToC(GetAdsServerTime()),
+end,
+
+//******************************************************************************
+// Action: Prüfmodus-Optionen-Fenster öffnen
+//******************************************************************************
+function A_ShowPruefModusOptionsDialogExecute( Sender )
+| aResult, nModalResult, nNewPruefModus |
+   // Optionen-Fenster öffnen und Rückgabe übernehmen
+   aResult := GFU_ShowModal_CustomInfo(nil, 'Produktion\Verfuegbarkeitspruefung\Options\GUI',
+                                        {
+                                           {'PRUEFMODE',       m_oVPU_OptionsMem:MODUS},
+                                           {'OPTIONSMEMTABLE', m_oVPU_OptionsMem}
+                                        }),
+
+   nModalResult   := aResult[1],
+   if nModalResult = mrOK then
+      nNewPruefModus := aResult[2],
+
+      // An diese Stelle muss nur noch die Combobox eingestellt werden, die @m_oVPU_OptionsMem
+      // ist schon aktuell, da diese vom Optionen-Dialog aktualisiert wurde (falls das
+      // Optionen-Fenster mit "OK" bestätigt wurde)
+
+      m_bPruefModusSetByCode  := true,
+      cmb_PruefModus.Value    := nNewPruefModus,
+      m_bPruefModusSetByCode  := false,
+
+      ActionExecute(A_Refresh), // Gleich die Verfügbarkeit neu berechnen
+   endif,
+end,
+
+//******************************************************************************
+// Action: Aktualisieren
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nOldCursor, cArtnr, oControl, bArtikelIsMinus2 |
+   startseq,
+
+      oControl := oForm.ActiveControl,   // Kurz das Grid fokussieren, damit alle ValidateValue()-Events ausgeführt werden
+      if not empty(oControl) then
+         oForm.ActiveControl := grid_ETR_ATP,
+         MyFocusControl(oForm, oControl),
+      endif,
+
+      nOldCursor := SetCursor(crHourglass),
+      startseq
+
+         cArtnr := PadR(edt_Artnr.Text, mBeArtNoLen),
+
+         if LookUp(waDab010, 'DAB011', {{cArtnr}}, 'not Eof()', false) then
+            bArtikelIsMinus2 := LookUp(waDab010, 'DAB011', {{cArtnr}}, 'MINDBEST', 0) = -2,
+            if not bArtikelIsMinus2 then
+               m_oETR_ATP_Mem.CbDisableControls(),
+               startseq
+                  Reload_ETR_ATPMem(m_oGUI_DM, m_oETR_ATP_Mem, cArtnr),
+               always
+                  m_oETR_ATP_Mem.CbEnableControls(),
+               stopseq,
+               RefreshHinweiseUndEinschraenkungen(cArtNr),
+               ds_ETR_ATPScroll_Update( nil ),
+
+               edt_ME.Text    := LookUp(waDab010, 'DAB011', {{cArtnr}}, 'AllTrim(ME)', '?'),
+               oForm.OrigCapt := 'Verfügbarkeitsübersicht (' + DateTimeToStr(GetAdsServerTime()) + ')',
+
+            else
+               MessageDlg('Die Verfügbarkeitsübersicht kann für -2 Artikel ("Dispo je Kundenauftrag") nicht aufgerufen werden.'), // TODO: Wie kann eine Logik für -2 Artikel aussehen?
+            endif,
+         else
+            MessageDlg('Der Artikel "' + AllTrim(cArtnr) + '" existiert nicht.'),
+         endif,
+
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+
+   onerror
+      GU_ShowStdErrorMessage('Fehler bei der Aktualisierung der Verfügbarkeitsprüfung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: In den Artikelstamm springen
+//******************************************************************************
+function A_GeheZuArtikelExecute( Sender )
+   if not empty(edt_Artnr.Text) then
+      ShowBeWindow(bwArticle, edt_Artnr.Text),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Individuelle Onlinehilfe anzeigen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_VPU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Übergabeparameter verarbeiten
+// Wird verwendet, wenn das Programm mit einer GFU_*_CustomInfo()-Funktion auf-
+// gerufen wird.
+// Dabei wird Paramter 4 (P4) für die Übergabe der Parameter als Array genutzt.
+//
+// @Result: null
+//******************************************************************************
+function ParseParams()
+|
+   nLen, i, aParam,
+   PARAM_ARTNR,
+   PARAM_PRUEFMODE
+
+|
+   PARAM_ARTNR     :='ARTNR',
+   PARAM_PRUEFMODE :='PRUEFMODE',
+
+   // Default-Werte initialisieren
+   m_cParamArtnr      := '',
+   m_nParamPruefMode  := 110,
+
+   // Nur Arrays als Parameter zulassen
+   if not ValType(m_aParams) = 'A' then
+      Exit,
+   endif,
+
+   nLen := ALen(m_aParams),
+   for i := 1 to nLen do
+      if ValType(m_aParams[i]) = 'A' and ALen(m_aParams[i]) = 2 then
+         aParam := m_aParams[i],
+         case aParam[1]
+            of PARAM_ARTNR      :: m_cParamArtnr     := aParam[2],
+            of PARAM_PRUEFMODE  :: m_nParamPruefMode := aParam[2],
+         endcase,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_GeheZuArtikel                 := FindObject(oForm, "A_GeheZuArtikel"),
+   A_LiefertermineAnzeigen         := FindObject(oForm, "A_LiefertermineAnzeigen"),
+   A_Refresh                       := FindObject(oForm, "A_Refresh"),
+   A_SetTodayAsWunschTermin        := FindObject(oForm, "A_SetTodayAsWunschTermin"),
+   A_ShowIndiHelp                  := FindObject(oForm, "A_ShowIndiHelp"),
+   A_ShowPruefModusOptionsDialog   := FindObject(oForm, "A_ShowPruefModusOptionsDialog"),
+   A_ShowSimulation                := FindObject(oForm, "A_ShowSimulation"),
+   actions                         := FindObject(oForm, "actions"),
+   BeBarButton1                    := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                    := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                    := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4                    := FindObject(oForm, "BeBarButton4"),
+   BeBarButton5                    := FindObject(oForm, "BeBarButton5"),
+   BeBarDockControl1               := FindObject(oForm, "BeBarDockControl1"),
+   BeBarManager                    := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1                := FindObject(oForm, "BeBarManagerBar1"),
+   beipnl_Liefertermine            := FindObject(oForm, "beipnl_Liefertermine"),
+   BeSpeedButton1                  := FindObject(oForm, "BeSpeedButton1"),
+   btn_ShowPruefModusOptionsDialog := FindObject(oForm, "btn_ShowPruefModusOptionsDialog"),
+   cmb_PruefModus                  := FindObject(oForm, "cmb_PruefModus"),
+   ds_ETR_ATP                      := FindObject(oForm, "ds_ETR_ATP"),
+   ds_Liefertermine                := FindObject(oForm, "ds_Liefertermine"),
+   edt_Artnr                       := FindObject(oForm, "edt_Artnr"),
+   edt_ME                          := FindObject(oForm, "edt_ME"),
+   edt_SimulierteMenge             := FindObject(oForm, "edt_SimulierteMenge"),
+   edt_SimulierterWunschTermin     := FindObject(oForm, "edt_SimulierterWunschTermin"),
+   grid_ETR_ATP                    := FindObject(oForm, "grid_ETR_ATP"),
+   grid_Liefertermine              := FindObject(oForm, "grid_Liefertermine"),
+   lbl_Artnr                       := FindObject(oForm, "lbl_Artnr"),
+   lbl_HinweiseEinschraenkungen    := FindObject(oForm, "lbl_HinweiseEinschraenkungen"),
+   lbl_ME                          := FindObject(oForm, "lbl_ME"),
+   lbl_PresetMode                  := FindObject(oForm, "lbl_PresetMode"),
+   lbl_Simulationscaption          := FindObject(oForm, "lbl_Simulationscaption"),
+   lbl_SimulierteMenge             := FindObject(oForm, "lbl_SimulierteMenge"),
+   lbl_SimulierterWunschTermin     := FindObject(oForm, "lbl_SimulierterWunschTermin"),
+   pnl_Liefertermine               := FindObject(oForm, "pnl_Liefertermine"),
+   pnl_Main                        := FindObject(oForm, "pnl_Main"),
+   pnl_SimulierteBewegung          := FindObject(oForm, "pnl_SimulierteBewegung"),
+   pnl_Top                         := FindObject(oForm, "pnl_Top"),
+   pnl_TopBackground               := FindObject(oForm, "pnl_TopBackground"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt                                 := 'Verfügbarkeitsübersicht',
+   oForm.ImageIndex                               := 569,  // Image-Index für den Window-Navigator setzen
+
+   VPU_Options_GUI_LoadOptionsToCombo(cmb_PruefModus),
+
+   if m_nParamPruefMode > 0 then
+      m_bPruefModusSetByCode := true, // damit nicht gleich Refresht wird...
+      cmb_PruefModus.Value   := m_nParamPruefMode,
+      VPU_Options_LoadOptionsByPruefModus(m_oVPU_OptionsMem, Val(cmb_PruefModus.Value)),
+      m_bPruefModusSetByCode := false,
+   endif,
+
+   edt_Artnr.Text := m_cParamArtnr,
+
+   // für's leichtere Entwicklen:
+   if EditorMode() then
+      edt_Artnr.Text := 'MUTTER M4',
+   endif,
+
+   oForm.ActiveControl                             := edt_Artnr,
+   edt_ME.Text                                     := '',
+   edt_SimulierterWunschTermin.Picture.PictureMask := '!!.##.##',
+   edt_SimulierterWunschTermin.Text                := '',
+   edt_SimulierteMenge.Text                        := '',
+   Set_edt_SimulierteMenge_PictureMask(),
+
+   A_ShowSimulation.Checked := true,
+   A_LiefertermineAnzeigen.Checked := true,
+
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function InitialRefresh()
+| cArtnr |
+
+   cArtnr := PadR(edt_Artnr.Text, mBeArtNoLen),
+
+   if LookUp(waDab010, 'DAB011', {{cArtnr}}, 'not Eof()', false) then
+      ActionExecute(A_Refresh),
+   endif,
+end,
+
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   ParseParams(),
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   LoadGUISettings(),
+   InitialRefresh(),
+   ShowGUI(),
+   SaveGUISettings(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

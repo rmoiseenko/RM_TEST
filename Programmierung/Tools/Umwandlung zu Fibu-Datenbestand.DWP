@@ -1,0 +1,139 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Programm zur Vorbereitung des Datenbestandes um eine 
+//               leere Installtion zu einem FiBu-Datebestand umzuwandeln
+//##############################################################################
+//##############################################################################
+
+| cOpPath | 
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// setzt den FiBU Tabellen Pfad
+//******************************************************************************
+function SetOpPath()
+
+  cOpPath := mbedefault,
+  cOpPath := StrTran(UPPER(cOpPath), '\WINBE', '\WINBEFIB'),
+end,
+
+//******************************************************************************
+// veraendert in der BeStatus den Status auf "UPDATE" 
+//******************************************************************************
+function ChangeBeStatusForUpdate()
+| oFile, cContent |
+
+   oFile := FOpen(mbedefault + 'BeStatus.ini', fo_ReadWrite),
+   startseq
+      cContent := '',
+      FRead(oFile, cContent, oFile.Size),
+      writeln(At('[UPDATE]' + CRLF + 'Status=OK', cContent)),
+   
+      if (At('[UPDATE]' + CRLF + 'Status=OK', cContent) != 0) then
+         cContent := Stuff(cContent,
+                           At('[UPDATE]' + CRLF + 'Status=OK', cContent),
+                           Len('[UPDATE]' + CRLF + 'Status=OK'),
+                           '[UPDATE]' + CRLF + 'Status=EXECUTE'),
+      endif,
+      writeln(cContent),
+      //writeln(cContent),
+      FSeek(oFile, 0, fs_Set),
+      FWrite(oFile, cContent, Len(cContent)),
+   always
+      FClose(oFile),
+   stopseq,
+end,
+
+//******************************************************************************
+// setzt in der DabPar dass FiBu aktiv ist und den setzt den winbefib-Pfad
+//******************************************************************************
+function ChangeDabParForFiBu()
+| oDPar, oDM |
+
+  oDM := CreateObject('TBeDbGet'),
+  oDPAR := CreateObject('TCalcTable'),
+  startseq
+     oDPar.AdsConnection := oDm.AdsConnection,
+     oDPar.TableName := 'DABPAR.ADT',
+     oDPar.Active := True,
+  
+     while not eof(oDPar) do
+        DbEdit(oDPar),
+        Writeln(oDPar:OP_PATH),
+        oDPar:FIBU_AKTIV := 'True',
+        oDPar:OP_PATH := cOpPath,
+        oDPar:OP := 'G',
+        DbPost(oDPar),
+        DbSkip(1,oDPar),
+     end,
+  always
+     DestroyObject(oDPar),
+     DestroyObject(oDM),
+  stopseq,
+end,
+
+//******************************************************************************
+// Kopiert alle benötigten Tabellen in den winbefib-Pfad
+//******************************************************************************
+function CopyFiBuTables()
+| cFibuFiles, cWinbehidPath |
+
+  CreateDir(lower(cOpPath)),
+  cFibuFiles := StrTran(cOpPath, '\WINBEFIB', '\UmstellungFIBU\FIBU\'),
+  PathCopy('*', cFibuFiles, cOpPath ),
+
+  cWinbehidPath := StrTran(cOpPath, '\WINBEFIB', '\WINBEHID'),
+  PathCopy('..\winbehid\DAB000.*', cWinbehidPath, cOpPath ),
+  PathCopy('..\winbehid\DAB100.*', cWinbehidPath, cOpPath ),
+end,
+
+//******************************************************************************
+// Umbennenung von 
+//                 Dab000 zu DF030000
+//                 Dab100 zu DF040000
+//******************************************************************************
+function RenameImportantTables()
+
+  RenameFile(cOpPath + '\DAB000.ADT', cOpPath + '\DF030000.ADT' ),
+  RenameFile(cOpPath + '\DAB000.ADM', cOpPath + '\DF030000.adm' ),
+  RenameFile(cOpPath + '\DAB000.ADI', cOpPath + '\DF030000.adi' ),
+  RenameFile(cOpPath + '\DAB000.DBF', cOpPath + '\DF030000.DBF' ),
+  RenameFile(cOpPath + '\DAB000.fpt', cOpPath + '\DF030000.fpt' ),
+  
+  RenameFile(cOpPath + '\DAB100.ADT', cOpPath + '\DF040000.ADT' ),
+  RenameFile(cOpPath + '\DAB100.ADM', cOpPath + '\DF040000.adm' ),
+  RenameFile(cOpPath + '\DAB100.ADI', cOpPath + '\DF040000.adi' ),
+  RenameFile(cOpPath + '\DAB100.DBF', cOpPath + '\DF040000.DBF' ),
+  RenameFile(cOpPath + '\DAB100.fpt', cOpPath + '\DF040000.fpt' ),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+  SetOpPath(),
+  ChangeDabParForFiBu(),
+  ChangeBeStatusForUpdate(),
+  CopyFiBuTables(),
+  RenameImportantTables(),
+   
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+              GetErrorText() + crlf + crlf +
+              DebugArr(GetErrorStack(true)), mtError),
+stopseq,
+

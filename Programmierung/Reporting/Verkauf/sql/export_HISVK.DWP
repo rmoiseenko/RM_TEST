@@ -1,0 +1,92 @@
+SELECT
+      HISVK.ID                AS "Datensatz-ID",
+      HISVK.ERSTELLT          AS "Erstellt am / um",
+      HISVK.PLATZ             AS "Erstellt durch",
+      HISVK.GEAENDERT         AS "Zuletzt geändert am / um",
+      HISVK.GEAEND_USR        AS "Zuletzt geändert durch",
+      HISVK.HISKOPF_ID        AS "Historisierungs-Kopfsatz-ID",
+      HISVK.TYP               AS "Typ der Historisierung",
+      HISVK.STATUS            AS "Status",
+      HISVK.STANDORT          AS "Standort",
+      HISVK.DATUM             AS "Stichtag der Historisierung",
+      HISVK.MONAT_KAL         AS "Monat der Historisierung",
+      HISVK.JAHR_KAL          AS "Jahr der Historisierung",
+      HISVK.KW                AS "Kalenderwoche der Historisierung",
+      HISVK.JAHR_KW           AS "Jahr zur Kalenderwoche der Historisierung",
+      HISVK.ABTEILUNG         AS "Abteilung",
+      HISVK.STO_AUF           AS "Standort des Auftrags",
+      HISVK.STO_IS_LF         AS "Standortübergreifende Lieferung (ja/nein)",
+      HISVK.STO_LIEF          AS "Auslieferung durch Standort",
+      HISVK.STO_IS_IC         AS "Intercompany-Auftrag (ja/nein)",
+      HISVK.IC_EMPFSTO        AS "Intercompany: Nr. des Empfänger-Standort",
+      HISVK.ARTNR             AS "Artikelnummer",
+      Trim(Trim(DAB010.BEZ1) + ' ' + Trim(DAB010.BEZ2)) + ' (' + TRIM(HISVK.ARTNR) + ')'  AS "Artikelnummer Bezeichnung",
+      HISVK.ARTTYP            AS "Artikel-Typ",
+      Trim(DABMDT_ARTTYP.BEZ1) + ' (' + TRIM(HISVK.ARTTYP) + ')'  AS "Artikel-Typ Bezeichnung",
+      HISVK.PROD_ABT          AS "Produktionsabteilung",
+      HISVK.ARTGRUPPE         AS "Artikelgruppe",
+      TRIM(DAB310.BEZ1) + ' (' + TRIM(CAST(DAB310.ARTGRUPPE AS SQL_CHAR)) + ')'  AS "Artikelgruppe Bezeichnung",
+      HISVK.KOSTENST          AS "Kostenstelle",
+      HISVK.EMPF_TYP          AS "Empfänger-Typ (Kunde/Lieferant)",
+      HISVK.KDNR              AS "Kunden-Nummer",
+      TRIM(DAB000.MATCHCODE) + ' (' + TRIM(CAST(DAB000.KDNR AS SQL_CHAR)) + ')' AS "Kunde Bezeichnung",
+      HISVK.DAB050_TYP        AS "Auftrags-Typ (Angebot/Auftrag/Lieferung)",
+      HISVK.LLANDNR           AS "Empfänger-Land",
+      Trim(DIA020.BEZ) + ' (' + TRIM(DIA020.LANDNR) + ')'  AS "Empfänger-Land Bezeichnung",
+      HISVK.LLAND_REG         AS "Empfänger-Region",
+         CASE HISVK.LLAND_REG
+             WHEN 10 THEN 'Inland (' + TRIM(CAST(HISVK.LLAND_REG AS SQL_CHAR)) + ')'
+             WHEN 20 THEN 'EU (' + TRIM(CAST(HISVK.LLAND_REG AS SQL_CHAR)) + ')'
+             WHEN 30 THEN 'Drittland (' + TRIM(CAST(HISVK.LLAND_REG AS SQL_CHAR)) + ')'
+             WHEN 90 THEN 'Intercompany (' + TRIM(CAST(HISVK.LLAND_REG AS SQL_CHAR)) + ')'
+         ELSE '?'
+         END
+                              AS "Empfänger-Region Bezeichnung",
+      HISVK.AUF_ART           AS "Auftrags-Art",
+      TRIM(DABAUF.AUF_ART) + ' (' + TRIM(CAST(DABAUF.AUF_NR AS SQL_CHAR)) + ')' AS "Auftrags-Art Bezeichnung",
+      HISVK.PRJ_ID            AS "Projekt-ID",
+      HISVK.WAEKZ             AS "Währung",
+      HISVK.VERTRETER         AS "Vertreter-Nr",
+      TRIM(DAB062_1.MATCHCODE) + ' (' + TRIM(CAST(DAB062_1.VTNR AS SQL_CHAR)) + ')' AS "Vertreter Bezeichnung",
+      HISVK.VERTRETER2        AS "Vertreter-Nr (2)",
+      TRIM(DAB062_2.MATCHCODE) + ' (' + TRIM(CAST(DAB062_2.VTNR AS SQL_CHAR)) + ')' AS "Vertreter (2) Bezeichnung",
+      HISVK.TERMINW           AS "Wunschtermin (Text)",
+      HISVK.TERMINWD          AS "Wunschtermin (Datum)",
+      HISVK.TERMIN            AS "Termin (Text)",
+      HISVK.TERMIND           AS "Termin (Datum)",
+      HISVK.TERMINAW          AS "Abstand in Wochen zum Liefertermin",
+      HISVK.ABRUF_AUF         AS "Rahmen-Auftrag (ja/nein)",
+      HISVK.APNUMMER          AS "Auftrags/Posit.Nr",
+      HISVK.DAB055_ID         AS "DAB055:ID",
+
+      HISVK.AN_MENGE          AS "Angebot Menge",
+      HISVK.AN_RE_WTFW        AS "Angebot Rechnungswert Fremdwährung",
+      HISVK.AN_RE_WT          AS "Angebot Rechnungswert",
+
+      HISVK.LR_MENGE          AS "Lieferrückstand Menge",
+      HISVK.LR_RE_WTFW        AS "Lieferrückstand Rechnungswert Fremdwährung",
+      HISVK.LR_RE_WT          AS "Lieferrückstand Rechnungswert",
+
+      HISVK.RV_MENGE          AS "Reserviert Menge",
+      HISVK.RV_RE_WTFW        AS "Reserviert Rechnungswert Fremdwährung",
+      HISVK.RV_RE_WT          AS "Reserviert Rechnungswert",
+
+      HISVK.VS_MENGE          AS "Versand Menge",
+      HISVK.VS_RE_WTFW        AS "Versand Rechnungswert Fremdwährung",
+      HISVK.VS_RE_WT          AS "Versand Rechn.wert",
+
+      HISVK.FR_MENGE          AS "Fakturarückstand Menge",
+      HISVK.FR_RE_WTFW        AS "Fakturarückstand Rechnungswert Fremdwährung",
+      HISVK.FR_RE_WT          AS "Fakturarückstand Rechnungswert"
+
+   FROM "HISVK.ADT" HISVK
+   LEFT JOIN  @DIA020@  DIA020        ON (DIA020.LANDNR = HISVK.LLANDNR)
+   LEFT JOIN  @DAB310@  DAB310        ON (DAB310.ARTGRUPPE = HISVK.ARTGRUPPE )
+   LEFT JOIN  @DAB000@ DAB000         ON (DAB000.KDNR = HISVK.KDNR )
+   LEFT JOIN  @DAB062@  DAB062_1      ON (DAB062_1.VTNR = HISVK.VERTRETER )
+   LEFT JOIN  @DAB062@  DAB062_2      ON (DAB062_2.VTNR = HISVK.VERTRETER2 )
+   LEFT JOIN  "DABAUF.ADT"  DABAUF        ON (DABAUF.AUF_NR = HISVK.AUF_ART )
+   LEFT JOIN  "DABMDT.ADT"  DABMDT_ARTTYP ON (DABMDT_ARTTYP.TAB_ID = 102024 AND DABMDT_ARTTYP.WERT = HISVK.ARTTYP )
+   LEFT JOIN  @DAB010@  DAB010        ON (DAB010.ARTNR = HISVK.ARTNR AND DAB010.STANDORT = HISVK.STANDORT)
+
+   WHERE HISVK.HISKOPF_ID = @HISKOPF_ID@  

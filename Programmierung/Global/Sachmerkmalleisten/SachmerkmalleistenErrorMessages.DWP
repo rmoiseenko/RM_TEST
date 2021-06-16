@@ -1,0 +1,92 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm enthält alle Fehlermeldungen, die innerhalb des
+//               Sachmerkmallesiten-Moduls auftreten können.
+//##############################################################################
+//##############################################################################
+
+|
+
+   gl_SML_ERR_ParamIdentifier:_C := '%PARAM%',
+
+   // Basis Error-Code für das Sachmerkmalleisten-Modul
+   gl_SML_ERR_BaseErrorCode:_N := 1000,
+
+   // Anzahl verfügbarer Error-Codes im Sachmerkmalleisten-Modul
+   // HINWEIS: Die Anzahl muss erhöht werden, sobald eine neue Error-Message
+   //          hinzugefügt wird!
+   gl_SML_ERR_ErrorCodeCount:_N := 12,
+
+   // Error-Codes:
+   gl_SML_ERRC_EmptyAttributeKeyNotAllowed:_N     := 1,
+   gl_SML_ERRC_NoAttributeForAttributeKey:_N      := 2,
+   gl_SML_ERRC_InvalidVArray:_N                   := 3,
+   gl_SML_ERRC_AssignmentDoesNotExist:_N          := 4,
+   gl_SML_ERRC_ValueNotUniqueForAllAssignments:_N := 5,
+   gl_SML_ERRC_ArticleDoesNotExist:_N             := 6,
+   gl_SML_ERRC_InvalidParameterType:_N            := 7,
+   gl_SML_ERRC_SMLAlreadyAssigned:_N              := 8,
+
+   // SL_MEMO Error-Codes:
+   gl_SML_ERRC_SLMEMO_SLMemoMustNotBeEmpty:_N      := 9,
+   gl_SML_ERRC_SLMEMO_NoAttributeForVIndex:_N      := 10,
+   gl_SML_ERRC_SLMEMO_ArrayIndexOutOfBounds:_N     := 11,
+   gl_SML_ERRC_SLMEMO_AttributeDataTypeMismatch:_N := 12,
+
+   // Array das alle Fehlermeldungen unformatiert enthält:
+   gl_SML_ERR_ErrorMessages:_U
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Einem Error-Code eine Fehlermeldung zuordnen
+// @Result: null
+//******************************************************************************
+function SML_ERR_MapErrorMessage(nRelativeErrorCode:N, cErrorMessage:C)
+   gl_SML_ERR_ErrorMessages[nRelativeErrorCode] := cErrorMessage,
+end,
+
+//##############################################################################
+//##############################################################################
+// Fehlermeldungen
+//##############################################################################
+//##############################################################################
+
+gl_SML_ERR_ErrorMessages := Dim(gl_SML_ERR_ErrorCodeCount),
+
+// Setzen der Fehlermeldungen
+SML_ERR_MapErrorMessage(gl_SML_ERRC_EmptyAttributeKeyNotAllowed,
+                        'Leerer Merkmalsschlüssel nicht erlaubt'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_NoAttributeForAttributeKey,
+                        'Merkmalsschlüssel <' + gl_SML_ERR_ParamIdentifier + '> kann keinem Merkmal zugeordnet werden'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_InvalidVArray,
+                        'V-Array ist nicht gültig, 1. Parameter SMLV_VVal() muss immer v sein. Z.B.: SMLV_VVal(v, ...)'),
+// TODO: Meldung ggf. anpassen: "Keine passende Sachmerkmalleistenzuordnung ..."
+SML_ERR_MapErrorMessage(gl_SML_ERRC_AssignmentDoesNotExist,
+                        'Keine Sachmerkmalleistenzuordnungen vorhanden für ' + gl_SML_ERR_ParamIdentifier),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_ValueNotUniqueForAllAssignments,
+                        'Wert für Merkmal <' + gl_SML_ERR_ParamIdentifier + '> ist nicht eindeutig in allen Zuordnungen:' + CRLF +
+                        '- ' + gl_SML_ERR_ParamIdentifier                                                                 + CRLF +
+                        '- ' + gl_SML_ERR_ParamIdentifier),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_ArticleDoesNotExist,
+                        'Artikel mit Artikelnummer <' + gl_SML_ERR_ParamIdentifier + '> existiert nicht'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_InvalidParameterType,
+                        'Datentyp <' + gl_SML_ERR_ParamIdentifier + '> ist für Parameter <' + gl_SML_ERR_ParamIdentifier + '> ungültig, erwarte <' + gl_SML_ERR_ParamIdentifier + '>'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_SMLAlreadyAssigned,
+                        'Zuordnung der Sachmerkmalleiste <' + gl_SML_ERR_ParamIdentifier + '> nicht möglich!' + CRLF + 'Sachmerkmalleistenzuordnung existiert bereits!'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_SLMEMO_SLMemoMustNotBeEmpty,
+                        'SLMemo-Array darf nicht leer sein'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_SLMEMO_NoAttributeForVIndex,
+                        'Es existiert kein Merkmal mit V-Index <' + gl_SML_ERR_ParamIdentifier + '> im SL_MEMO-Array'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_SLMEMO_ArrayIndexOutOfBounds,
+                        'SL_MEMO-Index <' + gl_SML_ERR_ParamIdentifier + '> liegt außerhalb des gültigen Bereichs'),
+SML_ERR_MapErrorMessage(gl_SML_ERRC_SLMEMO_AttributeDataTypeMismatch,
+                        'Der Datentyp des zu setzenden Werts <' + gl_SML_ERR_ParamIdentifier +
+                        '> stimmt nicht mit dem Datentyp <' + gl_SML_ERR_ParamIdentifier +
+                        '> des Merkmals <' + gl_SML_ERR_ParamIdentifier + '> überein'),
+

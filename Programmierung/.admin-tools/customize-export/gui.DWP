@@ -1,0 +1,390 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3, m_aParams:P4,
+
+   m_cFormClassID, m_cWinPosSaveId, m_cBrowserID,
+
+   m_cBasicPath, m_cNotLessThen72Version,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Export, A_HelpContent, A_SelectAll, A_UnselectAll, AL_Actions,
+   bar_MainBar, bar_MainDockControl, bar_MainManager, bbtn_Export, beButton1,
+   beButton2, cmb_ExportBrowserUser, dtp_ChangesSince, edt_Path, gpnl_Export,
+   gpnl_Path, ipnl_Main, lbl_ChangesSince, lbl_CodeBlockPanels,
+   lbl_CompleteExport, lbl_ExportBrowser, lbl_ExportIndiForms,
+   lbl_ExportIndiMenues, lbl_ExportLayouts, lbl_ExportMasks, lbl_ExportMMT,
+   lbl_ExportPrograms, lbl_ExportRollen, lbl_ExportWithPackage, lbl_Path,
+   lbl_TableDefExport, pnl_Main, tgs_CodeBlockPanels, tgs_CompleteExport,
+   tgs_ExportBrowser, tgs_ExportDefaultBrowser, tgs_ExportIndiForms,
+   tgs_ExportIndiMenues, tgs_ExportLayouts, tgs_ExportMasks, tgs_ExportMMT,
+   tgs_ExportPrograms, tgs_ExportRollen, tgs_ExportWithPackage,
+   tgs_IndiFormAsJSON, tgs_TableDefExport
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//#p .admin-tools\customize-export\utils
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID      := '@DBEXPORT',
+m_cWinPosSaveId     := '@DBEXPORT',
+m_cBrowserID         := '',  //@BROWSER_ID
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Enabled/Disbaled die Actions
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+end,
+
+//******************************************************************************
+// setzt funkstionsübergreifende Variabeln
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   cmb_ExportBrowserUser.Value   := c_usr,
+   dtp_ChangesSince.Value        := date() - 30,
+   cmb_ExportBrowserUser.Enabled := not tgs_ExportDefaultBrowser.Checked,
+
+   m_cNotLessThen72Version := CompareBeVersion(mBeVersion, '7.2.1.1'),
+   tgs_IndiFormAsJSON.Checked := m_cNotLessThen72Version,
+   tgs_IndiFormAsJSON.Enabled := m_cNotLessThen72Version,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FindAndGetBrowserIDFromProgram(cPath:C,cProgramContent:C)
+   | oRegEx |
+   Result := '',
+
+   oRegEx := CreateObject('TBeCBRegExpr', 'FIND_BROWSER_IDS'),
+   startseq
+      oRegEx.SearchExpression := '.*:=.*(' + '''' + '|")(.*)("|' + '''' + '),.*\/\/@BROWSER_ID',
+      oRegEx.SearchText       := cProgramContent,
+      if oRegEx.ExecSearch then
+         Result += crlf + 'TYPE=BROW;FOLDER=' + cPath + ';NAME=' + oRegEx.Matches[3] +';COPYTOALL=J;COPYTOZERO=J',
+         while oRegEx.ExecSearchNext do
+            Result += crlf + 'TYPE=BROW;FOLDER=' + cPath + ';NAME=' + oRegEx.Matches[3] +';COPYTOALL=J;COPYTOZERO=J',
+         end,
+      endif,
+   always
+      DestroyObject(oRegEx),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ChangeToogleSwitchesChecked( bChecked )
+   tgs_ExportPrograms.Checked := bChecked,
+   tgs_ExportIndiForms.Checked := bChecked,
+   tgs_ExportMasks.Checked := bChecked,
+   tgs_ExportBrowser.Checked := bChecked,
+   tgs_ExportLayouts.Checked := bChecked,
+   tgs_ExportIndiMenues.Checked := bChecked,
+   tgs_ExportMMT.Checked := bChecked,
+   tgs_CodeBlockPanels.Checked := bChecked,
+   tgs_TableDefExport.Checked := bChecked,
+   tgs_ExportRollen.Checked := bChecked,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function tgs_ExportDefaultBrowserClick( Sender )
+   cmb_ExportBrowserUser.Enabled := not tgs_ExportDefaultBrowser.Checked,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function tgs_ExportIndiFormsClick( Sender )
+   tgs_IndiFormAsJSON.Enabled := tgs_ExportIndiForms.Checked and m_cNotLessThen72Version,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function tgs_CompleteExportClick( Sender )
+   dtp_ChangesSince.Enabled := not tgs_CompleteExport.Checked,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_PathBtnClick( Sender )
+   | oDialog |
+
+   oDialog := OpenDlg('Export Pfad', 'Ordner|*.', '','a'),
+   startseq
+      oDialog.Active := true,
+      if oDialog.Selected then
+         edt_Path.Text := ExtractFilePath(oDialog.FileName),
+      endif,
+   always
+      DestroyObject(oDialog),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_UnselectAllExecute( Sender )
+   startseq
+      ChangeToogleSwitchesChecked( false ),
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SelectAllExecute( Sender )
+   startseq
+      ChangeToogleSwitchesChecked( true ),
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ExportExecute( Sender )
+   | cBasicPath, aExportSettings, bSuccessful |
+
+   bSuccessful := false,
+   startseq
+      cBasicPath := edt_Path.Text,
+      if empty(cBasicPath) or not DirectoryExists(cBasicPath)  then
+         MessageDlg('Bitte geben Sie einen gültigen Pfad an.', mtError),
+      else
+         if not tgs_CompleteExport.Checked and Empty(dtp_ChangesSince.Value) then
+            MessageDlg('Bitte geben Sie an ab welchem Datum alle Änderungen exportiert werden sollen.', mtError),
+         else
+            writeln(time()),
+
+            aExportSettings := {},
+
+            KVU_Set(aExportSettings, 'BASICPATH',               cBasicPath),
+            KVU_Set(aExportSettings, 'COMPLETE_EXPORT',         tgs_CompleteExport.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_SINCE',            dtp_ChangesSince.Value),
+            KVU_Set(aExportSettings, 'EXPORT_INDIFORM_AS_JSON', tgs_IndiFormAsJSON.Checked),
+            if tgs_ExportDefaultBrowser.Checked then
+               KVU_Set(aExportSettings, 'EXPORT_BRO_AS_USR',    0),
+            else
+               KVU_Set(aExportSettings, 'EXPORT_BRO_AS_USR',    val(cmb_ExportBrowserUser.Value)),
+            endif,
+
+            KVU_Set(aExportSettings, 'EXPORT_PROGRAM',    tgs_ExportPrograms.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_INDIFORMS',  tgs_ExportIndiForms.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_MASKS',      tgs_ExportMasks.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_BROWSER',    tgs_ExportBrowser.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_LAYOUTS',    tgs_ExportLayouts.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_INDIMENUES', tgs_ExportIndiMenues.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_MMT',        tgs_ExportMMT.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_CB_PANELS',  tgs_CodeBlockPanels.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_TABLEDEF',   tgs_TableDefExport.Checked),
+            KVU_Set(aExportSettings, 'EXPORT_ROLLEN',     tgs_ExportRollen.Checked),
+
+
+
+            if tgs_ExportWithPackage.Checked then
+               bSuccessful := ExportWithPackage(aExportSettings),
+
+            else
+               ExportWithoutPackage(aExportSettings),
+               bSuccessful := false,
+            endif,
+
+            writeln(time()),
+            if bSuccessful then
+               MessageDlg('Export war erfolgreich.', mtInformation),
+            else
+               MessageDlg('Export war nicht erfolgreich.', mtInformation),
+            endif,
+         endif,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.FormStyle   := fsNormal,
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.Keypreview     := true,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Export                 := FindObject(oForm, "A_Export"),
+   A_HelpContent            := FindObject(oForm, "A_HelpContent"),
+   A_SelectAll              := FindObject(oForm, "A_SelectAll"),
+   A_UnselectAll            := FindObject(oForm, "A_UnselectAll"),
+   AL_Actions               := FindObject(oForm, "AL_Actions"),
+   bar_MainBar              := FindObject(oForm, "bar_MainBar"),
+   bar_MainDockControl      := FindObject(oForm, "bar_MainDockControl"),
+   bar_MainManager          := FindObject(oForm, "bar_MainManager"),
+   bbtn_Export              := FindObject(oForm, "bbtn_Export"),
+   beButton1                := FindObject(oForm, "beButton1"),
+   beButton2                := FindObject(oForm, "beButton2"),
+   cmb_ExportBrowserUser    := FindObject(oForm, "cmb_ExportBrowserUser"),
+   dtp_ChangesSince         := FindObject(oForm, "dtp_ChangesSince"),
+   edt_Path                 := FindObject(oForm, "edt_Path"),
+   gpnl_Export              := FindObject(oForm, "gpnl_Export"),
+   gpnl_Path                := FindObject(oForm, "gpnl_Path"),
+   ipnl_Main                := FindObject(oForm, "ipnl_Main"),
+   lbl_ChangesSince         := FindObject(oForm, "lbl_ChangesSince"),
+   lbl_CodeBlockPanels      := FindObject(oForm, "lbl_CodeBlockPanels"),
+   lbl_CompleteExport       := FindObject(oForm, "lbl_CompleteExport"),
+   lbl_ExportBrowser        := FindObject(oForm, "lbl_ExportBrowser"),
+   lbl_ExportIndiForms      := FindObject(oForm, "lbl_ExportIndiForms"),
+   lbl_ExportIndiMenues     := FindObject(oForm, "lbl_ExportIndiMenues"),
+   lbl_ExportLayouts        := FindObject(oForm, "lbl_ExportLayouts"),
+   lbl_ExportMasks          := FindObject(oForm, "lbl_ExportMasks"),
+   lbl_ExportMMT            := FindObject(oForm, "lbl_ExportMMT"),
+   lbl_ExportPrograms       := FindObject(oForm, "lbl_ExportPrograms"),
+   lbl_ExportRollen         := FindObject(oForm, "lbl_ExportRollen"),
+   lbl_ExportWithPackage    := FindObject(oForm, "lbl_ExportWithPackage"),
+   lbl_Path                 := FindObject(oForm, "lbl_Path"),
+   lbl_TableDefExport       := FindObject(oForm, "lbl_TableDefExport"),
+   pnl_Main                 := FindObject(oForm, "pnl_Main"),
+   tgs_CodeBlockPanels      := FindObject(oForm, "tgs_CodeBlockPanels"),
+   tgs_CompleteExport       := FindObject(oForm, "tgs_CompleteExport"),
+   tgs_ExportBrowser        := FindObject(oForm, "tgs_ExportBrowser"),
+   tgs_ExportDefaultBrowser := FindObject(oForm, "tgs_ExportDefaultBrowser"),
+   tgs_ExportIndiForms      := FindObject(oForm, "tgs_ExportIndiForms"),
+   tgs_ExportIndiMenues     := FindObject(oForm, "tgs_ExportIndiMenues"),
+   tgs_ExportLayouts        := FindObject(oForm, "tgs_ExportLayouts"),
+   tgs_ExportMasks          := FindObject(oForm, "tgs_ExportMasks"),
+   tgs_ExportMMT            := FindObject(oForm, "tgs_ExportMMT"),
+   tgs_ExportPrograms       := FindObject(oForm, "tgs_ExportPrograms"),
+   tgs_ExportRollen         := FindObject(oForm, "tgs_ExportRollen"),
+   tgs_ExportWithPackage    := FindObject(oForm, "tgs_ExportWithPackage"),
+   tgs_IndiFormAsJSON       := FindObject(oForm, "tgs_IndiFormAsJSON"),
+   tgs_TableDefExport       := FindObject(oForm, "tgs_TableDefExport"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   SetDefaults(),
+   OpenDataBaseAndLinkToGUI(),
+   ActionsEnabled(),
+   ShowGUI(),
+onerror
+   if not empty(oForm) then
+      DestroyObject(oForm),
+   endif,
+   GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+
+
+
+
+

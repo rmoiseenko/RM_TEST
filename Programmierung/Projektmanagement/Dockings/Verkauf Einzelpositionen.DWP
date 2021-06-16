@@ -1,0 +1,181 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Fenster ist ein "Rahmen" für das Fenster TFormTOSinglePos
+//               (Einzelpositionen) da dieses ansonsten nicht eingedockt werden
+//               kann.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+   m_oFormTOSinglePos,
+   m_cPositionSaveID, m_cFormID,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, bipnl_Headline, ds_MasterDataSource
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@SIPOSFRAM',
+m_cPositionSaveID := '@SINGLEPOS',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Standardeinstellungen für das TFormTOSinglePos Fenster setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| cMonday |
+   // Damit das Docking auch in der Entwicklungsumgebung gestartet werden kann
+   if empty(m_oMasterTable) then
+      m_oMasterTable := DBOpen(waDABPRJ),
+   endif,
+   // Übergebene Tabelle in das DS setzen um auf Positionierungen reagieren zu können
+   ds_MasterDataSource.DataSet := m_oMasterTable,
+
+   // Datumsbereich soll immer von Montag der aktuellen Woche angezeigt werden
+   // Außerdem sollen nur A-Buchungen angezeigt werden
+   cMonday := FormatDateTime('DD/MM/YYYY', FridayOfWeek(DToC(Date())) - 4), // Ab Wochenbeginn
+   m_oFormTOSinglePos.Filter := 'DATUM >= "' + cMonday + '" AND BUART = "A"',
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Masterdatasource mit der übergebenen Mastertable verbinden um auf
+// Änderungen reagieren zu können
+//******************************************************************************
+function ds_MasterDatasourceScroll_Update( Sender )
+   // Auf neues Projekt setzen und Daten neu laden
+   m_oFormTOSinglePos.ProjectID := iif(m_oMasterTable:ID > 0, m_oMasterTable:ID, -1),
+   m_oFormTOSinglePos.CbRefreshData(),
+end,
+
+//******************************************************************************
+// Event: nach dem das Fenster angedockt wurde
+//******************************************************************************
+function FormExEndDock( Sender )
+   ProjMgmtGUI_FixDocking(oForm),
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Fenster wird zerstört, globale Variable zurücksezten
+//******************************************************************************
+function FormExDestroy()
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Erstellt das TFormTOSinglePos und setzt es auf das "Rahmen"-Formular
+// @Result: null
+//******************************************************************************
+function CreateSinglePos()
+   startseq
+      m_oFormTOSinglePos                  := CreateObject('TFormTOSinglePos', 'SNGPOS', oForm, oForm),
+      m_oFormTOSinglePos.StatType         := 6, // Fest auf manuelle Filterung setzen
+      m_oFormTOSinglePos.CbInit(),
+      m_oFormTOSinglePos.BorderStyle      := bsNone,
+      m_oFormTOSinglePos.Align            := alClient,
+      m_oFormTOSinglePos.AlignWithMargins := True,
+      m_oFormTOSinglePos.Margins.Top      := 0,
+      m_oFormTOSinglePos.FormStyle        := fsStayOnTop,
+      m_oFormTOSinglePos.Visible          := True,
+   onerror
+      SetError('Fehler beim Erstellen der Einzelpositionen' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm := LoadForm(m_cFormID, m_oOwnerForm),
+   endif,
+
+   oForm.BorderStyle    := bsSizeToolWin,
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.OrigCapt       := 'Verkauf Einzelpositionen',
+
+
+   // Events zuweisen
+   AssignEvent(oForm, 'OnClose', 'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy', 'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      bipnl_Headline      := FindObject( oForm, "bipnl_Headline" ),
+      ds_MasterDataSource := FindObject( oForm, "ds_MasterDataSource" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   CreateSinglePos(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText(), mtError),
+stopseq,
+
+oForm

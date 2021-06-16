@@ -1,0 +1,107 @@
+//******************************************************************************
+// Funktion ruft das Fenster zur Verfügbarkeitsübersicht auf und übergibt
+//    eine Parameter-Array zur Steuerung des Fensters
+//
+//    Die möglichen Parameter können nachgelesen werden im Programm
+//    "Produktion\Verfuegbarkeitspruefung\GUI\ATP_Uebersicht"
+//
+//    Beispiel-Aufruf:
+//      VPU_GUI_ShowVerfuegbarkeitsUebersichtAsModalForm( { {'ARTNR',     'MUTTER M5' },
+//                                                          {'PRUEFMODE', 110         } } )
+//
+// @Result: die Funktion hat keine Rückgabe
+//******************************************************************************
+function _VPU_GUI_ShowVerfuegbarkeitsUebersichtAsModalForm(aCustomInfoArray)
+   GFU_ShowModal_CustomInfo(nil, 'Produktion\Verfuegbarkeitspruefung\GUI\ATP_Uebersicht', aCustomInfoArray),
+end,
+
+//******************************************************************************
+// Funktion ruft das Fenster zur Verfügbarkeitsprüfung auf und übergibt
+//    eine Parameter-Array zur Steuerung des Fensters
+//
+//    Die möglichen Parameter können nachgelesen werden im Programm
+//    "Produktion\Verfuegbarkeitspruefung\GUI" in der
+//    Funktion "ParseUserDefinedEventParams()"
+//
+//    Beispiel-Aufruf:
+//      VPU_GUI_ShowVerfuegbarkeitspruefungAsMdiChild( { {'ORDER_WA',   waDab035  },
+//                                                       {'ORDER_NO',   '600018  '},
+//                                                       {'PRUEF_MODE', 200       } })
+//
+// @Result: Formular-Instanz
+//******************************************************************************
+function _VPU_GUI_ShowVerfuegbarkeitspruefungAsMdiChild(aParamArray)
+| oForm |
+   oForm := GFU_ShowMdiChild('VERFUEGBARKEITSPRUEFUNG', 'Produktion\Verfuegbarkeitspruefung\GUI'),
+   if not empty(oForm) then
+      oForm.CbHelper.CbInvokeUserDefinedEvent(oForm, 'CHECK_VERFUEG_PARAMS', aParamArray),
+   endif,
+   Result := oForm,
+end,
+
+//******************************************************************************
+// Erzeugt eine Memtable für die Darstellung des Prüfungsergebnisses an der GUI
+// @Result: MemTable-Instanz
+//******************************************************************************
+function _VPU_GUI_CreateStrukturMem(oOwner)
+   Result           := CreateObject('TMemCalcTable', 'ITEMTABLE', oOwner),
+   startseq
+      Result.AliasName := 'ITEMTABLE',
+
+      MyAddMemField(Result, 'EBENE',                   'ftInteger',  0,  0),
+      MyAddMemField(Result, 'SORT_KEY',                'ftString', 500,  0),
+      MyAddMemField(Result, 'TYP',                     'ftInteger',  0,  0),
+                            // 10 = Stücklisten-Position
+                            // 20 = Zugangs-Kopf-Satz (Dab035 oder Grobplanung)
+                            // TODO: globale Variablen hierfür anlegen und überall nutzen
+
+      MyAddMemField(Result, 'ARTNR_BG',                'ftString',   mBeArtNoLen, 0),
+      MyAddMemField(Result, 'ARTNR',                   'ftString',   mBeArtNoLen, 0),
+      MyAddMemField(Result, 'BEZ1',                    'ftString',   40, 0),
+      MyAddMemField(Result, 'BEZ2',                    'ftString',   40, 0),
+      MyAddMemField(Result, 'ARTGRUPPE',               'ftInteger',  0,  0),
+      MyAddMemField(Result, 'ARTTYP',                  'ftString',   1,  0),
+      MyAddMemField(Result, 'LAGER_KZ',                'ftString',   1,  0),  // für Verfügbarkeit ist nur LAGER_KZ = 'J' relevant
+      MyAddMemField(Result, 'WBZ',                     'ftInteger',  0,  0),
+
+      MyAddMemField(Result, 'B_POS_LFD',               'ftString',   11, 0),  // Nur in der ersten Ebene (aus Dab240) gefüllt
+      MyAddMemField(Result, 'POSNR',                   'ftString',   6,  0),
+
+      MyAddMemField(Result, 'PROD_ABT',                'ftString',   3,  0),  // Aus Dab240/Dab035 bzw. Dab210
+      MyAddMemField(Result, 'R_S',                     'ftString',   1,  0),
+
+      MyAddMemField(Result, 'BEDARF_MENGE',            'ftFloat',    0,  0),
+      MyAddMemField(Result, 'BEDARF_TERMIN',           'ftString',   8,  0),   // Berechnet mit Rückterminierung!
+      MyAddMemField(Result, 'BEDARF_TERMIN_INDEX',     'ftString',   9,  0),   //  ''
+
+      MyAddMemField(Result, 'DAB240_ID',               'ftInteger',  0,  0),
+      MyAddMemField(Result, 'DAB210_ID',               'ftInteger',  0,  0),
+
+      MyAddMemField(Result, 'CALC_BESTAND_AKTUELL',            'ftFloat',     0,  0),
+      MyAddMemField(Result, 'CALC_BESTAND_BEI_BEDARF',         'ftFloat',     0,  0),
+      MyAddMemField(Result, 'CALC_BEDARF_GEDECKT_DURCH_LAGER', 'ftString',    1,  0), // Ist der Bedarf durch Lagerbestand gedeckt?
+                                                                                      //   'N' - nein      (es sind Zugänge erforderlich, um den Bedarf zu decken)
+                                                                                      //   'T' - teilweise
+                                                                                      //   'J' - ja        (der Bedarf ist komplett gedeckt durch heute verfügbaren Lagerbestand)
+
+      MyAddMemField(Result, 'ZEILEN_TYP',              'ftInteger',  0,  0), // "ZEILEN_TYP" aus Einzel-Terminraster-Logik
+      MyAddMemField(Result, 'DATENSATZ_ID_ETR',        'ftInteger',  0,  0), // "DATENSATZ_ID" aus Einzel-Terminraster-Logik
+      MyAddMemField(Result, 'ZUGANGS_TERMIN',          'ftString',   8,  0),
+      MyAddMemField(Result, 'ZUGANGS_TERMIN_INDEX',    'ftString',   9,  0),
+      MyAddMemField(Result, 'ZUGANGS_INFO',            'ftString',   50, 0), // Info-Text zum Zugangs-Element
+      MyAddMemField(Result, 'ZUGANGS_LAUFNUMMER',      'ftInteger',  0,  0), // Bei einem Zugangs-Kopf (TYP=20) ist das die (virtuelle) laufende Nummer des Zugangs (1, 2, 3, ...)
+                                                                             //  -> dient der Sortierung der Zugänge, wenn es mehrere zugeord. Zugänge für einen Bedarf gibt.
+      MyAddMemField(Result, 'ZUGANG_FUER_B_POS_LFD',   'ftString',   11, 0), // (momentan nur für den SortKey notwendig)
+      MyAddMemField(Result, 'ZUGANG_BESTPOSNR',        'ftString',    8, 0),
+
+      MyAddMemField(Result, 'ANZ_MAT_POSITIONEN',      'ftInteger',   0, 0), // Nur für Zugangs-Köpfe (TYP=20): Wieviele relevante Stücklisten-Pos. hat der FA?    -> Wird erst bei Auflösung des Zugangs berechnet.
+      MyAddMemField(Result, 'HAT_MAT_RUECKSTAND',      'ftString',    1, 0), // Nur für Zugangs-Köpfe (TYP=20): Hat der Fertigungsauftrag noch Material-Rückstand? -> Wird erst bei Auflösung des Zugangs berechnet.
+
+      MyAddMemField(Result, 'IS_EXPANDED',             'ftBoolean',   0, 0), // Ist die aktuelle Zeile "aufgeklappt", also: sind untergeordnete Datensätze erzeugt worden?
+
+      Result.Active := true,
+   onerror
+      DestroyObject(Result),
+      raise(),
+   stopseq,
+end,

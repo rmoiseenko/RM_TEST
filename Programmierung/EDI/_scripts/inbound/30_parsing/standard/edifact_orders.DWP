@@ -1,0 +1,216 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inbound Parsing
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm analysiert eine EDIFACT ORDERS Nachricht (Bestellung durch
+//   einen Kunden bei uns) und erstellt dafür das Inhouseformat.
+//
+// Rückgabe:
+//   array - EDIProcessStatus
+//     {
+//        {'EDIProcessStatus.status',       <integer>},
+//        {'EDIProcessStatus.errorMessage', <string>},
+//        {'EDIProcessStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+
+   m_aProcessResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion parst eine EDIFACT ORDERS Nachricht.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ParseEdifactMessage_Internal(oDM:O, nEDIMSGId:N, oAST:O)
+|
+   oEDIMSG, oEDIPART, oEDIHEAD, oEDIPOS,
+   nEDIPARTId,
+   cOwnGLN, cPartnerGLN,
+   aHeaders, aPositions, aHeadData, aPositionData, n, i,
+   oUNB, oSGMSG, oUNH, aSG02, oLIN, oQTY, oNAD, nKdnr
+|
+
+   oEDIHEAD := MyGetTable(oDM, waEDIHEAD, ''),
+   oEDIPOS  := MyGetTable(oDM, waEDIPOS,  ''),
+   oEDIPART := MyGetTable(oDM, waEDIPART, ''),
+   oEDIPART.CbIndexName := 'ID',
+   oEDIMSG := MyGetTable(oDM, waEDIMSG,  'EDIMSG_SEEK'),
+   oEDIMSG.CbIndexName := 'ID',
+
+   SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+
+   nEDIPARTId := oEDIMSG:EDIPART_ID,
+   // EDIPART_ID Validieren:
+   //   In den meisten fällen wird die EDIPART_ID im EDIMSG-Datensatz nicht
+   //   gesetzt sein, weil in der Nachricht mehrere Belege von verschiedenen
+   //   kaufmännischen GLN's versendet wurden.
+   //   In diesem Fall darf die EDIPART_ID nicht validiert werden.
+   SetErrorIf(not empty(nEDIPARTId) and not oEDIPART.CbFindKey({nEDIPARTId}), 'EDIPART record with ID <' + str(nEDIPARTId) + '> does not exist'),
+
+   //***************************************************************************
+   // 1. Schritt - Alte Inhouseformat-Daten löschen
+   //***************************************************************************
+   // Einfache Lösung:
+   //   Altes Inhouseformat komplett verwerfen (aus vorherigen Parsing-Versuchen
+   //    für diese Nachricht).
+   EDI_Message_EDIMSG_DeleteInhouseFormatRecords(oDM, nEDIMSGId),
+
+   //***************************************************************************
+   // 2. Schritt - EDIFACT-Nachricht analysieren
+   //***************************************************************************
+   oUNB        := EDI_Edifact_AST_FindChild(oAST, 'UNB'),
+   // TODO: Die folgenden GLN's beziehen sich nur auf den Envelope, sind also
+   //       keine kaufmännischen GLN's => Muss raus!
+   cOwnGLN     := EDI_Edifact_AST_GetValue(oUNB, 'S003', '0010'), // bei eingehenden Nachrichten: GLN unseres Empfänger-Standorts
+   cPartnerGLN := EDI_Edifact_AST_GetValue(oUNB, 'S002', '0004'), // bei eingehenden Nachrichten: GLN des Absender-Standorts
+
+   // Jede SGMSG Segmentgruppe (kein EDIFACT-Standard sondern eigene
+   //  Gruppierungs-Logik des be-EDIFACT-Parsers) enthält einen Beleg
+   //  (Von einem UNH-Segment zum darauf folgenden UNT-Segment, hier: eine ORDER)
+   aHeaders := EDI_Edifact_AST_FindAllRecursive(oAST, 'SGMSG'),
+   for n := 1 to ALen(aHeaders) do
+
+      //------------------------------------------------------------------------
+      // Kopfdaten ermitteln
+      //------------------------------------------------------------------------
+
+      oSGMSG := aHeaders[n],
+      oUNH   := EDI_Edifact_AST_FindChild(oSGMSG, 'UNH'),     // Segmentgruppe enthält Beleg-Kopf-Information
+      aSG02  := EDI_Edifact_AST_FindChildren(oSGMSG, 'SG02'), // Segmentgruppe enthält Informationen zu den beteiligten Parteien (Sender und Empfänger):
+                                                      // u.A. auch Name und Adressen der Parteien.
+      for i := 1 to ALen(aSG02) do
+         oNAD := EDI_Edifact_AST_FindChild(aSG02[i], 'NAD'),
+         case EDI_Edifact_AST_GetValue(oNAD, '3035')
+            of 'SU' :: cOwnGLN     := EDI_Edifact_AST_GetValue(oNAD, 'C082', '3039'),
+            of 'BY' :: cPartnerGLN := EDI_Edifact_AST_GetValue(oNAD, 'C082', '3039'),
+         endcase,
+      next,
+
+      aHeadData := {},
+
+      // Allgemeine Informationen zur Nachricht
+      // Alternativ: _STD_FOREIGN_ORDER_NO, _STD_FOREIGN_DOCUMENT_NO
+      EDI_InhouseFormat_Set(aHeadData, 'DAB050.KDBEST_NR',          EDI_Edifact_AST_GetPathValue(oSGMSG, 'BGM',      '1004')),         // Bestellnummer des Kunden
+      //EDI_InhouseFormat_Set(aHeadData, 'DAB050.WAEKZ',              EDI_Edifact_AST_GetPathValue(oSGMSG, 'SG07/CUX', 'C504', '6345')), // Währung (ggf. Fremdwährung)
+      EDI_InhouseFormat_Set(aHeadData, 'DAB050.TERMIN',             EDI_Edifact_AST_GetPathValue(oSGMSG, 'DTM',      'C507', '2380')), // Bestelldatum
+      EDI_InhouseFormat_Set(aHeadData, '_STD_MESSAGE_REFERENCE_NO', EDI_Edifact_AST_GetValue(oUNH, '0062')),                           // EDIFACT: Beleg-Referenznummer
+      EDI_InhouseFormat_Set(aHeadData, '_STD_GLN_OWN',              cOwnGLN),
+      EDI_InhouseFormat_Set(aHeadData, '_STD_GLN_PART',             cPartnerGLN),
+
+      // Beispiel für individuelle Inhouse-Format-Felder
+      // EDI_InhouseFormat_Set(aHeadData, '_CUSTOM_AUFTRAG_SOFORT_RESERVIEREN', ...),
+
+      oEDIHEAD.CbAppend(),
+      oEDIHEAD:EDIMSG_ID  := nEDIMSGId,
+      oEDIHEAD:DIRECTION  := gl_EDI_ProcessDirection_Inbound,
+
+      // Redundante EDIPART-Felder nur setzen, sofern Partnerkonfiguration für
+      // aktuelle Nachricht verfügbar ist.
+      if not empty(nEDIPARTId) then
+         oEDIHEAD:EDIPART_ID := oEDIPART:ID,
+         oEDIHEAD:EDIPART_WA := oEDIPART:WORKAREA,
+         oEDIHEAD:EDIPART_RI := oEDIPART:RECORD_ID,
+
+         if oEDIHEAD:EDIPART_WA = waDab000 then
+            nKdnr := LookUp(waDab000, 5, {{oEDIPART:RECORD_ID}}, 'KDNR', 0),
+            EDI_InhouseFormat_Set(aHeadData, 'DAB050.KDNR', nKdnr),
+         endif,
+      endif,
+
+      oEDIHEAD:DATA       := ArrToStr(aHeadData),            
+      oEDIHEAD.CbPost(),
+
+      //------------------------------------------------------------------------
+      // Positionsdaten ermitteln
+      //------------------------------------------------------------------------
+
+      aPositions := EDI_Edifact_AST_FindChildren(oSGMSG, 'SG25'),
+      for i := 1 to ALen(aPositions) do
+         oLIN := EDI_Edifact_AST_FindChild(aPositions[i], 'LIN'),
+         oQTY := EDI_Edifact_AST_FindChild(aPositions[i], 'QTY'),
+         aPositionData := {},
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.POSNR',  EDI_Edifact_AST_GetValue(oLIN, '1082')),                                  // Positionsnummer
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.ARTNR',  EDI_Edifact_AST_GetValue(oLIN, 'C212', '7140')),                          // Kunden-Artikelnummer
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.BMENGE', EDI_Edifact_AST_GetValue(oQTY, 'C186', '6060')),                          // Bestellmenge
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.ME',     EDI_Edifact_AST_GetValue(oQTY, 'C186', '6411')),                          // Mengeneinheit
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.EPREIS', EDI_Edifact_AST_GetPathValue(aPositions[i], 'SG28/PRI', 'C509', '5118')), // Preis pro ME
+         EDI_InhouseFormat_Set(aPositionData, 'DAB055.TERMIN', EDI_Edifact_AST_GetPathValue(aPositions[i], 'DTM',      'C507', '2380')), // gewünschtes Lieferdatum
+         oEDIPOS.CbAppend(),
+         oEDIPOS:EDIHEAD_ID := oEDIHEAD:ID,
+         oEDIPOS:DATA       := ArrToStr(aPositionData),
+         oEDIPOS.CbPost(),
+      next,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion parst eine eingehende EDIFACT Nachricht mit der übergebenen
+// EDIMSG-ID und erstellt auf Basis der enthaltenen Daten das Inhouseformat für
+// die Nachricht.
+//
+// @result: array - EDIProcessStatus
+//******************************************************************************
+function ParseEdifactMessage(oDM:O, nEDIMSGId:N, oProgressCallback:O)
+| oEDIMessage, oReader |
+
+   result := {},
+   EDI_ProcessResult_SetSuccess(result),
+
+   oEDIMessage := EDI_Message_Open(oDM, nEDIMSGId),
+   startseq
+      startseq
+         oReader := EDI_Message_Inbound_GetReader(oEDIMessage),
+         ParseEdifactMessage_Internal(oDM, nEDIMSGId, oReader),
+         EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed),
+      onerror
+         EDI_ProcessResult_SetError(result, GetErrorText(GetErrorObj())),
+         EDI_Message_LogErrorAndSave(oEDIMessage, GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+   stopseq,
+
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aProcessResult := {},
+
+m_oDM.CbTransaction_Begin(),
+startseq
+   startseq
+      m_aProcessResult := ParseEdifactMessage(m_oDM, m_nEDIMSGId, m_oProgressCallback),
+   onerror
+      EDI_ProcessResult_SetError(m_aProcessResult, GetErrorText(GetErrorObj())),
+   stopseq,
+
+   m_oDM.CbTransaction_Commit(),
+always
+   if m_oDM.CbTransaction_TryRollback() then
+      DbResetDM(m_oDM),
+   endif,
+stopseq,
+
+m_aProcessResult
+

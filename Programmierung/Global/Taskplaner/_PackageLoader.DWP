@@ -1,0 +1,38 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: PackageLoader für Package "Scheduler"
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Allgemein
+//******************************************************************************
+Call('Global\Taskplaner\TaskplanerConfig'),
+Call('Global\Taskplaner\TaskplanerServiceConfig'),
+Call('Global\Taskplaner\TaskplanerUtils'),
+Call('Global\Taskplaner\TaskplanerLoggingUtils'),
+Call('Global\Taskplaner\TaskplanerSetStatusUtils'),
+Call('Global\Taskplaner\TaskplanerTaskLauncherUtils'),
+Call('Global\Taskplaner\TaskplanerTaskProgramUtils'),
+
+//******************************************************************************
+// Algorithmen
+//******************************************************************************
+Call('Global\Taskplaner\Scheduler\Algorithm\Once'),
+Call('Global\Taskplaner\Scheduler\Algorithm\Daily'),
+Call('Global\Taskplaner\Scheduler\Algorithm\Weekly'),
+Call('Global\Taskplaner\Scheduler\Algorithm\Monthly'),
+Call('Global\Taskplaner\Scheduler\Algorithm\Yearly'),
+Call('Global\Taskplaner\Scheduler\Algorithm\Periodically'),
+
+//******************************************************************************
+// Calculator & Scheduler
+//******************************************************************************
+Call('Global\Taskplaner\Scheduler\Calculator'),
+Call('Global\Taskplaner\Scheduler\Scheduler'),
+
+//******************************************************************************
+// Individuelle Konfiguration laden - sofern vorhanden
+//******************************************************************************
+CallIfExists('Global\Taskplaner\_CustomInit'),
+

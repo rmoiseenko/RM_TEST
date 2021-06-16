@@ -1,0 +1,1567 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Produktions Grobplanung Kapatitäts-Auswertung / Betrachtung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PGKU' steht für 'P'roduktions 'G'robplanung 'K'apatitäts 'U'tils
+// Teilsammlung für den Kapazitäts-Bedarf
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Berechnet den "Eindeutigkeits-Schlüssel" eines AuftragKopfes:
+// -> Interner, künstlicher Schlüssel zur eindeutigen Erkennung von zwei identischen Ausnahmen.
+//    Der Schlüssel besteht aus:
+//    - dem Standort
+//    - der workarea
+//    - der ID auf der workarea (bei Dab035 ist es die ID des Dab240-Kopfsatzes)
+//
+// @Result: string
+//******************************************************************************
+function _PGKU_CalcEindeutigkeitsSchluesselKopf(nStandort, nDS_WA, nDS_ID)
+   Result := StrZero(nSTANDORT, 3)     + '|' +
+             StrZero(nDS_WA, 4)        + '|' +
+             StrZero(nDS_ID, 12)       + '|',
+end,
+
+//******************************************************************************
+// Berechnet den "Eindeutigkeits-Schlüssel" eines AuftragDetails:
+// -> Interner, künstlicher Schlüssel zur eindeutigen Erkennung von zwei identischen Ausnahmen.
+//    Der Schlüssel besteht aus:
+//    - dem Eindeutigkeitsschlüssel des Auftragskopfes
+//    - abhängig von der workarea einem weiteren eindeutigen Schlüssel
+//
+// @Result: string
+//******************************************************************************
+function _PGKU_CalcEindeutigkeitsSchluesselDetail(cEindSchlKopf, nWorkarea, oDabDetail)
+   Result := cEindSchlKopf,
+   case nWorkarea
+      of waDab035 :: Result += oDabDetail:B_POS_LFD,
+      of waDab215 :: Result += StrZero(oDabDetail:ID, 11),
+      otherwise      SetError('not implemented'),
+   endcase,
+end,
+
+//******************************************************************************
+// Berechnet den kleinsten "Eindeutigkeits-Schlüssel" eines AuftragDetails
+//   (für Scopes auf die Positions-Tabelle gedacht)
+//
+// @Result: string
+//******************************************************************************
+function _PGKU_CalcEindeutigkeitsSchluesselDetail_MinValue(cEindSchlKopf)
+   Result := cEindSchlKopf,
+end,
+
+//******************************************************************************
+// Berechnet den größten "Eindeutigkeits-Schlüssel" eines AuftragDetails
+//   (für Scopes auf die Positions-Tabelle gedacht)
+//
+// @Result: string
+//******************************************************************************
+function _PGKU_CalcEindeutigkeitsSchluesselDetail_MaxValue(cEindSchlKopf, nWorkarea)
+   Result := cEindSchlKopf,
+   case nWorkarea
+      of waDab035 :: Result += Replicate('Z', 11),
+      of waDab215 :: Result += Replicate('Z', 11),
+      otherwise      SetError('not implemented'),
+   endcase,
+end,
+
+//******************************************************************************        // => verlagern in Global\Produktion Grobplanung Kapazität\Utils_Bedarf
+// Funktion erzeugt eine MemTable zur Aufnahme von
+// Kapazitätsbedarfs-Kopfsatz-Informationen
+// @Result: MemTable
+//******************************************************************************
+function _PGKU_CreateKapaBedarfKopfMem(oOwner)
+
+   Result := Createobject('TBeMemTable', , oOwner),
+
+   Result.CbAddField('STANDORT',           ftInteger,  0), //                      Standort
+   Result.CbAddField('EIND_SCHL',          ftString,  55), //                      Eindeutigkeits-Schlüssel
+   Result.CbAddField('ARTNR_BG',           ftString,  50), //                      Artikel Baugruppe
+   Result.CbAddField('AUF_WA',             ftInteger,  0), //                      Workarea (aus PGKSYA)
+   Result.CbAddField('AUF_ID',             ftInteger,  0), //                      ID aus Workarea-Tabelle (aus PGKSYA)
+   Result.CbAddField('AUF_ID_240',         ftInteger,  0), //                      Dab240-Kopfsatz-ID bei AUF_WA = waDab035
+   Result.CbAddField('BESTPOSNR',          ftString,   8), //                      nur bei Fertigungsaufträgen, falls die ID noch nicht vorhanden ist
+   Result.CbAddField('AUF_STATUS',         ftInteger,  0), //                      Status des Auftrags
+   Result.CbAddField('UEFAKTOR',           ftInteger,  0), //                      Faktor Übergangszeit in %
+
+   Result.CbAddField('KAP_PRIORI',         ftInteger,  0), //                      Priorität Kapazitäts-Analyse
+   Result.CbAddField('KAP_SPERRE',         ftBoolean,  0), //                      Sperre Kapazitäts-Analyse
+   Result.CbAddField('KAP_TRMMOD',         ftInteger,  0), //                      Terminierungsmodus Kap.Analyse
+
+
+   Result.CbAddField('TERMIN',             ftString,   8), //                      Fertigstellungstermin aus Auftragskopf
+   Result.CbAddField('SICH_ENDE',          ftFloat,    0), //                      Sicherheitszeit am Ende in Minuten
+   Result.CbAddField('SICH_DELTA',         ftFloat,    0), //                      Sicherheitszeit aus Originaldaten
+   Result.CbAddField('SICH_DFAKT',         ftInteger,  0), //                      Faktor Sicherheitszeit aus Originaldaten
+
+   // ab hier berechnet durch DLT
+   Result.CbAddField('START_FR',           ftDateTime, 0), //                      frühester Start = spätester Start, weil wir die Sicherheitszeit am Anfang nicht haben
+   Result.CbAddField('START_SP',           ftDateTime, 0), //                      spätester Start = frühester Start, weil wir die Sicherheitszeit am Anfang nicht haben
+   Result.CbAddField('ENDE_FR',            ftDateTime, 0), //                      frühestes Ende
+   Result.CbAddField('ENDE_SP',            ftDateTime, 0), //                      spätestes Ende (über Termin z.B. DAB035:TERMIN)
+
+   Result.Active := True,
+   // Index brauchts nicht, nur ein Datensatz
+end,
+
+//******************************************************************************
+// Funktion füllt eine zuvor erstellte MemTable mit den Daten eines Kopfsatz
+// @Result: null
+//******************************************************************************
+function _PGKU_FillKapaBedarfKopfMem(oDM, oMemKopf, nDS_WA, nDS_ID, cBestPosNr)
+   | dStartFr, oDab035, oDab215, dSpaetestesEnde, nSicherheitsEndeMin,
+     nStandort, cArtNrBg, nSicherDelta, nSicherDFakt, nAufStatus,
+     nKapPrioritaet, nKapSperre, nKapTermModus, cTermin, nUeFaktor, nAufIdD240Kopfsatz,
+     oDab240, bProdOrderIsNotFinished, oPGKBDK |
+   // Memtable muss leer übergeben werden
+   SetErrorIf(Empty(oMemKopf),            'memtable is empty'),
+   SetErrorIf(not oMemKopf.Active,        'memtable not active'),
+   SetErrorIf(oMemKopf.CbRecordCount > 0, 'memtable.CbRecordCount > 0. memtable must be empty.'),
+
+   nAufIdD240Kopfsatz  := 0,
+   cTermin             := '',
+   dSpaetestesEnde     := null,
+   nSicherheitsEndeMin := 0,
+   nSicherDelta        := 0,
+   nSicherDFakt        := 0,
+   nStandort           := 0,
+   cArtNrBg            := '',
+   nAufStatus          := 0,
+   nUeFaktor           := 100,
+   nKapPrioritaet      := 0,
+   nKapSperre          := false,
+   nKapTermModus       := 0,
+
+   case nDS_WA
+      of waDab035  ::
+         oDab035             := DbGetTable(oDM, waDab035),
+         oDab035.IndexName   := 'DAB03B',
+
+         oDab240             := DbGetTable(oDM, waDab240),
+         oDab240.IndexName   := 'DAB241',
+
+         D240_FindHead(oDab240, cBestPosNr), // schlägt fehl, wenn Satz nicht gefunden wird
+         nAufIdD240Kopfsatz  := oDab240:ID,
+         cArtNrBg            := oDab240:ARTNR1,
+         nStandort           := oDab240:STANDORT,
+
+         // Wenn der Dab035-Satz nicht mehr existiert, dann ist der Auftrag end-fertiggemeldet
+         bProdOrderIsNotFinished := DbSeek({cBestPosNr}, oDab035),
+
+         // Wenn der Dab035-Satz nicht mehr vorhanden ist weil der Auftrags fertiggemeldet
+         // wurde, dann wird später auch nicht mehr termniert sondern nur noch
+         // die Daten bzgl. Status etc. aktualisiert.
+         // Es gibt hier einen Sonderfall:
+         //    Der Auftrag wurde angelegt und so schnell fertiggemeldet, dass die
+         //    Terminierung nie durchlaufen wurde! D.h. man kann sich nicht darauf
+         //    verlassen, dass für diesen Auftrag schon Daten in der PGKBDK (Kopf-Tabelle)
+         //    vorhanden sind.
+
+         if bProdOrderIsNotFinished then
+            nDS_ID              := oDab035:ID,
+            cTermin             := oDab035:TERMIN,
+            dSpaetestesEnde     := StoD(oDab035:TERM_INDEX) + EncodeTime(8, 0, 0, 0),                      // spätestes Ende des Auftrags: 08:00 Uhr morgens zum Fertigstellungstermin // TODO: ggf. konfigurierbar machen? Es spricht auch einiges dafür, 00:00 Uhr (morgens) am Fertigstellungstermin zu nutzen. Alternativ könnte man den ersten Zeitpunkt der Firmenbetriebszeit nutzen, das wäre dann dynamisch, aber ggf. später als gewünscht...
+            nSicherheitsEndeMin := PGKU_CalcWartezeitMinuten(oDab035:KAP_DELTA, oDab035:KAP_DFAKT),        // Sicherheitszeit am Ende des Auftrags in Minuten
+            nSicherDelta        := oDab035:KAP_DELTA,
+            nSicherDFakt        := oDab035:KAP_DFAKT,
+            nAufStatus          := iif( oDab035:AKA_AKTIV,
+                                    gl_PGKU_AuftragsStatus_Aktiv,
+                                    iif( oDab035:AKA_TEIL or oDab035:AKA,
+                                         gl_PGKU_AuftragsStatus_Freigegeben,
+                                         gl_PGKU_AuftragsStatus_Eroeffnet ) ),    // als "gestartet" annehmen, sobald die erste Teil-AKA gedruckt wurde // TODO: noch nicht alle Status werden hier erkannt
+            if not empty(DbField('X_UEFAKTOR', oDab035)) then
+               nUeFaktor        := oDab035:X_UEFAKTOR,
+            endif,
+            nKapPrioritaet      := oDab035:KAP_PRIORI,
+            nKapSperre          := oDab035:KAP_SPERRE,
+            nKapTermModus       := oDab035:KAP_TRMMOD,
+         else
+            nAufStatus          := gl_PGKU_AuftragsStatus_Abgeschlossen,
+            // Wenn es Daten zum Auftragskopf in der PGKBDK (Kopf-Tabelle) gibt
+            // (weil der Auftrag vor Fertigmeldung mind. einmal terminiert wurde), dann
+            // holen wir uns von dort die Infos "zurück".
+            oPGKBDK             := DbGetTable(oDM, waPGKBDK),
+            oPGKBDK.IndexName   := 'AUF_WA_AUF_ID_240', // AUF_WA;AUF_ID_240
+            if DbSeek({waDab035, nAufIdD240Kopfsatz}, oPGKBDK) then
+               nDS_ID              := oPGKBDK:AUF_ID,
+               cTermin             := oPGKBDK:TERMIN,
+               dSpaetestesEnde     := oPGKBDK:ENDE_SP,
+               nSicherheitsEndeMin := oPGKBDK:SICH_ENDE,
+               nSicherDelta        := oPGKBDK:SICH_DELTA,
+               nSicherDFakt        := oPGKBDK:SICH_DFAKT,
+               nUeFaktor           := oPGKBDK:UEFAKTOR,
+               nKapPrioritaet      := oPGKBDK:KAP_PRIORI,
+               nKapSperre          := oPGKBDK:KAP_SPERRE,
+               nKapTermModus       := oPGKBDK:KAP_TRMMOD,
+            endif,
+         endif,
+
+      of waDab215  ::
+         oDab215             := DbGetTable(oDM, waDab215),
+         oDab215.IndexName   := 'ID',
+
+         MySeek({nDS_ID}, oDab215),
+
+         nDS_ID              := oDab215:ID,
+         cTermin             := oDab215:TERMIN,
+         dSpaetestesEnde     := StoD(oDab215:TERM_INDEX) + EncodeTime(8, 0, 0, 0),                      // spätestes Ende des Auftrags: 08:00 Uhr morgens zum Fertigstellungstermin // TODO: ggf. konfigurierbar machen? Es spricht auch einiges dafür, 00:00 Uhr (morgens) am Fertigstellungstermin zu nutzen. Alternativ könnte man den ersten Zeitpunkt der Firmenbetriebszeit nutzen, das wäre dann dynamisch, aber ggf. später als gewünscht...
+         nSicherheitsEndeMin := 0,                                                 // TODO Sicherheitszeit am Ende des Auftrags in Minuten -> Gibt es nicht in der Dab215 => global konfigurierbar machen, z.B. im Artikelstamm?
+         nSicherDelta        := 0,
+         nSicherDFakt        := 0,
+         nStandort           := oDab215:STANDORT,
+         cArtNrBg            := oDab215:ARTNR,
+         nAufStatus          := gl_PGKU_AuftragsStatus_Geplant,
+         if not empty(DbField('X_UEFAKTOR', oDab215)) then
+            nUeFaktor        := oDab215:X_UEFAKTOR,
+         endif,
+         nKapPrioritaet      := oDab215:KAP_PRIORI,
+         nKapSperre          := oDab215:KAP_SPERRE,
+         nKapTermModus       := oDab215:KAP_TRMMOD,
+   otherwise
+      SetError('only waDab035 and waDab215 implemented'),
+   endcase,
+
+   oMemKopf.CbAppend(),
+   oMemKopf:STANDORT       := nStandort,
+   oMemKopf:EIND_SCHL      := PGKU_CalcEindeutigkeitsSchluesselKopf(nStandort, nDS_WA, iif(nDS_WA = waDab035, nAufIdD240Kopfsatz, nDS_ID)),
+   oMemKopf:ARTNR_BG       := cArtNrBg,
+   oMemKopf:AUF_WA         := nDS_WA,
+   oMemKopf:AUF_ID         := nDS_ID,
+   oMemKopf:AUF_ID_240     := nAufIdD240Kopfsatz,
+   oMemKopf:AUF_STATUS     := nAufStatus,
+   oMemKopf:BESTPOSNR      := cBestPosNr,
+   oMemKopf:UEFAKTOR       := nUeFaktor,
+   oMemKopf:KAP_PRIORI     := nKapPrioritaet,
+   oMemKopf:KAP_SPERRE     := nKapSperre,
+   oMemKopf:KAP_TRMMOD     := nKapTermModus,
+
+   oMemKopf:TERMIN         := cTermin,
+   oMemKopf:SICH_ENDE      := nSicherheitsEndeMin,
+   oMemKopf:SICH_DELTA     := nSicherDelta,
+   oMemKopf:SICH_DFAKT     := nSicherDFakt,
+   oMemKopf:START_FR       := Null,                  // wird erst durch die DLT gefüllt
+   oMemKopf:START_SP       := Null,
+   oMemKopf:ENDE_FR        := Null,
+   oMemKopf:ENDE_SP        := dSpaetestesEnde,
+   oMemKopf.CbPost(),                                                           // Browse(,oMemKopf),
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine MemTable zur Aufnahme von
+// Kapazitätsbedarfs-Detail-Informationen
+// => Je Auftrags-Position wird der Bedarf in Minuten
+// @Result: MemTable
+//******************************************************************************
+function _PGKU_CreateKapaBedarfDetailMem(oOwner)
+
+   Result := Createobject('TBeMemTable', , oOwner),
+
+   Result.CbAddField('ID',                 ftInteger,  0), //                      ID fortlaufend, ist für die Sortierreihenfolge relevant
+   Result.CbAddField('STANDORT',           ftInteger,  0), //                      Standort
+   Result.CbAddField('EIND_SCHL',          ftString,  55), //                      Eindeutigkeits-Schlüssel
+
+   Result.CbAddField('PP_JAHR',            ftInteger,  0), //                      Planungsperiode Jahr,          in welches der Bedarf fällt
+   Result.CbAddField('PP_KW',              ftInteger,  0), //                      Planungsperiode Kalenderwoche, in welche der Bedarf fällt
+   Result.CbAddField('PP_DATUM',           ftDate,     0), //                      Planungsperiode Datum,         auf welches der Bedarf fällt
+
+   Result.CbAddField('POSNR',              ftString,   6), //                      POSNR ist identisch für Rüst und Stück
+   Result.CbAddField('DAB210_ID',          ftInteger,  0), //                      eindeutige Zuordnung zur Stückliste
+   Result.CbAddField('AUF_WA',             ftInteger,  0), //                      Workarea des Auftragskopfs-Bedarfs-Datensatzes (z.B. waDab035)
+   Result.CbAddField('AUF_ID',             ftInteger,  0), //                      ID des Auftragskopfs-Bedarfs-Datensatzes (z.B. eine Dab035:ID)
+   Result.CbAddField('AUF_ID_240',         ftInteger,  0), //                      Dab240-Kopfsatz-ID bei AUF_WA = waDab035                      // TODO: Befüllen
+
+   // Result.CbAddField('SPLIT_KZ',           ftString,  50), //                      falls eine Arbeitsgang in mehrere Teile gesplittet wird - noch gar nicht implementiert
+   Result.CbAddField('ARTNR',              ftString,  50), //                      Artikel der Position
+   Result.CbAddField('ARTTYP',             ftString,   1), //                      Artikeltyp ist redundant
+   Result.CbAddField('ARBG_ID',            ftInteger,  0), //                      ID aus Originaltabelle
+   Result.CbAddField('D240R_ID',           ftInteger,  0), //                      DAB240 ID Rüsten
+   Result.CbAddField('D240S_ID',           ftInteger,  0), //                      DAB240 ID Fertigen
+
+   Result.CbAddField('HAS_RESANF',         ftBoolean,  0), //                      Arbg. hat Ressourcen-Anforderung (Dab270) bzw. ist eine terminierte Externleistung
+   Result.CbAddField('RESTYP',             ftString,   1), //                      'M' = Mensch oder 'R' = Ressource
+   Result.CbAddField('D270_RESID',         ftInteger,  0), //                      ID der Ressource / PERSNR des Mitarbeiters  aus der DAB270
+   Result.CbAddField('TERM_RESID',         ftInteger,  0), //                      ID der Ressource / PERSNR des Mitarbeiters, die für die Terminierung genutzt wird
+   Result.CbAddField('RES_BEZ',            ftString,  40), //                      Bezeichung / Name ID der Ressource / des Mitarbeiters
+   Result.CbAddField("QUALI",              ftInteger,  0), //                      ID der detailliertesten Qualifikation der Ressource / des Mitarbeiters
+   Result.CbAddField("QUALI_BEZ",          ftString,  40), //                      Bezeichnung zu QUALI_DETAIL aus DABVTM:BEZ
+
+   // Status-Felder
+   Result.CbAddField('AUF_STATUS',         ftInteger,  0), //                      Status des Auftrags
+   Result.CbAddField('ARB_STATUS',         ftInteger,  0), //                      Status des Arbeitsgangs
+   Result.CbAddField('ARB_BEREIT',         ftInteger,  0), //                      Bereitsschaft des Arbeitsgangs // TODO
+
+   Result.CbAddField('KAP_PRIORI',         ftInteger,  0), //                      Priorität Kapazitäts-Analyse
+   Result.CbAddField('KAP_SPERRE',         ftBoolean,  0), //                      Sperre Kapazitäts-Analyse
+
+   // Planwerte
+   Result.CbAddField('START_FR',           ftDateTime, 0), //                  ->  frühester Start     - die ersten 4 sind redundant aus den unteren
+   Result.CbAddField('START_SP',           ftDateTime, 0), //                  ->  spätester Start
+   Result.CbAddField('ENDE_FR',            ftDateTime, 0), //                      frühestes Ende
+   Result.CbAddField('ENDE_SP',            ftDateTime, 0), //                  ->  spätestes Ende
+   Result.CbAddField('START_FR_R',         ftDateTime, 0), //                      frühester Start Rüsten
+   Result.CbAddField('START_SP_R',         ftDateTime, 0), //                      spätester Start Rüsten
+   Result.CbAddField('ENDE_FR_R',          ftDateTime, 0), //                      frühestes Ende Rüsten
+   Result.CbAddField('ENDE_SP_R',          ftDateTime, 0), //                      spätestes Ende Rüsten
+   Result.CbAddField('START_FR_S',         ftDateTime, 0), //                      frühester Start Fertigen
+   Result.CbAddField('START_SP_S',         ftDateTime, 0), //                      spätester Start Fertigen
+   Result.CbAddField('ENDE_FR_S',          ftDateTime, 0), //                      frühestes Ende Fertigen
+   Result.CbAddField('ENDE_SP_S',          ftDateTime, 0), //                      spätestes Ende Fertigen
+
+   // IST-Werte aus dab340 / dab020
+   Result.CbAddField('STA_IST_R',          ftDateTime, 0), //                      Start tatsächlich
+   Result.CbAddField('ENDE_IST_R',         ftDateTime, 0), //                      Ende tatsächlich - nicht explizit ermittelbar
+   Result.CbAddField('STA_IST_S',          ftDateTime, 0), //                      Start tatsächlich
+   Result.CbAddField('ENDE_IST_S',         ftDateTime, 0), //                      Ende tatsächlich - nicht explizit ermittelbar
+
+   // Mengen-Rückmeldungs-Werte aus Dab240
+   Result.CbAddField('MENGE_GUT',          ftFloat, 0), //                         Gefertigte Menge des Arb.Gangs aus Dab240:MENGE
+   Result.CbAddField('MENGE_AUSS',         ftFloat, 0), //                         Gefertigter Arbg.-Ausschuss    aus Dab240:MENGE_AUSS
+
+   // Zeitanforderung Plan und IST
+   Result.CbAddField('K_SOLL_R',           ftFloat,    0), //                      Soll Rüsten in Minuten
+   Result.CbAddField('K_SOLL_S',           ftFloat,    0), //                      Soll Fertigen in Minuten
+   Result.CbAddField('ARBG_DELTA',         ftFloat,    0), //                      Wartezeit eines Arbeitsgangs
+   Result.CbAddField('ARBG_DFAKT',         ftFloat,    0), //                      Einheit zu K_ARBG_DFAKT
+   Result.CbAddField('ARBG_DQUEL',         ftInteger,  0), //                      Quelle der Wartezeit (workarea)
+   Result.CbAddField('K_SOLL_WAR',         ftFloat,    0), //                      Soll-Wartezeit eines Arbeitsgangs berechnet in Minuten
+   Result.CbAddField('K_REST_WAR',         ftFloat,    0), //                      Rest-Wartezeit eines Arbeitsgangs berechnet in Minuten
+   Result.CbAddField('K_IST_WAR',          ftFloat,    0), //                      Ist-Wartezeit eines Arbeitsgangs berechnet in Minuten
+
+
+   Result.CbAddField('K_IST_R',            ftFloat,    0), //                      IST Rüsten in Minuten
+   Result.CbAddField('K_IST_S',            ftFloat,    0), //                      IST Ferigen in Minuten
+   Result.CbAddField('K_REST_R',           ftFloat,    0), //                      Rest Rüsten in Minuten
+   Result.CbAddField('K_REST_S',           ftFloat,    0), //                      Rest Fertigen in Minuten
+   Result.CbAddField('K_SOLL_BEA',         ftFloat,    0), //                      Soll Bearbeitungszeit
+   Result.CbAddField('K_REST_BEA',         ftFloat,    0), //                      Rest Bearbeitungszeit
+   Result.CbAddField('K_IST_BEA',          ftFloat,    0), //                      Ist Bearbeitungszeit
+   Result.CbAddField('K_SOLL_DLZ',         ftFloat,    0), //                      Soll Durchlaufzeit des Arbeitsgangs
+   Result.CbAddField('K_REST_DLZ',         ftFloat,    0), //                      Rest Durchlaufzeit des Arbeitsgangs
+   Result.CbAddField('K_IST_DLZ',          ftFloat,    0), //                      Ist Durchlaufzeit des Arbeitsgangs
+
+   Result.Active := True,
+   Result.CbAddIndex('DAB210_ID', 'DAB210_ID', ixPrimary),
+   Result.CbAddIndex('ID', 'ID', ixPrimary),
+   Result.CbAddIndex('EIND_SCHL', 'EIND_SCHL', ixPrimary),
+
+end,
+
+//******************************************************************************
+// Funktion berechnet den Status des Arbeitsgangs (Gesamtstatus für Rüsten und Fertigen)
+// @Result: Status des Arbeitsgangs, Numerisch
+//******************************************************************************
+function _PGKU_CalcArbeitsgangStatus(nAuftragsBaugruppenSollMenge, nGutmengeArbeitsgang, nIstMengeRuesten, nIstMengeFertigen)
+   Result := iif( nGutmengeArbeitsgang = 0,
+                  iif( (nIstMengeRuesten + nIstMengeFertigen) > 0,
+                       gl_PGKU_ArbeitsgangStatus_Begonnen,
+                       gl_PGKU_ArbeitsgangStatus_Offen ),
+                  iif( nGutmengeArbeitsgang >= nAuftragsBaugruppenSollMenge,
+                       gl_PGKU_ArbeitsgangStatus_Fertig,
+                       gl_PGKU_ArbeitsgangStatus_Teilfertig) ),
+end,
+
+//******************************************************************************
+// Funktion füllt eine zuvor erstellte Detail-MemTable mit dem Kapazitätsbedarf
+//    für Ressourcen und Mitarbeiter für Produktionsaufträge
+// @Result: null
+//******************************************************************************
+function _PGKU_FillKapaBedarfDetailMemWithDab240(oDM, oMemKopf, oMemDetail)
+| oDab240Head, oDAB240Detail, cBestPosNr,
+  nID, oDab270,
+  oDAB020, oDab340, oDABVTM,
+  cResTyp,
+  nQualiID, cQualiDesc, aQualiInfo, nFixResID, nTermResId,
+  aWarte, nWarteMinuten,
+  dIstStart, dIstEnde,
+  bAppend, bHasDab270,
+  cLastRS, nRefResNr_Ruest
+|
+
+    oDab240Head             := myGetTable(oDM, waDab240,'HEAD240'),
+    oDab240Head.IndexName   := 'DAB241',  //B_POS_LFD
+    oDab240Detail           := myGetTable(oDM, waDab240,'DETAIL240'),
+    oDab240Detail.IndexName := 'DAB241',  //B_POS_LFD
+    oDab020                 := DbGetTable(oDM, waDab020),
+    oDab340                 := DbGetTable(oDM, waDab340),
+    oDab270                 := DbGetTable(oDM, waDab270),
+    oDabVTM                 := DbGetTable(oDM, waDabVTM),
+    nID                     := 1,
+    cBestPosNr              := D035_NormalizeBestPosNr(oMemKopf:BESTPOSNR),
+    D240_FindHead(oDab240Head, cBestPosNr),
+    D240_SetScopeOnOrder(oDab240Detail, cBestPosNr, false), // ohne Kopfsatz
+    DbGoTop(oDab240Detail),
+                                                                                                                //browse(,oDab240Detail),
+    oMemDetail.CbIndexName := 'ID',
+    while not eof(oDab240Detail) do
+       // gelöschte Positionen einfach überspringen
+       if not empty(oDAB240Detail:ARTNR_E) then
+          // Wann ist ein Datensatz in der oMemDetail bereits eindeutig vorhanden?
+          // Wann also muß ich CbEdit() machen und wann CbAppend?
+          // Bei Nicht-Arbeitswerten gibt es immer nur einen Datensatz, da ist Append stets richtig.
+            // Der folgende Delphi Code beantwortet die Frage, ob der aktuelle Arbg. mit dem vorherigen
+            // "verschmolzen" wird ( = Rüst/Stück-Kombination gefunden)
+            //****************************************************************************
+            //function MergeWithPreviousArbg: Boolean;
+            //begin
+            //   Result := (aLastArtNo                    = aSourceQuery.PosArtNo.AsString)   and // ARTNR_E identisch
+            //             (aSourceQuery.Pos_R_S.AsString = fcProductionTime)                 and // aktueller  Satz = 'S'tück
+            //             (aLastR_S                      = fcSetupTime)                      and // vorheriger Satz = 'R'üst
+            //             (aLastD270ID                   = aSourceQuery.QuaRefID.AsInteger )     // Die referenzierte Res.Anforderung ist die Res.Anf. des 'R'üst-Satzes
+            //             // and (aSourceQuery.QuaResID.AsInteger = 0 bzw. aLastD270ResID) // Todo: Keine abweichende fixierte Ressource im 'S'-Satz
+            //             ;
+            //end;
+
+          bAppend := false,
+          if oDab240Detail:ARTTYP <> 'A' then
+             bAppend := true,
+             nRefResNr_Ruest := 0,
+          else
+             if oDab240Detail:R_S = 'R' then
+                bAppend := true,
+                nRefResNr_Ruest := Lookup(waDAB270,'ARBG_ID',{{waDAB240,oDAB240Detail:ID}},'ID',-2),
+             else                                                                                                         // aktueller  Satz = 'S'tück
+                // writeln('Verschmelzung RS?', oDAB240Detail:ID, Lookup(waDAB270,'ARBG_ID',{{waDAB240,oDAB240Detail:ID}},'REF_RESZNR',-1), nRefResNr_Ruest, oDAB240Detail:B_POS_LFD, cLastRS ),
+                if not (oDAB240Detail:ARTNR_E <> oMemDetail:ARTNR                                                         // ARTNR_E identisch
+                   and cLastRS = 'R'                                                                                      // vorheriger Satz = 'R'üst
+                   and Lookup(waDAB270,'ARBG_ID',{{waDAB240,oDAB240Detail:ID}},'REF_RESZNR',-1) = nRefResNr_Ruest) then   // Die referenzierte Res.Anforderung ist die Res.Anf. des 'R'üst-Satzes
+                   // writeln('Verschmelzung RS? nein'),
+                   bAppend := true,
+                   nRefResNr_Ruest := 0,
+                endif,
+             endif,
+          endif,
+
+          if bAppend then
+             oMemDetail.CbAppend(),
+             oMemDetail:ID            := nID,
+             nID++,
+             oMemDetail:EIND_SCHL     := PGKU_CalcEindeutigkeitsSchluesselDetail(trim(oMemKopf:EIND_SCHL), waDab035, oDab240Detail),
+             oMemDetail:STANDORT      := oDAB240Detail:STANDORT,
+             oMemDetail:ARTNR         := oDAB240Detail:ARTNR_E,
+             oMemDetail:ARTTYP        := oDAB240Detail:ARTTYP,
+             oMemDetail:POSNR         := oDAB240Detail:POSNR,
+             oMemDetail:DAB210_ID     := oDAB240Detail:DAB210_ID,
+             oMemDetail:AUF_WA        := oMemKopf:AUF_WA,
+             oMemDetail:AUF_ID        := oMemKopf:AUF_ID,
+             oMemDetail:AUF_ID_240    := oMemKopf:AUF_ID_240,
+             oMemDetail:AUF_STATUS    := oMemKopf:AUF_STATUS,
+             oMemDetail:KAP_PRIORI    := oMemKopf:KAP_PRIORI,
+             oMemDetail:KAP_SPERRE    := oMemKopf:KAP_SPERRE,
+             oMemDetail:HAS_RESANF    := false,
+          else
+             oMemDetail.CbEdit(),
+          endif,
+
+          bHasDab270 := DbSeek({waDAB240, oDab240Detail:ID}, oDAB270),
+
+          //***************************************************************
+          // Rüst- und Fertigungs-Arbeitsgänge und Externleistungen bearbeiten
+          //***************************************************************
+          if (oDab240Detail:ARTTYP = 'A' and bHasDab270) or (oDab240Detail:ARTTYP = 'E') then
+             oMemDetail:HAS_RESANF    := true,
+             oMemDetail:ARBG_ID       := oDAB240Detail:ID,
+             if oDAB240Detail:R_S = 'R' then
+                oMemDetail:D240R_ID := oDAB240Detail:ID,
+             else
+                oMemDetail:D240S_ID := oDAB240Detail:ID,
+             endif,
+             // oMemDetail:SPLIT_KZ   := ,                          noch nicht implementiert
+
+             if bAppend then
+                cResTyp    := '',
+                nFixResID  := 0,
+                nTermResId := 0,
+                nQualiID   := 0,
+
+                // Ressoucen / Mitarbeiter und ID dazu
+                if oDab240Detail:ARTTYP = 'A' then
+                   // Dab270 ist bereits positioniert
+                   cResTyp                  := oDab270:RESTYP,
+                   nFixResID                := oDab270:RES_ID,
+
+                   // Liegt eine fixierte Ressource vor ? Dann wird die Qualifikation aus der Ressource abgeleitet
+                   // => Die Qualifikation muss immer mit der für die Terminierung genutzten Ressource
+                   //    zusammenpassen, sonst sind Auswertungen nicht konsistent
+                   if nFixResID > 0 then
+                      aQualiInfo            := PGKU_GetQualificationInfosForResource(oDM, cResTyp, nFixResID),
+                      nQualiID              := aQualiInfo[1], // kann = 0 sein, wenn nicht eindeutig oder nicht auf unterster Quali-Ebene zugeordnet
+                      cQualiDesc            := aQualiInfo[2],
+                   else
+                      nQualiID              := Val(BeToken(oDab270:RESQLIST, '/', 1)), // TODO: Was tun, wenn  mehrere Qualis angefordert sind, was tun, wenn keine Qualifikation zugeordnet ist?
+                      cQualiDesc            := iif(nQualiID > 0, Lookup(waDABVTM, 'VORG_TYP', {{nQualiID}}, 'BEZ', ''), ''),
+                   endif,
+
+                   oMemDetail:QUALI         := nQualiID,
+                   oMemDetail:QUALI_BEZ     := cQualiDesc,
+                   oMemDetail:D270_RESID    := nFixResID,
+                   // writeln(oDAB240Detail:ID,oDab270:RESQLIST, nQualiid, nFixResID),
+                endif,
+
+                if oDAB240Detail:ARTTYP = 'A' and nQualiID = 0 and nFixResID = 0 then
+                   SetError('Arbeitsgang ARTNR: ' + AllTrim(oDab240Detail:ARTNR_E) + ' / B_POS_LFD: ' + oDab240Detail:B_POS_LFD +
+                            ' hat keine Qualifikation und keine fixierte Ressource' + crlf +
+                            'Terminierung nicht möglich'),
+                endif,
+
+                case oDAB240Detail:ARTTYP
+                   of 'A' ::
+                      if nFixResID > 0 then
+                         nTermResId := nFixResID,
+                      else
+                         oDABVTM.IndexName := 'VORG_TYP',
+                         if DbSeek({nQualiID}, oDABVTM) then
+                            nTermResId := oDABVTM:X_STDRESS,
+                         endif,
+                      endif,
+
+                      // Wartezeit für Position ermitteln
+                      // - Wartezeiten können nur für "A"rbeitswerte definiert werden
+                      // - Man nimmt die Wartezeit aus dem Rüstdatensatz, es sei denn es gibt gar keinen, daher nur im Falle von "bAppend" befüllen
+                      aWarte := {oDab240Detail:ARBG_DELTA, oDab240Detail:ARBG_DFAKT},
+                      if aWarte[1] <> 0 then
+                         nWarteminuten           := PGKU_CalcWartezeitminuten(aWarte[1], aWarte[2]),
+                         oMemDetail:ARBG_DELTA   := aWarte[1],
+                         oMemDetail:ARBG_DFAKT   := aWarte[2],
+                         oMemDetail:ARBG_DQUEL   := waDab240,
+                         oMemDetail:K_SOLL_WAR   := Round(nWarteminuten * oMemKopf:UEFAKTOR / 100, 2),
+                         oMemDetail:K_REST_WAR   := oMemDetail:K_SOLL_WAR,
+                      else
+                         if nQualiID > 0 then // ist nicht gesetzt, wenn in der Dab270 nur die Ressource fixiert ist aber keine Quali(s) gewählt
+                            oDABVTM.IndexName       := 'VORG_TYP',
+                            MySeek({nQualiID}, oDABVTM),
+                            nWarteminuten           := PGKU_CalcWartezeitminuten(oDABVTM:X_ARBG_DEL, oDABVTM:X_ARBG_DFA),
+                            oMemDetail:ARBG_DELTA   := oDABVTM:X_ARBG_DEL,
+                            oMemDetail:ARBG_DFAKT   := oDABVTM:X_ARBG_DFA,
+                            oMemDetail:ARBG_DQUEL   := waDabVTM,
+                            oMemDetail:K_SOLL_WAR   := Round(nWarteminuten * oMemKopf:UEFAKTOR / 100, 2),
+                            oMemDetail:K_REST_WAR   := oMemDetail:K_SOLL_WAR,
+                         endif,
+                      endif,
+
+                   of 'E' ::
+                        // Dummy - Ressource bei externen Leistungen
+                        nTermResId := gl_PGKU_ExternRessource,
+                        cResTyp    := gl_PGKU_ExternRessourceTyp,
+                endcase,
+
+                oMemDetail:TERM_RESID    := nTermResId,
+                oMemDetail:RESTYP        := cResTyp,
+                if not empty(cResTyp) and not empty(nTermResId) then
+                   oMemDetail:RES_BEZ    := iif(nTermResId > 0, PGKU_GetResourceDescription(cResTyp, nTermResId), ''),
+                endif,
+             endif,
+
+             // ****************************************************************
+             // Ist-Starttermin als früheste Buchung aus der DAB020 bzw. aus der
+             // DAB340 (soweit vorhanden) holen
+             // Für Externleistungen den Ist-Starttermin vorerst nicht ermitteln
+             // ****************************************************************
+             dIstStart := nil,
+             dIstEnde  := nil,
+             if oMemDetail:ARTTYP = 'A' then
+
+                // Suche in Dab020
+                oDAB020.IndexName := 'I_BUART_B_POS_LFD',   // BUART; B_POS_LFD; ERSTELLT
+                DbScope({'P', oDab240Detail:B_POS_LFD}, {'P', oDab240Detail:B_POS_LFD}, oDAB020),
+                startseq
+                   if not nods(oDAB020) then
+                      dbgotop(oDAB020),
+                      dIstStart := oDAB020:ERSTELLT,                            // Writeln('dStartIST in 020 ',oDab240Detail:B_POS_LFD, oDAB020:ERSTELLT, dIstStart),
+                   endif,
+                always
+                   oDab020.CbCancelRange(),
+                stopseq,
+
+                // Suche zusätzlich in Dab340
+                oDab340.IndexName := 'B_POS_LFD', // B_POS_LFD,                 // TODO: Index B_POS_LFD;START anlegen für Performance
+                DbScope({oDab240Detail:B_POS_LFD}, {oDab240Detail:B_POS_LFD}, oDab340),
+                startseq
+                   if not nods(oDab340) then
+                      dbgotop(oDab340),
+                      while not eof(oDab340) do
+                         if dIstStart = nil or oDab340:START < dIstStart then
+                            dIstStart := oDab340:START,                         // Writeln('dStartIST in 340 ',oDab240Detail:B_POS_LFD, oDab340:START, dIstStart),
+                         endif,
+                      dbskip(1, oDab340),
+                      end,
+                   endif,
+                always
+                    oDab340.CbCancelRange(),
+                stopseq,
+
+                // Sofern es einen Starttermin gibt, wird hier noch das Ende der (bisher) letzten Buchung ermittelt
+                // => Dieser Zeitpunkt ist natürlich nur "vorläufgi" das "Ist Ende"
+                if not empty(dIstStart) then
+                   oDab340.IndexName := 'B_POS_LFD', // B_POS_LFD,              // TODO: Index B_POS_LFD;START anlegen für Performance
+                   DbScope({oDab240Detail:B_POS_LFD}, {oDab240Detail:B_POS_LFD}, oDab340),
+                   startseq
+                      if not NoDs(oDab340) then
+                         dbgotop(oDab340),
+                         while not eof(oDab340) do
+                            if dIstEnde = nil or oDab340:ENDE > dIstEnde then
+                               dIstEnde := oDab340:ENDE,                        // Writeln('dIstEnde in 340 ',oDab240Detail:B_POS_LFD, oDab340:ENDE, dIstEnde),
+                            endif,
+                         dbskip(1, oDab340),
+                         end,
+                      endif,
+                   always
+                       oDab340.CbCancelRange(),
+                   stopseq,
+                endif,
+
+             endif,
+
+             // IST, SOLL und Bedarf getrennt nach Rüst und Stück
+             if oDab240Detail:R_S = 'R' then
+                oMemDetail:K_SOLL_R    := D240_SollMenge(oDab240Detail, oDab240Head),
+                oMemDetail:K_IST_R     := D240_IstMenge(oDab240Detail),
+                oMemDetail:STA_IST_R   := dIstStart,
+                oMemDetail:ENDE_IST_R  := dIstEnde,
+                oMemDetail:K_REST_R    := D240_BedarfsMenge(oDab240Detail, oDab240Head),
+             endif,
+             if oDab240Detail:R_S = 'S' then
+                oMemDetail:K_SOLL_S    := D240_SollMenge(oDab240Detail, oDab240Head),
+                oMemDetail:K_IST_S     := D240_IstMenge(oDab240Detail),
+                oMemDetail:STA_IST_S   := dIstStart,
+                oMemDetail:ENDE_IST_S  := dIstEnde,
+                oMemDetail:K_REST_S    := D240_BedarfsMenge(oDab240Detail, oDab240Head),
+
+                oMemDetail:MENGE_GUT   := oDab240Detail:MENGE,
+                oMemDetail:MENGE_AUSS  := oDab240Detail:MENGE_AUSS,
+
+                // Die Rest-Rüst-Zeit wird ignoriert, wenn auf Grundlage der Stückzeit-Daten erkennbar ist, dass der Rüst-Vorgang abgeschlossen sein muss
+                //  -> Sofern der Stück-Arbg. eine Gutmengen-Buchung hat, betrachten wir
+                //     den Rüst-Arbg als erledigt (auch wenn dieser noch eine offene RUECKS_PR hat)
+                //     da die Position offensichtlich bereits in Bearbeitung ist
+                if oDab240Detail:MENGE > 0 or oDab240Detail:MENGE_AUSS > 0 then
+                   oMemDetail:K_REST_WAR   := 0, // Wartezeit macht dann auch keinen Sinn mehr => ebenfalls 0 setzen
+                   oMemDetail:K_REST_R     := 0,
+                endif,
+             endif,
+
+             // Status des Arbeitsgangs berechnen
+             if oMemDetail:ARTTYP = 'A' then
+                if oMemDetail:AUF_STATUS = gl_PGKU_AuftragsStatus_abgeschlossen then
+                   oMemDetail:ARB_STATUS := gl_PGKU_ArbeitsgangStatus_Fertig,
+                else
+                   oMemDetail:ARB_STATUS := PGKU_CalcArbeitsgangStatus(oDab240Head:SOLL, oDab240Detail:MENGE, oMemDetail:K_IST_R, oMemDetail:K_IST_S),
+                endif,
+
+                // Für "komplett fertige" Arbeitsgänge wird die Rest-Zeit-Reservierung ignoriert
+                if oMemDetail:ARB_STATUS = gl_PGKU_ArbeitsgangStatus_Fertig then
+                   oMemDetail:K_REST_WAR   := 0,
+                   oMemDetail:K_REST_R     := 0,
+                   oMemDetail:K_REST_S     := 0,
+                endif,
+             endif,
+
+             // Es muss jetzt eine RES_ID ergeben, ansonsten ist eine Terminierung nicht möglich
+             SetErrorIf(empty(oMemDetail:TERM_RESID),
+                        'no resource defined for ARTNR "' + AllTrim(oMemDetail:ARTNR) + ' ARBG_ID: ' + Str(oMemDetail:ARBG_ID) + ', QUALI: ' + Str(oMemDetail:QUALI) + ' QUALI_BEZ: ' + AllTrim(oMemDetail:QUALI_BEZ)),
+
+          endif,
+
+          oMemDetail.CbPost(),
+       endif,
+       cLastRS := oDAB240Detail:R_S,
+       DbSkip(1, oDAB240Detail),
+    end,
+end,
+
+//******************************************************************************
+// Funktion füllt eine zuvor erstellte Detail-MemTable mit dem Kapazitätsbedarf
+//    für Ressourcen und Mitarbeiter für Produktions-Dispoplanung
+// @Result: null
+//******************************************************************************
+function _PGKU_FillKapaBedarfDetailMemWithDab215(oDM, oMemKopf, oMemDetail)
+| oDab210, oDab215,
+  nID, oDab270,
+  oDABVTM,  nVariableBedarfsmenge, nDab010NKStellen,
+  cResTyp, cArtTyp,
+  nQualiID, cQualiDesc, aQualiInfo, nFixResID, nTermResId,
+  aWarte, nWarteMinuten,
+  dIstStart,
+  bAppend, bHasDab270,
+  cLastRS, nRefResNr_Ruest
+|
+   oDab210             := DbGetTable(oDM, waDab210),
+   oDab210.IndexName   := 'DAB211',  // ARTNR1,POSNR,ARTNR2
+   oDab270 := myGetTable(oDM,waDab270,),
+   oDabVTM := myGetTable(oDM,waDabVTM,),
+   nID := 1,
+   DbScope({oMemKopf:ARTNR_BG}, {oMemKopf:ARTNR_BG}, oDAB210),
+   DbGoTop(oDAB210),
+   while not EoF(oDAB210) do
+      oMemDetail.CbAppend(),
+      oMemDetail:ID            := nID,
+      nID++,
+      oMemDetail:EIND_SCHL     := PGKU_CalcEindeutigkeitsSchluesselDetail(trim(oMemKopf:EIND_SCHL), waDab215, oDab210),
+      oMemDetail:STANDORT      := oMemKopf:STANDORT,
+      oMemDetail:ARTNR         := oDAB210:ARTNR2,
+      cArtTyp                  := Lookup(waDab010, 'DAB011', {{oDAB210:ARTNR2}}, 'ARTTYP', ''),
+      oMemDetail:ARTTYP        := cArtTyp,
+      oMemDetail:POSNR         := oDAB210:POSNR,
+      oMemDetail:DAB210_ID     := oDAB210:ID,
+      oMemDetail:AUF_WA        := oMemKopf:AUF_WA,
+      oMemDetail:AUF_ID        := oMemKopf:AUF_ID,
+      oMemDetail:AUF_ID_240    := 0,
+      oMemDetail:AUF_STATUS    := oMemKopf:AUF_STATUS,
+      oMemDetail:KAP_PRIORI    := oMemKopf:KAP_PRIORI,
+      oMemDetail:KAP_SPERRE    := oMemKopf:KAP_SPERRE,
+      oMemDetail:HAS_RESANF    := false,
+
+      // Ressourcen-Anforderung wird erst in der Stückliste gesucht (spezifisch),
+      // wenn dort nichts definiert ist, dann im Artikelstamm nachsehen (allgemein)
+      oDAB270.IndexName        := 'ARBG_ID', // Ausdruck: "WORKAREA;ARBG_ID;RESZNR"
+      bHasDab270               := DbSeek({waDab210, oDab210:ID}, oDAB270),
+      if not bHasDab270 then
+         oDAB270.IndexName     := 'ARTNR', // Ausdruck: "ARTNR;RESZNR"
+         bHasDab270            := DbSeek({oDAB210:ARTNR2}, oDAB270),
+      endif,
+      //***************************************************************
+      // Arbeitsgänge und Externleistungen bearbeiten
+      //***************************************************************
+      if (cArtTyp = 'A' and bHasDab270) or (cArtTyp = 'E') then
+         oMemDetail:HAS_RESANF    := true,
+         oMemDetail:ARBG_ID       := oDAB210:ID,
+         // oMemDetail:SPLIT_KZ   := ,                          noch nicht implementiert
+
+         cResTyp    := '',
+         nFixResID  := 0,
+         nTermResId := 0,
+         nQualiID   := 0,
+
+         // Ressoucen / Mitarbeiter und ID dazu
+         if cArtTyp = 'A' then
+            // Dab270 ist bereits positioniert
+            cResTyp                  := oDab270:RESTYP,
+            nFixResID                := oDab270:RES_ID,
+
+            // Liegt eine fixierte Ressource vor ? Dann wird die Qualifikation aus der Ressource abgeleitet
+            // => Die Qualifikation muss immer mit der für die Terminierung genutzten Ressource
+            //    zusammenpassen, sonst sind Auswertungen nicht konsistent
+            if nFixResID > 0 then
+               aQualiInfo            := PGKU_GetQualificationInfosForResource(oDM, cResTyp, nFixResID),
+               nQualiID              := aQualiInfo[1], // kann = 0 sein, wenn nicht eindeutig oder nicht auf unterster Quali-Ebene zugeordnet
+               cQualiDesc            := aQualiInfo[2],
+            else
+               nQualiID              := Val(BeToken(oDab270:RESQLIST, '/', 1)), // TODO: Was tun, wenn  mehrere Qualis angefordert sind, was tun, wenn keine Qualifikation zugeordnet ist?
+               cQualiDesc            := iif(nQualiID > 0, Lookup(waDABVTM, 'VORG_TYP', {{nQualiID}}, 'BEZ', ''), ''),
+            endif,
+
+            oMemDetail:QUALI         := nQualiID,
+            oMemDetail:QUALI_BEZ     := cQualiDesc,
+            oMemDetail:D270_RESID    := nFixResID,
+            // writeln(oDAB240Detail:ID,oDab270:RESQLIST, nQualiid, nFixResID),
+         endif,
+
+         if cArtTyp = 'A' and nQualiID = 0 and nFixResID = 0 then
+            SetError('Arbeitsgang ARTNR: ' + AllTrim(oDab210:ARTNR2) +
+                     ' hat keine Qualifikation und keine fixierte Ressource' + crlf +
+                     'Terminierung nicht möglich'),
+         endif,
+
+         case cArtTyp
+            of 'A' ::
+               if nFixResID > 0 then
+                  nTermResId := nFixResID,
+               else
+                  oDABVTM.IndexName := 'VORG_TYP',
+                  if DbSeek({nQualiID}, oDABVTM) then
+                     nTermResId := oDABVTM:X_STDRESS,
+                  endif,
+               endif,
+
+               // Wartezeit für Position ermitteln
+               // - Wartezeiten können nur für "A"rbeitswerte definiert werden
+               // - Man nimmt die Wartezeit aus dem Rüstdatensatz, es sei denn es gibt gar keinen, daher nur im Falle von "bAppend" befüllen
+               aWarte := {oDab210:ARBG_DELTA, oDab210:ARBG_DFAKT},
+               if aWarte[1] <> 0 then
+                  nWarteminuten           := PGKU_CalcWartezeitminuten(aWarte[1], aWarte[2]),
+                  oMemDetail:ARBG_DELTA   := aWarte[1],
+                  oMemDetail:ARBG_DFAKT   := aWarte[2],
+                  oMemDetail:ARBG_DQUEL   := waDab210,
+                  oMemDetail:K_SOLL_WAR   := Round(nWarteminuten * oMemKopf:UEFAKTOR / 100, 2),
+                  oMemDetail:K_REST_WAR   := oMemDetail:K_SOLL_WAR,
+               else
+                  if nQualiID > 0 then // ist nicht gesetzt, wenn in der Dab270 nur die Ressource fixiert ist aber keine Quali(s) gewählt
+                     oDABVTM.IndexName       := 'VORG_TYP',
+                     MySeek({nQualiID}, oDABVTM),
+                     nWarteminuten           := PGKU_CalcWartezeitminuten(oDABVTM:X_ARBG_DEL, oDABVTM:X_ARBG_DFA),
+                     oMemDetail:ARBG_DELTA   := oDABVTM:X_ARBG_DEL,
+                     oMemDetail:ARBG_DFAKT   := oDABVTM:X_ARBG_DFA,
+                     oMemDetail:ARBG_DQUEL   := waDabVTM,
+                     oMemDetail:K_SOLL_WAR   := Round(nWarteminuten * oMemKopf:UEFAKTOR / 100, 2),
+                     oMemDetail:K_REST_WAR   := oMemDetail:K_SOLL_WAR,
+                  endif,
+               endif,
+
+            of 'E' ::
+                 // Dummy - Ressource bei externen Leistungen
+                 nTermResId := gl_PGKU_ExternRessource,
+                 cResTyp    := gl_PGKU_ExternRessourceTyp,
+         endcase,
+
+         oMemDetail:TERM_RESID    := nTermResId,
+         oMemDetail:RESTYP        := cResTyp,
+         if not empty(cResTyp) and not empty(nTermResId) then
+            oMemDetail:RES_BEZ    := iif(nTermResId > 0, PGKU_GetResourceDescription(cResTyp, nTermResId), ''),
+         endif,
+
+         // IST, SOLL und Bedarf getrennt nach Rüst und Stück
+         oMemDetail:K_SOLL_R    := oDab210:FIX_MENGE,               // immer Minuten lt. Std-Hilfe
+         oMemDetail:K_IST_R     := 0,
+         oMemDetail:STA_IST_R   := Null,
+         oMemDetail:K_REST_R    := oMemDetail:K_SOLL_R,
+
+         oDab215           := DbGetTable(oDM, waDab215),
+         oDab215.IndexName := 'ID',
+         MySeek({oMemKopf:AUF_ID}, oDab215),
+
+         nDab010NKStellen       := Lookup(waDab010, 'DAB011', {{oDAB210:ARTNR2}}, 'NKSTELLEN', 0),
+         nVariableBedarfsmenge  := oDab215:DISPO * oDab210:MENGE * (100 + oDab210:AUSSCHUSS) / 100, // immer Minuten lt. Std-Hilfe
+         nVariableBedarfsmenge  := Round(nVariableBedarfsmenge, nDab010NKStellen),
+         oMemDetail:K_SOLL_S    := nVariableBedarfsmenge,
+         oMemDetail:K_IST_S     := 0,
+         oMemDetail:STA_IST_S   := Null,
+         oMemDetail:K_REST_S    := oMemDetail:K_SOLL_S,
+
+         oMemDetail:ARB_STATUS := gl_PGKU_ArbeitsgangStatus_Offen,
+
+         // Es muss jetzt eine RES_ID ergeben, ansonsten ist eine Terminierung nicht möglich
+         SetErrorIf(empty(oMemDetail:TERM_RESID),
+                    'no resource defined for ARTNR "' + AllTrim(oMemDetail:ARTNR) + ' ARBG_ID: ' + Str(oMemDetail:ARBG_ID) + ', QUALI: ' + Str(oMemDetail:QUALI) + ' QUALI_BEZ: ' + AllTrim(oMemDetail:QUALI_BEZ)),
+
+      endif,
+      oMemDetail.CbPost(),
+      dbskip(1, oDAB210),
+   end,
+
+end,
+
+//******************************************************************************
+// Funktion füllt eine zuvor erstellte MemTable mit dem Kapazitätsbedarf
+//    für Ressourcen und Mitarbeiter
+// @Result: null
+//******************************************************************************
+function _PGKU_FillKapaBedarfDetailMem(oDM, oMemKopf, oMemDetail)
+   SetErrorIf(Empty(oMemKopf),              'memtable Kopf is empty '),
+   SetErrorIf(not oMemKopf.Active,          'memtable Kopf not active'),
+   SetErrorIf(oMemKopf.CbRecordCount <> 1,  'memtable.CbRecordCount <> 1. memtable Kopf muss genau einen Datensatz enthalten.'),
+   SetErrorIf(Empty(oMemDetail),            'memtable Detail is empty '),
+   SetErrorIf(not oMemDetail.Active,        'memtable Detail not active'),
+   SetErrorIf(oMemDetail.CbRecordCount > 0, 'memtable.CbRecordCount > 0. memtable Detail darf keinen Datensatz enthalten.'),
+
+   case oMemKopf:AUF_WA
+      of waDab035 :: // DAB035
+         PGKU_FillKapaBedarfDetailMemWithDab240(oDM, oMemKopf, oMemDetail),
+
+      of waDab215  ::
+         PGKU_FillKapaBedarfDetailMemWithDab215(oDM, oMemKopf, oMemDetail),
+
+      otherwise :: SetError('workarea noch nicht implementiert.: ' + Str(oMemKopf:AUF_WA)),
+   endcase,
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt
+//    - Die Bearbeitungszeit und die Durchlaufzeit DLZ
+//       - DLZ Arbeitswert:    Auftragszeit (Rüst + Stück) + Wartezeit
+//       - DLZ Externleistung: WBZ + WarteZeit
+// @Result: null
+//******************************************************************************
+function _PGKU_ReCalc(oMemDetail)
+   | aWarte, nWarteMinuten, nBetrZeitFaktor, nRestBearbeitungsZeit, nRestRuestZeit |
+
+   oMemDetail.CbIndexName := 'ID',
+
+   DbGoTop(oMemDetail),
+   while not EoF(oMemDetail) do
+      if oMemDetail:ARTTYP = 'A' or oMemDetail:ARTTYP = 'E' then
+         oMemDetail.CbEdit(),
+
+
+         // Soll-Werte *********************************************************
+         oMemDetail:K_SOLL_BEA := oMemDetail:K_SOLL_R   + oMemDetail:K_SOLL_S,
+         oMemDetail:K_SOLL_DLZ := oMemDetail:K_SOLL_WAR + oMemDetail:K_SOLL_BEA,
+
+         // Ist-Werte **********************************************************
+         oMemDetail:K_IST_BEA := oMemDetail:K_IST_R + oMemDetail:K_IST_S,
+         oMemDetail:K_IST_DLZ := oMemDetail:K_IST_WAR + oMemDetail:K_IST_BEA, // TODO: Die ist-warte-Dauer K_IST_WAR ist aktuell immer leer. Diese zu berechnen, würde die Information "ende des vorhergehenden Arbg." erfordern und außerdem nur eindeutig definiert sein, wenn das "Ende vorg. Arbg" vor dem "Start eigener Arbg". liegt. Dies ist häufig nicht der Fall.
+
+         // Rest-Werte *********************************************************
+         if oMemDetail:AUF_STATUS = gl_PGKU_AuftragsStatus_Abgeschlossen then
+            oMemDetail:K_REST_BEA := 0,
+            oMemDetail:K_REST_DLZ := 0,
+         else
+            nRestBearbeitungsZeit := 0,
+            case oMemDetail:ARTTYP
+               of 'A' :: nRestRuestZeit        := oMemDetail:K_REST_R,
+                         nRestBearbeitungsZeit := nRestRuestZeit + oMemDetail:K_REST_S,
+               of 'E' :: nRestBearbeitungsZeit := Lookup(WaDab010, 'DAB011', {{oMemDetail:ARTNR}}, 'WBZ', 0) * 60 * 8,
+                         // TODO:
+                         // - Interpretation von WBZ-Tagen muss Abhängig vom PLanungsmodus tagesgenau / wochengenau sein. Außerdem muss die Annahme von 8h pro Werktag ggf. konfigrierbar sein / aus der Externleistungs-Ressource ermittelt werden.
+                         // - Woher kommt die "Rest"-Bearbeitungszeit einer Externleistung? Anteilig anhand der gebuchten Menge reduzieren?
+            endcase,
+            oMemDetail:K_REST_BEA    := nRestBearbeitungsZeit,
+            if oMemDetail:ARBG_DFAKT = 5 or oMemDetail:ARBG_DFAKT = 6 then
+               oMemDetail:K_REST_DLZ := oMemDetail:K_REST_WAR + nRestBearbeitungsZeit, // TODO: Wie ist die Durchlaufzeit definiert, wenn die Wartezeit in Kalenderzeit definiert ist? Das lässt sich eigentlich nicht addieren!
+            else
+               oMemDetail:K_REST_DLZ := oMemDetail:K_REST_WAR + nRestBearbeitungsZeit,
+            endif,
+         endif,
+
+         oMemDetail.CbPost(),
+      endif,
+      dbskip(1,oMemDetail),
+   end,
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt
+//    - den Bereitschafts-Status eines Arbeitsgangs (direkt abgeleitet aus dem
+//      Arbeitsgang-Status des Vorgänger-Arbeitsgangs)
+// @Result: null
+//******************************************************************************
+function _PGKU_CalcBereitschaft(oMemDetail)
+   | nPrevArbgStatus, nBereitStatus |
+
+   nPrevArbgStatus        := -1,
+   oMemDetail.CbIndexName := 'ID',
+
+   DbGoTop(oMemDetail),
+   while not EoF(oMemDetail) do       // die Reihenfolge der Arbeitsgänge (aus Dab210 bzw. Dab240) ist aktuell
+                                      // immer die angenommene Prozess-Reihenfolge
+      if oMemDetail:HAS_RESANF then
+         oMemDetail.CbEdit(),
+
+         // Die Bereitschaft eines Arbeitsgangs hängt vom Status des Vorgänger-Arbeitsgangs ab
+         // "bereit" bedeutet, bereit zur Bearbeitung (einer Teilmenge)
+
+         if oMemDetail:AUF_STATUS = gl_PGKU_AuftragsStatus_abgeschlossen then
+            nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_Abgeschlossen, // Arbeitsgänge von abgeschlossenen Aufträgen haben im Prinzip keinen definierten "Bereit"-Status, daher hier dieser "abgeschlossen"-Status - damit fällt die Position auf jeden Fall aus einer gefilteren Liste "Arbeitsgänge, die bereit sind"
+         else
+            if nPrevArbgStatus = -1 then
+               if    oMemDetail:AUF_STATUS = gl_PGKU_AuftragsStatus_Freigegeben
+                  or oMemDetail:AUF_STATUS = gl_PGKU_AuftragsStatus_aktiv then
+                  nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_KomplettBereit, // Erster Arbeitsgang bei alle gestarteten Aufträgen wird als "bereit" angenommen
+               else
+                  nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_NichtBereit,
+               endif,
+            else
+               case nPrevArbgStatus
+                  of gl_PGKU_ArbeitsgangStatus_Offen       :: nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_NichtBereit,
+                  of gl_PGKU_ArbeitsgangStatus_Begonnen    :: nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_NichtBereit,
+                  of gl_PGKU_ArbeitsgangStatus_Teilfertig  :: nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_Teilbereit,
+                  of gl_PGKU_ArbeitsgangStatus_Fertig      :: nBereitStatus := gl_PGKU_ArbeitsgangBereitschaft_KomplettBereit,
+               endcase,
+            endif,
+         endif,
+
+         oMemDetail:ARB_BEREIT := nBereitStatus,
+
+         nPrevArbgStatus := oMemDetail:ARB_STATUS,
+
+         oMemDetail.CbPost(),
+      endif,
+      DbSkip(1,oMemDetail),
+   end,
+end,
+
+//******************************************************************************
+// Funktion führt die Durchlaufterminierung (DLT) rückwärts für den in der Memtable
+//    gefüllten Auftrag durch und schreibt die Daten in eben diese Memtable
+// Dabei wird die Terminierung mittel der TimeLine Funktionalität durchgeführt.
+// Rückgabe: {Result-Code, letzte Verarbeitete Memtable-Detail:ID}
+//           0 - Terminierung erfolgreich
+//           1 - Der im @oCbPCData verfügbare Planungsbereich muss nach links  verlängert werden (in die Vergangsheit) um die Terminierung durchzuführen zu können
+//           2 - Der im @oCbPCData verfügbare Planungsbereich muss nach rechts verlängert werden (in die Zukunft)      um die Terminierung durchzuführen zu können
+//******************************************************************************
+function _PGKU_Durchlaufterminierung(oDM, oCbPCData, oMemDetail, oMemKopf)
+| oResourceList, oResource,
+   dtTimelineStart:DT,
+   dParamsPlanningStart:DT, dParamsPlanningEnd:DT,
+   oSicherheitszeitTimeLine, oResourceTimeline,
+   dtArbgSpaetestesEnde:DT,
+   dtArbgFruehesterBeginn:DT,
+   dtArbgSpaetesterBeginn:DT,
+   dtAuftragEnde:DT,
+   dtTermin:DT,
+   dtStarttermin:DT,
+   drBearbeitungszeit:DR, drDLZ:DR, drWartezeit:DR, drSicherEnde:DR,
+   bHasOneArbgWithTerminierung,
+   oDateTimeHelper |
+
+   Result := {0, 0},
+
+   if oMemKopf:AUF_STATUS = gl_PGKU_AuftragsStatus_Abgeschlossen then
+      exit, // TODO: Aktuell gibt es für abgeschlossene Aufträge keine Planungs-Zeitpunkte mehr - die Frage ist, nach welcher Logik diese berechnet werden sollten und warum die Infos noch interessieren sollten...
+            //       Für abgeschlossene Aufträge interessieren eigentlich nur noch die Ist-Werte
+   endif,
+
+   SetErrorIf(empty(gl_PGKU_ExternRessource),          'resource for scheduling of external services is not defined (gl_PGKU_ExternRessource)'),
+   SetErrorIf(empty(gl_PGKU_SicherheitszeitRessource), 'resource for scheduling of safety periods is not defined (gl_PGKU_SicherheitszeitRessource)'),
+
+
+   oDateTimeHelper := CreateObject('TBeCbDateTimeHelper'),
+   startseq
+      oResourceList             := oCbPcData.ResourceList,                      // Klasse: TBeCbPCResourceList
+      oResource                 := oResourceList.GetResourceByIdAndType(gl_PGKU_SicherheitszeitRessource, iif(gl_PGKU_SicherheitszeitRessourcenTyp = 'R', 0, 1)),
+      SetErrorIf(empty(oResource), 'sicherheitszeit resource: ' + Str(gl_PGKU_SicherheitszeitRessource) + ' / restype: ' + 'R' + ' not found via oResourceList.GetResourceByIdAndType()'),
+      oSicherheitszeitTimeLine  := oResource.OperationTimeLine,
+
+      // Präzision Auftragsdaten
+      drSicherEnde.Precision           := precMinutes,
+      dtAuftragEnde.Precision          := precMinutes,
+
+      // Präzision Positionsdaten
+      dtArbgSpaetestesEnde.Precision   := precMinutes,
+      dtArbgSpaetesterBeginn.Precision := precMinutes,
+      dtArbgFruehesterBeginn.Precision := precMinutes,
+      drBearbeitungszeit.Precision     := precMinutes,
+      drDLZ.Precision                  := precMinutes,
+      drWartezeit.Precision            := precMinutes,
+      // Präzision Timeline
+      dtTimeLineStart.Precision        := precMinutes,
+
+      dtTermin.Precision               := precMinutes,
+      dtStarttermin.Precision          := precMinutes,
+
+      // Berechnung des spätesten Endes des letzten Arbeitsgangs = frühestes Ende Auftrag
+      dtAuftragEnde.DateTime    := oMemKopf:ENDE_SP,
+      drSicherEnde.Minutes      := oMemKopf:SICH_ENDE,
+      if oMemKopf:SICH_DFAKT = 5 or oMemKopf:SICH_DFAKT = 6 then
+         dtArbgSpaetestesEnde   := oDateTimeHelper.Subtract(dtAuftragEnde, drSicherEnde),              // Sicherheitspuffer in Kalenderzeit
+      else
+         dtArbgSpaetestesEnde   := oSicherheitszeitTimeLine.CalendarSub(dtAuftragEnde, drSicherEnde),  // Sicherheitspuffer in Betriebszeit
+      endif,
+      myedit(oMemKopf),
+      oMemKopf:ENDE_FR          := dtArbgSpaetestesEnde.DateTime,
+      mypost(oMemKopf),
+      // Wenn das Ende des Auftrags nicht in die Timelime paßt
+      dParamsPlanningStart        := oCbPCData.Params.PlanningStart,
+      dParamsPlanningEnd          := dParamsPlanningStart,
+      dParamsPlanningEnd.DateTime := dParamsPlanningEnd.DateTime + oCbPCData.Params.PlanningDays,
+      if dtArbgSpaetestesEnde >  dParamsPlanningEnd then
+         Result :=  {2, 0},
+         exit,
+      endif,
+
+      // Rückwärtsterminierung durchführen
+      bHasOneArbgWithTerminierung := false,
+      if not NoDs(oMemDetail) then
+         DbGoBottom(oMemDetail),
+         while not BoF(oMemDetail) do
+            if oMemDetail:ARTTYP = 'A' or oMemDetail:ARTTYP = 'E' then                                     // writeln('-------------------------------------------------------'),
+               if oMemDetail:HAS_RESANF then
+                  bHasOneArbgWithTerminierung := true,
+                  // Man muß prüfen, ob der nächste dtTermin außerhalb der Timelinegrenzen liegt und wenn ja, dann muß man die Timeline-DAten neu berechnen
+                  oResource            := oResourceList.GetResourceByIdAndType(oMemDetail:TERM_RESID, iif(oMemDetail:RESTYP = 'R', 0, 1)),       // writeln('Artikel: '+trim(oMemDetail:ARTNR), 'Ressource: ', oMemDetail:TERM_RESID, oMemDetail:RES_BEZ),
+                  SetErrorIf(empty(oResource), 'resource: <' + Str(oMemDetail:TERM_RESID) + '> / restype: "' + oMemDetail:RESTYP + '" not found via oResourceList.GetResourceByIdAndType(). ARTNR "' + AllTrim(oMemDetail:ARTNR) + '", POSNR "' + oMemDetail:POSNR + '"'),
+                  oResourceTimeline    := oResource.OperationTimeLine,
+                  // Wenn der früheste Starttermin außerhalb der Timelineperiode liegt, dann muß man diese verlängern
+                  drDLZ.Minutes          := round(oMemDetail:K_REST_DLZ, 0),
+                  dtTimeLineStart        := oResourceTimeline.CalendarSub(dtArbgSpaetestesEnde, drDLZ),
+                  if dtTimeLineStart < oCbPCData.Params.PlanningStart  then
+                     Result := {1, oMemDetail:ID},
+                     exit,
+                  endif,
+
+                  drBearbeitungszeit.Minutes := Round(oMemDetail:K_REST_BEA, 0),                                          // writeln('Bearbeitungszeit:      ', drBearbeitungszeit.Minutes),
+                  drWartezeit.Minutes        := Round(oMemDetail:K_REST_WAR, 0),                                          // writeln('Wartezeit:             ', drWartezeit.Minutes),
+
+                  dtArbgSpaetesterBeginn     := oResourceTimeline.CalendarSub(dtArbgSpaetestesEnde,   drBearbeitungszeit),  // writeln('spätester Starttermin: ', DateTimetoStr(dtArbgSpaetesterBeginn.DateTime)),
+
+                  // Wartezeit in Kalenderzeit oder Betriebszeit?
+                  if oMemDetail:ARBG_DFAKT = 5 or oMemDetail:ARBG_DFAKT = 6 then
+                     dtArbgFruehesterBeginn  := oDateTimeHelper.Subtract(dtArbgSpaetesterBeginn, drWartezeit),              // Wartezeit in Kalenderzeit
+                  else
+                     dtArbgFruehesterBeginn  := oResourceTimeline.CalendarSub(dtArbgSpaetesterBeginn, drWartezeit),         // writeln('frühester Starttermin: ', DateTimetoStr(dtArbgFruehesterBeginn.DateTime)),
+                  endif,
+
+                  myedit(oMemDetail),
+                  oMemDetail:ENDE_SP    := dtArbgSpaetestesEnde.DateTime,                                        // TODO Füllen der Einzeltermine für Rüst und Stück und das früheste Ende.
+                  // oMemDetail:START_SP_R := dtArbgSpaetesterBeginn.DateTime,
+                  // oMemDetail:START_FR_R := dtArbgFruehesterBeginn.DateTime,
+                  oMemDetail:START_SP   := dtArbgSpaetesterBeginn.DateTime,
+                  oMemDetail:START_FR   := dtArbgFruehesterBeginn.DateTime,
+
+                  // Auf Basis der jetzt terminierten Termine die Einordnung in die Planungsperiode vornehmen
+                  // => vorerst mal auf Basis des "spätesten Start"
+                  oMemDetail:PP_DATUM := oMemDetail:START_SP,
+                  oMemDetail:PP_KW    := PGKU_GetPlanungsperiodenKW(oMemDetail:PP_DATUM),
+                  oMemDetail:PP_JAHR  := PGKU_GetPlanungsperiodenJahr(oMemDetail:PP_DATUM),
+
+                  mypost(oMemDetail),
+
+                  dtArbgSpaetestesEnde := dtArbgFruehesterBeginn,
+               endif,
+            endif,
+            DbSkip(-1, oMemDetail),
+         end,
+
+         MyEdit(oMemKopf),
+         if bHasOneArbgWithTerminierung then  // nur wenn mind. ein Arbeitsgang oder eine Externleistung terminiert wurde, gibt es einen "Früh Start"
+            oMemKopf:START_SP := dtArbgFruehesterBeginn.DateTime,
+            oMemKopf:START_FR := dtArbgFruehesterBeginn.DateTime,
+         else
+            oMemKopf:START_SP := oMemKopf:ENDE_FR,
+            oMemKopf:START_FR := oMemKopf:ENDE_FR,
+         endif,
+         MyPost(oMemKopf),
+      endif,
+   always
+      DestroyObject(oDateTimeHelper),
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion führt eine DLT durch und sorgt zusätzlich dafür, dass der im
+// oCbPCData-Objekt verfügbare Planungszeitraum ggf. vergrößert wird, wenn
+// er für die DLT nicht ausreicht.
+//   Achtung: oCbPCData wird per Referenz übergeben, denn oCbPCData wird in der
+//            Funktion ggf. neu erzeugt.
+// @Result: null
+//******************************************************************************
+function _PGKU_Durchlaufterminierung_PCDataHandling(oDM, oCbPCData:R, oMemDetail, oMemKopf)
+| aResult, nResultCode, nMemDetail_ID, dParamsPlanningStart:DT, dParamsPlanningEnd:DT, nMaxCycles,
+  nCycles, nTageVerlaengerung, cRichtungsText, dMinDateTime, dMaxDateTime, cFehlerBetrifft |
+
+   nMaxCycles         := 2,
+   nCycles            := 0,
+   nTageVerlaengerung := 365,
+   dMinDateTime       := BoY(Date() - (2 * 365)),
+   dMaxDateTime       := EoY(Date() + (5 * 365)),
+
+   repeat
+      aResult       := PGKU_Durchlaufterminierung(oDM, oCbPCData, oMemDetail, oMemKopf),
+      nResultCode   := aResult[1],
+      nMemDetail_ID := aResult[2],
+      if nResultCode <> 0 then
+         WriteLn(Replicate('#', 80)),
+         dParamsPlanningStart        := oCbPCData.Params.PlanningStart,
+         dParamsPlanningEnd          := dParamsPlanningStart,
+         dParamsPlanningEnd.DateTime := dParamsPlanningEnd.DateTime + oCbPCData.Params.PlanningDays,
+
+         // --- START ---
+         // Aktuell (08.07.2016 CM) gibt es ein Speicher-Leck beim Zerstören von PCData
+         // daher wird die "automatische Verlängerungs-Logik" hier nicht benutzt
+         cRichtungsText  := iif(nResultCode = 1, 'in die Vergangenheit', 'in die Zukunft'),
+         cFehlerBetrifft := '',
+         case nResultCode
+            of 1 :: SetErrorIf(oMemDetail:ID <> nMemDetail_ID, 'oMemDetail:ID <> nMemDetail_ID für Fehlermeldungs-Ermittlung'), // Detail-Mem müsste im fehlerfall eigentlich noch korrekt positioniert sein. falls später nicht mehr, dann hier mit locate arbeiten.
+                    cFehlerBetrifft := '<Position Artikel-Nr.:' + AllTrim(oMemDetail:ARTNR) + ', Position: ' + AllTrim(oMemDetail:POSNR) + '>',
+            of 2 :: cFehlerBetrifft := '<Auftrags-End-Termin>',
+         endcase,
+
+         SetError('Die Durchlaufterminierung kann den Auftrag nicht verarbeiten, da mindestens eine Ressource nicht lange genug verfügbar ist (' + cRichtungsText + ').' + crlf +
+                  'Fehler betrifft: ' + cFehlerBetrifft + crlf +
+                  'Der letzte genutzte Planungszeitraum war: ' + DToC(dParamsPlanningStart.DateTime) + ' bis ' + DToC(dParamsPlanningEnd.DateTime)),
+         // --- ENDE ---
+
+         // Der maximale Betrachtungszeitraum ist <heute minus 2 Jahre> bis <heute plus 5 Jahre>
+         // => Diese Begrenzung ist notwendig, da das PCData-Objekt sonst bei der Abarbeitung
+         //    einer großen Menge von Sync-Jobs immer größer wird
+         //    => irgendwann geht dann der Arbeitsspeicher aus mit Fehlermeldung <OutOfMemory>
+         // => Abgesehen davon sind eise Grenzen so groß, dass eine Einplanung von Aufträgen, die hier nicht
+         //    reinpassen keinen Sinn macht => vmlt. liegt dann ein Datenfehler vor...
+
+
+         if nResultCode = 1 then
+            // verlängern nach links um x Tage
+            dParamsPlanningStart.DateTime := dParamsPlanningStart.DateTime - nTageVerlaengerung,
+            WriteLn('Verlängerung nach links um nTageVerlaengerung Tage', dParamsPlanningStart),
+            if dParamsPlanningStart.DateTime < dMinDateTime then
+               SetError('Die Durchlaufterminierung kann den Auftrag nicht verarbeiten, da mindestens eine Ressource nicht lange genug in die Vergangenheit verfügbar ist. ' + crlf +
+                        'Die Einlastung wird abgebrochen, da der minimale Planungszeitraum-Beginn erreicht ist (' + DToc(dMinDateTime) + ')'),
+            endif,
+         else
+            if nResultCode = 2 then
+               // verlängern nach rechts um x Tage
+               dParamsPlanningEnd.DateTime := dParamsPlanningEnd.DateTime + nTageVerlaengerung,
+               WriteLn('Verlängerung nach rechts um nTageVerlaengerung Tage', dParamsPlanningEnd),
+               if dParamsPlanningEnd.DateTime > dMaxDateTime then
+                  SetError('Die Durchlaufterminierung kann den Auftrag nicht verarbeiten, da mindestens eine Ressource nicht lange genug in die Zukunft verfügbar ist. ' + crlf +
+                           'Die Einlastung wird abgebrochen, da das maximale Planungszeitraum-Ende erreicht ist (' + DToc(dMaxDateTime) + ')'),
+               endif,
+            endif,
+         endif,
+
+         DestroyObject(oCbPCData),
+         oCbPCData := PGKU_CreatePCData(Stod(Dtos(Trunc(dParamsPlanningStart.DateTime))), Stod(Dtos(Trunc(dParamsPlanningEnd.DateTime))) , '', oDM),
+
+         nCycles ++,
+         if nCycles > nMaxCycles then
+            cRichtungsText := iif(nResultCode = 1, 'in die Vergangenheit', 'in die Zukunft'),
+            SetError('Die Durchlaufterminierung kann den Auftrag nicht verarbeiten, da mindestens eine Ressource nicht lange genug verfügbar ist (' + cRichtungsText + ').' + crlf +
+                     'Der letzte genutzte Planungszeitraum war: ' + DToC(dParamsPlanningStart.DateTime) + ' bis ' + DToC(dParamsPlanningEnd.DateTime)),
+         endif,
+      endif,
+   until nResultCode = 0 end,
+end,
+
+//******************************************************************************
+// Funktion überträgt einen neuen Auftragskopf von der Memtable in die Datenbank.
+// @Result: null
+//******************************************************************************
+function _PGKU_DB_UebertrageAuftragsKopf(oMemKopf, oPGKBDK)
+   oPGKBDK:STANDORT   := oMemKopf:STANDORT,
+   oPGKBDK:ARTNR_BG   := oMemKopf:ARTNR_BG,
+   oPGKBDK:AUF_WA     := oMemKopf:AUF_WA,
+   oPGKBDK:AUF_ID     := oMemKopf:AUF_ID,
+   oPGKBDK:AUF_ID_240 := oMemKopf:AUF_ID_240,
+   oPGKBDK:AUF_STATUS := oMemKopf:AUF_STATUS,
+   oPGKBDK:UEFAKTOR   := oMemKopf:UEFAKTOR,
+   oPGKBDK:KAP_PRIORI := oMemKopf:KAP_PRIORI,
+   oPGKBDK:KAP_SPERRE := oMemKopf:KAP_SPERRE,
+   oPGKBDK:KAP_TRMMOD := oMemKopf:KAP_TRMMOD,
+   oPGKBDK:TERMIN     := oMemKopf:TERMIN,
+   oPGKBDK:BESTPOSNR  := oMemKopf:BESTPOSNR,
+   oPGKBDK:EIND_SCHL  := oMemKopf:EIND_SCHL,
+   oPGKBDK:SICH_ENDE  := oMemKopf:SICH_ENDE,
+   oPGKBDK:SICH_DELTA := oMemKopf:SICH_DELTA,
+   oPGKBDK:SICH_DFAKT := oMemKopf:SICH_DFAKT,
+   oPGKBDK:ENDE_SP    := oMemKopf:ENDE_SP,
+   oPGKBDK:ENDE_FR    := oMemKopf:ENDE_FR,
+   oPGKBDK:START_SP   := oMemKopf:START_SP,
+   oPGKBDK:START_FR   := oMemKopf:START_FR,
+end,
+
+//******************************************************************************
+// Funktion überträgt ein neues Auftragsdetails von der Memtable in die Datenbank.
+// @Result: null
+//******************************************************************************
+function _PGKU_DB_UebertrageAuftragsPosition(oMemKopf, oMemDetail, oPGKBDP)
+   oPGKBDP:STANDORT   := oMemKopf:STANDORT,
+   oPGKBDP:EIND_SCHL  := oMemDetail:EIND_SCHL,
+   oPGKBDP:PP_DATUM   := oMemDetail:PP_DATUM,
+   oPGKBDP:PP_KW      := oMemDetail:PP_KW,
+   oPGKBDP:PP_JAHR    := oMemDetail:PP_JAHR,
+   oPGKBDP:POSNR      := oMemDetail:POSNR,
+   oPGKBDP:DAB210_ID  := oMemDetail:DAB210_ID,
+   oPGKBDP:AUF_WA     := oMemDetail:AUF_WA,
+   oPGKBDP:AUF_ID     := oMemDetail:AUF_ID,
+   oPGKBDP:AUF_ID_240 := oMemDetail:AUF_ID_240,
+   oPGKBDP:ARTNR      := oMemDetail:ARTNR,
+   oPGKBDP:ARTTYP     := oMemDetail:ARTTYP,
+   oPGKBDP:ARBG_ID    := oMemDetail:ARBG_ID,
+   oPGKBDP:D240R_ID   := oMemDetail:D240R_ID,
+   oPGKBDP:D240S_ID   := oMemDetail:D240S_ID,
+   oPGKBDP:HAS_RESANF := oMemDetail:HAS_RESANF,
+   oPGKBDP:D270_RESID := oMemDetail:D270_RESID,
+   oPGKBDP:TERM_RESID := oMemDetail:TERM_RESID,
+   oPGKBDP:RESTYP     := oMemDetail:RESTYP,
+   oPGKBDP:QUALI      := oMemDetail:QUALI,
+   oPGKBDP:AUF_STATUS := oMemDetail:AUF_STATUS,
+   oPGKBDP:ARB_STATUS := oMemDetail:ARB_STATUS,
+   oPGKBDP:ARB_BEREIT := oMemDetail:ARB_BEREIT,
+   oPGKBDP:KAP_PRIORI := oMemDetail:KAP_PRIORI,
+   oPGKBDP:KAP_SPERRE := oMemDetail:KAP_SPERRE,
+   oPGKBDP:START_FR   := oMemDetail:START_FR,
+   oPGKBDP:START_SP   := oMemDetail:START_SP,
+   oPGKBDP:ENDE_FR    := oMemDetail:ENDE_FR,
+   oPGKBDP:ENDE_SP    := oMemDetail:ENDE_SP,
+   oPGKBDP:START_FR_R := oMemDetail:START_FR_R,
+   oPGKBDP:START_SP_R := oMemDetail:START_SP_R,
+   oPGKBDP:ENDE_FR_R  := oMemDetail:ENDE_FR_R,
+   oPGKBDP:ENDE_SP_R  := oMemDetail:ENDE_SP_R,
+   oPGKBDP:START_FR_S := oMemDetail:START_FR_S,
+   oPGKBDP:START_SP_S := oMemDetail:START_SP_S,
+   oPGKBDP:ENDE_FR_S  := oMemDetail:ENDE_FR_S,
+   oPGKBDP:ENDE_SP_S  := oMemDetail:ENDE_SP_S,
+   oPGKBDP:STA_IST_R  := oMemDetail:STA_IST_R,
+   oPGKBDP:ENDE_IST_R := oMemDetail:ENDE_IST_R,
+   oPGKBDP:STA_IST_S  := oMemDetail:STA_IST_S,
+   oPGKBDP:ENDE_IST_S := oMemDetail:ENDE_IST_S,
+   oPGKBDP:K_SOLL_R   := oMemDetail:K_SOLL_R,
+   oPGKBDP:K_SOLL_S   := oMemDetail:K_SOLL_S,
+   oPGKBDP:ARBG_DELTA := oMemDetail:ARBG_DELTA,
+   oPGKBDP:ARBG_DFAKT := oMemDetail:ARBG_DFAKT,
+   oPGKBDP:ARBG_DQUEL := oMemDetail:ARBG_DQUEL,
+   oPGKBDP:K_SOLL_WAR := oMemDetail:K_SOLL_WAR,
+   oPGKBDP:K_IST_WAR  := oMemDetail:K_IST_WAR,
+   oPGKBDP:K_REST_WAR := oMemDetail:K_REST_WAR,
+   oPGKBDP:K_IST_R    := oMemDetail:K_IST_R,
+   oPGKBDP:K_IST_S    := oMemDetail:K_IST_S,
+   oPGKBDP:K_REST_R   := oMemDetail:K_REST_R,
+   oPGKBDP:K_REST_S   := oMemDetail:K_REST_S,
+   oPGKBDP:K_SOLL_BEA := oMemDetail:K_SOLL_BEA,
+   oPGKBDP:K_IST_BEA  := oMemDetail:K_IST_BEA,
+   oPGKBDP:K_REST_BEA := oMemDetail:K_REST_BEA,
+   oPGKBDP:K_SOLL_DLZ := oMemDetail:K_SOLL_DLZ,
+   oPGKBDP:K_IST_DLZ  := oMemDetail:K_IST_DLZ,
+   oPGKBDP:K_REST_DLZ := oMemDetail:K_REST_DLZ,
+end,
+
+//******************************************************************************
+// Die Funktion aktualisiert die Tabellen "Kapazitätsbedarf"
+//    PGKBDK.ADT und PGKBDP auf Basis der übergebenen, befüllten MemTables des Kapazitätsbedarfs.
+// -> Je nach "Aktualisierungs-Situation" werden (individuell) in den beiden Tabellen Datensätze
+//    erzeugt, aktualisiert oder gelöscht.
+//
+// @Result: Null
+//******************************************************************************
+function _PGKU_TransferKapaBedarfMemsToDatabase(oDM, oMemKopf, oMemDetail)
+
+| oPGKBDK, oPGKBDP, cScope,
+
+bBothListsEnd, cLastProcessedKey, cCurKey, cAbgleichsSituation, bDebug,
+  aCounterArray, cFilter, cEIND_SCHL_MinValue, cEIND_SCHL_MaxValue, oDeleteQuery, cSQL |
+
+   cEIND_SCHL_MinValue := PGKU_CalcEindeutigkeitsSchluesselDetail_MinValue(Trim(oMemKopf:EIND_SCHL)),
+   cEIND_SCHL_MaxValue := PGKU_CalcEindeutigkeitsSchluesselDetail_MaxValue(trim(oMemKopf:EIND_SCHL), oMemKopf:AUF_WA),
+
+   //***************************************************************************
+   // 0. Aufräum-Arbeiten
+   //***************************************************************************
+   // Sofern die Standard-Funktion "Aktualisierung FA_Stückliste" genutzt wird, wird (leider) die
+   // komplette Dab240 inkl. Kopfsatz gelöscht und neu angelegt, wodurch die Dab240:ID's alle neu vergeben werden.
+   // => Im "EIND_SCHL", der als Abgleich genutzt wird, wird die DAB240-Kopfsatz-ID genutzt.
+   //    Daher wird ein zuvor bestehender DS hier nicht mehr gefunden und ein neuer angelegt.
+   //    Diese "Leichen" löschen wir hier noch raus. Alternative wäre gewesen, den "EIND_SCHL" für
+   //    DAB035 mittels der BESTPOSNR zu berechnen.
+   //
+   // "Alten" Kopf-Satz löschen
+   cSQL := '',
+   cSQL += 'DELETE FROM ' + DBSqlTableName(waPGKBDK) + crlf +
+           '   WHERE AUF_WA = ' + Str(oMemKopf:AUF_WA) + ' AND AUF_ID = ' + Str(oMemKopf:AUF_ID) + ' AND EIND_SCHL <> ''' + AllTrim(oMemKopf:EIND_SCHL) + ''';' + crlf,
+   // "Alte" Detail-Sätze löschen
+   cSQL += 'DELETE FROM ' + DBSqlTableName(waPGKBDP) + crlf +
+           '   WHERE AUF_WA = ' + Str(oMemKopf:AUF_WA) + ' AND AUF_ID = ' + Str(oMemKopf:AUF_ID) + crlf +
+           '         AND NOT EIND_SCHL BETWEEN ''' + AllTrim(cEIND_SCHL_MinValue) + ''''  + crlf +
+           '                               AND ''' + AllTrim(cEIND_SCHL_MaxValue) + ''';' + crlf,
+
+   oDeleteQuery  := CreateObject('TBeAdsQuery', 'PGK_DELETE_QUERY', oDM),
+   startseq
+      oDeleteQuery.ProtocolActive := false,
+      oDeleteQuery.SQL            := cSQL, WriteLn(cSQL),
+      oDeleteQuery.CbExecSQL(),
+   always
+      DestroyObject(oDeleteQuery),
+   stopseq,
+
+   //***************************************************************************
+   // 1. Zunächst muß man die Kopf-Tabelle abgleichen. Das ist insofern
+   //    relativ leicht als die Kopfmem nur einen Datensatz enthält
+   //***************************************************************************
+   oPGKBDK := MyGetTable(oDM, waPGKBDK,),
+
+   DbGoTop(oMemKopf),
+   oPGKBDK.IndexName         := 'EIND_SCHL',
+   if DbSeek({oMemKopf:EIND_SCHL}, oPGKBDK) then
+      MyEdit(oPGKBDK),
+   else
+      MyAppend(oPGKBDK),
+   endif,
+   PGKU_DB_UebertrageAuftragsKopf(oMemKopf, oPGKBDK),
+   MyPost(oPGKBDK),
+
+   aCounterArray := {0, 0, 0},
+
+   //***************************************************************************
+   // 2. Positionen abgleichen
+   //    Info: Die Richtung des Abgleichs erfolgt
+   //          von  oMemDetail (neu) nach oPGKBDP (bestehend)
+   //          von     "links"             nach      "rechts"
+   //***************************************************************************
+
+   // Sollen auch Positionen in die Datenbank gespeichert werden, die keine Ressourcen-Anforderungen darstellen?
+   if gl_PGKU_TransferRecordsWithoutResAnfToDataBase then
+      oMemDetail.CbFilter   := '',
+      oMemDetail.CbFiltered := false,
+   else
+      oMemDetail.CbFilter   := 'HAS_RESANF',
+      oMemDetail.CbFiltered := true,
+   endif,
+
+   startseq
+      // MemTable und Tabelle identisch (!) sortieren
+      oPGKBDP                   := DbGetTable(oDM, waPGKBDP),
+      oPGKBDP.IndexName         := 'EIND_SCHL',
+      oMemDetail.CbIndexName    := 'EIND_SCHL',
+      // MemTable und Tabelle identisch (!) filtern
+      // -> Wichtig, denn "links" und "rechts" sollen nach dem Abgleich identisch
+      //    sein, dann muss auch die gleiche Grundmenge betrachtet werden...
+
+      DbScope({cEIND_SCHL_MinValue}, {cEIND_SCHL_MaxValue}, oPGKBDP),
+      DbScope({cEIND_SCHL_MinValue}, {cEIND_SCHL_MaxValue}, oMemDetail),
+      DbGoTop(oMemDetail),
+      DbGoTop(oPGKBDP),
+
+      bBothListsEnd     := EoF(oMemDetail) and EoF(oPGKBDP),
+      cLastProcessedKey := '',
+      while not bBothListsEnd do
+         // Grundidee des Abgleichs:
+         //    Beide Listen (links und rechts) sind identisch sortiert und identisch gefiltert (siehe oben).
+         //    Auf Basis dieser Annahme wird bei jeder Iteration geprüft, welcher
+         //    Datensatz (links oder rechts oder beide identisch) der nächste
+         //    in der Reihenfolge (bezogen auf die "sortierte Vereinigungsmenge") ist.
+         //
+         //    Dann wird für diesen Datensatz die "Abgleichs-Situation" errechnet
+         //      'A' - Neue Position aufgetreten, welchen es noch nicht gab
+         //      'B' - Bereits vorhandene Position ist erneut aufgetreten
+         //      'C' - Vorhandene Position ist nicht neu aufgetreten
+         //
+         //    Je nach "Abgleichs-Situation" wird dann (individuell) gehandelt (erzeugt, aktualisiert, gelöscht).
+
+         cAbgleichsSituation := '',
+
+         //*********************************************************************
+         // 1. "Abgleichs-Situation" ermitteln
+         //*********************************************************************
+         // Durch Einfügen eines Datensatzes könnte ein bereits verarbeiteter Key
+         //   (nochmals) im Fokus sein -> in diesem Fall weiter skippen
+         if     trim(oMemDetail:EIND_SCHL) <= cLastProcessedKey
+            and not empty(cLastProcessedKey)
+            and not EoF(oMemDetail) then                             //     WriteLn(-2),
+            DbSkip(1, oMemDetail),
+         else
+            if    trim(oPGKBDP:EIND_SCHL) <= cLastProcessedKey
+               and not empty(cLastProcessedKey)
+               and not EoF(oPGKBDP) then                             //            WriteLn(-1),
+               DbSkip(1, oPGKBDP),
+            else
+
+               // Hier muss jetzt ein neuer (also der nächste links oder rechts
+               // vorhandene) Schlüssel im Fokus sein
+
+               if EoF(oMemDetail) then // -> links ist leer -> rechts hat Inhalt
+                  cAbgleichsSituation := 'C',
+               else
+                  if EoF(oPGKBDP) then // -> rechts ist leer -> links hat Inhalt
+                     cAbgleichsSituation := 'A',
+                  else
+                     // -> Beide Seiten haben Inhalt -> links == rechts
+                     // writeln('Vergleich:',trim(oMemDetail:EIND_SCHL), trim(oPGKBDP:EIND_SCHL)),
+                     if trim(oMemDetail:EIND_SCHL) = trim(oPGKBDP:EIND_SCHL) then
+                        cAbgleichsSituation := 'B',
+                     else
+                        // -> links kleiner rechts
+                        if trim(oMemDetail:EIND_SCHL) < trim(oPGKBDP:EIND_SCHL) then
+                           cAbgleichsSituation := 'A',
+                        else
+                           if trim(oMemDetail:EIND_SCHL) > trim(oPGKBDP:EIND_SCHL) then // -> rechts kleiner links
+                              cAbgleichsSituation := 'C',
+                           else
+                              SetError('Dieser Fall ist eigentlich unmöglich, richtig?'),
+                           endif,
+                        endif,
+                     endif,
+                  endif,
+               endif,
+
+            endif,
+         endif,
+         // writeln(cAbgleichsSituation),
+         //*********************************************************************
+         // 2. Die "Abgleichs-Situation" steht jetzt fest - entspr. handeln!
+         //     -> Hinzufügen, Aktualisieren oder Löschen der Auftragsposition
+         //*********************************************************************
+         case cAbgleichsSituation
+
+            // Neue Position aufgetreten, welche es noch nicht gab *************
+            of 'A' ::
+
+               cLastProcessedKey := trim(oMemDetail:EIND_SCHL),
+               aCounterArray[1]  += 1,
+
+               MyAppend(oPGKBDP),
+               PGKU_DB_UebertrageAuftragsPosition(oMemKopf, oMemDetail, oPGKBDP),
+               MyPost(oPGKBDP),
+
+               DbSkip(1, oMemDetail),
+               DbSkip(1, oPGKBDP),
+
+            // Bereits vorhandene Position ist erneut aufgetreten **************
+            of 'B' ::
+
+               cLastProcessedKey := trim(oMemDetail:EIND_SCHL),
+               aCounterArray[2]  += 1,
+
+               MyEdit(oPGKBDP),
+               PGKU_DB_UebertrageAuftragsPosition(oMemKopf, oMemDetail, oPGKBDP),
+               MyPost(oPGKBDP),
+
+               DbSkip(1, oMemDetail),
+               DbSkip(1, oPGKBDP),
+
+            // Vorhandene Position ist nicht neu aufgetreten *******************
+            of 'C' ::
+
+               cLastProcessedKey := trim(oPGKBDP:EIND_SCHL),
+               aCounterArray[3]  += 1,
+               MyDelete(oPGKBDP),
+               MyPost(oPGKBDP),
+               // Hier kein DbSkip()! (Sofern der Satzzeiger auf den vorherigen
+               // Record springt wird dieser oben als "schon verarbeitet" erkannt.)
+         endcase,
+
+         bBothListsEnd := EoF(oMemDetail) and EoF(oPGKBDP),
+      end,
+
+   always
+      oMemDetail.CbFilter   := '',
+      oMemDetail.CbFiltered := false,
+   stopseq,
+
+   WriteLn('PGKU_TransferKapaBedarfMemsToDatabase(): Statistik der Änderungen für : ' + trim(oMemKopf:EIND_SCHL) + crlf
+            + '         ' + Str(aCounterArray[1]) + ' hinzugefügt, ' + Str(aCounterArray[2]) + ' aktualisiert, ' + Str(aCounterArray[3]) + ' gelöscht.'),
+end,
+
+//******************************************************************************
+// Die Funktion löscht alle Datensätze aus PGKBDP und PGKBDK
+// für den mittels PGKSYA übergebenen Datensatz
+// @Result: null
+//******************************************************************************
+function _PGKU_AuftragLoeschen(oDM, oPGKSYA)
+| oPGKBDK, oPGKBDP |
+
+   SetErrorIf(empty(oPGKSYA:DS_WA),    'empty(PGKSYA:DS_WA),    PGKSYA:ID = ' + Str(oPGKSYA:ID)),
+   SetErrorIf(empty(oPGKSYA:AEND_ART), 'empty(PGKSYA:AEND_ART), PGKSYA:ID = ' + Str(oPGKSYA:ID)),
+
+   // CM 31.10.2016 -
+   //    Da auch PGKSYA-Sätze mit Änderungsart "Neu" oder "Geändert" als Löschung interpretiert werden
+   //    können, wenn Dab035 und Dab240 weg sind => hier keinen Fehler werfen
+   //    => Der Fall kann z.B. auftreten, wenn eine PGKSYA-Änderungssatz "hängen bleibt" und ein zweiter
+   //       Lösch-Satz für den gleichen Auftrag entsteht. Der Lösch-Satz löscht dann, der Änderungssatz mit "AEND_ART <> 'D'"
+   //       verbleibt, wird anschließend als Löschung betrachtet und wirft hier einen Fehler
+   // SetErrorIf(oPGKSYA:AEND_ART <> 'D', 'PGKSYA:AEND_ART <> "D" ID: '  + Str(oPGKSYA:ID)),
+
+   // CM 31.10.2016 -
+   //    Da auch PGKSYA-Sätze mit Änderungsart "Neu" oder "Geändert" als Löschung interpretiert werden
+   //    können, kann es u.U. vorkommen, dass ein Datensatz keine DS_ID hat und hier auftaucht.
+   //    => ein Neuanlage oder Änderungssatz z.B. der Dab240, der auf einen Fehler gelaufen ist, dann
+   //      wurde der FA gelöscht, danach wird die "Änderung" als Löschung interpretiert
+   //    => dieser Fall kann nur für Workarea = 13 eintreten
+   //    => daher hier einfach nichts machen, wenn keine DS_ID vorhanden ist
+
+   if oPGKSYA:DS_WA <> waDab035 then
+      SetErrorIf(oPGKSYA:DS_ID = 0,    'PGKSYA:DS_ID = 0, PGKSYA:DS_WA = ' + Str(oPGKSYA:DS_WA) + ' PGKSYA:ID = '    + Str(oPGKSYA:ID)),
+   endif,
+
+   if oPGKSYA:DS_ID > 0 then
+
+      // Kopfsatz löschen
+      oPGKBDK           := DbGetTable(oDM, waPGKBDK),
+      oPGKBDK.IndexName := 'AUF_WA_ID',     // AUF_WA;AUF_ID
+      if DbSeek({oPGKSYA:DS_WA, oPGKSYA:DS_ID}, oPGKBDK) then
+         MyDelete(oPGKBDK),
+      endif,
+
+      // Positionen löschen
+      oPGKBDP           := DbGetTable(oDM, waPGKBDP),
+      oPGKBDP.IndexName := 'AUF_WA_AUF_ID', // AUF_WA;AUF_ID
+      DbScope({oPGKSYA:DS_WA, oPGKSYA:DS_ID}, {oPGKSYA:DS_WA, oPGKSYA:DS_ID}, oPGKBDP),
+      DbGoTop(oPGKBDP),
+      while not NoDs(oPGKBDP) do
+         MyDelete(oPGKBDP),
+      end,
+      DbScope(, oPGKBDP),
+
+   endif,
+end,
+

@@ -1,0 +1,85 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm ist eine Sammlung an globalen Funktionen, die
+//               für die Individuelle Online Hilfe benötigt werden.
+//
+//               Das Präfix IOHU_* steht für Individuelle Online-Hilfe Utils und
+//               ist jeder zugehörigen Funktion und Variable vorangestellt.
+//               Dies ermöglicht ein
+//               einfaches zuordnen der Funktion zu diesem Programmpaket.
+//##############################################################################
+//##############################################################################
+
+| gl_IOHU_HelpMemoSQLStatement:_C:='', gl_IOHU_HelpMemoFieldName:_C:='' |
+
+
+//##############################################################################
+//##############################################################################
+// Initialisierung der globalen Variablen
+//##############################################################################
+//##############################################################################
+
+gl_IOHU_HelpMemoFieldName    := 'MEMO',
+gl_IOHU_HelpMemoSQLStatement := 'SELECT ' + crlf +
+                               '   ' +
+                                  gl_IOHU_HelpMemoFieldName + ', ' +
+                                  'MEMO_ID, ' +
+                                  'BETREFF, ' +
+                                  'PLATZ, ' +
+                                  'ERSTELLT, ' +
+                                  'GEAEND_USR, ' +
+                                  'GEAENDERT' + crlf +
+                               'FROM ' + DbSqlTableName(waDab065)                                                              + crlf +
+                               'WHERE '                                                                                        + crlf +
+                               '',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// INTERNE FUNKTION. NICHT DIREKT VERWENDEN!
+// Bitte folgende Funktionen verwenden:
+//    • IOHU_ShowOnlineHelpGUI()
+//    • IOHU_ShowOnlineHelpGUI_GoTo()
+// Beschreibung:
+//    Diese Funktion ermöglich das öffnen/aktualisieren der
+//    "Individuellen Online Hilfe".
+//    Wird hier eine MemoID übergeben, wird versucht diese im Browser der GUI
+//    zu positionieren.
+// @Result: null
+//******************************************************************************
+function _IOHU_Internal_ShowOnlineHelpGUI(cOnlineHelpSQLWhere, nGoToMemoID)     prs('IOHU_Internal_ShowOnlineHelpGUI', 'START'),
+   // Sicherstellen, dass die Online Hilfe GUI existiert. Wenn nicht ordentliche
+   // Fehlermeldung
+   if not Lookup(waDABPRG, 'BEZ', {{'Tools\Individuelle Online Hilfe\GUI'}}, True, False) then
+      MessageDlg('Die Individuelle Online Hilfe ist nicht installiert.', mtInformation),
+   else
+      Result := CallPersist('Tools\Individuelle Online Hilfe\GUI',
+                            cOnlineHelpSQLWhere,
+                            nGoToMemoID),
+   endif,                                                                       prs('IOHU_Internal_ShowOnlineHelpGUI', 'END'),
+end,
+
+//******************************************************************************
+// Beschreibung:
+//    Diese Funktion ermöglicht das öffnen/aktualisieren der
+//    Individuellen Online Hilfe.
+// @Result: null
+//******************************************************************************
+function _IOHU_ShowOnlineHelpGUI(cOnlineHelpSQLWhere)                           prs('IOHU_ShowOnlineHelpGUI', 'START'),
+   IOHU_Internal_ShowOnlineHelpGUI(cOnlineHelpSQLWhere, -1),                    prs('IOHU_ShowOnlineHelpGUI', 'END'),
+end,
+
+//******************************************************************************
+// Beschreibung:
+//    Diese Funktion ermöglicht das öffnen/aktualisieren der
+//    Individuellen Online Hilfe, mit dem Zusatz ein bestimmes Memo zu
+//    positionieren
+// @Result: null
+//******************************************************************************
+function _IOHU_ShowOnlineHelpGUI_GoTo(cOnlineHelpSQLWhere, nGoToMemoID)         prs('IOHU_ShowOnlineHelpGUI_GoTo', 'START'),
+   IOHU_Internal_ShowOnlineHelpGUI(cOnlineHelpSQLWhere, nGoToMemoID),           prs('IOHU_ShowOnlineHelpGUI_GoTo', 'END'),
+end,

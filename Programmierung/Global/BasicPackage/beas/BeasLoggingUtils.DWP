@@ -1,0 +1,170 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung: Sammlung globaler Hilfs-Funktionen zum strukturierten Schreiben
+//               von beas Logs.
+//               Der Funktions-Präfix 'BU' steht für 'Beas Utils'.
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_GU_Log_nCurrentLogIndentLevel:_N,
+   gl_GU_Log_aFunctionTimer:_U
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten/Variablen
+//##############################################################################
+//##############################################################################
+
+gl_GU_Log_nCurrentLogIndentLevel := 0,
+gl_GU_Log_aFunctionTimer         := {},
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Setzt die Einrückungstiefe zurück
+//******************************************************************************
+function _BU_Log_ResetLogLevel()
+   gl_GU_Log_nCurrentLogIndentLevel := 0,
+   ReDim(gl_GU_Log_aFunctionTimer, 0),
+end,
+
+//******************************************************************************
+// Berechnet einen String mit allen Infos aus dem übergebenen Array für die
+// Log-Ausgabe
+// z.B. '|---Funktion1 => Funktion2 => '
+//******************************************************************************
+function _BU_Log_CalculateLogString_Internal(cFunctionInfo)
+| i |
+   Result := '',
+   for i := 1 to gl_GU_Log_nCurrentLogIndentLevel do
+      Result += '|' + StringOfChar('-', 3),
+   next,
+
+   if not empty(cFunctionInfo) then
+      Result += cFunctionInfo + ' => ',
+   endif,
+end,
+
+//******************************************************************************
+// Logging mit erhöhung der Einrückung starten (z. B. für Funktions-Beginn)
+// Ergibt z.B.
+//    '|Funktion1 => START' oder auch
+//    '|---Funktion2 => START'
+//******************************************************************************
+function _BU_Log_Start(cCurrentSectionDescription)
+| cLogString |
+
+   cLogString := BU_Log_CalculateLogString_Internal(cCurrentSectionDescription) + 'START',
+
+   if EditorMode() then
+      writeln(cLogString),
+   else
+      Log(cLogString, llDebug),
+   endif,
+
+   // Einrückung erhöhen
+   gl_GU_Log_nCurrentLogIndentLevel++,
+
+   // Start-Zeit merken
+   AAdd(gl_GU_Log_aFunctionTimer, GetExTimer()),
+end,
+
+//******************************************************************************
+// Logging für eine Ebene abschließen hierbei wird zusätzlich die benötigte Zeit
+// angegeben.
+// Ergibt z.B.
+//    '|Funktion1 => END (100 ms)' oder auch
+//    '|---Funktion2 => END (100 ms)'
+//******************************************************************************
+function _BU_Log_End(cCurrentSectionDescription)
+| cLogString, nTimeSinceStart |
+
+   // Einrückung verringern
+   gl_GU_Log_nCurrentLogIndentLevel--,
+   if gl_GU_Log_nCurrentLogIndentLevel < 0 then
+      BU_Log_ResetLogLevel(),
+   endif,
+
+   cLogString := BU_Log_CalculateLogString_Internal(cCurrentSectionDescription) + 'END',
+
+   // Benötigte Zeit anhängen
+   if ALen(gl_GU_Log_aFunctionTimer) > 0 then
+      nTimeSinceStart := GetExTimer() - gl_GU_Log_aFunctionTimer[ALen(gl_GU_Log_aFunctionTimer)],
+      cLogString += ' (' + FormatStd(Round(nTimeSinceStart * 1000, 2), 0) + ' ms)',
+      ADelete(gl_GU_Log_aFunctionTimer, ALen(gl_GU_Log_aFunctionTimer)),
+   endif,
+
+   if EditorMode() then
+      writeln(cLogString),
+   else
+      Log(cLogString, llDebug),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion zum Loggen von Informationen ohne, dass die Log-Ebene verändert wird
+//******************************************************************************
+function _BU_Log_Info(cLoggingInfos)
+| cLogString |
+   cLogString := BU_Log_CalculateLogString_Internal('') + cLoggingInfos,
+   if EditorMode() then
+      writeln(cLogString),
+   else
+      Log(cLogString, llDebug),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion zum Loggen des aktuellen Zustands einer Tabelle
+//******************************************************************************
+function _BU_Log_TableStatus(oTable)
+| oBookMark, i, aIndexList, cIndexExpression, cIndexCondition, cLogText |
+   cLogText := '',
+
+   // Aktuell verwendete Indexfelder ermitteln
+   aIndexList       := DBIndexList(oTable.Workarea),
+   cIndexExpression := '',
+   cIndexCondition  := '',
+   for i := 1 to ALen(aIndexList) do
+      if aIndexList[i, 2] == oTable.IndexName then
+         cIndexExpression := aIndexList[i, 3],
+         cIndexCondition  := aIndexList[i, 4],
+         break,
+      endif,
+   next,
+
+   oBookMark := GetBookMarkEx(oTable),
+   startseq
+      cLogText := 'Name:          ' + oTable.Name                   + CRLF +
+                  'AliasName:     ' + oTable.AliasName              + CRLF +
+                  'Tabelle aktiv: ' + ToString(oBookMark.Active)    + CRLF +
+                  'Index:         ' + AllTrim(oBookMark.IndexOrder) + CRLF +
+                  '   Ausdruck:      ' + cIndexExpression              + CRLF +
+                  '   Bedingung:     ' + cIndexCondition               + CRLF +
+                  CRLF +
+                  'Filter'                                        + CRLF +
+                  '   aktiv:     ' + ToString(oBookMark.Filtered) + CRLF +
+                  '   Filter:    ' + AllTrim(oBookMark.Filter)    + CRLF +
+                  '   AdsFilter: ' + AllTrim(oBookMark.AdsFilter) + CRLF +
+                  CRLF +
+                  'Scope / Range'                                                 + CRLF +
+                  '   Scope (alt):         ' + ToString(oBookMark.IsScope)        + CRLF +
+                  '   Range:               ' + ToString(oBookMark.IsRange)        + CRLF +
+                  '   TopScope:            ' + AllTrim(oBookMark.TopScope)        + CRLF +
+                  '   BottomScope:         ' + AllTrim(oBookMark.BottomScope)     + CRLF +
+                  '   TopKeyFieldCount:    ' + ToString(oBookMark.TopKeyFldCount) + CRLF +
+                  '   BottomKeyFieldCount: ' + ToString(oBookMark.BottomKeyFldCount),
+
+      BU_Log_Info(cLogText),
+   always
+      DestroyObject(oBookmark),
+   stopseq,
+end,

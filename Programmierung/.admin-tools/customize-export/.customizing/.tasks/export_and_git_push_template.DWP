@@ -1,0 +1,18 @@
+|
+   m_cRepoPath, m_cGitPortablePath, m_cGitUser, m_cGitToken, m_cGitUrl,
+   m_cSystemMatchcode, m_cInstanceMatchcode, m_cInstanceType
+|
+
+m_cGitPortablePath   := 'XY\PortableGit\bin',
+m_cRepoPath          := '',
+m_cGitUser           := '',
+m_cGitToken          := '',
+m_cGitUrl            := '',
+m_cSystemMatchcode   := '', // Kundenmatchcode
+m_cInstanceMatchcode := '', // Name der Instanz
+m_cInstanceType      := '', // Type: PRODUCTION | DEVELOPMENT | TRAINING
+
+
+
+call('.admin-tools\customize-export\task_export_and_git_push', m_cRepoPath, m_cGitPortablePath, m_cGitUrl, m_cGitUser, m_cGitToken,
+   m_cSystemMatchcode, m_cInstanceMatchcode, m_cInstanceType)

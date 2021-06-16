@@ -1,0 +1,176 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Auswahldialog für Merkmalstabellen
+//
+// Parameter:
+//  - m_oDM:     Datenmodul, um die DabMTA zu öffnen
+//  - m_nPreset: Vorauswahl einer Merkmalstabelle
+//
+// TODO: Suchfunktionalität implementieren!
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nPreset:P2,
+   m_oMainTable,
+   m_nResult,
+   m_bSelected
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Merkmalstabelle auswählen
+// @Result: integer, ID der Merkmalstabelle
+//******************************************************************************
+function ShowAttribTableSelectionDialog(oDM, nPreset)
+| oFormMMT, oGrid, oSearch, ds_DabMTA |
+   Result   := 0,
+   oFormMMT := CreateObject('TFormEx', 'FormChooseAttribTable'),
+   startseq
+      oFormMMT.OrigCapt := 'Merkmalstabelle auswählen',
+      oFormMMT.Width    := 351,
+      oFormMMT.Height   := 600,
+      // Search-Edit erzeugen
+      oSearch                  := CreateObject('TBeSearchEdit', 'edt_Search', oFormMMT, oFormMMT),
+      oSearch.Text             := '',
+      oSearch.Align            := alTop,
+      oSearch.AlignWithMargins := True,
+      oSearch.Margins.Bottom   := 0,
+      oSearch.TextHintProperties.TextHint := 'Suchen',
+      oSearch.Font.Name        := 'Segoe UI',
+      AssignEvent(oSearch, 'OnKeyPress',      'edt_SearchKeyPress'),
+      AssignEvent(oSearch, 'OnSearchExecute', 'edt_SearchSearchExecute'),
+      // DabMTA holen
+      m_oMainTable           := DbGetTable(oDM, waDabMTA, 'DABMTA'),
+      m_oMainTable.IndexName := 'TAB_ID',
+      // DataSource erzeugen
+      ds_DabMTA         := CreateObject('TDataSourceEx', 'ds_DabMTA', oFormMMT, oFormMMT),
+      ds_DabMTA.DataSet := m_oMainTable,
+      // Browser erzeugen
+      oGrid                  := CreateObject('TBeAltGrid', 'grd_MMT', oFormMMT, oFormMMT),
+      oGrid.Align            := alClient,
+      oGrid.AlignWithMargins := True,
+      oGrid.DataSource       := ds_DabMTA,    // DataSource zuweisen
+      oGrid.RegisterDataSet  := m_oMainTable, // DataSet im Browser registrieren
+      oGrid.ID               := 'ATTRADO',    // Default-Browser für DabMTA
+      oGrid.ReadWriteProps   := 0,
+      AssignEvent(oGrid, 'OnKeyPress', 'GridAttribTables_KeyPress'),
+      AssignEvent(oGrid, 'OnDblClick', 'GridAttribTables_DblClick'),
+
+      DbSeek({nPreset}, m_oMainTable),
+
+      ShowModal(oFormMMT),
+      if m_bSelected then
+         Result := m_oMainTable:TAB_ID,
+      endif,
+   always
+      DestroyObject(oFormMMT),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Key-Press im Such-Eingabefeld
+//******************************************************************************
+function edt_SearchKeyPress( Sender, cKey )
+   case Asc(cKey)
+     // ESC => Fenster schließen, wenn Suchtext leer
+     // (erstes Mal ESC drücken macht den Suchtext ggf. erst leer)
+     of 27 ::
+        if Empty(Sender.Text) then
+           m_bSelected := False,
+           CloseForm(GetOwner(Sender)),
+        endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Beim Ausführen der Volltextsuche
+//******************************************************************************
+function edt_SearchSearchExecute( Sender )
+| cSearchText, nID, cFilter |
+
+   cSearchText := AllTrim(Sender.Text),
+   if Empty(cSearchText) then
+      m_oMainTable.Filtered := False,
+      m_oMainTable.Filter   := '',
+      DbRefresh(m_oMainTable),
+   else
+      cFilter := '',
+      if Upper(Left(cSearchText, 3)) == 'ID:' then
+         nID     := Val(SubStr(cSearchText, 4)),
+         cFilter := 'TAB_ID = ' + Str(nID),
+      else
+         cFilter := 'CONTAINS(BEZ,"' + cSearchText + '*")',
+      endif,
+
+      WriteLn('cFilter: ' + cFilter),
+      m_oMainTable.Filtered := False,
+      m_oMainTable.Filter   := cFilter,
+      m_oMainTable.Filtered := True,
+   endif
+end,
+
+//******************************************************************************
+// Event: Key-Press im Browser
+//******************************************************************************
+function GridAttribTables_KeyPress( Sender, cKey )
+   WriteLn(Asc(cKey)),
+   case Asc(cKey)
+      // Enter => Fenster mit Auswahl schließen
+      of 13 ::
+         m_bSelected := True,
+         CloseForm(GetOwner(Sender)),
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Browser
+//******************************************************************************
+function GridAttribTables_DblClick( Sender )
+   m_bSelected := True,
+   CloseForm(GetOwner(Sender)),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_bSelected := False,
+m_nResult   := 0,
+startseq
+   // Um den Dialog in der Programmierumgebung testen zu können:
+   // Globales Datenmodul verwenden.
+   if EditorMode() then
+      m_oDM := gl_oDM,
+   endif,
+
+   SetErrorIf(Empty(m_oDM), 'Erwarte Datenmodul als Parameter 1 (P1)!'),
+   m_nResult := ShowAttribTableSelectionDialog(m_oDM, m_nPreset),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + CRLF +
+              GetErrorText()                     + CRLF + CRLF +
+              DebugArr(GetErrorStack(True)), mtError),
+stopseq,
+
+m_nResult
+

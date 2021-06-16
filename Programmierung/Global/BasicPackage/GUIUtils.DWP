@@ -1,0 +1,872 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die GUI-Programmierung
+//
+//  ( dieses Funktionssammlung enthält Funktionen, die ehemals in
+//    "Global\Utils" zu finden waren )
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt ein übergebenes Control auf der ebenfalls übergebenen
+// Maske als aktiv (Sonderlogik für angedockte F12-Fenster)
+// @Result: null
+//******************************************************************************
+function _MyFocusControl(oForm, oControl)
+| oParentForm, oParent, oPageControl |
+   // ActiveControl muss immer auf dem nächst höheren Formular aufgerufen werden
+   // wenn es ein übergeordnetes gibt.
+   oParentForm := GetParentForm(oForm),
+
+   oParent := GetParent(oControl),
+   while (oParent <> nil) do
+      if (Upper(ClassName(oParent)) = 'TBETABSHEET' or Upper(ClassName(oParent)) = 'TTABSHEET')
+             and (GetParent(oParent) <> nil)
+          then
+          oParent.TabVisible      := true,
+          oPageControl            := GetParent(oParent),
+          oPageControl.ActivePage := oParent,
+      endif,
+
+      oParent := GetParent(oParent),
+   end,
+
+   // Control auf dem entsprechenden Formular aktiv setzen
+   if oParentForm <> nil then
+      oParentForm.ActiveControl := oControl,
+   else
+      // Im nicht gedockten Zustand des übergebenen Formulars
+      oForm.ActiveControl := oControl,
+   endif,
+end,
+
+//******************************************************************************
+// Findet oder erzeugt ein Control
+// @Result: null
+//******************************************************************************
+function _MakeControl( aClass, aName, aOwner, aParent)
+| aTest |
+   aTest := FindObject(aParent, aName),
+   if Empty(aTest) then
+      Result := CreateObject( aClass, aName, aOwner, aParent),
+   else
+      Result := aTest,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: Integer
+//******************************************************************************
+function _RightOf(oCtrl)
+   Result := oCtrl.left + oCtrl.width,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _RefreshAllEdits(oMask, oDetailTab)
+| oFields, i, oField, oCtrl |
+   oFields:=DbFieldList(oMask.WorkArea),
+   for i:=1 to ALen(oFields) do
+      oField:=DbField(oFields[i,1], oDetailTab),
+      oCtrl:=FindFieldComponent(oMask, oField, "TBeEdit"),
+      if !empty(oCtrl) then
+         RefreshReadOnlyColor(oCtrl),
+      endif,
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: Array
+//******************************************************************************
+function _GetComboArray(oTable, cFieldData, cFieldShow, nMode)  //Erzeugt  Array für Combo ..
+                                                //auf GetList für Tabelle ..
+                                                //nMode: 1: ID steht am Anfang
+                                                //Weitere Modi bei Bedarf
+| aItems |
+   dbGotop(oTable),
+   aItems:={{1,0}},
+   aadd(aItems, ''),
+   While !eof(oTable),
+      AAdd(aItems, Trim(ToString(AsVariant(cFieldData, oTable))) + ' ' + Trim(ToString(AsVariant(cFieldShow, oTable)))),
+      DbSkip(1, oTable)
+   end,
+   Result := aItems,
+end,
+
+//******************************************************************************
+// Gibt an, welche ID gewählt wurde
+// @Result: String
+//******************************************************************************
+function _GetComboArrayID(aArray)
+| cBuf |
+   cBuf   := aArray[aArray[1,1]+1],
+   Result := strtoken(cBuf, ' ', 1),
+end,
+
+//******************************************************************************
+//
+// @Result: Integer / Array
+//******************************************************************************
+function _SetComboArrayID(uID, aArray) // Setzt ein ComboBox-Array auf den übergebenen Wert ..
+                                       // Refresh Get muß noch erfolgen
+| i, bFound |
+   Result := 0,
+   if empty(uID) then
+      aArray[1,1]:=1,
+      Result := aArray,
+      exit,
+   endif,
+   bFound:=False,
+   for i:=2 to alen(aArray) do
+      if trim(strtoken(aArray[i], ' ', 1))==trim(uID) then
+         aArray[1,1]:=i-1,
+         bFound:=true,
+      endif,
+   end,
+   if !bFound then
+      aArray[1,1]:=1,
+   endif,
+   Result := aArray,
+end,
+
+//******************************************************************************
+//
+// @Result: Boolean
+//******************************************************************************
+function _ControlActive(oCtrl) //Gibt an, ob das Control den Focus bekommen kann
+   Result := oCtrl.enabled and oCtrl.Visible and not oCtrl.ReadOnly,
+end,
+
+//******************************************************************************
+//
+// @Result: Array
+//******************************************************************************
+function _ComboBoxExArray(oTable, cID, cShow, cMode) // Gibt ein Array für ComboBoxEx zurück..
+                                                     // cMode: 'I' : Suche nach ID, 'V': Vorbelegung mit 1. Wert
+| aRes, cBuf |
+   DbGotop(oTable),
+   if 'V' $ cMode then
+      aRes:={{AsVariant(cID, oTable), GCTCOMBOEX}},
+   else
+      aRes:={{'', GCTCOMBOEX}},
+   endif,
+   while !eof(oTable) do
+      if 'I' $ cMode then
+         cBuf:=ToString(AsVariant(cID, oTable)) + ' ' + AsVariant(cShow, oTable),
+      else
+         cBuf:=ToString(AsVariant(cShow, oTable)),
+      endif,
+      aadd(aRes, {cBuf, ToString(AsVariant(cID, oTable))}),
+      dbskip(1, oTable),
+   end,
+   Result := aRes,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _ComboFill(oControl, cID, cText, oDS, cMode) // Füllen einer F12-Combobox
+| aArray, cStr |
+
+   aArray:={},
+   dbgotop(oDS),
+   while !eof(oDS) do
+      cStr:=trim(AsVariant(cText, oDS)) + chr(9) +  trim(ToString(AsVariant(cID, oDS))),
+      aadd(aArray, cStr),
+      dbskip(1, oDS),
+   end,
+   oControl.Items:=aArray,
+end,
+
+//******************************************************************************
+//
+// Funktionen für Workaround RichText in GetListen
+// @Result: RichText-Instanz
+//******************************************************************************
+function _RichTextCreate(oGetList, nLeft, nTop, nWidth, nHeight, cLabel, nCaptionLeftTop, lLabelTop)
+| aRichText, oDS, oPanel, oControl, oLabel, oDAB, oMemTable |
+
+   oMemTable:=CreateObject('TMemCalcTable'),
+   AddMemField(oMemTable,'X_KOMM', 'M', 1,0),
+   oMemTable.Active:=true,
+
+   MyAppend(oMemTable),
+   MyPost(oMemTable),
+
+   oDS:=CreateObject('TDataSource'),
+   oDS.DataSet:=oMemTable,
+
+   oPanel:=CreateObject('TPanel', ,oGetList.GetForm, oGetList.GetForm.ScrollBox),
+   oPanel.left:=nLeft,
+   oPanel.top:=nTop,
+   oPanel.Width:=nWidth,
+   oPanel.Height:=nHeight,
+
+   oLabel:=CreateObject('TLabel',,oGetList.GetForm, oGetList.GetForm.ScrollBox),
+   oLabel.Caption:=cLabel,
+   oLabel.Left:=nCaptionLeftTop,
+   oLabel.Top:=nTop,
+   oLabel.Width:=nLeft-nCaptionLeftTop,
+   oLabel.Font.Size:=10,
+   oLabel.Font.Style:=1,
+
+   oControl:=CreateObject('TBeRichEditEx', ,oPanel, oPanel),
+   oControl.Left:=0,
+   oControl.Top:=0,
+   oControl.Width:=oPanel.Width,
+   oControl.Height:=oPanel.Height,
+   oControl.DataSource:=oDS,
+   oControl.DataField:='X_KOMM',
+   oControl.TextOnly:=false,
+
+   oControl.Font.size:=10,
+   oControl.Font.Name:='Arial',
+
+   aRichText:={},
+   aadd(aRichText, oControl),
+   aadd(aRichText, oLabel),
+   aadd(aRichText, oMemTable),
+   aadd(aRichText, oPanel),
+   aadd(aRichText, oDS),
+
+   Result := aRichText,
+end,
+
+//******************************************************************************
+//
+// @Result: String
+//******************************************************************************
+function _RichTextValue(oRichText)
+| oBuf |
+   oBuf   := oRichText[3],
+   Result := oBuf:X_KOMM,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _RichTextSetValue(oRichEdit, cValue)
+| oBuf |
+   oBuf := oRichEdit[3],
+
+   if !EditModes(oBuf) then
+      DbEdit(oBuf),
+   endif,
+   oBuf:X_KOMM := cValue,
+   MyPost(oBuf),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _RichTextVisible(oRichEdit, lVisible)
+| oBuf |
+   oBuf         := oRichEdit[4],
+   oBuf.visible := lVisible,
+   oBuf         := oRichEdit[2],
+   oBuf.visible := lVisible,
+end,
+
+//******************************************************************************
+//
+// @Result: Browser-Instanz
+//******************************************************************************
+function _CreateAltGrid(oTable, cID, oOwner, oParent)
+| oDS, oBrowser |
+
+   oDS:=CreateObject('TDataSource', 'oDS' + cID, oOwner, oOwner),
+   oDS.DataSet:=oTable,
+
+   oBrowser:=CreateObject('TBEAltGrid', 'oBrowser' + cID, oOwner, oParent),
+   oBrowser.ExecLoaded := True,
+   oBrowser.ID := cID,
+   oBrowser.DataSource := oDS,
+   oBrowser.ReadWriteProps := 0,
+
+   Result := oBrowser,
+end,
+
+//##############################################################################
+//##############################################################################
+//
+// Sammlung sonstiger globaler Funktionen für die GUI-Programmierung
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'GU' steht für 'Gui Utils'
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zeigt den Standard-Image-List Editor an
+// @Result: Array {Status des Dialogs (mrOK, mrCancel, mrAbort),
+//                 Index Image-Liste,
+//                 Image-Index,
+//                 Indi Image-Liste wurde verändert}
+//******************************************************************************
+function _GU_ShowBeImageListEditor(nListIndex, nImageIndex)
+| oImgListEditor, nDlgResult |
+   Result := {},
+
+   oImgListEditor := CreateObject('TBeCbImageListEditor', 'CbImgEditor'),
+   startseq
+      // ggf. Liste und Image-Index vorbelegen
+      oImgListEditor.CbListIndex  := nListIndex,
+      oImgListEditor.CbImageIndex := nImageIndex,
+
+      nDlgResult := ShowModal(oImgListEditor),
+
+      Result     := {nDlgResult,
+                     oImgListEditor.CbListIndex,
+                     oImgListEditor.CbImageIndex,
+                     oImgListEditor.CbChanged}
+   always
+      DestroyObject(oImgListEditor)
+   stopseq,
+end,
+
+//******************************************************************************
+// Zum Artikel-Typ den ImageIndex berechnen
+// -> Funktion ist schneller als ein "AttribImageInfo(102024, DAB010:ARTTYP)"-Aufruf
+// => für mehr Performance in Browsern
+// @Result: Integer
+//******************************************************************************
+function _GU_ArtTypImageIndex(cArtikelTyp)
+   Result := -1,
+   case cArtikelTyp
+      of 'M'  :: Result := 247, // Endprodukt
+      of 'B'  :: Result := 247, // Baugruppe
+      of 'U'  :: Result := 253, // Unterbaugruppe
+      of 'T'  :: Result := 246, // Kaufteil
+      of 'H'  :: Result := 552, // Setartikel
+      of 'V'  :: Result := 552, // Variante
+      of 'A'  :: Result := 251, // Arbeitswert
+      of 'E'  :: Result := 252, // Externleistung
+    endcase,
+end,
+
+//******************************************************************************
+// Funktion setzt für ein Control alle Farben (die für die Anzeige im
+//   "Bearbeitbaren" und "ReadOnly"-Status relevant sind) auf die übergebene
+//   Farbe nColor. Nutzbar z.B. für den Maskendesigner.
+// @Result: null
+//******************************************************************************
+function _GU_SetAllControlColors(oControl, nColor)
+   nColor := iif(nColor = clNone, clBtnFace, nColor),
+   oControl.Color         := nColor,
+   oControl.DefaultColor  := nColor,
+   oControl.ReadOnlyColor := nColor,
+end,
+
+//******************************************************************************
+// Funktion setzt für ein Filter-Control (Klasse 'TDBIndiFilterEx') den ausgewählten
+// Filter-Eintrag zurück, so dass kein Filter mehr ausgewählt ist
+//   Nutzbar z.B. in einen Button mit der Aufschrift "Filter aufheben" im Maskendesigner.
+// @Result: null
+//******************************************************************************
+function _GU_ClearMaskIndiFilter(oSelf, oOwner, cFilterControlName)
+| oFilterControl, cMaskId |
+   cMaskId        := Right(oSelf.Name, 10),
+   oFilterControl := FindObject(oOwner, cFilterControlName + cMaskId),
+   if not empty(oFilterControl) then
+      if CollCount(oFilterControl.Items) > 0 then
+         oFilterControl.ItemIndex := 0,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-181
+//******************************************************************************
+// Standard Fehlermeldung mit Error-Stack anzeigen
+// ACHTUNG: Im Error-Stack werden die Exception-Messages OHNE Zeilenumbrüche
+//          angezeigt.
+//
+// @Result: ErrorText mit Stack-Informationen
+//******************************************************************************
+function _GU_ShowStdErrorMessage(cErrorMessage:C, oException:O, bQuietMode:B:=false)
+| aErrorStack, cErrorStack, i |
+   aErrorStack := GetErrorStack(True),
+   cErrorStack := '',
+
+   startseq
+      for i := 1 to ALen(aErrorStack) do
+           cErrorStack += '- '     + aErrorStack[i, 1] + '(): ',
+           cErrorStack += 'Zeile ' + Str(aErrorStack[i, 2]) + ': ',
+           cErrorStack += StrTran(aErrorStack[i, 4], crlf, ' '),
+           cErrorStack += ' (' + aErrorStack[i, 3] + ')' + crlf,
+      next,
+   onerror
+     cErrorStack := DebugArr(aErrorStack),
+   stopseq,
+
+   cErrormessage += crlf + GetErrorText(oException) + crlf +
+           'Typ: ' + ClassName(oException) + crlf + crlf +
+           'Error stack: ' + crlf + cErrorStack,
+
+   if not bQuietmode then
+      messagedlg(cerrorMessage,mterror),
+   endif,
+   result := cErrorMessage,
+end,
+
+//******************************************************************************
+// REQ-183
+//******************************************************************************
+// Funktion dient dazu, eine Tabelle, ein DataSource und ein Grid in GUI's zu
+//    verbinden. Dabei werden außerdem Standard-Eigenschaften der Tabelle so
+//    gesetzt, dass die Tabelle für die Nutzung in der GUI optimiert ist.
+// @Result: null
+//******************************************************************************
+function _GU_LinkTableToGUI(oTable:O, oDataSource:O, oGrid:O, cBrowserID:C, bWriteProtocol:L)
+   // Wenn es sich um eine TBeRightsTable handelt -> Rechte-Optionen setzen
+   if ClassOf(oTable, 'TBeRightsTable') then
+      oTable.CheckReadAccess := raFilter,       // Datensatz-Leserechte auswerten
+      oTable.CheckUserRights := True,           // Tabellen- und Feld-Rechte auswerten
+      oTable.ShowRightErrors := true,           // Meldungen wie "Keine Berechtigung zur Neuanlage" an der GUI anzeigen
+      oTable.ShowLockErr     := true,           // Wenn ein Datensatz 4 Sekunden nicht gesperrt werden konnte, dann das
+                                                // "Warte auf Freigage"-Fenster anzeigen - bricht nach 60 Sekunden von selbst ab.
+      oTable.WriteProtocol   := bWriteProtocol, // Stammdatenprotokollierung aktivieren
+   endif,
+
+   oDataSource.DataSet   := oTable,
+   oGrid.DataSource      := oDataSource,    // DataSource zuweisen
+   oGrid.RegisterDataSet := oTable,         // DataSet im Browser registrieren
+   oGrid.ID              := cBrowserID,     // Browser-ID zuweisen
+   oGrid.ReadWriteProps  := 0,              // Defaults laden
+end,
+
+//******************************************************************************
+// REQ-189
+//******************************************************************************
+// Splitter-Daten eines TBePanels ermitteln
+// Die Splitter-Daten umfassen:
+//  * Breite/Höhe des Panels
+//  * Zustand des Splitters (eingeklappt: ssClosed / ausgeklappt: ssOpened)
+//  * Breite/Höhe des Panels bevor der Splitter eingeklappt wurde
+//
+// @Result: array, Splitter-Daten
+//******************************************************************************
+function _GU_TBePanel_GetSplitterData(oPanel:O)
+| nAlignment, nSize |
+   Result := {},
+   // Objekt auf Gültigkeit prüfen
+   SetErrorIf(not ClassOf(oPanel, 'TBePanel'),
+              'Objekt muss vom Typ TBePanel sein!'),
+
+   nAlignment := oPanel.Align,
+   // Wenn das Panel keine Ausrichtung besitzt -> Leeres Array zurückgeben
+   if nAlignment <> alNone then
+      // Entsprechend der Ausrichtung nSize entweder als Breite oder Höhe
+      // ermitteln.
+      case nAlignment
+         of { alLeft, alRight } :: nSize := oPanel.Width,  // vertikal
+         otherwise                 nSize := oPanel.Height, // horizontal
+      endcase,
+      Result := {
+         {nAlignment, // Ausrichtung welche das Panel hat
+          nSize},     // Breite/Höhe
+         oPanel.BeSplitterState, // Zustand des Splitters
+         // Breite/Höhe vor Einklappen des Splitters (ACHTUNG: Die Eigenschaft
+         //   BeSizeBeforeSplitterClose funktioniert aktuell nicht, wird also
+         //   aktuell nicht beachtet!)
+         oPanel.BeSizeBeforeSplitterClose
+      },
+   endif,
+end,
+
+//******************************************************************************
+// REQ-190
+//******************************************************************************
+// Splitter-Daten in ein TBePanel zurückschreiben.
+// (siehe auch Funktion GU_BePanel_GetSplitterData)
+// @Result: null
+//******************************************************************************
+function _GU_TBePanel_SetSplitterData(oPanel:O, aSplitterData:A)
+| nAlignment, nSize, bError |
+
+   bError := False,
+   // Objekt und Array-Format auf Gültigkeit prüfen
+   if not ClassOf(oPanel, 'TBePanel') or  // Objekt muss vom Typ TBePanel sein!
+      ((ValType(aSplitterData) <> 'A') or // Splitter-Daten ungültig!
+       (ALen(aSplitterData) < 2)       or
+       (ALen(aSplitterData[1]) <> 2)) then
+      // Funktion verlassen, keine Exception auslösen, da kein fataler Fehler
+      Exit,
+   endif,
+
+   // Wenn das Panel keine Ausrichtung besitzt -> Keine Daten zürckschreiben
+   if oPanel.Align <> alNone then
+      // Breite/Höhe nur setzen, wenn der Splitter ausgeklappt ist!
+      if aSplitterData[2] = ssOpened then
+         nAlignment := aSplitterData[1, 1],
+         nSize      := aSplitterData[1, 2],
+         // Panel-Alignment muss mit gespeichertem Alignment übereinstimmen
+         if oPanel.Align = nAlignment then
+            // Entsprechend der Ausrichtung nSize entweder als Breite oder Höhe
+            // setzen
+            if ((nAlignment = alLeft) or (nAlignment = alRight)) then
+               oPanel.Width := nSize, // vertikal
+            else
+               if ((nAlignment = alTop) or (nAlignment = alBottom)) then
+                  oPanel.Height := nSize, // horizontal
+               else
+                  bError := True,
+               endif,
+            endif,
+         else
+            bError := True,
+         endif,
+      endif,
+
+      if not bError then
+         oPanel.BeSplitterState := aSplitterData[2],
+
+         if ALen(aSplitterData) > 2 then
+            oPanel.BeSizeBeforeSplitterClose := aSplitterData[3],
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-544
+//******************************************************************************
+// Breite und Höhe eines Strings ermitteln.
+// Dient hauptsächlich dazu, dynamisch lange Strings auf Controls (z.B. Labels)
+// platzieren zu können.
+//
+// HINWEIS:
+//  Falls eine gewünschte maximale Breite für den String übergeben wurde, kann
+//  es sein, dass die Breite des Strings trotzdem größer als die gewünschte
+//  Breite ist, wenn der zu messende String Wörter enthält, die länger als die
+//  gewünschte maximale Breite sind.
+//
+// @Result: array - Breite und Höhe des Strings im Format {<Breite>, <Höhe>}
+//******************************************************************************
+function _GU_MeasureString(cString:C, oFont:O, nFixedWidth:N)
+| oMeasureLabel |
+
+   Result        := {-1, -1},
+   oMeasureLabel := CreateObject('TBeLabel'),
+   startseq
+      // Damit die Breite korrekt berechnet werden kann müssen ggf. die Font-
+      // Einstellungen übernommen werden.
+      if not Empty(oFont) then
+         oMeasureLabel.Font := oFont,
+      endif,
+      // Ggf. maximale Bereite des Labels setzen und WordWrap aktivieren, damit
+      // zu langer Text entsprechend umgebrochen wird.
+      if nFixedWidth > 0 then
+         oMeasureLabel.WordWrap := True,
+         oMeasureLabel.Width    := nFixedWidth,
+      endif,
+      // AutoSize ist zwar per Default True, aber könnte sich ggf. ändern
+      // -> deshalb explizit setzen
+      oMeasureLabel.AutoSize := True,
+      oMeasureLabel.Caption  := cString,
+      Result[1]              := oMeasureLabel.Width,
+      Result[2]              := oMeasureLabel.Height,
+   always
+      DestroyObject(oMeasureLabel),
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion für die Erstellung einer Eingabe-Maske für numerische Werte
+//    für F12-Edits wie z.B. TBeEdit.
+//    Die Funktion "stellt" die Maske von MPicture() nach.
+//
+//    Das Ergebnis kann verwendet werden, um
+//    z.B. TBeEdit.Picture.PictureMask zu definieren.
+//
+//    HINWEIS: Die Funktion kann vmtl. umgeleitet werden, sobald die neue
+//             Standard-Funktion ConvertClipperEditMask() verfügbar ist.
+//
+// @Result: String, z.B. '[#][#][#][#][;,[#][#][#][#]]'
+//******************************************************************************
+function _GU_BuildBeEditPictureMask(nTotal, nDecimals, bAllowNegative)
+| nVorkommaStellen, cVorkommaMask, cNachkommaMask |
+
+   cVorkommaMask    := '',
+   cNachkommaMask   := '',
+
+   nVorkommaStellen := nTotal - nDecimals - iif(nDecimals > 0, 1, 0),
+
+   if nVorkommaStellen > 0 then
+      if bAllowNegative then
+         cVorkommaMask := '[{-,#}]',
+         nVorkommaStellen --, // Reduktion für DBF-Feld-Formate, da hier eine Byte für das Vorzeichen drauf geht !?
+      endif,
+      cVorkommaMask += Replicate('[#]', nVorkommaStellen),
+   else
+      if bAllowNegative then
+         cVorkommaMask := '[-]',
+      endif,
+   endif,
+
+   if nDecimals > 0 then
+      cNachkommaMask := '[;,' + Replicate('[#]', nDecimals) + ']',
+   endif,
+
+   Result           := cVorkommaMask + cNachkommaMask,
+end,
+
+//******************************************************************************
+// Interne Funktion: Springen zum Lieferanten - Sprung zu einem speziellen Reiter
+//         z.B. Dispoplanung oder Bestellrückstände
+//
+//   Parameter:
+//      @cDockingActionName: Name der Action, die das Detail-Fenster aufruft
+//      @cDockingFormName:   Klassenname des Dockings
+//      @cTableName:         Name der Tabellen / Query-Instanz auf dem Fenster, die
+//                           hinter dem Browser liegt
+//      @nLiefnr:            Lieferanten-Nr., ggf. 0
+//      @cIDFieldName:       Feldname in der Zieltabelle, über das positioniert werden soll (z.B. 'ID' oder 'AUTOINC')
+//      @nIDFieldValue:      Wert für Feld @cIDFieldName
+//
+// @Result: Docking-Fenster-Instanz
+//******************************************************************************
+function _GU_Internal_ShowBeWindow_Einkauf(cDockingActionName, cDockingFormName, cTableName, nLiefnr, cIDFieldName, nIDFieldValue)
+| cParams, oAct, oForm, oDetailForm, oDetailTable, oRefreshAction  |
+
+   Result := nil,
+
+   // Lieferantenstamm öffnen
+   //    Hinweis:  kann ohne Lieferant sein (LIEFNR = 0)
+   cParams := iif(nLiefnr = 0, '', Str(nLiefnr)),
+   oForm   := ShowBeWindow(bwSupplier, cParams),
+
+   // Aktion für Dispoplanung / Disposition etc. suchen
+   oAct  := FindObject(oForm, cDockingActionName),
+
+   // Aktion ausführen (Detailfenster öffnen oder in den Vordergrund bringen
+   if not Empty(oAct) and ActionExecute(oAct) then
+
+      oDetailForm := FindObjByClass(oForm, cDockingFormName),
+
+      // Wenn Detail-Fenster vorhanden => dann Datensatz positionieren
+      if not Empty(oDetailForm) then
+         Result       := oDetailForm,
+         oDetailTable := FindObject(oDetailForm, cTableName),
+
+         if not empty(oDetailTable) then
+            if not EditModes(oDetailTable) then
+               // Wenn positionieren des Datensatzes nicht(!) möglich war
+               if not DbLocate(cIDFieldName, {nIDFieldValue}, , oDetailTable) then
+                  // ggf. sind die Daten noch nicht aktuell, weil das Detail-Fenster durch den Master-Table-Skip erst neu geladen werden muss
+                  // => Refresh auslösen
+                  oRefreshAction := FindObject(oDetailForm, "A_Refresh"),
+                  if not empty(oRefreshAction) then
+                     ActionExecute(oRefreshAction),
+                  endif,
+                  if not DbLocate(cIDFieldName, {nIDFieldValue}, , oDetailTable) then
+                     Meld('Der Datensatz konnte im Ziel-Detail-Fenster nicht gefunden werden, ggf. ist ein Filter aktiv? (z.B. Lieferanten- / Abteilungs- / Masken-Filter)'),
+                  endif,
+               endif,
+            else
+               Meld('Das Ziel-Detail-Fenster ist im Bearbeitungsmodus, ein Springen ist in diesem Zustand nicht möglich.'),
+            endif,
+         endif,
+
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion zum Springen in die Einkaufs-Dispositions-Planungs-GUI (Dab315)
+//   Beispiel-Aufruf:   GU_ShowBeWindow_Dab315(0, 'AUTOINC', '555')
+// @Result: Docking-Fenster-Instanz
+//******************************************************************************
+function _GU_ShowBeWindow_Dab315(nLiefNr, cLocateFieldName, uLocateFieldValue)
+   Result := GU_Internal_ShowBeWindow_Einkauf('A_Scheduling',
+                                              'TBeFormPurchaseDispositionPlanning',  // Fenster-Klassenname ab 6.5.65.209
+                                              'qry_DAB315',
+                                               nLiefNr,
+                                               cLocateFieldName,
+                                               uLocateFieldValue
+                                             ),
+end,
+
+//******************************************************************************
+// Funktion zum Springen in die Einkaufs-Dispositions-GUI (Dab320)
+//    Aufruf z.B.   GU_ShowBeWindow_Dab320(12345, 'ID', '555')
+// @Result: Docking-Fenster-Instanz
+//******************************************************************************
+function _GU_ShowBeWindow_Dab320(nLiefNr, cLocateFieldName, uLocateFieldValue)
+   SetErrorIf(nLiefNr <= 0, '(nLiefNr <= 0) not allowed, use only for purchase'),   // nur für den Einkauf notwendig, in die Fertigungs-Dispo Dab320 kann per ShowBeWindow(bwProdDisposition, ...) gesprungen werden.
+   Result := GU_Internal_ShowBeWindow_Einkauf('A_Dispo',
+                                              'TBeFormPurchaseDisposition', // Fenster-Klassenname ab 6.5.65.209
+                                              'qry_DAB320',
+                                               nLiefNr,
+                                               cLocateFieldName,
+                                               uLocateFieldValue),
+end,
+
+//******************************************************************************
+// Funktion zum Springen in die Einkaufs-Bestellrückstände-GUI (Dab035)
+//    Aufruf z.B.   GU_ShowBeWindow_Dab035(12345, 'ID', '555')
+// @Result: Docking-Fenster-Instanz
+//******************************************************************************
+function _GU_ShowBeWindow_Dab035_Einkauf(nLiefNr, cLocateFieldName, uLocateFieldValue)
+   SetErrorIf(nLiefNr <= 0, '(nLiefNr <= 0) not allowed, use only for purchase'),   // nur für den Einkauf
+   Result := GU_Internal_ShowBeWindow_Einkauf('A_BackOrders',
+                                              'TFormSuppBackOrd',
+                                              'Maintable',
+                                               nLiefNr,
+                                               cLocateFieldName,
+                                               uLocateFieldValue),
+end,
+
+//******************************************************************************
+// Funktion zum Springen in die "Produktion - Offene Aufträge"-GUI (Dab035)
+//
+// @Result: Fenster-Instanz
+//******************************************************************************
+function _GU_ShowBeWindow_Dab035_Produktion(cBestPosNr)
+| oProdOrdersForm, oClearFilterAction |
+
+   // Das Fenster wird erst angezeigt, dann wird der ggf. vorhandene Anzeige-Filter
+   // geleert, dann wird versucht, den FA zu positionieren.
+   // -> Macht man das nicht so, kommt erstens ggf. die Meldung "Auftrag befindet
+   //    sich nicht in aktueller Auswahl!" und zweitens kommt anschließend
+   //    eine Fehlermeldung.
+   oProdOrdersForm := ShowBeWindow(bwProduction, ),
+   if not empty(oProdOrdersForm) then
+      Result             := oProdOrdersForm,
+      oClearFilterAction := FindObject(oProdOrdersForm, 'A_ClearFilter'),
+      if not empty(oClearFilterAction) then
+         ActionExecute(oClearFilterAction),
+         if not empty(cBestPosNr) then
+            Result := ShowBeWindow(bwProduction, cBestPosNr),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Öffnen des Versands mit Positionierung auf eine Sendung
+//
+//   Parameter:
+//      @nSendungsNummer: Dab750:SENDUNG
+//
+// @Result: Fenster-Instanz
+//******************************************************************************
+function _ShowBeWindow_Versand(nSendungsNummer:N:=0)
+| oForm, oMainDataSource, oDataModule, oDab750, oDab755 |
+
+   // Prüfen, ob es das Fenster schon gibt -> das passiert aktuell nur, weil es einen Bug gibt -> Edit-Modus in Dab750 wird durch ShowBeWindow() automatisch gepostet...
+   oForm := FindObjByClass(GetAppMainForm(), 'TShippNotesForm'),
+   if empty(oForm) then
+      oForm         := ShowBeWindow(bwShippNotes, ''),
+   else
+      Show(oForm),
+   endif,
+
+   SetErrorIf(empty(oForm) or not ClassOf(oForm, 'TShippNotesForm'), 'ShowBeWindow() did not return expected class. It returned ' + ClassName(oForm)),
+
+   // Haupt-Datasource suchen
+   oMainDataSource := FindObject(oForm, 'DS_MainTable'),
+   SetErrorIf(empty(oMainDataSource) or not ClassOf(oMainDataSource, 'TDataSource'), 'main datasource not found'),
+
+   oDab750 := oMainDataSource.DataSet,
+   SetErrorIf(empty(oDab750), 'main dataset (Dab750) not found'),
+
+   oDataModule := GetOwner(oDab750),
+   SetErrorIf(empty(oDataModule) or not ClassOf(oDataModule, 'TSNDM'), 'datamodule not found'),
+
+   oDab755     := FindObject(oDataModule, 'tbl_Dab755'),
+   SetErrorIf(empty(oDab755), 'position table (Dab755) not found'),
+
+   // Positionierung notwendig?
+   if nSendungsNummer <> oDab750:SENDUNG then
+
+      if EditModes(oDab750) or EditModes(oDab755) then
+         // 98 = txtDetailTableEditing =
+         //   'Der Vorgang ist nicht möglich. Die Tabelle %s kann derzeit nicht neu positioniert werden.' + #13#10 +
+         //   'Gegebenenfalls wird dies durch die Bearbeitung einer abhängigen Tabelle verhindert.';
+         MessageDlg(GetLangTextEx(98, {'Dab750/Dab755'}), mtWarning),
+      else
+         // analog TSNDM.FindDelivery()
+         if not DbSeek({nSendungsNummer}, oDab750) then
+            // 15707 = txtSNSendungNotFound = 'Sendung %s wurde nicht gefunden.';
+            MessageDlg(GetLangTextEx(15707, {nSendungsNummer}), mtError),
+         endif,
+      endif,
+
+   endif,
+
+   Result := oForm,
+end,
+
+//******************************************************************************
+// Setzt ReadOnly von einer Control auf den Wert, selbst wenn das Feld im
+// anderen Status ist. Falls nicht möglich, wird das Control Enabled/Disabled.
+//******************************************************************************
+function _Control_SetReadOnly(oControl:O, bReadOnly:L)
+   startseq
+      oControl.ReadOnlyStateFromField := not bReadOnly,
+      oControl.ReadOnly               := bReadOnly,
+   onerror
+     oControl.Enabled                := not bReadOnly,
+   stopseq,
+end,
+
+//******************************************************************************
+// Setzt ReadOnly von allen Controls in einem Container auf den Wert, selbst
+// wenn das Feld im anderen Status ist. Falls nicht möglich, wird das Control 
+// Enabled/Disabled.
+//******************************************************************************
+function _Container_SetReadOnly(oContainer:O, bReadOnly:L)
+| cControlName, i, oControl |
+   for i := 0 to ControlCount(oContainer) - 1 do
+      cControlName := Upper(ClassName(Controls(oContainer, i))),
+      case cControlName
+         of {'TBEPANEL', 'TPANEL', 'TPAGECONTROL', 'TBEPAGECONTROL', 'TTABSHEET',
+            'TBETABSHEET', 'TBEGROUPPANEL'} ::
+            oControl := Controls(oContainer, i),
+            Container_SetReadOnly(oControl, bReadOnly),
+         otherwise
+            if cControlName <> 'TBELABEL' and cControlName <> 'TLABEL' then
+               oControl := Controls(oContainer, i),
+               Control_SetReadOnly(oControl, bReadOnly),
+            endif,
+      endcase,    
+   next,
+end,
+
+//******************************************************************************
+// Best Practice Fehler-Behandlungs-Funktion für das Abfangen von unerwarteten 
+//   Fehlern in be Oberflächen - MIT Transaktionshandling.
+//    
+//   Typischer Einsatz z.B. in Action-Handlern:
+//
+//       function A_ActionExecute()
+//         BeStartTransaction(m_oDM),
+//         startseq
+//            // ... Verbuchungs-Logik unter Nutzung des Datenmoduls ...
+//            BeCommitTransaction(m_oDM),
+//         onerror
+//            BeGUITransactionAndErrorHandler(m_oDM, GetErrorText(), GetErrorObj()),
+//         stopseq,
+//       end,
+//
+// Die Funktion zeigt einen modalen Fehler-Meldungs-Dialog, der es ermöglicht, 
+//   die Meldung im Detail einzusehen und diese per E-Mail zu verschicken.
+//
+// @Result: null
+//******************************************************************************
+function _BeGUITransactionAndErrorHandler(oDM:O, cErrorText:C, oErrorObject:O, bQuietMode:B:=false)
+   SetErrorIf(empty(oDM), 'Kein Datenmodul übergeben!'),   
+   BeRollbackTransaction(oDM),
+   GU_ShowStdErrorMessage(cErrorText, oErrorObject, bQuietMode),
+end,

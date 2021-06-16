@@ -1,0 +1,221 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält sämtliche globale Konstanten, die für die
+//   EDI-Toolbox benötigt werden.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+|
+   // Standard Trennzeichen in EDI-Nachrichten
+   // TODO: Konstanten in folgendem Block umbenennen: gl_EDI_Default_... -> gl_EDI_Edifact_Default_
+   gl_EDI_Default_ElementSeperator:_C          := '+', // Datenelement-Trennzeichen
+   gl_EDI_Default_CompositeElementSeperator:_C := ':', // Composite-Element Trennzeichen
+   gl_EDI_Default_DecimalSeperator:_C          := ',', // Dezimaltrennzeichen   => hier Stand ein "." => muss im EDI-Verkehr aber ein "," sein
+   gl_EDI_Default_ReleaseIndicator:_C          := '?', // Release-Zeichen (Escape-Zeichen)
+   gl_EDI_Default_ReservedCharacter:_C         := ' ', // Leerzeichen (reserviert, bleibt leer)
+   gl_EDI_Default_SegmentTerminator:_C         := "'", // Segmenttrennzeichen
+   
+   // Merkmalstabellen-IDs
+   gl_EDI_MMTID_ProcessDirection:_N     := 8024,
+   gl_EDI_MMTID_DataTransferProtocol:_N := 8025,
+   gl_EDI_MMTID_ProcessStatus:_N        := 8026,
+   gl_EDI_MMTID_EDIMSG_ProcessStep:_N   := 8027,
+   gl_EDI_MMTID_MessageStandard:_N      := 8028,
+   gl_EDI_MMTID_MessageType:_N          := 8029,
+   gl_EDI_MMTID_TransportChannel:_N     := 8030,
+   gl_EDI_MMTID_Profile:_N              := 8031,
+   gl_EDI_MMTID_PartnerWorkarea:_N      := 8032,
+   gl_EDI_MMTID_EDIDOCL_ProcessStep:_N  := 8033,
+   gl_EDI_MMTID_EDIODC_ProcessStep:_N   := 8034,
+   gl_EDI_MMTID_DataFormat:_N           := 8035,
+
+   // Merkmalstabelle: "EDI: Prozessrichtung"
+   gl_EDI_ProcessDirection_Inbound:_N  := 10, // eingehend
+   gl_EDI_ProcessDirection_Outbound:_N := 20, // ausgehend
+
+   // Merkmalstabelle: "EDI: Datenübertragungsprot."
+   gl_EDI_DataTransferProtocol_FileSystem:_N := 10, // Verzeichnis
+   gl_EDI_DataTransferProtocol_SFTP:_N       := 20, // SFTP
+   gl_EDI_DataTransferProtocol_FTP:_N        := 30, // FTP
+
+   // Merkmalstabelle: "EDI: Prozessschritt (EDIMSG)"
+   gl_EDI_ProcessStep_EDIMSG_Initialized:_N        := 5,   // initialisiert
+   gl_EDI_ProcessStep_EDIMSG_Inbound_Read:_N       := 10,  // Inbound: eingelesen
+   gl_EDI_ProcessStep_EDIMSG_Inbound_Identified:_N := 20,  // Inbound: identifiziert
+   gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed:_N     := 30,  // Inbound: geparst
+   gl_EDI_ProcessStep_EDIMSG_Inbound_Imported:_N   := 40,  // Inbound: importiert
+   gl_EDI_ProcessStep_EDIMSG_Outbound_Created:_N   := 110, // Outbound: erstellt
+   gl_EDI_ProcessStep_EDIMSG_Outbound_Sent:_N      := 120, // Outbound: versendet
+
+   // Merkmalstabelle: "EDI: Prozessschritt (EDIDOCL)"
+   gl_EDI_ProcessStep_EDIDOCL_DocumentListCreated:_N  := 10, // Inbound: Belegliste erstellt
+   gl_EDI_ProcessStep_EDIDOCL_InhouseFormatCreated:_N := 20, // Inbound: Inhouseformat erstellt
+   gl_EDI_ProcessStep_EDIDOCL_MessageCreated:_N       := 30, // Inbound: Nachricht erstellt
+   gl_EDI_ProcessStep_EDIDOCL_MessageSent:_N          := 40, // Inbound: Nachricht versendet
+
+   // Merkmalstabelle: "EDI: Prozessschritt (EDIDOC)"
+   gl_EDI_ProcessStep_EDIDOC_DocumentSelected:_N       := 10, // Inbound: Beleg ausgewählt
+   gl_EDI_ProcessStep_EDIDOC_InhouseFormatCreated:_N   := 20, // Inbound: Inhouseformat erstellt
+   gl_EDI_ProcessStep_EDIDOC_DocumentAddedToMessage:_N := 30, // Inbound: In Nachricht aufgenommen
+
+   // Merkmalstabelle: "EDI: Prozessstatus"
+   gl_EDI_ProcessStatus_Ok:_N       := 10,  // Ok - kein Fehler / keine Warnungen
+   gl_EDI_ProcessStatus_Warning:_N  := 20,  // Warnung(en) vorhanden
+   gl_EDI_ProcessStatus_Error:_N    := 30,  // Fehler vorhanden
+   gl_EDI_ProcessStatus_Canceled:_N := 40,  // Vorgang beendet
+
+   // Merkmalstabelle: "EDI: Standard"
+   gl_EDI_MessageStandard_Individual:_N     := 10,  // individuelles Format
+   gl_EDI_MessageStandard_EdifactD96A:_N    := 110, // EDIFACT: D96A
+
+   // Merkmalstabelle: "EDI: Vorgangsart"
+   gl_EDI_EdifactMessageType_PRICAT:_N := 10, // PRICAT
+   gl_EDI_EdifactMessageType_ORDERS:_N := 20, // ORDERS
+   gl_EDI_EdifactMessageType_ORDRSP:_N := 30, // ORDRSP
+   gl_EDI_EdifactMessageType_ORDCHG:_N := 40, // ORDCHG
+   gl_EDI_EdifactMessageType_DESADV:_N := 50, // DESADV
+   gl_EDI_EdifactMessageType_INVOIC:_N := 60, // INVOIC
+
+   // Merkmalstabelle: "EDI: Datenformat"
+   gl_EDI_DataFormat_XML:_N       := 10, // XML
+   gl_EDI_DataFormat_EDIFACT:_N   := 20, // EDIFACT
+   gl_EDI_DataFormat_PlainText:_N := 30, // Plain-Text
+
+   // Key-Value Mappings
+   gl_EDI_EdifactMessageStandard_Map:_U,
+   gl_EDI_EdifactMessageType_Map:_U,
+
+   // Basis-Pfad für Scripte
+   gl_EDI_ScriptsBasePath:_C := 'EDI\_scripts',
+   gl_EDI_ScriptsPathInbound:_C,
+   gl_EDI_ScriptsPathOutbound:_C,
+
+   // Standard-Dateinamen Datums- und Zeitformate
+   gl_EDI_DefaultFileNameDateFormat:_C := 'YYYY-MM-DD', // z.B: 2018-06-25
+   gl_EDI_DefaultFileNameTimeFormat:_C := 'HH-NN-SS',   // z.B: 11-16-31
+
+   gl_EDI_DefaultFileNamePattern:_C := '@PROFILE_MC@-@ID@-@DATE_CREATED@',
+   gl_EDI_DefaultFileExtension:_C   := 'edi',
+
+   // Maximale Dateigröße für den Inbound-Transport-Prozess (Angabe in Bytes)
+   gl_EDI_InboundTransportMaximumFileSize:_N := 209715200, // => 200 MB
+
+   // Transport - SFTP Authentifizierungstypen
+   gl_EDI_Transport_SFTP_AuthenticationType_Normal:_N  := 1,
+   gl_EDI_Transport_SFTP_AuthenticationType_KeyFile:_N := 2,
+
+   // Transport - Default Ports
+   gl_EDI_Transport_SFTP_DefaultPort:_N := 22,
+   gl_EDI_Transport_FTP_DefaultPort:_N  := 21,
+
+   // Inbound Import löschen - Default Skript
+   gl_EDI_DefaultDeleteSkript:_C := 'EDI\_scripts\inbound\50_delete\standard\edidact_reverse_import'
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_EDI_ScriptsPathInbound  := gl_EDI_ScriptsBasePath + '\inbound',
+gl_EDI_ScriptsPathOutbound := gl_EDI_ScriptsBasePath + '\outbound',
+
+//##############################################################################
+//##############################################################################
+// Mappings
+//##############################################################################
+//##############################################################################
+
+gl_EDI_EdifactMessageStandard_Map := {},
+KVU_Set(gl_EDI_EdifactMessageStandard_Map, 'D96A',    gl_EDI_MessageStandard_EdifactD96A),
+
+gl_EDI_EdifactMessageType_Map := {},
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'PRICAT', gl_EDI_EdifactMessageType_PRICAT),
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'ORDERS', gl_EDI_EdifactMessageType_ORDERS),
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'ORDRSP', gl_EDI_EdifactMessageType_ORDRSP),
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'ORDCHG', gl_EDI_EdifactMessageType_ORDCHG),
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'DESADV', gl_EDI_EdifactMessageType_DESADV),
+KVU_Set(gl_EDI_EdifactMessageType_Map, 'INVOIC', gl_EDI_EdifactMessageType_INVOIC),
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion prüft, ob der übergebene Wert der MMT "EDI: Standard" einen
+// EDIFACT-Standard repräsentiert.
+//
+// @result: boolean
+//******************************************************************************
+function _EDI_Consts_MessageStandard_IsEdifactStandard(nValue:N)
+| i |
+
+   result := false,
+   for i := 1 to ALen(gl_EDI_EdifactMessageStandard_Map) do
+      if gl_EDI_EdifactMessageStandard_Map[i, 2] = nValue then
+         result := true,
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert einen EDIFACT-Standard String (z.B. "D96A") in den
+// entsprechenden EDI-Standard Wert.
+//
+// @result: integer - EDI-Standard
+//******************************************************************************
+function _EDI_Consts_EdifactMessageStandard_ToValue(cEdifactStandardString:C)
+   result := KVU_GetAssert(gl_EDI_EdifactMessageStandard_Map, cEdifactStandardString),
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert einen EDIFACT-Standard in die ntsprechende
+// String-Repräsentierung.
+//
+// @result: string - EDI-Standard als String
+//******************************************************************************
+function _EDI_Consts_EdifactMessageStandard_ToString(nMessageStandard:N)
+| nIndex |
+
+   nIndex := SeekInDimArray(nMessageStandard, gl_EDI_EdifactMessageStandard_Map, 2),
+   if nIndex > 0 then
+      result := gl_EDI_EdifactMessageStandard_Map[nIndex, 1],
+   else
+      result := ''
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert einen EDIFACT-Vorgangsart String (z.B. "ORDERS")
+// in den entsprechenden Vorgangsart-Wert.
+//
+// @result: integer - Vorgangsart
+//******************************************************************************
+function _EDI_Consts_EdifactMessageType_ToValue(cEdifactMessageTypeString:C)
+   result := KVU_GetAssert(gl_EDI_EdifactMessageType_Map, cEdifactMessageTypeString),
+end,
+
+//******************************************************************************
+// Diese Funktion konvertiert eine EDIFACT-Vorgangsart in die entsprechende
+// String-Repräsentierung.
+//
+// @result: integer - Vorgangsart
+//******************************************************************************
+function _EDI_Consts_EdifactMessageType_ToString(nMessageType:N)
+| nIndex |
+
+   nIndex := SeekInDimArray(nMessageType, gl_EDI_EdifactMessageType_Map, 2),
+   if nIndex > 0 then
+      result := gl_EDI_EdifactMessageType_Map[nIndex, 1],
+   else
+      result := '',
+   endif,
+end,
+

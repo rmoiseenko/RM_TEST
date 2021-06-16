@@ -1,0 +1,30 @@
+| oCustomDataSource, cDataSourceName |
+
+//******************************************************************************
+// Event: OnScroll-Update des CB-Panel-DataSource -> "Artikelbild intern" anzeigen
+//******************************************************************************
+function DoOnScroll_Update(Sender)
+   DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update(Self, Sender, true),
+end,
+
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+// Keine Aktion im Design-Modus, sonst entstehen Komponenten, die der Designer speichert
+if not ClassOf(GetOwner(Self), 'TBeMaskDesigner') then
+   if not Empty(Self.DataSource) and ClassOf(Self.DataSource, 'TDataSourceEx') then
+      // Custom-DataSource auf der Artikelstamm-Maske suchen und ggf.
+      // erzeugen, falls es noch nicht existiert.
+      cDataSourceName   := 'ds_CustomArticleImageDataSource',
+      oCustomDataSource := FindObject(Self, cDataSourceName),
+      if Empty(oCustomDataSource) then
+         oCustomDataSource := CreateObject('TDataSourceEx', cDataSourceName, Self),
+      endif,
+
+      AssignEvent(oCustomDataSource, 'OnScroll_Update', 'DoOnScroll_Update'),
+
+      // DataSet zuweisen -> Notwendig, damit beim Scrollen des Artikelstamms
+      // das OnScroll_Update-Event des CustomDataSources ausgeführt wird.
+      oCustomDataSource.DataSet := Self.DataSource.DataSet,
+   endif,
+endif,

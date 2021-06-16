@@ -1,0 +1,190 @@
+//##############################################################################
+//##############################################################################
+//
+// Globale Funktionen mit GUI-Bezug für das Dokumentenmanagement
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Erweiterte ShellExecute()-Funktion mit kurzer Anzeige der "Sanduhr"
+// @Result: null
+//******************************************************************************
+function _DMSU_GUI_ShellExecuteWithWaitEffekt(cOpenCommandOrFileName, bIsHyperlink, bWaitEffekt)
+| nOldCursor |
+   iif(bWaitEffekt, nOldCursor := SetCursor(crHourGlass), ),
+   startseq
+      if bIsHyperlink then
+         ShellExecute(, 'open', cOpenCommandOrFileName),
+      else
+         ShellExecute(cOpenCommandOrFileName),
+      endif,
+
+      // Damit der User den Eindruck eines wartenden Prozesses hat, wird ein
+      // kurzer Sleep ausgelöst
+      // => denn meist braucht die Datei / Hyperlink / Webbrowser eine Weile
+      //    bis es "los" geht
+      iif(bWaitEffekt, Sleep(200), ),
+   always
+      iif(bWaitEffekt, SetCursor(nOldCursor), ),
+   stopseq,
+end,
+
+//##############################################################################
+// Funktionen zur Integration des DMS in die GUI
+//##############################################################################
+
+//******************************************************************************
+// Funktion positioniert eine DmsVer-Tabelle für die Anzeige einer Bild-Datei,
+//    welche für eine Artikel-Nr. als "internes Artikelbild" klassifiziert ist.
+//
+//  TODO: Diese Funktion interessiert sich aktuell nicht für den Versions-Strang eines
+//        Dokuments, wenn es also z.B. eine zweite Version eines Artikelbildes gibt, wird
+//        dennoch die erste angezeigt
+//
+// @Result: "internes Artikelbild" vorhanden ja/nein
+//******************************************************************************
+function _DMSU_GUI_Integration_FindInternalPictureForArticle(oDmsVer, oDmsBsp, bUseThumbnail, cArtnr)
+| nArticleId, bFound, cGuid |
+   bFound     := false,
+   nArticleId := LooKup(waDab010, 'DAB011', {{cArtnr}}, 'ID', 0),
+
+   if nArticleId > 0 then
+      oDmsVer.IndexName := 'WORKAREA',
+
+      DbScope({waDab010, nArticleId}, {waDab010, nArticleId}, oDmsVer),
+      DbGoTop(oDmsVer),
+      while not EoF(oDmsVer) and not bFound do
+         if '/' + Str(gl_DMSU_DokumentenVerwendung_ArtikelbildIntern) + '/' $ ('/' + oDmsVer:VERWENDUNG + '/') and empty(oDMSVER:LOESCH_USR) then // Dokument finden, welches als "internes Artikelbild" klassifiziert wurde
+            if ('/' + AllTrim(oDmsVer:FILE_TYPE) + '/') $ DMSU_GetGraphicFileTypes() then // ist das Dokument ein Bild?
+               if oDmsVer:ART = gl_DMSU_DokumentenArt_File then
+                  // Im Falle einer Datei muß die DmsBsp positioniert werden
+                  cGuid := iif(bUseThumbnail, oDmsVer:T_GUID_STR, oDmsVer:D_GUID_STR),
+                  if not empty(cGuid) then // eigentlich sollte es immer ein DATA und THUMB-GUID geben... nur zur Sicherheit
+                     oDmsBsp.IndexName := 'GUID_STR',
+                     MySeek({cGuid}, oDmsBsp),
+                  endif,
+               endif,
+               bFound := true,
+            endif,
+         endif,
+         if not bFound then
+            DbSkip(1, oDmsVer),
+         endif,
+      end,
+   endif,
+
+   Result := bFound,
+end,
+
+//******************************************************************************
+// Funktion kann in einem Codeblock-Panel eingesetzt werden, um auf einer
+//    designbaren Maske das "Interne Artikelbild" anzuzeigen.
+// @Result: null
+//******************************************************************************
+function _DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update(oCodeblockPanel, oDataSource, bUseThumbNail, cArtnrFieldName:_C:='')
+| oMainTable, cMasterArtnr, pnl_DebugInfo, oDbBlockImage,
+  oDmsVer, oDmsVerDataSource, oDmsBsp, oDmsBspDataSource, bInternalArticlePictureFound |
+                                                                                // prs('DMSU_GUI_ArticlePictureOnMask_HandleCodeblockPanel_OnScroll_Update', 'START'),
+   if not empty(oCodeblockPanel) and not empty(oDataSource.DataSet) then
+      oMainTable := oDataSource.DataSet,
+
+      // #1) Objekte finden bzw. neu erzeugen ----------------------------------
+
+      pnl_DebugInfo                  := FindObject(oCodeblockPanel,    'DMS_DEBUG_PANEL'),
+      if empty(pnl_DebugInfo) then
+         pnl_DebugInfo               := CreateObject('TBePanel',       'DMS_DEBUG_PANEL', oCodeblockPanel, oCodeblockPanel),
+         pnl_DebugInfo.Align         := alBottom,
+         pnl_DebugInfo.Height        := 20,
+         pnl_DebugInfo.BevelOuter    := bvNone,
+         pnl_DebugInfo.Color         := clInfoBk,
+      endif,
+
+      oDbBlockImage                  := FindObject(oCodeblockPanel,    'DMS_ARTICLEPICTURE_IMAGE'),
+      if empty(oDbBlockImage) then
+         oDbBlockImage               := CreateObject('TDBBlockImage',  'DMS_ARTICLEPICTURE_IMAGE', oCodeblockPanel, oCodeblockPanel),
+         oDbBlockImage.Align         := alClient,
+         oDbBlockImage.KeepRatio     := true,
+      endif,
+
+      oDmsVer                        := FindObject(oCodeblockPanel,    'DMS_VER'),
+      if empty(oDmsVer) then
+         oDmsVer                     := CreateObject('TBeRightsTable', 'DMS_VER', oCodeblockPanel, oCodeblockPanel),
+         oDmsVer.Workarea            := waDmsVer,
+         oDmsVer.Active              := true,
+      endif,
+
+      oDmsVerDataSource              := FindObject(oCodeblockPanel,    'DMS_VER_DS'),
+      if empty(oDmsVerDataSource) then
+         oDmsVerDataSource           := CreateObject('TDataSourceEx',  'DMS_VER_DS', oCodeblockPanel, oCodeblockPanel),
+         oDmsVerDataSource.DataSet   := oDmsVer,
+      endif,
+
+      oDmsBsp                        := FindObject(oCodeblockPanel,    'DMS_BSP'),
+      if empty(oDmsBsp) then
+         oDmsBsp                     := CreateObject('TBeRightsTable', 'DMS_BSP', oCodeblockPanel, oCodeblockPanel),
+         oDmsBsp.Workarea            := waDmsBsp,
+         oDmsBsp.Active              := true,
+      endif,
+
+      oDmsBspDataSource              := FindObject(oCodeblockPanel,    'DMS_BSP_DS'),
+      if empty(oDmsBspDataSource) then
+         oDmsBspDataSource           := CreateObject('TDataSourceEx',  'DMS_BSP_DS', oCodeblockPanel, oCodeblockPanel),
+         oDmsBspDataSource.DataSet   := oDmsBsp,
+      endif,
+
+      // #2) Master-Artikel-Nr. bestimmen --------------------------------------
+
+      case oMainTable.Workarea
+         of waDab010 :: cMasterArtnr := oMainTable:ARTNR,
+         of waDab220 :: cMasterArtnr := oMainTable:ARTNR,
+         of waDab215 :: cMasterArtnr := oMainTable:ARTNR,
+         of waDab315 :: cMasterArtnr := oMainTable:ARTNR,
+         of waDab035 :: cMasterArtnr := oMainTable:ARTNR,
+         of waDab240 :: cMasterArtnr := oMainTable:ARTNR_E,
+         otherwise
+              SetErrorIf(empty(cArtnrFieldName), 'Fehler in DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update - unbekannte Tabelle und fehlender Feldname'),
+              cMasterArtnr := AsString(cArtnrFieldName, oMainTable),
+      endcase,
+
+      pnl_DebugInfo.Caption          := 'Art.Nr.: ' + cMasterArtnr,
+      pnl_DebugInfo.Visible          := mBeSuperVisor,
+
+      // #3) DmsVer positionieren ----------------------------------------------
+      DbDisableControls(oDmsVer),
+      startseq
+         bInternalArticlePictureFound := not empty(cMasterArtnr) and DMSU_GUI_Integration_FindInternalPictureForArticle(oDmsVer, oDmsBsp, bUseThumbNail, cMasterArtnr),
+
+         // Je nach Dokumentenart (File oder Link) die Quelle angeben
+         if bInternalArticlePictureFound then
+            case oDmsVer:ART
+               of gl_DMSU_DokumentenArt_File ::     // Datei (in DB gespeichert)
+
+                  // Hinweis: Reihenfolge dieser 4 Zeilen ist wichtig für das korrekte Aktualisieren an der GUI
+                  oDbBlockImage.DataField     := '',
+                  oDbBlockImage.DataSource    := oDmsBspDataSource,
+                  oDbBlockImage.PictFromFile  := false,
+                  oDbBlockImage.DataField     := 'DATA',  // Datei steht in DmsBsp:DATA
+
+               of gl_DMSU_DokumentenArt_Filelink :: // Verknüpfung
+
+                  // Hinweis: Reihenfolge dieser 4 Zeilen ist wichtig für das korrekte Aktualisieren an der GUI
+                  oDbBlockImage.DataField     := '',
+                  oDbBlockImage.DataSource    := oDmsVerDataSource,
+                  oDbBlockImage.DataField     := 'LINKS', // kompletter Pfad + Name der verlinkten Datei steht in DmsVer:LINKS
+                  oDbBlockImage.PictFromFile  := true,
+
+               // Hyperlinks werden nicht ausgewertet...
+
+            endcase,
+         else
+            oDbBlockImage.PictFromFile        := true,
+            oDbBlockImage.FileNameBlock       := "",
+         endif,
+
+      always
+         DbEnableControls(oDmsVer),
+      stopseq,
+   endif,                                                                                       // prs('DMSU_GUI_ArticlePictureOnMask_HandleCodeblockPanel_OnScroll_Update', 'END'),
+end,
+

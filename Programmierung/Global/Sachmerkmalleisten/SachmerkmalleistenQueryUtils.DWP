@@ -1,0 +1,394 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: API-Funktionen für das Erzeugen von SQL-Statements zum Suchen
+//               von Sachmerkmalleistenzuordnungen.
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-328
+//******************************************************************************
+// Erzeugen eines Filter-Satzes zur Nutzung in der Funktion
+//  SML_QUERY_BuildFilteredSelect().
+// Diese Funktion soll das Schreiben von Filtern für die o.g. Funktion
+//  vereinfachen. Für den Filter notwendige Informationen (wie z.B. Datentyp des
+//  Merkmals) werden automatisch über den Merkmalstamm (SMLMKM) ermittelt.
+//
+// @Result: array, Filter-Satz
+//******************************************************************************
+function _SML_QUERY_MakeFilterItem(uVIndexOrAttributeKey:U, cOperator:C, uValue:U)
+| cDataType, nVIndex, nAttributeDataType |
+
+   cDataType := ValType(uVIndexOrAttributeKey),
+   case cDataType
+      of 'N' :: nVIndex := uVIndexOrAttributeKey,
+      of 'C' :: nVIndex := SMLV_VIndexAssert(uVIndexOrAttributeKey),
+      otherwise
+         SML_ERR_RaiseError({gl_SML_ERRC_InvalidParameterType,
+                             {cDataType, 'uVIndexOrAttributeKey', 'N> oder <C'}}),
+   endcase,
+
+   nAttributeDataType := Lookup(waSMLMKM, 'V_INDEX', {{nVIndex}}, 'DATEN_TYP', -1),
+   SetErrorIf(nAttributeDataType = -1, 'Merkmal mit V-Index <' + Str(nVIndex) + '> existiert nicht!'),
+
+   Result := {
+      {'V_INDEX', '=', nVIndex, 'N'},
+      {
+         SML_AttributeTargetFieldName(nAttributeDataType),
+         cOperator,
+         uValue,
+         SML_DataTypeToCbDataType(nAttributeDataType)
+      }
+   },
+end,
+
+//******************************************************************************
+// REQ-325
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Aufruf über: SML_QUERY_BuildFilteredSelect()
+//
+//******************************************************************************
+// SQL Select-Statement mit Filterung auf Basis des übergebenen Filter-Arrays
+// erzeugen.
+// Diese Funktion funktioniert rekursiv und ruft sich je nach Anzahl an
+// Elementen im Filter-Array immer wieder selbst auf.
+//
+// Parameter:
+//  * cAlias:         Alias der SMLWRT für das aktuelle Sub-Select
+//  * cOldAlias:      Alias der SMLWRT für das vorherige Sub-Select
+//  * nMainWorkarea:  Workarea der Stamm-Tabelle (z.B. Dab010, Dab000, etc.)
+//  * nSMLID:         ID der Sachmerkmalleiste, deren Zuordnungen betroffen sind
+//  * aAttribFilters: Array mit Filterausdrücken, Format:
+//                     {
+//                        {<Feldname>, <Operator>, <Wert>, <Codeblock-Datentyp>}
+//                        {...},
+//                        ...
+//                     }
+//  * nFilterIndex:   Index des zu verarbeitenden Filters im Filter-Array
+//
+// @Result: string, komplexes SQL Select-Statement
+//******************************************************************************
+function _SML_QUERY_BuildFilteredSelect_Internal(cAlias:C,
+                                                 cOldAlias:C,
+                                                 nMainWorkarea:N,
+                                                 nSMLID:N,
+                                                 aAttribFilters:R,
+                                                 nFilterIndex:N,
+                                                 bComprehensiveSearch:L)
+|
+   cFilter, aFilters, cIDField,
+   bAttribFilterAvailable, nAttribFilterCount,
+   bIsFirstRow, bIsLastRow, bNotInRange, i
+|
+
+   //***************************************************************************
+   // Hilfsfunktion zum zusammenbauen des SQL-Filterausdrucks
+   // @Result: string
+   //***************************************************************************
+   function ConcatFilters(cInitialFilter, aFilterParts, cAlias)
+   | aFilterPair, cCurFilter, i |
+      Result := cInitialFilter,
+      SetErrorIf(ValType(aFilterParts) <> 'A',
+                 'ConcatFilters: Erwarte Array!'),
+
+      for i := 1 to ALen(aFilterParts) do
+         aFilterPair := aFilterParts[i],
+         SetErrorIf(ValType(aFilterPair) <> 'A',
+                    'ConcatFilters: Erwarte Array!'),
+
+         // 1: Name des Feldes
+         aFilterPair[1] := AllTrim(aFilterPair[1]),
+         aFilterPair[1] := iif(Empty(aFilterPair[1]), aFilterPair[1], // Ggf. Alias voranstellen
+                               cAlias + '.' + aFilterPair[1]),
+         // 2: Vergleichs-Operator
+         aFilterPair[2] := AllTrim(aFilterPair[2]),
+         // 3: Filter-Wert
+         aFilterPair[3] := AllTrim(aFilterPair[3]),
+         // 4: Datentyp
+         aFilterPair[4] := AllTrim(aFilterPair[4]),
+
+         if (aFilterPair[4] = 'C') then
+            // String zuerst sanatisieren, um SQL-Injection zu vermeiden:
+            aFilterPair[3] := StrTran(aFilterPair[3], "'", ''),
+            if Empty(aFilterPair[3]) then
+               // Kein Filter-Wert vorhanden -> Diesen Filter nicht verwenden
+               aFilterPair[1] := '',
+            else
+               // Wenn Filter vom Typ String (C) ist -> Hochkommas anfügen!
+               aFilterPair[3] := "'" + aFilterPair[3] + "'",
+            endif,
+         else
+            if (aFilterPair[4] = 'D') then
+               if aFilterPair[3] = 0 then
+                  aFilterPair[3] := '',
+               else
+                  // Wenn Filter vom Typ Datum (D) ist -> Datum formatieren!
+                  aFilterPair[3] := "'" + FormatDateTime('YYYY-mm-dd', aFilterPair[3]) + "'",
+               endif,
+            else
+               if (aFilterPair[4] = 'N') then
+                  // Bei reellen Zahlen ggf. das Komma durch einen Punkt ersetzen
+                  aFilterPair[3] := StrTran(aFilterPair[3], ',', '.'),
+               endif,
+            endif,
+         endif,
+
+         if not Empty(aFilterPair[1]) and not Empty(aFilterPair[3]) then
+            if Upper(aFilterPair[2]) = 'CONTAINS' then
+               cCurFilter := 'CONTAINS(' + aFilterPair[1] + ', ' +
+                                           aFilterPair[3] + ')'
+            else
+               // Filter für String-Merkmale sollen case-insensitive sein
+               if aFilterPair[4] = 'C' then
+                  aFilterPair[1] := 'Upper(' + aFilterPair[1] + ')',
+                  aFilterPair[3] := 'Upper(' + aFilterPair[3] + ')',
+               endif,
+               cCurFilter := aFilterPair[1] + ' ' + aFilterPair[2] + ' ' +
+                             aFilterPair[3],
+            endif,
+         else
+            cCurFilter := '',
+         endif,
+
+         if not Empty(Result) and not Empty(cCurFilter) then
+            Result := Result + ' AND ' + cCurFilter,
+         else
+            if not Empty(cCurFilter) then
+               Result := cCurFilter,
+            endif,
+         endif,
+      next,
+   end,
+
+   //***************************************************************************
+   // SQL SubSelect-Statement mit Filterung erzeugen
+   // @Result: string
+   //***************************************************************************
+   function BuildSubSelect(nWA, cAlias, cFields, cFilter, cIndentation)
+   | i, nTokens, cUseFields |
+      cFields    := AllTrim(cFields),
+      cFields    := iif(ALen(cFields) = 0, '*', cFields),
+      cUseFields := '',
+      nTokens    := TokenCount(cFields, ' '),
+
+      if cFields <> '*' then // Wenn nicht alle Felder selektiert werden -> Alias voranstellen
+         if nTokens > 1 then
+            // cFields enthält eine Feld-Liste
+            for i := 1 to nTokens do
+               cUseFields := cUseFields + ' ' + StrToken(cFields, ' ', i),
+            next,
+         else
+            // cFields enthält nur ein Feld
+            cUseFields := cAlias + '.' + cFields
+         endif,
+      else
+         cUseFields := cFields,
+      endif,
+
+      Result := cIndentation + 'SELECT ' + cUseFields + ' FROM ' + DbSQLTableName(nWA) + ' ' + cAlias,
+      Result += iif(Empty(cFilter), '', CRLF + cIndentation + 'WHERE ' + cFilter),
+   end,
+
+   //***************************************************************************
+   // Alias-Namen für SubSelect ermitteln
+   // @Result: string
+   //***************************************************************************
+   function MakeAliasName(cAliasBaseName, nID)
+      Result := cAliasBaseName + iif(nID > 1, '_' + Str(nID), ''),
+   end,
+
+   //***************************************************************************
+   // Einrückung anhand des Zeilen-Index erzeugen
+   // @Result: string
+   //***************************************************************************
+   function Indent(nLevel)
+      nLevel := Max(1, nLevel),
+      Result := Replicate(' ', nLevel * 3),
+   end,
+
+   Result                 := '',
+   cFilter                := '',
+   aFilters               := {},
+   bAttribFilterAvailable := nFilterIndex > 0,
+   nAttribFilterCount     := ALen(aAttribFilters),
+   bIsFirstRow            := nFilterIndex = 1,
+   bIsLastRow             := nFilterIndex = nAttribFilterCount,
+   bNotInRange            := (nFilterIndex < 1) or (nFilterIndex > nAttribFilterCount),
+
+   // ID-Feld ermitteln:
+   // Wenn es sich um Dab010-Datensätze handelt muss das Feld ARTNR als ID-Fled
+   // verwendet werden.
+   if nMainWorkarea = waDab010 then
+      cIDField := 'ARTNR',
+   else
+      cIDField := 'VERWEND_ID',
+   endif,
+
+   SetErrorIf(bAttribFilterAvailable and bNotInRange,
+              'Filter-Index befindet sich nicht im gültigen Bereich!'),
+
+   // Standard Filter definieren:
+   // Filter für Workarea           (1. Ausdruck im Index)
+   AAdd(aFilters, {'VERWEND_WA', '=', nMainWorkarea, 'N'}),
+   // Wenn eine Sachmerkmallesiten-übergreifende Suche ausgeführt wird, muss die
+   //  SML-ID ignoriert werden.
+   if not bComprehensiveSearch then
+      // Filter für Sachmerkmalsleiste (2. Ausdruck im Index)
+      AAdd(aFilters, {'SML_ID', '=', nSMLID, 'N'}),
+   endif,
+
+   if bAttribFilterAvailable then
+      if not bIsFirstRow then
+         // Weitere SubSelects einbetten
+         Result += ' AND ' + cOldAlias + '.' + cIDField + ' IN (' + CRLF,
+      endif,
+
+      // Merkmals-Filter berücksichtigen
+      for i := 1 to ALen(aAttribFilters[nFilterIndex]) do
+         AAdd(aFilters, aAttribFilters[nFilterIndex, i]),
+      next,
+
+      // Nur wenn der aktuelle Filter gültig ist wird der "alte" Alias-Name neu
+      // gesetzt, ansonsten wird der alte benutzt
+      cOldAlias := MakeAliasName(cAlias, nFilterIndex),
+   endif,
+
+   cFilter := ConcatFilters(cFilter, aFilters, MakeAliasName(cAlias, nFilterIndex)),
+   Result  += BuildSubSelect(waSmlWRT, MakeAliasName(cAlias, nFilterIndex),
+                             cIDField, cFilter, Indent(nFilterIndex)),
+
+   if bAttribFilterAvailable then
+      if not bIsLastRow then
+         // Weitere Filterkriterien rekursiv verarbeiten
+         Result += SML_QUERY_BuildFilteredSelect_Internal(
+            cAlias, cOldAlias, nMainWorkarea, nSMLID, aAttribFilters,
+            nFilterIndex + 1, bComprehensiveSearch
+         ),
+      endif,
+
+      if not bIsFirstRow then
+         // Verschachtelungen abschließen
+         Result += CRLF + Indent(nFilterIndex - 1) +  ')',
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// REQ-326
+//******************************************************************************
+// SQL Select-Statement mit Filterung auf Basis des übergebenen Filter-Arrays
+// erzeugen.
+// Diese Funktion nutzt die interne Funktion
+//  SML_QUERY_BuildFilteredSelect_Internal()
+//
+// Parameter:
+//  * nMainWorkarea:    Workarea der Stammdaten-Tabelle (z.B. Dab010, Dab000, etc.)
+//  * cMainIdFieldName: Name des ID-Felds in der Stamm-Tabelle
+//  * uSMLIDOrSMLKey:   ID der Sachmerkmalleiste, deren Zuordnungen betroffen
+//                       sind
+//  * aAttribFilters:   Array mit Filterausdrücken, Format:
+//                       {
+//                          {<Feldname>, <Operator>, <Wert>, <Codeblock-Datentyp>}
+//                          {...},
+//                          ...
+//                       }
+//  * nFilterIndex:     Index des zu verarbeitenden Filters im Filter-Array
+//
+// @Result: string, komplexes SQL Select-Statement
+//******************************************************************************
+function _SML_QUERY_BuildFilteredSelect(nMainWorkarea:N,
+                                        cMainIdFieldName:C,
+                                        uSMLIDOrSMLKey:U,
+                                        aAttribFilters:R,
+                                        bComprehensiveSearch:L,
+                                        bUseLocationFilter:L,
+                                        cAdditionalCustomSQLFilter:C:='')
+|
+   nSMLID, cDataType, nExpectedWA, cIDField,
+   cMainAlias, nFirstFilter, cSubSelect, oTableInfo, cMainFilter,
+   cLocationFilter
+|
+
+   nSMLID := 0,
+   // Wenn Sachmerkmalleisten-übergreifend gesucht werden soll, muss die SML-ID
+   //  ignoriert werden.
+   if not bComprehensiveSearch then
+      cDataType := ValType(uSMLIDOrSMLKey),
+      case cDataType
+         of 'N' :: nSMLID := uSMLIDOrSMLKey,
+         of 'C' :: nSMLID := SML_GetSMLIDByKey(uSMLIDOrSMLKey),
+         otherwise
+            SML_ERR_RaiseError({gl_SML_ERRC_InvalidParameterType,
+                                {cDataType, 'uSMLIDOrSMLKey', 'N> oder <C'}}),
+      endcase,
+      // Sachmerkmalleisten-ID validieren
+      SetErrorIf(nSMLID = 0, 'Ungültige Sachmerkmalleiste!'),
+
+      // Sicherstellen, dass die Sachmerkmalleiste für die übergebene Workarea
+      // verwendet werden kann.
+      nExpectedWA := Lookup(waSMLSTM, 'ID', {{nSMLID}}, 'VERWEND_WA', -1),
+      SetErrorIf(nExpectedWA <> nMainWorkarea, 'Sachmerkmalleiste kann nicht für Workarea <' + Str(nMainWorkarea) + '> verwendet werden!'),
+   endif,
+
+   // ID-Feld ermitteln:
+   // Wenn es sich um Dab010-Datensätze handelt muss das Feld ARTNR als ID-Fled
+   // verwendet werden.
+   if nMainWorkarea = waDab010 then
+      cIDField := 'ARTNR',
+   else
+      cIDField := cMainIdFieldName,
+   endif,
+
+   // AliasName für die Haupttabelle ermitteln
+   oTableInfo := GetTableInfo(nMainWorkarea),
+   SetErrorIf(Empty(nMainWorkarea), 'Ungültige Workarea!'),
+   cMainAlias := oTableInfo.TableDef.AliasName,
+
+   cMainFilter := '',
+   // Wenn Sachmerkmalleisten-übergreifend gesucht werden soll und keine
+   //  Merkmalsfilter angegeben wurden, darf die Datenmenge nicht gefiltert
+   //  werden.
+   if not bComprehensiveSearch or ALen(aAttribFilters) > 0 then
+      // Gefilterte Sub-Selects erzeugen
+      nFirstFilter := Min(ALen(aAttribFilters), 1),
+      cSubSelect   := SML_QUERY_BuildFilteredSelect_Internal(
+         'SMLWRT', 'SMLWRT', nMainWorkarea, nSMLID, aAttribFilters, nFirstFilter,
+         bComprehensiveSearch
+      ),
+
+      cMainFilter := 'WHERE ' + cMainAlias + '.' + cIDField +
+                     ' IN (' + CRLF + cSubSelect + CRLF + ')',
+   endif,
+
+   // Ggf. Standort-Filter verwenden
+   if bUseLocationFilter then
+      cLocationFilter := 'STANDORT = ' + Str(mStandort),
+      if Empty(cMainFilter) then
+         cMainFilter := 'WHERE ' + cLocationFilter
+      else
+         cMainFilter := ConcatTrenner(cMainFilter, cLocationFilter, ' AND '),
+      endif,
+   endif,
+
+   // Ggf. Zusatz-Filter verwenden
+   if not empty(cAdditionalCustomSQLFilter) then
+      if empty(cMainFilter) then
+         cMainFilter := 'WHERE ' + cAdditionalCustomSQLFilter
+      else
+         cMainFilter := ConcatTrenner(cMainFilter, cAdditionalCustomSQLFilter, ' AND '),
+      endif,
+   endif,
+
+   // Vollständiges SQL Select-Statement zusammenbauen
+   Result := 'SELECT * FROM ' + DbSQLTableName(nMainWorkarea, False) + ' ' +
+             cMainAlias + ' ' + cMainFilter,
+end,
+

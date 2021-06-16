@@ -1,0 +1,102 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm ruft neuen Nachrichten für alle aktiven
+//   Inbound-Transportkanäle ab.
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ruft neue Nachrichten von allen aktiven
+// Inbound-Transportkanälen ab.
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function RetreiveMessagesFromActiveTransportChannels(oDM:O, oErrorCallback:O, oProgressCallback:O)
+|
+   oEDITRCH, nRecordCount, nCounter,
+   aProcessResult, aProgressInfo,
+   nProcessedMessagesCount, aSkippedMessagesList,
+   nSuccessfulFiles, nFailedFiles
+|
+
+   nSuccessfulFiles     := 0,
+   nFailedFiles         := 0,
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, 'EDITRCH_TASK'),
+   oEDITRCH.CbIndexName := 'ID',
+
+   nRecordCount := oEDITRCH.CbRecordCount,
+   nCounter     := 0,
+   oEDITRCH.CbFirst(),
+   while not oEDITRCH.CbEof do
+
+      if oEDITRCH:ACTIVE and oEDITRCH:DIRECTION = gl_EDI_ProcessDirection_Inbound then
+         startseq
+            aProcessResult := Call(oEDITRCH:SCRIPT_TRA, oDM, oEDITRCH:ID),
+
+            nProcessedMessagesCount := KVU_GetAssert(aProcessResult, 'processedFilesCount'),
+            aSkippedMessagesList    := KVU_GetAssert(aProcessResult, 'skippedFilesList'),
+            
+            nSuccessfulFiles += nProcessedMessagesCount,
+            nFailedFiles     += ALen(aSkippedMessagesList),
+
+            // Fortschritt aktualisieren
+            aProgressInfo := {},
+            KVU_Set(aProgressInfo, 'transportChannel.id',            oEDITRCH:ID),
+            KVU_Set(aProgressInfo, 'transportChannel.name',          trim(oEDITRCH:NAME)),
+            KVU_Set(aProgressInfo, 'process.processedMessagesCount', nProcessedMessagesCount),
+            KVU_Set(aProgressInfo, 'process.skippedMessagesList',    aSkippedMessagesList),
+            EDI_Process_UpdateProgress(oProgressCallback, nCounter, nRecordCount, aProgressInfo),
+         onerror
+            EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+         stopseq,
+      endif,
+
+      nCounter++,
+      oEDITRCH.CbNext(),
+   end,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSuccessfulFiles + nFailedFiles),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSuccessfulFiles),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nFailedFiles),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := RetreiveMessagesFromActiveTransportChannels(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+
+m_aTaskResult
+

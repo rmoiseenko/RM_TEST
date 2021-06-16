@@ -1,0 +1,173 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für den Verkauf
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'VKU' steht für 'V'er'k'aufs'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion formatiert die Rückgabe der Preis-Berechnungsfunktion
+//    "KundPreisCalcAll2()" in ein lesbares Debug-Output-Format
+// @Result: String, Debug-Output-Format
+//******************************************************************************
+function _VKU_Debug_KundPreisCalcAll2_ResultArray(nKdnr, cArtnr, nMenge, aKPC2Result)
+| oDM, cDebugStr, i, nDeci, nArtikelNkStellen, cArtikelMengeneinheit, cMengeText |
+
+   function PrintCurr(nCurrID)
+     Result := Str(nCurrID) + ' - ' +
+               CurrSign(nCurrID)    +
+               IIf(CurrConvSales(nCurrID) = 'J', '*', ''),
+   end,
+
+   function PrintStaffelArray(bTyp, bRabattTyp, aArray)
+   | i, nLines |
+     Result := PadR(IIf(bTyp, 'ab Wert', 'ab Menge'), 11) + PadR(IIf(bRabattTyp, 'Rabatt', 'Netto-Preis'), 25-11) + ' -> aus Dab010 oder Sonderkondition Dab040, falls dort vorhanden' + CrLf,
+     nLines := 0,
+     for i := 1 to ALen(aArray) do
+        if empty(aArray[i, 1]) then
+           break,
+        endif,
+        Result += Space(22) + PadR(aArray[i, 1], 10) + ' ' + FormatStd(aArray[i, 2], CurrDecimals()) + CrLf,
+        nLines += 1,
+     next,
+     if nLines = 0 then
+        Result += Replicate(' ', 20) + '<keine Staffelinformation>' + crlf,
+     endif,
+   end,
+
+   nDeci                 := CurrDecimals(),
+   nArtikelNkStellen     := LookUp(waDab010, 'DAB011', {{cArtnr}}, 'NKSTELLEN',     4),
+   cArtikelMengeneinheit := LookUp(waDab010, 'DAB011', {{cArtnr}}, 'AllTrim(ME)', '?'),
+   cMengeText            := FormatStd(nMenge, nArtikelNkStellen) + ' ' + cArtikelMengeneinheit,
+
+   cDebugStr :=
+      Replicate('*', 80) + crlf +
+      'Preis-Information für Kunde: ' + Str(nKdnr) + ', Artikel: "' + AllTrim(cArtnr) + '", Menge: ' + cMengeText + crlf +
+      Replicate('*', 80) + crlf + crlf +
+
+      'Währung           : ' + PadR(PrintCurr(aKPC2Result[ccpCurrID]), 25)                  + ' -> Kundenwährung oder Währung des Auftrags'                + CrLf +
+      'Brutto-Preis      : ' + PadR(FormatStd(aKPC2Result[ccpSinglePrice], nDeci), 25)      + ' -> in o.a. Währung für die übergebene Menge <' + cMengeText + '>' + CrLf +
+      '                    ' + PadR('', 25)                                                 + '    Positions-, Gesamt-Rabatte und Zusatzkosten NICHT verrechnet'  + CrLf +
+      'Preis-Einheit     : ' + PadR(Str(aKPC2Result[ccpPriceUnit]), 25)                     + ' -> aus Artikelstamm Dab010'                                + CrLf +
+      'Pos.-Rabatte 1    : ' + PadR(FormatStd(aKPC2Result[ccpDiscount, 1], 3), 25)          + ' -> aus Artikelstamm-Staffel-Rabatten oder aus Sonderkondition Dab040, falls vorhanden' + CrLf +
+      '             2    : ' +      FormatStd(aKPC2Result[ccpDiscount, 2], 3)                                                                              + CrLf +
+      '             3    : ' +      FormatStd(aKPC2Result[ccpDiscount, 3], 3)                                                                              + CrLf +
+      'Ges.-Rabatte 1    : ' + PadR(FormatStd(aKPC2Result[ccpTotalDiscount, 1], 2), 25)     + ' -> aus Kundenstamm'                                        + CrLf +
+      '             2    : ' +      FormatStd(aKPC2Result[ccpTotalDiscount, 2], 2)                                                                         + CrLf +
+      'Netto-Preis       : ' + PadR(FormatStd(aKPC2Result[ccpNetPrice], nDeci), 25)         + ' -> kalkulierter Preis für die Menge 1'                     + CrLf +
+      '                    ' + PadR('', 25)                                                 + '    Positions-, Gesamt-Rabatte und Zusatzkosten verrechnet' + CrLf +
+
+      'Staffel           : ' + PrintStaffelArray(aKPC2Result[ccpRateValue],
+                                                 aKPC2Result[ccpRateDiscount],
+                                                 aKPC2Result[ccpQuantRate])    +
+      'kalk. Netto-Preis : ' + PadR(FormatStd(aKPC2Result[ccpNetPriceQuant], nDeci), 25)    + ' -> kalkulierter Preis für die übergebene Menge <' + cMengeText + '>' + CrLf +
+      '                    ' + PadR('', 25)                                                 + '    Positions-, Gesamt-Rabatte und Zusatzkosten verrechnet',
+
+   if empty(aKPC2Result[ccpD040RecNo]) then
+      cDebugStr += crlf + crlf + ' **** keine Sonderkondition in Dab040 gefunden ***** ',
+   else
+       for i := 1 to 3 do
+          if empty(aKPC2Result[ccpExtra, i, ccpExtraText]) then
+             cDebugStr:= cDebugStr + crLf + '<Zusatzkosten ' + Str(i) + '>  : nicht definiert',
+          else
+             cDebugStr:= cDebugStr + crLf + crLf +
+                'Zuschlag-Text  ' + Str(i) + '  : ' + aKPC2Result[ccpExtra,     i, ccpExtraText]        + CrLf +
+                'Zuschlag-Art   ' + Str(i) + '  : ' + aKPC2Result[ccpExtra,     i, ccpExtraMode]        + CrLf +
+                'Zuschlag in EW ' + Str(i) + '  : ' + Str(aKPC2Result[ccpExtra, i, ccpExtraCost])       + CrLf +
+                'Zuschlag in FW ' + Str(i) + '  : ' + Str(aKPC2Result[ccpExtra, i, ccpExtraCostFW])     + CrLf +
+                'Beschreibung   ' + Str(i) + '  : ' + aKPC2Result[ccpExtra,     i, ccpExtraDisplayText] + CrLf
+          endif,
+      next,
+   endIf,
+
+   Result := cDebugStr,
+end,
+
+//******************************************************************************
+// Funktion schreibt die Rückgabe der Preis-Berechnungsfunktion "KundPreisCalcAll2()"
+//   zum Debuggen / Testen in die Konsole
+// @Result: String, Debug-Output-Format
+//******************************************************************************
+function _VKU_Debug_KundPreisCalcAll2(nKdnr, cArtnr, nMenge)
+| oDM, aKundPreisCalcAll2Result |
+
+   oDM := CreateObject('TBeDBGet'),
+   startseq
+      aKundPreisCalcAll2Result := KundPreisCalcAll2(oDM, nKdnr, cArtnr, nMenge),
+   always
+      DestroyObject(oDM),
+   stopseq,
+
+   if ALen(aKundPreisCalcAll2Result) = 0 then
+      SetError('Die Funktion "KundPreisCalcAll2()" hat keine Rückgabe geliefert -> Artikelnr. falsch?'),
+    endif,
+
+   Result := VKU_Debug_KundPreisCalcAll2_ResultArray(nKdnr, cArtnr, nMenge, aKundPreisCalcAll2Result),
+   WriteLn(Result),
+end,
+
+//******************************************************************************
+// Funktion wandelt die übergebene APNummer in ein Array bestehend aus der
+// Auftrags- (numerisch) und der Positionsnummer (numerisch) um.
+// @Result: Array
+//******************************************************************************
+function _VKU_Apnr2ApArr(cAPNummer:C)
+   Result := {Val(Padr(cAPNummer, 6)), Val(SubStr(cAPNummer, 7))},
+end,
+
+//******************************************************************************
+// Entsperren eines Kd.Auftrags über die Standard-Oberflächen-Entsperr-Funktion (=> Action)
+//
+// Die Funktion ist gedacht für die Nutzung aus Individual-Menüs in Auftragskopf oder -Position
+// -> Sofern eine nachgelagerte Funktion Änderungen an der DAB050, DAB055 durchführen muss.
+// @Result: true = Auftrag wurde entsperrt
+//******************************************************************************
+function _VKU_UnlockOrderViaGUI(cANUMMER, Self)
+| oDab050, oAction |
+  Result := false,
+
+  oDab050 := BeOpen(waDAB050, 'DAB051'),
+  startseq
+
+     // Auftrags-Tabelle positionieren
+     MySeek({Left(cANUMMER, 6)}, oDab050),
+
+     // Kann der Datensatz gesperrt werden? Wenn ja, haben wir den Auftrag NICHT
+     //    selbst gesperrt und außerdem hat auch sonst niemand den Auftrag gesperrt -> alles paletti
+     if DBLock(oDab050) then
+        if DBUnlock(oDab050) then
+           Result := true,
+        else
+           SetError('DAB050 could not be unlocked again'), // das sollte im Prinzip niemals passieren...
+        endif,
+     else
+        // Wenn man nicht sperren kann, dann einen Unlock über die Schloss-Funktion versuchen
+        oAction := FindObject(GetOwner(SELF), 'A_LockOrder'),
+        if not Empty(oAction) then
+           if ActionExecute(oAction) then
+              // Wenn die Aktion ausgeführt wurde, wurde der Auftrag normalerweise entsperrt.
+              // -> Warum wurde er nicht ggf. gesperrt? Weil wir hier ja nur ankommen, wenn der
+              //    Datensatz nicht sperrbar war. D.h. der Auftrag ist vmlt. von einem anderen
+              //    User / anderen Fenster gesperrt. Dann können wir auch nicht
+              //    sperren (Sperr-Problem-Dialog wird dann wie üblich erscheinen).
+              // Wenn entsperrt wurde, ist jetzt alles bereit, um zu bearbeiten
+              if DBLock(oDab050) then
+                 if DBUnlock(oDab050) then
+                    Result := true,
+                 else
+                    SetError('DAB050 could not be unlocked again'), // das sollte im Prinzip niemals passieren...
+                 endif,
+              else
+                 WriteLn('Der Auftrag konnte nicht gesperrt werden, vmtl. sperrt ein anderer User / anderes Fenster.'),
+              endif,
+           endif,
+        endif,
+     endif,
+  always
+     BeClose(oDab050),
+  stopseq,
+end,

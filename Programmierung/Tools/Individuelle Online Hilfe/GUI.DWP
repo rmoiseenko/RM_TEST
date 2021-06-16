@@ -1,0 +1,322 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:  Dieses Programm ermöglicht die Anzeige von individuellen
+//                Hilfe-Texten auf allen per Codeblock anpassbaren Oberflächen.
+//                z.B. Artikelstamm-Maske
+//                Hierbei werden Memos aus der Groupware angezeigt, die im
+//                definierbaren SQL-Filter enthalten sind
+//##############################################################################
+//##############################################################################
+|
+   m_cOnlineHelpSQLWhere:P1, m_nGoToMemoID:P2:=-1,
+   m_cOnlineHelpSQLString,
+   m_cOnlineHelpMemoField,
+   m_cFormClassID, m_cPositionSaveID, m_cBrowserId, m_cSettingsKey,
+   m_cUniqueFormName, m_cOnlineHelpQueryName,
+   m_oDM, m_oQuery,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_GoToHelpMemo, AL_Main, bar_BrowserToolbar, bardock_BrowserToolbar,
+   bebar_Manager, bipnl_Headline, btn_GoToMemo, ds_OnlineHelpMemos,
+   edt_HelpTextRichEdit, grd_OnlineHelpMemoBrowser, mni_GoToMemo,
+   mnu_BrowserPopup, pnl_Grid, pnl_RichEditBackPanel
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID    := '@ONLINEHLP',
+m_cPositionSaveID := '@ONLHLPPOS',
+m_cBrowserId      := '@ONLHLPBRW',
+
+// Speicherung für GUI-Einstellungen wie z.B. die Splitter-Position
+m_cSettingsKey := 'IONLHLP' + c_usr,
+
+// Eindeutiger Formular-Name. Wird benötigt, um ein bereits geöffnetes Formular finden zu können.
+m_cUniqueFormName := 'INDI_ONLINEHELP_FORM',
+
+// Eindeutiger Name für das SQL-Query objekt, damit dieses in einem bereits geöffneten Fenster gefunden und manipuliert werden kann.
+m_cOnlineHelpQueryName := 'INDI_ONLINEHELP_QUERY',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// En-/Disablen von Oberflächen-Controls
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+   A_GoToHelpMemo.Enabled := not (BOF(m_oQuery) and EOF(m_oQuery)),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()                                             prs('OpenDataBaseAndLinkToGUI()', 'START'),
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'INDIHELPDM', oForm, oForm),
+
+   // Notwendige Tabelle(n) öffnen
+   m_oQuery           := CreateObject('TBeAdsQuery', m_cOnlineHelpQueryName, oForm, oForm),
+   m_oQuery.AliasName := 'DAB065',
+   m_oQuery.SQL       := m_cOnlineHelpSQLString,
+   m_oQuery.Active    := True,
+
+   // Datasource und Browser verbinden
+   ds_OnlineHelpMemos.DataSet            := m_oQuery,
+   grd_OnlineHelpMemoBrowser.ID             := m_cBrowserId,
+   grd_OnlineHelpMemoBrowser.DataSource     := ds_OnlineHelpMemos,
+   grd_OnlineHelpMemoBrowser.ReadWriteProps := False,
+
+   // Memo-Feld für die Langtextanzeige verbinden
+   edt_HelpTextRichEdit.DataSource := ds_OnlineHelpMemos,
+   edt_HelpTextRichEdit.DataField  := m_cOnlineHelpMemoField,                   prs('OpenDataBaseAndLinkToGUI()', 'END'),
+end,
+
+//******************************************************************************
+// Fügt das übergebene Where zum Hilfe-Memo-Statement hinzu
+// @Result: null
+//******************************************************************************
+function BuildHelpMemoSQLStatement()
+
+   // Wurden keine eigene WHERE-Bedingung übergeben wird die Default-Bedingung
+   // verwendet, die immer ein leeres Ergebnis liefert.
+   if empty(m_cOnlineHelpSQLWhere) then
+      m_cOnlineHelpSQLWhere := 'MEMO_ID = -1',
+   endif,
+
+   m_cOnlineHelpMemoField := gl_IOHU_HelpMemoFieldName,
+   m_cOnlineHelpSQLString := gl_IOHU_HelpMemoSQLStatement + m_cOnlineHelpSQLWhere,
+   prs('BuildHelpMemoSQLStatement: Auszuführendes Statement', crlf + m_cOnlineHelpSQLString),
+end,
+
+//******************************************************************************
+// Öffnet die Groupware und positioniert auf das derzeit im Browser
+// positionierte Memo.
+// @Result: null
+//******************************************************************************
+function GoToHelpMemo()
+| cShowBeWindowParams |
+
+   cShowBeWindowParams := '',
+   cShowBeWindowParams += Str(waDAB065),               // Workarea
+   cShowBeWindowParams += ';' + Str(m_oQuery:MEMO_ID), // Memo-ID
+   cShowBeWindowParams += ';',                         // View-ID (keine Angabe)
+   cShowBeWindowParams += ';True',                     // Memo immer in neuem Tab öffnen
+   cShowBeWindowParams += ';True',                     // ohne Rückfrage als Single-Tab
+
+   ShowBeWindow(bwGroupware, cShowBeWindowParams),
+end,
+
+//******************************************************************************
+// Wurde dem Programm eine bestimmte Memo-ID übergeben, wird versucht diese
+// im Resultset des Queries zu positionieren
+//******************************************************************************
+function PositionMemoList()
+   // Wurde eine Memo-ID übergeben, wird versucht diese zu positionieren
+   if m_nGoToMemoID > -1 then
+      if not DBLocate('MEMO_ID', m_nGoToMemoID, loCaseInsensitive, m_oQuery) then
+          DBGoTop(m_oQuery),
+      endif,
+   else
+      DBGoTop(m_oQuery),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Öffnen der Groupware mit übergabe des aktuell ausgewählten Memos
+//******************************************************************************
+function A_GoToHelpMemoExecute( Sender )
+   GoToHelpMemo(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen/Updaten der Memo-Liste
+//******************************************************************************
+function ds_OnlineHelpMemosScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+| aUserSettings|                                                                prs('FormExClose', 'START'),
+   startseq
+      // Speicherung der benutzerspezifischen Einstellungen
+      aUserSettings := {pnl_Grid.Width},
+      SetBeParam(m_cSettingsKey, ArrToStr(aUserSettings)),
+   always
+      Action := caFree, // = Form auch bei Fehlern immer zerstören
+   stopseq,
+                                                                                prs('FormExClose', 'End'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular
+// @Result: null
+//******************************************************************************
+function InitForm()                                                             prs('InitForm', 'START'),
+   oForm                := LoadForm(m_cFormClassID,  GetAppMainForm()),
+   oForm.FormStyle      := fsNormal,
+   oForm.Windowstate    := wsMaximized,
+   oForm.PositionSaveID := m_cPositionSaveID,
+
+   // Dem Formular wird ein eindeutiger Name zugeordnet, damit eine bereits
+   // existierende Instanz später über das be-Hauptformular gefunden werden kann
+   oForm.Name := m_cUniqueFormName,                                             prs('InitForm', 'END'),
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| aSavedUserSettings, nBrowserPanelWidth |                                      prs('SetDefaults', 'START'),
+   oForm.OrigCapt   := 'Individuelle Online-Hilfe',
+   oForm.ImageIndex := 247, // Image-Index für den Window-Navigator setzen
+
+   // Benutzerdefinierte Einstellungen laden:
+   aSavedUserSettings := StrToArr(GetBeParam(m_cSettingsKey)),
+
+   // Browser-Panel-Breite (Splitter-Position) laden
+   nBrowserPanelWidth := pnl_Grid.Width,
+   if ALen(aSavedUserSettings) >= 1 then
+      nBrowserPanelWidth := aSavedUserSettings[1],
+   endif,
+
+   pnl_Grid.Width := Max(200, nBrowserPanelWidth), // Geladene Breite setzen
+
+   bipnl_Headline.ColorMode := ipcmInfo, // für ReDesign 7
+                                                                              prs('SetDefaults', 'END'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()                                                              prs('LoadGUI', 'START'),
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_GoToHelpMemo            := FindObject(oForm, "A_GoToHelpMemo"),
+      AL_Main                   := FindObject(oForm, "AL_Main"),
+      bar_BrowserToolbar        := FindObject(oForm, "bar_BrowserToolbar"),
+      bardock_BrowserToolbar    := FindObject(oForm, "bardock_BrowserToolbar"),
+      bebar_Manager             := FindObject(oForm, "bebar_Manager"),
+      bipnl_Headline            := FindObject(oForm, "bipnl_Headline"),
+      btn_GoToMemo              := FindObject(oForm, "btn_GoToMemo"),
+      ds_OnlineHelpMemos        := FindObject(oForm, "ds_OnlineHelpMemos"),
+      edt_HelpTextRichEdit      := FindObject(oForm, "edt_HelpTextRichEdit"),
+      grd_OnlineHelpMemoBrowser := FindObject(oForm, "grd_OnlineHelpMemoBrowser"),
+      mni_GoToMemo              := FindObject(oForm, "mni_GoToMemo"),
+      mnu_BrowserPopup          := FindObject(oForm, "mnu_BrowserPopup"),
+      pnl_Grid                  := FindObject(oForm, "pnl_Grid"),
+      pnl_RichEditBackPanel     := FindObject(oForm, "pnl_RichEditBackPanel"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,                                                                     prs('LoadGUI', 'END'),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   Show(oForm),
+end,
+
+//******************************************************************************
+// Diese Funktion ermöglicht das erzeugen/aktualisieren der Online-Hilfe-GUI.
+// Die Online-Hilfe-GUI wird hierbei in der Parent-Struktur des
+// be-Hauptfensters über dessen eindeutigen Namen gesucht.
+// Kann es dort:
+// - nicht gefunden werden, wird es erzeugt, gefiltert und geöffnet.
+// - gefunden werden, wird die Filterung der Online-Hilfe-Memos aktualisiert,
+//   und das Formular in den Vordergrund gebracht.
+//******************************************************************************
+function ShowOrCreateOnlineHelpGUI()                                            prs('ShowOrCreateOnlineHelpGUI', 'START'),
+
+   // Auf Basis des des konfigurierten SQL-Statements und dem übergebenen
+   // WHERE-Bedingungen das fertige Statement zusammenfügen
+   BuildHelpMemoSQLStatement(),
+
+   // Nach einer bereits bestehenden OnlineHilfe-GUI über dessen Namen suchen
+   oForm := FindObject(GetAppMainForm(), m_cUniqueFormName),
+
+   // Konnte die GUI nicht gefunden werden, wird sie neu erzeugt
+   if empty(oForm) then                                                         prs('ShowOrCreateOnlineHelpGUI', 'INITIALISIERUNG'),
+      InitForm(),
+      LoadGUI(),
+      SetDefaults(),
+      OpenDataBaseAndLinkToGUI(),
+      ShowGUI(),
+
+   // Konnte die GUI gefunden werden wird diese aktualisiert
+   else                                                                         prs('ShowOrCreateOnlineHelpGUI', 'AKTUALISIERUNG'),
+      // Da die Online-Hilfe-GUI bereits geoffnet ist, kann jetzt das
+      // Hilfe-Memos-Query gesucht und aktualisiert werden.
+      m_oQuery := FindObject(oForm, m_cOnlineHelpQueryName),
+      SetErrorIf(empty(m_oQuery),
+                 'Das SQL-Query Objekt zum Filtern der Hilfe-Memos konnte nicht gefunden werden!'),
+
+      m_oQuery.Active := False,
+      m_oQuery.Sql    := m_cOnlineHelpSQLString,
+      m_oQuery.Active := True,
+
+      // Aktualisiertes Fenster in den Vordergrund bringen
+      BringToFront(oForm),
+   endif,
+                                                                                prs('ShowOrCreateOnlineHelpGUI', 'ENDE'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Zu Testzwecken in der Entwicklungsumgebung
+   if EditorMode() then
+      m_cOnlineHelpSQLWhere := 'TYP = 90',
+      m_nGoToMemoID         := 2,
+   endif,
+
+   ShowOrCreateOnlineHelpGUI(),
+   PositionMemoList(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+              GetErrorText() + crlf + crlf +
+              DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

@@ -1,0 +1,45 @@
+//******************************************************************************
+// Definition von globalen Variablen für die Dubletten-Prüfung
+//******************************************************************************
+
+|
+   // Standard-Einstellungen für das Dubletten-Scoring
+   gl_DUBL_Score_Telefon:_N      := 1,
+   gl_DUBL_Score_Email:_N        := 2,
+   gl_DUBL_Score_Mailhost:_N     := 3,
+   gl_DUBL_Score_Name:_N         := 1,
+   gl_DUBL_Score_Ort:_N          := 1,
+   gl_DUBL_Score_Strasse:_N      := 1,
+   gl_DUBL_Score_USTID:_N        := 2,
+
+   // Felder, welche individuell angelegt werden müssen und dann im CustomInit hinterlegt werden
+   gl_DUBL_TargetKDNR_Field:_C   := '',
+   gl_DUBL_TargetPruef_Field:_C  := '',
+
+   // dyn. Merkmalstabelle für Länder, welche individuell angelegt werden muss und dann im CustomInit hinterlegt wird
+   gl_DUBL_AttribID_Laender:_N   := 0,
+
+   // minimaler Dubletten-Score / Standard-Einstellung
+   gl_DUBL_MinimumDublScore:_N   := 1,
+
+   // Name für Zugriffs-Rolle für "Dubletten-Admin"
+   gl_DUBL_Rolle_Admin:_C        := 'Zugriffe_Dubletten_Admin',
+
+   // Standard-Einstellungen für DUBLMATCH:FELDTYP (Für die Befüllung der Suchbegriffstabelle)
+   gl_DUBL_FeldTyp_Name:_N       := 10,
+   gl_DUBL_FeldTyp_Ort:_N        := 20,
+   gl_DUBL_FeldTyp_Strasse:_N    := 30,
+   gl_DUBL_FeldTyp_Telefon:_N    := 40,
+   gl_DUBL_FeldTyp_Mailhost:_N   := 50,
+   gl_DUBL_FeldTyp_Email:_N      := 60,
+   gl_DUBL_FeldTyp_USTIDNR:_N    := 70, 
+
+   // Standard-Einstellung welche NAME-Felder für das Scoring herangezogen werden sollen
+   // Wert 1 = nur NAME1
+   // Wert 2 = NAME1 + NAME2
+   // Wert 3 = NAME1 + NAME2 + NAME3
+   gl_DUBL_Count_Name:_N         := 1
+
+
+|
+''

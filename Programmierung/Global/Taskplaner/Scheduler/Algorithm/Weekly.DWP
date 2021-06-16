@@ -1,0 +1,149 @@
+function _TSKPL_CalculateStart_Weekly(aTaskExecutionOptions)
+| nWeekSize, aWeekdayBounds, aRequirements |
+
+   //Konstant
+   nWeekSize      := 7,
+   aWeekdayBounds := {{1, nWeekSize}},
+
+   //***************************************************************************
+   // Wochentage können nur zwischen nWeekdayBounds liegen
+   // @Param: Numeric
+   // @Result: Boolean
+   //***************************************************************************
+   function CheckWeekdayBounds(nWeekday)
+      result := (nWeekday >= aWeekdayBounds[1, 1]) and
+                (nWeekday <= aWeekdayBounds[1, 2]),
+   end,
+
+   //***************************************************************************
+   // Berechnet den Startzeitpunkt für wöchentliche Ausführung
+   // @Param: DateTime, Numeric
+   // @Result: DateTime
+   //***************************************************************************
+   function CalculateNextStartDate(dtStartDate, nWeekday, nRotation, dtLastStart, dtTime)
+   | nStartWeekday, nDaysToAdd, nInterval |
+
+      startseq
+         //Prüfen, ob Start dem wöchtenlichen Task entspricht
+
+         result := Int(dtStartDate),
+         if ( DoW(dtStartDate) <> nWeekday ) then
+            //Berechne einfach bis zum nächsten Tag
+            nStartWeekday := DoW(dtStartDate),
+            nDaysToAdd := nWeekday - nStartWeekday,
+
+            //Wenn Wochentag in der "Vergangenheit" liegt
+            //Sprich heute ist Montag (Wochentag 2), Start soll aber Sonntag (WT 1) sein
+            nDaysToAdd += iif(nDaysToAdd < 0, nWeekSize, 0),
+
+            //Addiere Differenz auf Tage
+            result := Int(dtStartDate) + nDaysToAdd,
+            result := ConvertArrayToDateTime(ConvertDateTimeToArray(result)),            
+         endif,
+         result += Frac(dtTime),
+
+         if (result < dtLastStart) then
+            nInterval := nRotation * nWeekSize,
+            result := Int((dtLastStart - result) / nInterval) * nInterval + result,
+            result := ConvertArrayToDateTime(ConvertDateTimeToArray(result)),
+            if result < dtLastStart then
+              result := result + nInterval,
+            endif,            
+            result = Int(result) + Frac(dtTime),
+         endif,
+      onerror
+         Raise(),
+      stopseq
+   end,
+
+   //***************************************************************************
+   // Extrahiert die Zeit vom übergebenen Datum
+   // @Param: DateTime, Numeric
+   // @Result: DateTime
+   //***************************************************************************
+   function GetTimeFromDateTime(dtDateTime)
+      | nHours, nMinutes, nSeconds, nMilli |
+         DecodeTime(dtDateTime, nHours, nMinutes, nSeconds, nMilli),
+         result := EncodeTime(nHours, nMinutes, nSeconds, nMilli),
+   end,
+
+   //***************************************************************************
+   // Prüft, ob alle Anforderungen für den Auführzeitplan übergeben wurden
+   // @Param: Array mit Ausführoptionen
+   // @Result: boolean, findet aber keine Verwendung, da SetError abbricht
+   //***************************************************************************
+   function CheckRequirements(aTaskExecutionOptions, aRequirements:R)
+   | i, cOutput, localReq, cKey |
+      //Wir gehen davon aus, dass alles passt und missbrauchen result dafür
+      result := True,
+      cOutput := '',
+      if (ALen(aTaskExecutionOptions) < 1) then
+         SetError('Keine Zeitplan-Optionen!'),
+      endif,
+      localReq := aRequirements,
+      for i := 1 to ALen(localReq) do
+         cKey := localReq[i],
+         if KVU_FIND(aTaskExecutionOptions, cKey) < 0 then
+            cOutput := cOutput + ' ' + cKey,
+            result := False,
+         endif,
+      end,
+      if not result then
+         SetError('Anforderungen fehlen: ' + cOutput),
+      endif,
+   end,
+
+   //***************************************************************************
+   // Von außen einzig aufrufbare Funktion (PSEUDO), da default
+   // @Param: Array mit Ausführoptionen
+   // @Result: DateTime
+   //***************************************************************************
+   function GetNextStartForTask(aTaskExecutionOptions)
+   |
+      dtStart, nWeekday, nWeekRotation, dtTime, nHours,  nMinutes, nSeconds, nMilli,
+      dtTimeNow, dtLastStart, aLastStart
+   |
+
+      if (ALen(aTaskExecutionOptions) < 1) then
+         SetError('Keine Zeitplan-Optionen!'),
+      endif,
+
+      dtTime      := KVU_GetAssert(aTaskExecutionOptions, 'execution.Time'),
+      dtTime      := iif(Empty(dtTime), EncodeTime(0, 1, 0, 0), dtTime),
+
+      dtStart     := KVU_GetAssert(aTaskExecutionOptions, 'execution.StartFirst'),
+      dtStart     := iif(Empty(dtStart), GetADSServerTime(), dtStart),
+
+      aLastStart  := KVU_GetAssert(aTaskExecutionOptions, 'execution.LastStart'),
+      dtLastStart := ConvertArrayToDateTime(aLastStart),
+      dtLastStart := iif(Empty(dtLastStart), dtStart, dtLastStart),
+
+
+      nWeekday    := KVU_GetAssert(aTaskExecutionOptions, 'execution.Weekday'),
+      nWeekday    := iif(Empty(nWeekday), DoW(dtStart), nWeekday),
+
+      if not checkWeekdayBounds(nWeekday) then
+         SetError('Wochentag-Grenzen verletzt [1, 7]'),
+      endif,
+
+      nWeekRotation := KVU_GET(aTaskExecutionOptions, 'execution.WeekRotation', 1),
+      if nWeekRotation < 1 then
+        nWeekRotation := 1,
+      endif,
+
+      DecodeTime(dtTime, nHours, nMinutes, nSeconds, nMilli),
+      dtTime := EncodeTime(nHours, nMinutes, 0, 0),
+
+      result := CalculateNextStartDate(dtStart, nWeekday, nWeekRotation, dtLastStart, dtTime)
+   end,
+
+   //Requirements definieren
+   aRequirements := Dim(0),
+   aRequirements := {'execution.Weekday', 'execution.WeekRotation', 'execution.StartFirst'},
+
+   CheckRequirements(aTaskExecutionOptions, aRequirements),
+
+
+   result := GetNextStartForTask(aTaskExecutionOptions),
+end,
+

@@ -1,0 +1,490 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzeroberfläche zum Importieren von Sachmerkmalleisten-
+//               Zuordnungen aus Excel-Sheets.
+//
+// Das Programm ist zum Aufruf durch die GFU_*-Funktion GFU_ShowModal(...) oder
+// GFU_ShowModal_CustomInfo(...) gedacht.
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+   m_aParams:P4,
+
+   m_cPositionSaveID,
+
+   m_oDM,
+   m_oErroneousRecords,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_ApplyImport, A_ClearLogs, A_DiscardImport, A_ExportErroneousRecords,
+   A_Import, A_ValidateImport, actions, bar_Main, bardock_Main, barmgr_Main,
+   bbtn_Apply, bbtn_ClearLogs, bbtn_Discard, bbtn_ExportErroneousRecords,
+   bbtn_Import, bbtn_ValidateImport, ds_MasterTable, edt_ImportExcelFileName,
+   edt_LogOutput, edt_SML, ipnl_LogOutput, lbl_ImportExcelFileName, lbl_SML,
+   pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveID := '@SMLIMPORTPOS',
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Tabelle für fehlerhafte Import-Datensätze erzeugen
+// @Result: object, TBeMemTable
+//******************************************************************************
+function ErroneousRecords_Create()
+   Result := CreateObject('TBeMemTable'),
+end,
+
+//******************************************************************************
+// Tabelle für fehlerhafte Import-Datensätze zerstören
+// @Result: null
+//******************************************************************************
+function ErroneousRecords_Destroy(oErroneousRecords:O)
+   Result := DestroyObject(oErroneousRecords),
+end,
+
+//******************************************************************************
+// Tabelle zurücksetzen:
+//   * Alle Datensätze löschen
+//   * Tabelle schließen (Active := False)
+//
+// @Result: null
+//******************************************************************************
+function ErroneousRecords_Reset(oErroneousRecords:O)
+   oErroneousRecords.CbEmptyTable(),
+   oErroneousRecords.Active := False,
+end,
+
+//******************************************************************************
+// Anzahl fehlerhafter Import-Datensätze ermitteln
+// @Result: integer
+//******************************************************************************
+function ErroneousRecords_GetCount(oErroneousRecords:O)
+   Result := oErroneousRecords.CbRecordCount,
+end,
+
+//******************************************************************************
+// Fehlerhafte Import-Datensätze in Excel-Datei exportieren
+// @Result: null
+//******************************************************************************
+function ErroneousRecords_ExportToExcelFile(oErroneousRecords:O, cFileName:C)
+   ExportExcelFile(cFileName, oErroneousRecords, True),
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bTransactionActive |
+
+   bTransactionActive               := DbInTrans(m_oDM.AdsConnection),
+   A_ApplyImport.Enabled            := bTransactionActive,
+   A_DiscardImport.Enabled          := bTransactionActive,
+   A_ExportErroneousRecords.Enabled := bTransactionActive and
+                                       (ErroneousRecords_GetCount(m_oErroneousRecords) > 0),
+   A_Import.Enabled                 := not bTransactionActive,
+   A_ValidateImport.Enabled         := not bTransactionActive,
+   A_ClearLogs.Enabled              := not Empty(AllTrim(edt_LogOutput.Text)),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
+   // muss
+   m_oDM := CreateObject('TBeDbGet', 'DM_SML_Import', oForm),
+
+   // Für Entwicklungszwecke
+   if EditorMode() and Empty(m_oMasterTable) then
+      m_oMasterTable           := CreateObject('TBeRightsTable', 'MasterTable', oForm),
+      m_oMasterTable.Workarea  := waSMLSTM,
+      m_oMasterTable.IndexName := 'ID',
+      m_oMasterTable.Active    := True,
+      m_oMasterTable.CbFindKey({13}),
+   else
+      SetErrorIf(m_oMasterTable.Workarea <> waSMLSTM,
+                 'MasterTable muss eine Instanz der SMLSTM (Sachmerkmalleisten-Stamm) sein'),
+   endif,
+   ds_MasterTable.DataSet := m_oMasterTable,
+
+   // DataSource mit GUI-Controls verbinden
+   edt_SML.DataSource := ds_MasterTable,
+   edt_SML.DataField  := 'BEZ',
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt       := 'Sachmerkmalleisten - Import',
+   oForm.PositionSaveID := m_cPositionSaveID,
+
+   edt_SML.Font.Style                 := fsBold,
+   edt_ImportExcelFileName.Font.Style := fsBold,
+   edt_LogOutput.Font.Name            := 'Courier New',
+   edt_LogOutput.Text                 := '',
+   edt_LogOutput.TextOnly             := True,
+   edt_LogOutput.ReadOnly             := True,
+
+   // Initial ActionsEnabled ausführen
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Prüfen, ob eine Import-Datei gewählt wurde
+// @Result: boolean
+//******************************************************************************
+function CheckImportFile()
+   Result := True,
+   if Empty(edt_ImportExcelFileName.Text) then
+      Result := False,
+      MessageDlg('Keine Import-Datei gewählt!', mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Log-Ausgabe schreiben
+// @Result: null
+//******************************************************************************
+function WriteToLog(cMessage:C)
+   edt_LogOutput.Text += cMessage + CRLF,
+   // Ans Ende der Log-Ausgabe springen
+   edt_LogOutput.SelStart := Len(edt_LogOutput.Text),
+end,
+
+//******************************************************************************
+// Import verwerfen
+// @Result: null
+//******************************************************************************
+function DiscardImport(oDM:O)
+   DbCancelAll(oDM.AdsConnection),
+   DbRollback(oDM.AdsConnection),
+   WriteToLog('-> IMPORT VERWORFEN ...'),
+end,
+
+//******************************************************************************
+// Import verwerfen
+// @Result: null
+//******************************************************************************
+function ApplyImport(oDM:O)
+   DbCommit(oDM.AdsConnection),
+   WriteToLog('-> IMPORT BESTÄTIGT ...'),
+end,
+
+//******************************************************************************
+// Import ausführen
+// @Result: null
+//******************************************************************************
+function RunImport(oDM:O, nSMLID:N, cImportFileName:C, bDryRun:L)
+| oLog, aImportResult, nCountAll, bImportFileValid, nCountErrors |
+
+   oLog := SML_ImportLog_Create(),
+   startseq
+      AssignEvent(oLog, 'BeforePost', 'SML_ImportLog_BeforePost'),
+
+      WriteToLog(Replicate('=', 80)),
+      if bDryRun then
+         WriteToLog('Validiere <' + cImportFileName + '> ...'),
+      else
+         WriteToLog('Importiere <' + cImportFileName + '> ...'),
+         DbStartTrans(oDM.AdsConnection),
+      endif,
+      startseq
+         ErroneousRecords_Reset(m_oErroneousRecords),
+         startseq
+            // Validierung und/oder Import durchführen
+            aImportResult     := Call('Sachmerkmalleisten\ImportExport\Import', nSMLID, cImportFileName, oDM, m_oErroneousRecords, oLog, bDryRun),
+            nCountAll         := aImportResult[1],
+            bImportFileValid  := aImportResult[2],
+            // Wenn die Import-Datei nicht valide ist, sind alle Datensätze ungültig
+            nCountErrors := iif(bImportFileValid,
+                                ErroneousRecords_GetCount(m_oErroneousRecords),
+                                nCountAll),
+
+            // Zusammenfassung in die Log-Ausgabe schreiben
+            WriteToLog(Replicate('-', 80)),
+            if bDryRun then
+               WriteToLog('Anzahl Datensätze gesamt:     ' +
+                          Str(nCountAll)),
+               WriteToLog('Anzahl ungültiger Datensätze: ' +
+                          Str(nCountErrors)),
+               WriteToLog('Anzahl gültiger Datensätze:   ' +
+                          Str(nCountAll - nCountErrors)),
+
+               // Abschließenden Status in die Log-Ausgabe schreiben
+               if bImportFileValid then
+                  WriteToLog('-> VALIDIERUNG ERFOLGREICH ...'),
+               else
+                  WriteToLog('-> VALIDIERUNG FEHLGESCHLAGEN ...'),
+               endif,
+            else
+               WriteToLog('Anzahl Datensätze gesamt:                            ' +
+                          Str(nCountAll)),
+               WriteToLog('Anzahl übersprungener Datensätze:                    ' +
+                          Str(SML_ImportLog_GetCountSkipped(oLog))),
+               WriteToLog('Anzahl fehlerhafter Datensätze:                      ' +
+                          Str(nCountErrors)),
+               WriteToLog('Anzahl aktualisierter Sachmerkmalleistenzuordnungen: ' +
+                          Str(SML_ImportLog_GetCountUpdated(oLog))),
+               WriteToLog('Anzahl neu angelegter Sachmerkmalleistenzuordnungen: ' +
+                          Str(SML_ImportLog_GetCountNew(oLog))),
+               WriteToLog('Anzahl gelöschter Sachmerkmalleistenzuordnungen:     ' +
+                          Str(SML_ImportLog_GetCount(oLog, gl_SML_ImportLogTypeDelete))),
+
+               // Wenn die Validierung der Import-Datei fehlschlug oder wenn
+               // kein Datensatz erfolgreich importiert werden konnte und keine
+               // fehlerhaften Datensätze zum Export zur Verfügung stehen
+               // -> Import verwerfen!
+               if not bImportFileValid or
+                  ((SML_ImportLog_GetCountUpdated(oLog)                      +
+                    SML_ImportLog_GetCountNew(oLog)                          +
+                    SML_ImportLog_GetCount(oLog, gl_SML_ImportLogTypeDelete) +
+                    nCountErrors) = 0) then
+                  DiscardImport(oDM),
+               endif,
+            endif,
+         onerror
+            WriteToLog('Fataler Fehler: ' + GetErrorText()),
+            DiscardImport(oDM),
+         stopseq,
+      onerror
+         // Fehler während der Transaktion UNBEDINGT abfangen!
+         if DbIntrans(oDM.AdsConnection) then
+            DiscardImport(oDM),
+         endif,
+         GU_ShowStdErrorMessage('Fehler beim Import: ', GetErrorObj()),
+      stopseq,
+
+      // Zustände der Actions aktualisieren
+      ActionsEnabled(),
+   always
+      SML_ImportLog_Destroy(oLog),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := not DbInTrans(m_oDM.AdsConnection),
+   if not bCanClose and JN('Import verwerfen?', False) then
+      DiscardImport(m_oDM),
+      bCanClose := True,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Log-Ausgabe schreiben
+//******************************************************************************
+function SML_ImportLog_BeforePost( Sender )
+   ProgressBarUpdate(0, SML_ImportLog_EntryAsString(Sender, False), False),
+   WriteToLog(SML_ImportLog_EntryAsString(Sender, True)),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ClearLogsExecute( Sender )
+   edt_LogOutput.Text := '',
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ExportErroneousRecordsExecute( Sender )
+| oDialog, cExportFileName, cDefaultFileExtension, nOldCursor, bExport |
+
+   bExport               := True,
+   cDefaultFileExtension := '.xlsx',
+
+   oDialog := SaveDlg('Fehlerhafte Datensätze exportieren', 'Excel-Dateien|*.xlsx'),
+   startseq,
+      oDialog.Active := true,
+      if oDialog.DoSave then
+         cExportFileName := oDialog.FileName,
+         // Ggf. Standard Dateinamenserweiterung (*.xlsx) an Dateinamen anfügen
+         if Right(cExportFileName, Len(cDefaultFileExtension)) <> cDefaultFileExtension then
+            cExportFileName := cExportFileName + cDefaultFileExtension,
+         endif,
+         // Prüfen, ob die Datei bereits existiert und User ggf. benachrichtigen
+         if File(cExportFileName) then
+            bExport := JN('Die Datei <' + cExportFileName + '> existiert bereits.' + CRLF +
+                          'Soll die Datei überschreiben werden?', False),
+         endif,
+
+         if bExport then
+            // Export durchführen
+            nOldCursor := SetCursor(crHourGlass),
+            startseq
+               ErroneousRecords_ExportToExcelFile(m_oErroneousRecords, cExportFileName),
+            always
+               SetCursor(nOldCursor),
+            stopseq,
+         endif,
+      endif,
+   always,
+      DestroyObject(oDialog),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ApplyImportExecute( Sender )
+   if JN('Import bestätigen?', False) then
+      ApplyImport(m_oDM),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_DiscardImportExecute( Sender )
+   if JN('Import verwerfen?', False) then
+      DiscardImport(m_oDM),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ImportExecute( Sender )
+| nCurrentCursor |
+
+   nCurrentCursor := SetCursor(crHourGlass),
+   startseq
+      if CheckImportFile() then
+         ProgressBarShow('Import', 'Importiere Sachmerkmalleisten', False),
+         startseq
+            RunImport(m_oDM, m_oMasterTable:ID, edt_ImportExcelFileName.Text, False),
+         always
+            ProgressBarHide(),
+         stopseq,
+      endif,
+   always
+      SetCursor(nCurrentCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ValidateImportExecute( Sender )
+| nCurrentCursor |
+
+   nCurrentCursor := SetCursor(crHourGlass),
+   startseq
+      if CheckImportFile() then
+         ProgressBarShow('Validierung', 'Validiere Sachmerkmalleisten-Importdatei', False),
+         startseq
+            RunImport(m_oDM, m_oMasterTable:ID, edt_ImportExcelFileName.Text, True),
+         always
+            ProgressBarHide(),
+         stopseq,
+      endif,
+   always
+      SetCursor(nCurrentCursor),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm                       := LoadForm("@SMLIMPORT", Application),
+   A_ApplyImport               := FindObject(oForm, "A_ApplyImport"),
+   A_ClearLogs                 := FindObject(oForm, "A_ClearLogs"),
+   A_DiscardImport             := FindObject(oForm, "A_DiscardImport"),
+   A_ExportErroneousRecords    := FindObject(oForm, "A_ExportErroneousRecords"),
+   A_Import                    := FindObject(oForm, "A_Import"),
+   A_ValidateImport            := FindObject(oForm, "A_ValidateImport"),
+   actions                     := FindObject(oForm, "actions"),
+   bar_Main                    := FindObject(oForm, "bar_Main"),
+   bardock_Main                := FindObject(oForm, "bardock_Main"),
+   barmgr_Main                 := FindObject(oForm, "barmgr_Main"),
+   bbtn_Apply                  := FindObject(oForm, "bbtn_Apply"),
+   bbtn_ClearLogs              := FindObject(oForm, "bbtn_ClearLogs"),
+   bbtn_Discard                := FindObject(oForm, "bbtn_Discard"),
+   bbtn_ExportErroneousRecords := FindObject(oForm, "bbtn_ExportErroneousRecords"),
+   bbtn_Import                 := FindObject(oForm, "bbtn_Import"),
+   bbtn_ValidateImport         := FindObject(oForm, "bbtn_ValidateImport"),
+   ds_MasterTable              := FindObject(oForm, "ds_MasterTable"),
+   edt_ImportExcelFileName     := FindObject(oForm, "edt_ImportExcelFileName"),
+   edt_LogOutput               := FindObject(oForm, "edt_LogOutput"),
+   edt_SML                     := FindObject(oForm, "edt_SML"),
+   ipnl_LogOutput              := FindObject(oForm, "ipnl_LogOutput"),
+   lbl_ImportExcelFileName     := FindObject(oForm, "lbl_ImportExcelFileName"),
+   lbl_SML                     := FindObject(oForm, "lbl_SML"),
+   pnl_Main                    := FindObject(oForm, "pnl_Main"),
+   pnl_Top                     := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   m_oErroneousRecords := ErroneousRecords_Create(),
+   startseq
+      ShowModal(oForm),
+   always
+      ErroneousRecords_Destroy(m_oErroneousRecords),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+

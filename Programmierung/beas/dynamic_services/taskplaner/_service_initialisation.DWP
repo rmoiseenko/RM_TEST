@@ -1,0 +1,15 @@
+BU_Log_Info('beas\dynamic_services\taskplaner\_service_initialisation => init'),
+
+BU_Reg_RegisterService('taskplaner', 'getConfig', {{'result', '', 'AnsiString', beasResult, beasRequired}}),
+BU_Reg_RegisterService('taskplaner', 'getDictionary', {{'result', '', 'AnsiString', beasResult, beasRequired}}),
+BU_Reg_RegisterService('taskplaner', 'getLogs',
+   {
+      {'sender',     'determines the sender type', 'AnsiString', beasIn, beasRequired},
+      {'senderid',   'id of scheduler or task',    'Integer',    beasIn, beasRequired},
+      {'offset',     'record offset',              'Integer',    beasIn, beasRequired},
+      {'count',      'number of records',          'Integer',    beasIn, beasRequired}
+   }),
+BU_Reg_RegisterService('taskplaner', 'getTasklist', {{'filter', 'type of filter', 'Integer', beasIn, beasRequired}}),
+BU_Reg_RegisterService('taskplaner', 'getSchedulerlist', {}),
+
+BU_Log_Info('beas\dynamic_services\taskplaner\_service_initialisation => init done'),

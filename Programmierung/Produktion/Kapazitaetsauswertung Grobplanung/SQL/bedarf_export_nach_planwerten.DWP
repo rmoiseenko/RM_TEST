@@ -1,0 +1,122 @@
+SELECT
+
+      // Felder aus dem Bedarfs-Kopf-Tabelle
+      PGKBDK.AUF_WA      AS "Auftrag Quelltabelle",
+      CASE PGKBDK.AUF_WA
+         WHEN 13 THEN 'Offene Aufträge'
+         WHEN 17 THEN 'Dispositionsplanung'
+      ELSE 'unbekannte Tabelle'
+      END                AS "Auftrag Quelltabelle Bez.",
+      PGKBDK.AUF_ID      AS "Auftrag ID aus Workarea-Tabelle",
+      PGKBDK.AUF_ID_240  AS "Auftrag ID des Auftragskopfs in Dab240",
+      PGKBDK.ARTNR_BG    AS "Auftrag Artikelnummer",
+
+      PGKBDK.KAP_PRIORI            AS "Auftrag Priorität Kapazitäts-Analyse",
+      Trim(DABMDT_KAP_PRIORI.BEZ1) AS "Auftrag Priorität Kapazitäts-Analyse Bez.",
+
+      PGKBDK.KAP_SPERRE  AS "Auftrag Sperre Kapazitäts-Analyse",
+      PGKBDK.BESTPOSNR   AS "Auftrag Fertigungsauftragsnummer",
+      PGKBDK.TERMIN      AS "Auftrag Fertigstellungstermin",
+
+      PGKBDK.AUF_STATUS  AS "Auftrag Status des Auftrags",
+      @PGKBDK.AUF_STATUS_AS_TEXT@,
+
+      PGKBDK.UEFAKTOR    AS "Auftrag Faktor Übergangszeit in %",
+      PGKBDK.SICH_ENDE   AS "Auftrag Sicherheitszeit am Ende",
+      PGKBDK.START_SP    AS "Auftrag spätester Start",
+      PGKBDK.ENDE_FR     AS "Auftrag frühestes Ende",
+      PGKBDK.ENDE_SP     AS "Auftrag spätestes Ende",
+
+      // Felder aus der Bedarfs-Positions-Tabelle
+      PGKBDP.ID          AS "Pos. Datensatz-ID",
+      PGKBDP.ERSTELLT    AS "Pos. Erstellt am / um",
+      PGKBDP.GEAENDERT   AS "Pos. Zuletzt geändert am / um",
+      PGKBDP.STANDORT    AS "Pos. Standort",
+      PGKBDP.PP_JAHR     AS "Pos. Plan Jahr",
+      PGKBDP.PP_KW       AS "Pos. Plan Woche",
+      CAST(Trim(CAST(PGKBDP.PP_JAHR AS SQL_CHAR(4))) + '-' + iif(PGKBDP.PP_KW < 10, '0', '') + CAST(PGKBDP.PP_KW AS SQL_CHAR) AS SQL_CHAR(7))
+                         AS "Pos. Plan Jahr+Woche", // StrZero() als SQL-Funktion ist erst ab ADS 12 verfügbar
+      PGKBDP.PP_DATUM    AS "Pos. Plan Datum",
+
+      PGKBDP.POSNR       AS "Pos. Stücklisten-Posnr",
+      PGKBDP.ARTNR       AS "Pos. Artikelnummer",
+      PGKBDP.ARBG_ID     AS "Pos. Arbeitsgang ID",
+      PGKBDP.D240R_ID    AS "Pos. DAB240 ID Arbeitsgang Rüsten",
+      PGKBDP.D240S_ID    AS "Pos. DAB240 ID Arbeitsgang Fertigen",
+      PGKBDP.HAS_RESANF  AS "Pos. Hat Ressourcenanforderung",
+
+      PGKBDP.RESTYP            AS "Pos. Ressourcentyp",
+      Trim(DABMDT_RESTYP.BEZ1) AS "Pos. Ressourcentyp Bez.",
+
+      PGKBDP.D270_RESID  AS "Pos. fixierte Ressource",
+      iif(PGKBDP.RESTYP = 'R',
+          DAB330_FIX.BEZ,
+          DAB262_FIX.NAME) AS "Pos. fixierte Ressource Bez.",
+
+      PGKBDP.TERM_RESID  AS "Pos. Terminierung über Ressource",
+
+      PGKBDP.QUALI       AS "Pos. Qualifikation",
+      DABVTM.BEZ         AS "Pos. Qualifikation Bez.",
+
+      PGKBDP.ARB_STATUS  AS "Pos. Status des Arbeitsgangs",
+      @PGKBDP.ARB_STATUS_AS_TEXT@,
+
+      PGKBDP.ARB_BEREIT  AS "Pos. Bereitschaft Arbeitsgang",
+      @PGKBDP.ARB_BEREIT_AS_TEXT@,
+
+      PGKBDP.START_FR    AS "Pos. frühester Start",
+      PGKBDP.START_SP    AS "Pos. spätester Start",
+      PGKBDP.ENDE_SP     AS "Pos. spätestes Ende",
+
+      PGKBDP.STA_IST_R   AS "Pos. Start tatsächlich Rüsten",
+      PGKBDP.ENDE_IST_R  AS "Pos. Ende tatsächlich Rüsten",
+      PGKBDP.STA_IST_S   AS "Pos. Start tatsächlich Fertigen",
+      PGKBDP.ENDE_IST_S  AS "Pos. Ende tatsächlich Fertigen",
+
+      PGKBDP.K_SOLL_WAR  AS "Pos. Soll Wartezeit",
+      PGKBDP.K_SOLL_R    AS "Pos. Soll Rüsten",
+      PGKBDP.K_SOLL_S    AS "Pos. Soll Fertigen",
+      PGKBDP.K_SOLL_BEA  AS "Pos. Soll Bearbeitungszeit",
+      Round(PGKBDP.K_SOLL_BEA / 60, 2)
+                         AS "Pos. Soll Bearbeitungszeit Stunden",
+      PGKBDP.K_SOLL_DLZ  AS "Pos. Soll Durchlaufzeit",
+
+      PGKBDP.K_IST_WAR   AS "Pos. Ist Wartezeit",
+      PGKBDP.K_IST_R     AS "Pos. Ist Rüsten",
+      PGKBDP.K_IST_S     AS "Pos. Ist Fertigen",
+      PGKBDP.K_IST_BEA   AS "Pos. Ist Bearbeitungszeit",
+      Round(PGKBDP.K_IST_BEA / 60, 2)
+                         AS "Pos. Ist Bearbeitungszeit Stunden",
+      PGKBDP.K_IST_DLZ   AS "Pos. Ist Durchlaufzeit",
+
+      PGKBDP.K_REST_WAR  AS "Pos. Rest Wartezeit",
+      PGKBDP.K_REST_R    AS "Pos. Rest Rüsten",
+      PGKBDP.K_REST_S    AS "Pos. Rest Fertigen",
+      PGKBDP.K_REST_BEA  AS "Pos. Rest Bearbeitungszeit",
+      Round(PGKBDP.K_REST_BEA / 60, 2)
+                         AS "Pos. Rest Bearbeitungszeit Stunden",
+      PGKBDP.K_REST_DLZ  AS "Pos. Rest Durchlaufzeit"
+
+
+FROM "PGKBDP.ADT" PGKBDP
+INNER JOIN "PGKBDK.ADT" PGKBDK           ON (PGKBDK.AUF_WA = PGKBDP.AUF_WA AND PGKBDK.AUF_ID = PGKBDP.AUF_ID)
+
+LEFT JOIN "DABVTM.ADT" DABVTM            ON (DABVTM.VORG_TYP = PGKBDP.QUALI)
+LEFT JOIN "DAB262.ADT" DAB262_FIX        ON (DAB262_FIX.PERSNR   = PGKBDP.D270_RESID AND PGKBDP.RESTYP = 'M')
+LEFT JOIN "DAB330.ADT" DAB330_FIX        ON (DAB330_FIX.ID       = PGKBDP.D270_RESID AND PGKBDP.RESTYP = 'R')
+LEFT JOIN "DABMDT.ADT" DABMDT_RESTYP     ON (DABMDT_RESTYP.TAB_ID = 101004 AND DABMDT_RESTYP.WERT = PGKBDP.RESTYP)
+LEFT JOIN "DABMDT.ADT" DABMDT_KAP_PRIORI ON (DABMDT_KAP_PRIORI.TAB_ID = @MM_TABELLE_KAP_PRIORI@ AND DABMDT_KAP_PRIORI.WERT = TRIM(CAST(PGKBDK.KAP_PRIORI AS SQL_CHAR)))
+
+WHERE
+       PGKBDP.STANDORT = @STANDORT@
+   AND PGKBDP.KAP_SPERRE = false
+   AND PGKBDP.ARTTYP   = 'A'
+   AND PGKBDP.PP_DATUM >= @DATUM_VON@
+   AND PGKBDP.PP_DATUM <= @DATUM_BIS@
+
+   @QUALI_AND_RES_FILTER@
+
+ORDER BY
+   PGKBDP.PP_JAHR,
+   PGKBDP.PP_KW,
+   PGKBDP.START_SP

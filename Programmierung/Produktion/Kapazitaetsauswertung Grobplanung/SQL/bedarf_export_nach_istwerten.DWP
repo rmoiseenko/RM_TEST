@@ -1,0 +1,267 @@
+SELECT
+
+      // Felder aus dem Bedarfs-Kopf-Tabelle
+      PGKBDK.AUF_WA      AS "Auftrag Quelltabelle",
+      CASE PGKBDK.AUF_WA
+         WHEN 13 THEN 'Offene Aufträge'
+         WHEN 17 THEN 'Dispositionsplanung'
+      ELSE 'unbekannte Tabelle'
+      END                AS "Auftrag Quelltabelle Bez.",
+      PGKBDK.AUF_ID      AS "Auftrag ID aus Workarea-Tabelle",
+      PGKBDK.AUF_ID_240  AS "Auftrag ID des Auftragskopfs in Dab240",
+      PGKBDK.ARTNR_BG    AS "Auftrag Artikelnummer",
+
+      PGKBDK.KAP_PRIORI            AS "Auftrag Priorität Kapazitäts-Analyse",
+      Trim(DABMDT_KAP_PRIORI.BEZ1) AS "Auftrag Priorität Kapazitäts-Analyse Bez.",
+
+      PGKBDK.KAP_SPERRE  AS "Auftrag Sperre Kapazitäts-Analyse",
+      PGKBDK.BESTPOSNR   AS "Auftrag Fertigungsauftragsnummer",
+      PGKBDK.TERMIN      AS "Auftrag Fertigstellungstermin",
+
+      PGKBDK.AUF_STATUS  AS "Auftrag Status des Auftrags",
+      @PGKBDK.AUF_STATUS_AS_TEXT@,
+      
+      PGKBDK.UEFAKTOR    AS "Auftrag Faktor Übergangszeit in %",
+      PGKBDK.SICH_ENDE   AS "Auftrag Sicherheitszeit am Ende",
+      PGKBDK.START_SP    AS "Auftrag spätester Start",
+      PGKBDK.ENDE_FR     AS "Auftrag frühestes Ende",
+      PGKBDK.ENDE_SP     AS "Auftrag spätestes Ende",
+
+      // Felder aus der Bedarfs-Positions-Tabelle
+      PGKBDP_ID          AS "Pos. Datensatz-ID",
+      PGKBDP_ERSTELLT    AS "Pos. Erstellt am / um",
+      PGKBDP_GEAENDERT   AS "Pos. Zuletzt geändert am / um",
+      PGKBDP_STANDORT    AS "Pos. Standort",
+      PGKBDP_PP_JAHR     AS "Pos. Plan Jahr",
+      PGKBDP_PP_KW       AS "Pos. Plan Woche",
+      CAST(Trim(CAST(PGKBDP_PP_JAHR AS SQL_CHAR(4))) + '-' + iif(PGKBDP_PP_KW < 10, '0', '') + CAST(PGKBDP_PP_KW AS SQL_CHAR) AS SQL_CHAR(7))
+                         AS "Pos. Plan Jahr+Woche", // StrZero() als SQL-Funktion ist erst ab ADS 12 verfügbar
+      PGKBDP_PP_DATUM    AS "Pos. Plan Datum",
+
+      PGKBDP_POSNR       AS "Pos. Stücklisten-Posnr",
+      PGKBDP_ARTNR       AS "Pos. Artikelnummer",
+      PGKBDP_ARBG_ID     AS "Pos. Arbeitsgang ID",
+      PGKBDP_D240R_ID    AS "Pos. DAB240 ID Arbeitsgang Rüsten",
+      PGKBDP_D240S_ID    AS "Pos. DAB240 ID Arbeitsgang Fertigen",
+      PGKBDP_HAS_RESANF  AS "Pos. Hat Ressourcenanforderung",
+
+      PGKBDP_RESTYP            AS "Pos. Ressourcentyp",
+      Trim(DABMDT_RESTYP.BEZ1) AS "Pos. Ressourcentyp Bez.",
+
+      PGKBDP_D270_RESID  AS "Pos. fixierte Ressource",
+      iif(PGKBDP_RESTYP = 'R',
+          DAB330_FIX.BEZ,
+          DAB262_FIX.NAME) AS "Pos. fixierte Ressource Bez.",
+
+      PGKBDP_TERM_RESID  AS "Pos. Terminierung über Ressource",
+
+      PGKBDP_QUALI       AS "Pos. Qualifikation",
+      DABVTM.BEZ         AS "Pos. Qualifikation Bez.",
+
+      PGKBDP_ARB_STATUS  AS "Pos. Status des Arbeitsgangs",
+      @PGKBDP_ARB_STATUS_AS_TEXT@,
+
+      PGKBDP_ARB_BEREIT  AS "Pos. Bereitschaft Arbeitsgang",
+      @PGKBDP_ARB_BEREIT_AS_TEXT@,
+
+      PGKBDP_START_FR    AS "Pos. frühester Start",
+      PGKBDP_START_SP    AS "Pos. spätester Start",
+      PGKBDP_ENDE_SP     AS "Pos. spätestes Ende",
+
+      PGKBDP_STA_IST_R   AS "Pos. Start tatsächlich Rüsten",
+      PGKBDP_ENDE_IST_R  AS "Pos. Ende tatsächlich Rüsten",
+      PGKBDP_STA_IST_S   AS "Pos. Start tatsächlich Fertigen",
+      PGKBDP_ENDE_IST_S  AS "Pos. Ende tatsächlich Fertigen",
+
+      PGKBDP_K_SOLL_WAR  AS "Pos. Soll Wartezeit",
+      PGKBDP_K_SOLL_R    AS "Pos. Soll Rüsten",
+      PGKBDP_K_SOLL_S    AS "Pos. Soll Fertigen",
+      PGKBDP_K_SOLL_BEA  AS "Pos. Soll Bearbeitungszeit",
+      PGKBDP_K_SOLL_DLZ  AS "Pos. Soll Durchlaufzeit",
+
+      PGKBDP_K_IST_WAR   AS "Pos. Ist Wartezeit",
+      PGKBDP_K_IST_R     AS "Pos. Ist Rüsten",
+      PGKBDP_K_IST_S     AS "Pos. Ist Fertigen",
+      PGKBDP_K_IST_BEA   AS "Pos. Ist Bearbeitungszeit",
+      PGKBDP_K_IST_DLZ   AS "Pos. Ist Durchlaufzeit",
+
+      PGKBDP_K_REST_WAR  AS "Pos. Rest Wartezeit",
+      PGKBDP_K_REST_R    AS "Pos. Rest Rüsten",
+      PGKBDP_K_REST_S    AS "Pos. Rest Fertigen",
+      PGKBDP_K_REST_BEA  AS "Pos. Rest Bearbeitungszeit",
+      PGKBDP_K_REST_DLZ  AS "Pos. Rest Durchlaufzeit",
+
+      // Felder aus der Buchungstabelle Dab340
+      DAB340_ID          AS "Buchung Datensatz-ID",
+      DAB340_BUCH_TYP    AS "Buchung Buchungstyp",
+      DAB340_BUCH_CODE   AS "Buchung Buchungscode",
+
+      DAB340_RESTYP                AS "Buchung Ressourcentyp Person/Ressource",
+      Trim(DABMDT_RESTYP_340.BEZ1) AS "Buchung Ressourcentyp Person/Ressource Bez.",
+
+      DAB340_PERSNR         AS "Buchung Mitarbeiter-Nr",
+      Trim(DAB262_340.NAME) AS "Buchung Mitarbeiter-Nr Bez.",
+
+      DAB340_RES_ID         AS "Buchung Ressourcen-ID",
+      Trim(DAB330_340.BEZ)  AS "Buchung Ressourcen-ID Bez.",
+
+      DAB340_START       AS "Buchung Start Datum & Zeitpunkt",
+      DAB340_ENDE        AS "Buchung Ende Datum & Zeitpunkt",
+      DAB340_STOER_CODE  AS "Buchung Code für integrierte Störung",
+      DAB340_STOERZ_SEK  AS "Buchung Anzahl Sekunden der Störung",
+      DAB340_STOERZ_ABZ  AS "Buchung Störungszeit abziehen",
+      DAB340_MINUTEN     AS "Buchung Anzahl gebuchter Minuten",
+      DAB340_EK_WERT     AS "Buchung Einstandswert der Buchung",
+      DAB340_EK_WERTZ    AS "Buchung Einstandswert der Zuschläge",
+      DAB340_ERFASS_SEK  AS "Buchung Anzahl erfasster Sekunden",
+      DAB340_SEK_PROD    AS "Buchung Anz. produktive Sekunden",
+      DAB340_DAB020_ID   AS "Buchung Verknüpfung zu Dab020-Buchung",
+      DAB340_MENGE       AS "Buchung Gefertigte Arbg.-Gutmenge",
+      DAB340_MENGE_AUSS  AS "Buchung Gefertigter Arbg.-Ausschuss",
+
+      DAB340_AUSS_CODE     AS "Buchung Ausschuss-Code",
+      Trim(DABBDC_340.BEZ) AS "Buchung Ausschuss-Code Bez."
+
+   FROM
+      (
+         SELECT
+
+            iif( MONTH(DAB340.S_DATUM) = 12 AND ISOWEEK(DAB340.S_DATUM) < 3,      // Leider gibt es keine Funktion "IsoWeekYear()", die das passende Jahr für "IsoWeek()" ermittelt... daher hier selbst berechnet!
+                 Year(DAB340.S_DATUM) + 1,
+                 iif( Month(DAB340.S_DATUM) = 1 AND IsoWeek(DAB340.S_DATUM) > 50,
+                      Year(DAB340.S_DATUM) - 1,
+                      Year(DAB340.S_DATUM) ) ) AS CALC_JAHR,
+            ISOWEEK(DAB340.S_DATUM)            AS CALC_KW,
+
+            PGKBDP_RUEST.ID                    AS PGKBDP_RUEST_ID,
+            PGKBDP_STUECK.ID                   AS PGKBDP_STUECK_ID,
+
+            IfNull(PGKBDP_RUEST.ARBG_DELTA,    PGKBDP_STUECK.ARBG_DELTA)    AS PGKBDP_ARBG_DELTA,
+            IfNull(PGKBDP_RUEST.ARBG_DFAKT,    PGKBDP_STUECK.ARBG_DFAKT)    AS PGKBDP_ARBG_DFAKT,
+            IfNull(PGKBDP_RUEST.ARBG_DQUEL,    PGKBDP_STUECK.ARBG_DQUEL)    AS PGKBDP_ARBG_DQUEL,
+            IfNull(PGKBDP_RUEST.ARBG_ID,       PGKBDP_STUECK.ARBG_ID)       AS PGKBDP_ARBG_ID,
+            IfNull(PGKBDP_RUEST.ARB_BEREIT,    PGKBDP_STUECK.ARB_BEREIT)    AS PGKBDP_ARB_BEREIT,
+            IfNull(PGKBDP_RUEST.ARB_STATUS,    PGKBDP_STUECK.ARB_STATUS)    AS PGKBDP_ARB_STATUS,
+            IfNull(PGKBDP_RUEST.ARTNR,         PGKBDP_STUECK.ARTNR)         AS PGKBDP_ARTNR,
+            IfNull(PGKBDP_RUEST.ARTTYP,        PGKBDP_STUECK.ARTTYP)        AS PGKBDP_ARTTYP,
+            IfNull(PGKBDP_RUEST.AUF_ID,        PGKBDP_STUECK.AUF_ID)        AS PGKBDP_AUF_ID,
+            IfNull(PGKBDP_RUEST.AUF_ID_240,    PGKBDP_STUECK.AUF_ID_240)    AS PGKBDP_AUF_ID_240,
+            IfNull(PGKBDP_RUEST.AUF_STATUS,    PGKBDP_STUECK.AUF_STATUS)    AS PGKBDP_AUF_STATUS,
+            IfNull(PGKBDP_RUEST.AUF_WA,        PGKBDP_STUECK.AUF_WA)        AS PGKBDP_AUF_WA,
+            IfNull(PGKBDP_RUEST.D240R_ID,      PGKBDP_STUECK.D240R_ID)      AS PGKBDP_D240R_ID,
+            IfNull(PGKBDP_RUEST.D240S_ID,      PGKBDP_STUECK.D240S_ID)      AS PGKBDP_D240S_ID,
+            IfNull(PGKBDP_RUEST.D270_RESID,    PGKBDP_STUECK.D270_RESID)    AS PGKBDP_D270_RESID,
+            IfNull(PGKBDP_RUEST.DAB210_ID,     PGKBDP_STUECK.DAB210_ID)     AS PGKBDP_DAB210_ID,
+            IfNull(PGKBDP_RUEST.EIND_SCHL,     PGKBDP_STUECK.EIND_SCHL)     AS PGKBDP_EIND_SCHL,
+            IfNull(PGKBDP_RUEST.ENDE_FR,       PGKBDP_STUECK.ENDE_FR)       AS PGKBDP_ENDE_FR,
+            IfNull(PGKBDP_RUEST.ENDE_FR_R,     PGKBDP_STUECK.ENDE_FR_R)     AS PGKBDP_ENDE_FR_R,
+            IfNull(PGKBDP_RUEST.ENDE_FR_S,     PGKBDP_STUECK.ENDE_FR_S)     AS PGKBDP_ENDE_FR_S,
+            IfNull(PGKBDP_RUEST.ENDE_IST_R,    PGKBDP_STUECK.ENDE_IST_R)    AS PGKBDP_ENDE_IST_R,
+            IfNull(PGKBDP_RUEST.ENDE_IST_S,    PGKBDP_STUECK.ENDE_IST_S)    AS PGKBDP_ENDE_IST_S,
+            IfNull(PGKBDP_RUEST.ENDE_SP,       PGKBDP_STUECK.ENDE_SP)       AS PGKBDP_ENDE_SP,
+            IfNull(PGKBDP_RUEST.ENDE_SP_R,     PGKBDP_STUECK.ENDE_SP_R)     AS PGKBDP_ENDE_SP_R,
+            IfNull(PGKBDP_RUEST.ENDE_SP_S,     PGKBDP_STUECK.ENDE_SP_S)     AS PGKBDP_ENDE_SP_S,
+            IfNull(PGKBDP_RUEST.ERSTELLT,      PGKBDP_STUECK.ERSTELLT)      AS PGKBDP_ERSTELLT,
+            IfNull(PGKBDP_RUEST.GEAENDERT,     PGKBDP_STUECK.GEAENDERT)     AS PGKBDP_GEAENDERT,
+            IfNull(PGKBDP_RUEST.GEAEND_USR,    PGKBDP_STUECK.GEAEND_USR)    AS PGKBDP_GEAEND_USR,
+            IfNull(PGKBDP_RUEST.HAS_RESANF,    PGKBDP_STUECK.HAS_RESANF)    AS PGKBDP_HAS_RESANF,
+            IfNull(PGKBDP_RUEST.ID,            PGKBDP_STUECK.ID)            AS PGKBDP_ID,
+            IfNull(PGKBDP_RUEST.KAP_PRIORI,    PGKBDP_STUECK.KAP_PRIORI)    AS PGKBDP_KAP_PRIORI,
+            IfNull(PGKBDP_RUEST.KAP_SPERRE,    PGKBDP_STUECK.KAP_SPERRE)    AS PGKBDP_KAP_SPERRE,
+            IfNull(PGKBDP_RUEST.K_IST_BEA,     PGKBDP_STUECK.K_IST_BEA)     AS PGKBDP_K_IST_BEA,
+            IfNull(PGKBDP_RUEST.K_IST_DLZ,     PGKBDP_STUECK.K_IST_DLZ)     AS PGKBDP_K_IST_DLZ,
+            IfNull(PGKBDP_RUEST.K_IST_R,       PGKBDP_STUECK.K_IST_R)       AS PGKBDP_K_IST_R,
+            IfNull(PGKBDP_RUEST.K_IST_S,       PGKBDP_STUECK.K_IST_S)       AS PGKBDP_K_IST_S,
+            IfNull(PGKBDP_RUEST.K_IST_WAR,     PGKBDP_STUECK.K_IST_WAR)     AS PGKBDP_K_IST_WAR,
+            IfNull(PGKBDP_RUEST.K_REST_BEA,    PGKBDP_STUECK.K_REST_BEA)    AS PGKBDP_K_REST_BEA,
+            IfNull(PGKBDP_RUEST.K_REST_DLZ,    PGKBDP_STUECK.K_REST_DLZ)    AS PGKBDP_K_REST_DLZ,
+            IfNull(PGKBDP_RUEST.K_REST_R,      PGKBDP_STUECK.K_REST_R)      AS PGKBDP_K_REST_R,
+            IfNull(PGKBDP_RUEST.K_REST_S,      PGKBDP_STUECK.K_REST_S)      AS PGKBDP_K_REST_S,
+            IfNull(PGKBDP_RUEST.K_REST_WAR,    PGKBDP_STUECK.K_REST_WAR)    AS PGKBDP_K_REST_WAR,
+            IfNull(PGKBDP_RUEST.K_SOLL_BEA,    PGKBDP_STUECK.K_SOLL_BEA)    AS PGKBDP_K_SOLL_BEA,
+            IfNull(PGKBDP_RUEST.K_SOLL_DLZ,    PGKBDP_STUECK.K_SOLL_DLZ)    AS PGKBDP_K_SOLL_DLZ,
+            IfNull(PGKBDP_RUEST.K_SOLL_R,      PGKBDP_STUECK.K_SOLL_R)      AS PGKBDP_K_SOLL_R,
+            IfNull(PGKBDP_RUEST.K_SOLL_S,      PGKBDP_STUECK.K_SOLL_S)      AS PGKBDP_K_SOLL_S,
+            IfNull(PGKBDP_RUEST.K_SOLL_WAR,    PGKBDP_STUECK.K_SOLL_WAR)    AS PGKBDP_K_SOLL_WAR,
+            IfNull(PGKBDP_RUEST.PLATZ,         PGKBDP_STUECK.PLATZ)         AS PGKBDP_PLATZ,
+            IfNull(PGKBDP_RUEST.POSNR,         PGKBDP_STUECK.POSNR)         AS PGKBDP_POSNR,
+            IfNull(PGKBDP_RUEST.PP_DATUM,      PGKBDP_STUECK.PP_DATUM)      AS PGKBDP_PP_DATUM,
+            IfNull(PGKBDP_RUEST.PP_JAHR,       PGKBDP_STUECK.PP_JAHR)       AS PGKBDP_PP_JAHR,
+            IfNull(PGKBDP_RUEST.PP_KW,         PGKBDP_STUECK.PP_KW)         AS PGKBDP_PP_KW,
+            IfNull(PGKBDP_RUEST.QUALI,         PGKBDP_STUECK.QUALI)         AS PGKBDP_QUALI,
+            IfNull(PGKBDP_RUEST.RESTYP,        PGKBDP_STUECK.RESTYP)        AS PGKBDP_RESTYP,
+            IfNull(PGKBDP_RUEST.SPLIT_KZ,      PGKBDP_STUECK.SPLIT_KZ)      AS PGKBDP_SPLIT_KZ,
+            IfNull(PGKBDP_RUEST.STANDORT,      PGKBDP_STUECK.STANDORT)      AS PGKBDP_STANDORT,
+            IfNull(PGKBDP_RUEST.START_FR,      PGKBDP_STUECK.START_FR)      AS PGKBDP_START_FR,
+            IfNull(PGKBDP_RUEST.START_FR_R,    PGKBDP_STUECK.START_FR_R)    AS PGKBDP_START_FR_R,
+            IfNull(PGKBDP_RUEST.START_FR_S,    PGKBDP_STUECK.START_FR_S)    AS PGKBDP_START_FR_S,
+            IfNull(PGKBDP_RUEST.START_SP,      PGKBDP_STUECK.START_SP)      AS PGKBDP_START_SP,
+            IfNull(PGKBDP_RUEST.START_SP_R,    PGKBDP_STUECK.START_SP_R)    AS PGKBDP_START_SP_R,
+            IfNull(PGKBDP_RUEST.START_SP_S,    PGKBDP_STUECK.START_SP_S)    AS PGKBDP_START_SP_S,
+            IfNull(PGKBDP_RUEST.STA_IST_R,     PGKBDP_STUECK.STA_IST_R)     AS PGKBDP_STA_IST_R,
+            IfNull(PGKBDP_RUEST.STA_IST_S,     PGKBDP_STUECK.STA_IST_S)     AS PGKBDP_STA_IST_S,
+            IfNull(PGKBDP_RUEST.TERM_RESID,    PGKBDP_STUECK.TERM_RESID)    AS PGKBDP_TERM_RESID,
+
+            DAB340.ID          AS DAB340_ID,
+            DAB340.BUCH_TYP    AS DAB340_BUCH_TYP,
+            DAB340.BUCH_CODE   AS DAB340_BUCH_CODE,
+            DAB340.RESTYP      AS DAB340_RESTYP,
+            DAB340.PERSNR      AS DAB340_PERSNR,
+            DAB340.RES_ID      AS DAB340_RES_ID,
+            DAB340.START       AS DAB340_START,
+            DAB340.ENDE        AS DAB340_ENDE,
+            DAB340.STOER_CODE  AS DAB340_STOER_CODE,
+            DAB340.STOERZ_SEK  AS DAB340_STOERZ_SEK,
+            DAB340.STOERZ_ABZ  AS DAB340_STOERZ_ABZ,
+            DAB340.MINUTEN     AS DAB340_MINUTEN,
+            DAB340.EK_WERT     AS DAB340_EK_WERT,
+            DAB340.EK_WERTZ    AS DAB340_EK_WERTZ,
+            DAB340.ERFASS_SEK  AS DAB340_ERFASS_SEK,
+            DAB340.SEK_PROD    AS DAB340_SEK_PROD,
+            DAB340.DAB020_ID   AS DAB340_DAB020_ID,
+            DAB340.MENGE       AS DAB340_MENGE,
+            DAB340.MENGE_AUSS  AS DAB340_MENGE_AUSS,
+            DAB340.AUSS_CODE   AS DAB340_AUSS_CODE
+
+         FROM "DAB340.ADT" DAB340
+
+         LEFT JOIN "PGKBDP.ADT" PGKBDP_RUEST  ON (PGKBDP_RUEST.D240R_ID  = DAB340.DAB240_ID)
+         LEFT JOIN "PGKBDP.ADT" PGKBDP_STUECK ON (PGKBDP_STUECK.D240S_ID = DAB340.DAB240_ID)
+
+         WHERE
+                DAB340.STANDORT = @STANDORT@
+            AND DAB340.BUCH_TYP IN (200, 210)  // nur Rüst- und Stückzeit
+            AND DAB340.DAB240_ID > 0
+
+            AND DAB340.START >= @DATUM_ZEIT_VON@  // Ist-Buchung wird in die Woche des Buchungs-Starts einsortiert
+            AND DAB340.START <  @DATUM_ZEIT_BIS@
+       ) AS INNER_RESULT
+
+       INNER JOIN "PGKBDK.ADT" PGKBDK           ON (PGKBDK.AUF_WA = PGKBDP_AUF_WA AND PGKBDK.AUF_ID = PGKBDP_AUF_ID)
+
+       LEFT JOIN "DABVTM.ADT" DABVTM            ON (DABVTM.VORG_TYP   = PGKBDP_QUALI)
+
+       LEFT JOIN "DAB262.ADT" DAB262_FIX        ON (DAB262_FIX.PERSNR = PGKBDP_D270_RESID AND PGKBDP_RESTYP = 'M')
+       LEFT JOIN "DAB262.ADT" DAB262_340        ON (DAB262_340.PERSNR = DAB340_PERSNR     AND DAB340_RESTYP = 'M')
+
+       LEFT JOIN "DAB330.ADT" DAB330_FIX        ON (DAB330_FIX.ID     = PGKBDP_D270_RESID AND PGKBDP_RESTYP = 'R')
+       LEFT JOIN "DAB330.ADT" DAB330_340        ON (DAB330_340.ID     = DAB340_RES_ID     AND DAB340_RESTYP = 'R')
+
+       LEFT JOIN "DABMDT.ADT" DABMDT_RESTYP     ON (DABMDT_RESTYP.TAB_ID     = 101004 AND DABMDT_RESTYP.WERT     = PGKBDP_RESTYP)
+       LEFT JOIN "DABMDT.ADT" DABMDT_RESTYP_340 ON (DABMDT_RESTYP_340.TAB_ID = 101004 AND DABMDT_RESTYP_340.WERT = DAB340_RESTYP)
+
+       LEFT JOIN "DABBDC.ADT" DABBDC_340        ON (DABBDC_340.CODE = DAB340_AUSS_CODE)
+
+
+       LEFT JOIN "DABMDT.ADT" DABMDT_KAP_PRIORI ON (DABMDT_KAP_PRIORI.TAB_ID = @MM_TABELLE_KAP_PRIORI@ AND DABMDT_KAP_PRIORI.WERT = TRIM(CAST(PGKBDK.KAP_PRIORI AS SQL_CHAR)))
+
+       WHERE
+          (   INNER_RESULT.PGKBDP_RUEST_ID  is not null
+           OR INNER_RESULT.PGKBDP_STUECK_ID is not null)
+
+           AND INNER_RESULT.PGKBDP_KAP_SPERRE = false // Macht das Sinn bei der Betrachtung von Ist-Werten?
+
+
+          @QUALI_AND_RES_FILTER@
+
+       ORDER BY INNER_RESULT.DAB340_START

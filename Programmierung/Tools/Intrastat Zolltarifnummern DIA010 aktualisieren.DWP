@@ -1,0 +1,160 @@
+//##############################################################################
+//##############################################################################
+//
+// Dieses Hilfsprogramm ermöglicht es, die Liste der
+// Warennummern / Zolltarifnummern (DIA010) aus einer vom
+// Statistischen Bundesamt bereitgestellten Datei einzulesen
+//
+// Verarbeitet wird die sog. 'SOVA-Leitdatei'
+// => Download (Stand Mai 2012)
+//    https://www.destatis.de/DE/Methoden/Klassifikationen/Aussenhandel/Content75/sova_leitdatei.html
+//
+//##############################################################################
+//##############################################################################
+
+
+| m_oDM, m_oDIA010, m_nImportedCount, m_nUpdatedCount |
+
+//******************************************************************************
+// Verarbeitung einer einzelnen Zeile der .TXT-Datei
+// => Import neuer Waren-Nr. und Aktualisierung bestehender Nr.
+// @Result: null
+//******************************************************************************
+function UpdateOrAppendWarenNummer(cLine)
+| cZollWarenNr, cBez, bNeedUpdate |
+
+  // Zum Stand 2012 gilt für die SOVA2012.txt-Datei folgendes Format (kann in
+  //     Liesmich.txt nachempfunden werden, welches Bestandteil des
+  //     Download-Pakets ist)
+  //
+  //    WA 2012: Start 01,  Breite 8:
+  //    Leer:    Start 09,  Breite 2;
+  //    Text1:   Start 11,  Breite 110;
+  //    Text2:   Start 121, Breite 120;
+  //    Text3:   Start 241, Breite 18;
+  //    Besondere Maßeinheit (im WA verwendete Abkürzung)
+  //             Start 259, Breite 16;
+  //    Besondere Maßeinheit (numerische Codes)
+  //             Start 275, Breite 2;
+
+  cZollWarenNr :=        SubStr(cLine, 1,   8),
+  cBez         :=        SubStr(cLine, 11,  110),
+  cBez         += crlf + SubStr(cLine, 121, 120),
+  cBez         += crlf + SubStr(cLine, 241, 18),
+
+  cBez         := AllTrim(Left(cBez, 250)), // Feld-Längen-Beschränkung der DIA010
+
+  bNeedUpdate  := false,
+
+  // gibt es die Waren-Nr. schon?
+  if not DbSeek({cZollWarenNr}, m_oDIA010) then
+     MyAppend(m_oDIA010),
+     m_oDIA010:WARENNR   := cZollWarenNr,
+     bNeedUpdate         := true,
+     m_nImportedCount    += 1,
+  endif,
+
+  bNeedUpdate := bNeedUpdate or
+                 AllTrim(cBez) <> AllTrim(m_oDIA010:INTRA_BEZ) or
+                 AllTrim(cBez) <> AllTrim(m_oDIA010:AE_BEZ),
+
+  if bNeedUpdate and not EditModes(m_oDIA010) then
+     MyEdit(m_oDIA010),
+     m_nUpdatedCount     += 1,
+  endif,
+
+  if bNeedUpdate then
+     WriteLn('Geänderte Warennummer: ' + cZollWarenNr),  
+     // Bezeichnungen immer aktualisieren sofern geändert
+     m_oDIA010:INTRA_BEZ := cBez,
+     m_oDIA010:AE_BEZ    := cBez,
+
+     MyPost(m_oDIA010),
+  endif,
+end,
+
+//******************************************************************************
+// List die SOVA-Datei zeilenweise ein
+// @Result: null
+//******************************************************************************
+function SOVA_File_Einlesen()
+| oOpenDlg, oFile, cCurLine, cCurWarenNr, cCaption, nProcessedLines, nTotalLines |
+   nProcessedLines  := 0,
+   m_nImportedCount := 0,
+   m_nUpdatedCount  := 0,
+   cCaption         := 'SOVA Leitdatei Zollnummern-Import',
+   oOpenDlg         := OpenDlg(cCaption),
+   oOpenDlg.Active  := true,
+
+   if oOpenDlg.Selected then
+      oFile := FOpen(oOpenDlg.FileName, fo_Read), // liefert eine Instanz von 'TCbFile'
+      startseq
+         ProgressBarShow(cCaption, cCaption, true),
+
+         startseq
+            DbStartTrans(m_oDM.AdsConnection),
+
+            nTotalLines := Round(oFile.Size, 0) / 277, // ungefähre Anzahl Zeilen
+
+            while not eof(oFile) do
+               cCurLine    := FReadLn(oFile),
+               cCurWarenNr := SubStr(cCurLine, 1, 8),
+               if not empty(cCurLine) then
+                  UpdateOrAppendWarenNummer(cCurLine),
+                  nProcessedLines += 1,
+               endif,
+
+               ProgressBarUpdate( nProcessedLines / nTotalLines * 100,
+                                  'Aktualisiere Waren-Nr. ' + cCurWarenNr, true ),
+
+               // für den Test: Abbruch nach x verarbeiteten Zeilen
+               if nProcessedLines = 2000 then
+                  // break,
+               endif,
+            end,
+
+            DbCommit(m_oDM.AdsConnection),
+
+            MessageDlg('Import erfolgreich'  + crlf + crlf +
+                       'Verarbeitete Zeilen: '        + Str(nProcessedLines) + crlf +
+                       'Neue Warennummern: '          + Str(m_nImportedCount) + crlf +
+                       'Aktualisierte Warennummern: ' + Str(m_nUpdatedCount)),
+
+         onerror
+            if DbInTrans(m_oDM.AdsConnection) then
+               DbRollback(m_oDM.AdsConnection),
+            endif,
+            // Fehler wieder auslösen
+            SetError('Fehler beim Import (aktuelle Waren-Nr.: ' + cCurWarenNr + ')'
+                     + crlf + 'Fehler: ' + GetErrorText()),
+         stopseq,
+      always
+         FClose(oFile),
+         ProgressBarHide(),
+      stopseq,
+   endif,
+
+end,
+
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+
+startseq
+   m_oDM := CreateObject('TBeDbGet'),
+   startseq
+      m_oDIA010           := DbGetTable(m_oDM, waDia010),
+      m_oDIA010.IndexName := 'DIA011', // Expr. = 'WARENNR'
+      BeginSuspend(m_oDIA010),
+
+      SOVA_File_Einlesen(),
+
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   MessageDlg('Im Programm ' + ProgName() + ' ist ein Fehler aufgetreten. ' + crlf +
+              'Der Import wurde abgebrochen, die Transaktion wurde zurück gesetzt.' + crlf + crlf
+              + GetErrorText(), mtError),
+stopseq,
+

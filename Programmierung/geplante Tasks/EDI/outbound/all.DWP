@@ -1,0 +1,112 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   EDI Task-Programm für das ganze Outbound-Prozess
+//
+// Parameter:
+//   * m_nSchedulerID:  ID des ausgeführten Schedulers
+//   * m_nTaskID:       ID des ausgeführten Tasks
+//   * m_aCustomParams: Array mit benutzerdefinierten Übergabeparametern
+//
+// Rückgabe:
+//   standard Task-Result (siehe Funktion TSKPL_SetTaskResult)
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_nSchedulerId:P1,
+   m_nTaskId:P2,
+   m_aCustomParams:P3,
+
+   m_oProgressCallback, m_oErrorCallback,
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+function EDITask_OnError(sender:O)
+| aData |
+
+   startseq
+      aData := sender.Data,
+      TSKPL_WriteCustomLog(m_nTaskId, 'ERROR: ' + KVU_Get(aData, 'errorInfo.text', '')),
+
+      result := mrOk,
+   onerror
+      result := mrAbort,
+   stopseq,
+end,
+
+function EDITask_OnProgress(sender:O)
+| aData |
+
+   startseq
+      TSKPL_WriteCustomLog(m_nTaskId, KVU_Get(sender.Data, 'data', '')),
+
+      result := mrOk,
+   onerror
+      TSKPL_WriteCustomLog(m_nTaskId, GetErrorText(GetErrorObj())),
+      result := mrAbort,
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion führt den übergebenen Sub-Task aus und schreibt jeweils ein
+// Log-Eintrag beim Starten bzw. beim beenden des Sub-Tasks, sowie das Ergebnis
+// des Tasks.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ExecuteSubTask(cCaption:C, cTaskScriptName:C, oErrorCallback:O, oProgressCallback:O)
+| aSubTaskResult |
+
+   //***************************************************************************
+   function WriteTaskLog_BeginSubTask(cCaption:C)
+      TSKPL_WriteCustomLog(m_nTaskId, cCaption + ' gestartet'),
+   end,
+
+   //***************************************************************************
+   function WriteTaskLog_EndSubTask(cCaption:C, aSubTaskResult:A)
+      TSKPL_WriteCustomLog(m_nTaskId, cCaption + ' beendet: ' + ArrToStr(aSubTaskResult)),
+   end,
+
+   WriteTaskLog_BeginSubTask(cCaption),
+   aSubTaskResult := Call(cTaskScriptName, oErrorCallback, oProgressCallback),
+   WriteTaskLog_EndSubTask(cCaption, aSubTaskResult),
+end,
+
+//##############################################################################
+//##############################################################################
+// Task
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oErrorCallback := CallbackInfo('EDITask_OnError'),
+   startseq
+      m_oProgressCallback := CallbackInfo('EDITask_OnProgress'),
+      startseq
+         ExecuteSubTask('Outbound - "Beleglisten erstellen"',   'EDI\_tasks\outbound\10_documentlist\standard',  m_oErrorCallback, m_oProgressCallback),
+         ExecuteSubTask('Outbound - "Inhouseformat erstellen"', 'EDI\_tasks\outbound\20_inhouseformat\standard', m_oErrorCallback, m_oProgressCallback),
+         ExecuteSubTask('Outbound - "Nachrichten erstellen"',   'EDI\_tasks\outbound\30_createmessage\standard', m_oErrorCallback, m_oProgressCallback),
+         ExecuteSubTask('Outbound - "Transport"',               'EDI\_tasks\outbound\40_transport\standard',     m_oErrorCallback, m_oProgressCallback),
+
+         TSKPL_SetTaskResult(m_aResult, gl_TSKPL_TaskResult_Success, 0),
+      always
+         DestroyObject(m_oProgressCallback),
+      stopseq,
+   always
+      DestroyObject(m_oErrorCallback),
+   stopseq,
+onerror
+   TSKPL_SetTaskResult(m_aResult, gl_TSKPL_TaskResult_Failure, GetErrorText()),
+stopseq,
+
+// Ergebnis explizit zurückgeben
+m_aResult
+

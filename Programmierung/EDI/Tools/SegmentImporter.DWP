@@ -1,0 +1,234 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm dient zum automatisierten Importieren von Edifact-Segment-
+//   Definitionen, welche z.B. unter www.edifactory.de abrufbar sind.
+//
+// Fehlerbehandlung:
+//   Alle auftretenden Exceptions werden an die aufrufende Stelle des Programms
+//   weitergegeben.
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_oEDISEGM:P2,
+   m_nStandard:P3,
+   m_cSegmentIdentifier:P4,
+   m_cSegmentDefinitionString:P5,
+
+   m_cBaseURL,
+   m_cURLDirectoryString, m_cURLSegmentIdentifierString
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cBaseURL                    := 'https://www.edifactory.de/edifact',           // Wird ausschließlich für den Web-Import benötigt
+m_cURLDirectoryString         := 'directory',                                   // Wird ausschließlich für den Web-Import benötigt
+m_cURLSegmentIdentifierString := 'segment',                                     // Wird ausschließlich für den Web-Import benötigt
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @result: array - Format:
+//   {
+//     {
+//       <Composite-Datenelement>,
+//       <Datenelement>,
+//       <Position im Segment>,
+//       <Position im Element>,
+//       <Mandatory-Flag>,
+//       <Description>
+//     },
+//     ...
+//   }
+//******************************************************************************
+function ParseSegmentDefinition(cSegmentDefinitionString:C)
+|
+   aLines, cLine, i,
+   nElementIndex, nSubElementIndex, cDataElementIdentifier,
+   cSubDataElementIdentifier, cDescription, bMandatory, bIsSubElement
+|
+
+   //***************************************************************************
+   function ParseMandatoryFlag(cFlag:C)
+      result := cFlag == 'M',
+   end,
+
+   result           := {},
+   aLines           := StrArray(cSegmentDefinitionString),
+   nElementIndex    := 0,
+   nSubElementIndex := 0,
+
+   for i := 1 to ALen(aLines) do
+      cLine         := aLines[i],
+      if not empty(cLine) then
+         bIsSubElement := left(cLine, 1) == ' ',
+         if bIsSubElement then
+            nSubElementIndex++,
+            cSubDataElementIdentifier := AllTrim(left(cLine, 11)),
+         else
+            nElementIndex++,
+            nSubElementIndex          := 0,
+            cSubDataElementIdentifier := '',
+            cDataElementIdentifier    := left(cLine, 11),
+         endif,
+
+         cDescription := AllTrim(SubStr(cLine, 12, 50)),
+         bMandatory   := ParseMandatoryFlag(SubStr(cLine, 63, 1)),
+
+         AAdd(result, {
+            cDataElementIdentifier,
+            cSubDataElementIdentifier,
+            nElementIndex,
+            nSubElementIndex,
+            bMandatory,
+            cDescription
+         }),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion überprüft, ob das übergebene Segment bereits unter den
+// Datenelementen vorhanden ist, die neu gemapped werden sollen
+// @Result: boolean
+//******************************************************************************
+function SameDataElementInArray(cElement, aDataElements)
+   | i, nCount |
+
+   Result := False,
+   nCount := 0,
+
+   for i := 1 to Alen(aDataElements) do
+      if VarEqual(cElement, aDataElements[i, 1]) and
+         VarEqual('', aDataElements[i, 2]) then
+         nCount++,
+      endif,
+   end,
+
+   if nCount > 1 then
+      Result := True,
+   endif,
+end,
+
+//******************************************************************************
+// Analysiert die Segmentdefinition des übergebenen Segments und speichert die
+// in der Struktur hinterlegten Datenelemente in die Tabelle EDISEGM.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ParseSegmentDefinitionAndStoreDataElements(oDM:O, oEDISEGM:O, nStandard:N, cSegmentIdentifier:C, cSegmentDefinition)
+| aDataElements, i, bHasSameSegment, nCount, cElementName |
+
+   aDataElements := ParseSegmentDefinition(cSegmentDefinition),
+   nCount        := -1,
+   cElementName  := '',
+
+   for i := 1 to ALen(aDataElements) do
+      // Wenn der DataElementIdentifier bereits vorhanden ist,
+      // soll ein Buchstabe an dessen Ende eingefügt werden
+      if SameDataElementInArray(aDataElements[i, 1], aDataElements) then
+         if VarEqual(aDataElements[i, 2], '') then
+            nCount++,
+         endif,
+         cElementName := Trim(aDataElements[i, 1]) + chr(97 + nCount),
+      else
+         cElementName := aDataElements[i, 1],
+      endif,
+
+      EDI_Edifact_SegmentMapping_Add(
+         oDM,
+         oEDISEGM,
+         nStandard,
+         cSegmentIdentifier,
+         cElementName,
+         aDataElements[i, 2],
+         aDataElements[i, 3],
+         aDataElements[i, 4],
+         aDataElements[i, 5],
+         aDataElements[i, 6]
+      ),
+   next,
+end,
+
+//******************************************************************************
+// Abruf-URL zusammensetzen
+// @result: string - Abrufs-URL
+//******************************************************************************
+function BuildURL(cBaseURL:C, cDirectory:C, cSegmentIdentifier:C)
+   result := cBaseURL + '/' + m_cURLDirectoryString         + '/' + cDirectory +
+                        '/' + m_cURLSegmentIdentifierString + '/' + cSegmentIdentifier,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Segment-Definitions-String aus dem HTML-Code der
+// übergebenen URL.
+//
+// @result: string - Segment-Definitions-String
+//******************************************************************************
+function FetchSegmentDefinitionString(cURL:C)
+| cHTMLString, oRichEdit, cText, cPart1, cPart2 |
+
+   cHTMLString := HttpGet(cURL),
+
+prs('FetchSegmentDefinitionString::cHTMLString', cHTMLString),
+   // Der Segment-Definitions-String befindet sich im HTML-Code innerhalb des
+   // <pre>-Tags.
+   cText := Token(cHTMLString, '<pre>',  2),
+   cText := Token(cText,       '</pre>', 1),
+   result := cText,
+
+prs('FetchSegmentDefinitionString', result),
+
+   // Falls sich in der Segmentdefinition noch HTML-Tags befinden, müssen diese
+   // ebenfalls entfernt werden.
+   if IsTextHTML(cText) then
+      while At('<', cText) > 0 do
+         cPart1 := Left(cText,   At('<', cText) - 1),
+         cPart2 := SubStr(cText, At('>', cText) + 1),
+         cText  := cPart1 + cPart2,
+      end,
+   endif,
+
+   result := trim(cText),
+end,
+
+//******************************************************************************
+// Ermittelt die Struktur des übergebenen Segments und speichert die in der
+// Struktur hinterlegten Datenelemente in die Tabelle EDISEGM.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function FetchAndStoreDataElements(oDM:O, oEDISEGM:O, cBaseURL:C, nStandard:N, cSegmentIdentifier:C)
+| cURL, cSegmentDefinition |
+
+   cURL := BuildURL(
+      cBaseURL,
+      EDI_Consts_EdifactMessageStandard_ToString(nStandard),
+      cSegmentIdentifier
+   ),
+
+   cSegmentDefinition := FetchSegmentDefinitionString(cURL),
+   ParseSegmentDefinitionAndStoreDataElements(oDM, oEDISEGM, nStandard, cSegmentIdentifier, cSegmentDefinition),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, m_oEDISEGM, true),
+
+FetchAndStoreDataElements(m_oDM, m_oEDISEGM, m_cBaseURL, m_nStandard, m_cSegmentIdentifier)

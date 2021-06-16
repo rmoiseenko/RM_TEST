@@ -1,0 +1,413 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Installations-Script für das Standard-Package "Historisierung"
+//##############################################################################
+//##############################################################################
+
+|
+   // Workareas
+   nWorkarea_HISKOPF,
+   nWorkarea_HISLAG,
+   nWorkarea_HISVK,
+   nWorkarea_HISVKAKT,
+   nWorkarea_HISEK,
+   nWorkarea_HISEKAKT,
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_HISKOPF  := 760,
+nWorkarea_HISLAG   := 761,
+
+nWorkarea_HISVK    := 762,
+nWorkarea_HISVKAKT := 764, // Reihenfolge ist vertauscht, weil Tabelle später eingeführt wurde
+
+nWorkarea_HISEK    := 763,
+nWorkarea_HISEKAKT := 765,  // Reihenfolge ist vertauscht, weil Tabelle später eingeführt wurde
+
+//##############################################################################
+//##############################################################################
+// Feld-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function HIS_DetailTable_AddInitialFields(oTableDefinition:R)
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'HISKOPF_ID', 0, 0, ftInteger,        'Historisierungs-Kopfsatz-ID',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TYP',        0, 0, gl_PCKGU_ftShort, 'Typ',                            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STATUS',     0, 0, gl_PCKGU_ftShort, 'Status',                         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STANDORT',   0, 0, gl_PCKGU_ftShort, 'Standort',                       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATUM',      0, 0, ftDate,           'Stichtag der Historisierung',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'MONAT_KAL',  0, 0, gl_PCKGU_ftShort, 'Monat zu DATUM',                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'JAHR_KAL',   0, 0, gl_PCKGU_ftShort, 'Jahr zu DATUM',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KW',         0, 0, gl_PCKGU_ftShort, 'Kalenderwoche zu DATUM',         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'JAHR_KW',    0, 0, gl_PCKGU_ftShort, 'Jahr zur Kalenderwoche',
+                                                                                          'Kann abweichen vom Datums-Jahr',     0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PER_VON',    0, 0, ftDate,           'Periode von',
+                                                                                          'Bei Periodenbezug: Werte beziehen sich auf diese Periode',
+                                                                                                                                0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PER_BIS',    0, 0, ftDate,           'Periode bis',
+                                                                                          'Bei Periodenbezug: Werte beziehen sich auf diese Periode.' + CRLF +
+                                                                                          'Der Wert muss immer mit DATUM übereinstimmen, es sei denn die Historisierung wurde zu einem späteren Zeitpunkt gemacht z.B. Am Monatsende für die erste Woche des Monats.',
+                                                                                                                                0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABTEILUNG',  0, 0, gl_PCKGU_ftShort, 'Historisierung für Abteilung',
+                                                                                          'Optional, wenn die Daten je Abteilung getrennt historisiert werden, z.B. relevant für Verkaufsdaten',
+                                                                                                                                0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SUM_TYP',    0, 0, gl_PCKGU_ftShort, 'Typ der Detail-Daten',
+                                                                                          'Detail-Daten oder summierte Daten / Summierungsebene?',
+                                                                                                                                0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+end,
+
+//******************************************************************************
+// Für die Datenfelder der Verkaufs-Auftragsbestands-Tabellen der Definition hinzu
+//******************************************************************************
+function HIS_DetailTable_AddVKDataFields(oTableDefinition:R)
+| i, aHISVK_WertFelder, cFeldBez, cFeldPraefix |
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_AUF',     0, 0, gl_PCKGU_ftShort, 'Standort, in dem der Auftrag existiert',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_AUFFN',   0, 0, ftInteger,        'Firmen-Nr. zu STO_AUF',                     '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_IS_LF',   0, 0, ftBoolean,        'Ist "Standortübergreifende Lieferung"',     '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_LIEF',    0, 0, gl_PCKGU_ftShort, 'Auslieferung durch Standort',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_LIEFFN',  0, 0, ftInteger,        'Firmen-Nr. zu STO_LIEF',                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_IS_IC',   0, 0, ftBoolean,        'Ist "Intercompany-Auftrag"',                '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IC_EMPFSTO',  0, 0, gl_PCKGU_ftShort, 'IC: Nr. des Empfänger-Standorts',           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IC_EMPFFN',   0, 0, ftInteger,        'IC: Firmen-Nr. des Empfänger-Standorts',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR',       mBeArtNoLen, 0, ftString, 'Artikelnummer',                '', 1, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTTYP',      1, 0, ftString,         'Artikel-Typ',                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PROD_ABT',    3, 0, ftString,         'Produktionsabteilung',           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTGRUPPE',   0, 0, ftInteger,        'Artikelgruppe',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                // 6 = fspSAccount
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KOSTENST',    0, 0, ftInteger,        'Kostenstelle',                   '', 6, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'EMPF_TYP',    1, 0, ftString,         'Empfänger-Typ',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                // 2 = fspCustNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KDNR',        0, 0, ftInteger,        'Kunden-Nummer',                  '', 2, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB050_TYP',  1, 0, ftString,         'Auftrags-Typ',                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LLANDNR',     3, 0, ftString,         'Empfänger-Land',                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LLAND_REG',   0, 0, gl_PCKGU_ftShort, 'Empfänger-Region',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'AUF_ART',     0, 0, gl_PCKGU_ftShort, 'Auftrags-Art',                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PRJ_ID',      0, 0, ftInteger,        'Projekt-ID',                     '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WAEKZ',       0, 0, gl_PCKGU_ftShort, 'Währung',                        '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'VERTRETER',   0, 0, ftInteger,        'Vertreter-Nr',                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'VERTRETER2',  0, 0, ftInteger,        'Vertreter-Nr (2)',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINW',     8, 0, ftString,         'Wunschtermin',                              '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINWD',    0, 0, ftDate,           'Wunschtermin (Date)',                       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMIN',      8, 0, ftString,         'Termin',                                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMIND',     0, 0, ftDate,           'Termin (Date)',                             '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINAW',    0, 0, ftInteger,        '"Abstand in Wochen" des Liefer-Termins',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABRUF_AUF',   0, 0, ftBoolean,        'Rahmen-Auftrag',                            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'APNUMMER',    9, 0, ftString,         'Auftrags/Posit.Nr  (6+3)',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB055_ID',   0, 0, ftInteger,        'DAB055:ID',                                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   // Wert-Felder (jeweils 4 Felder je Kennzahl)
+   aHISVK_WertFelder :=   {{'Angebot',          'AN'},
+                           {'Lieferrückstand',  'LR'},
+                           {'Reserviert',       'RV'},
+                           {'Versand',          'VS'},
+                           {'Fakturarückstand', 'FR'}},
+
+   for i := 1 to ALen(aHISVK_WertFelder) do
+      cFeldBez     := aHISVK_WertFelder[i, 1],
+      cFeldPraefix := aHISVK_WertFelder[i, 2],
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_MENGE',   0, 0, ftFloat, cFeldBez + ' Menge',                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_EK_WT',   0, 0, ftFloat, cFeldBez + ' Einstandswert',            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_RE_WTFW', 0, 0, ftFloat, cFeldBez + ' Rechn.wert Fremdw.',       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_RE_WT',   0, 0, ftFloat, cFeldBez + ' Rechn.wert',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   next,
+end,
+
+//******************************************************************************
+// Für die Datenfelder der Einkaufs-Bestellbestands-Tabellen der Definition hinzu
+//******************************************************************************
+function HIS_DetailTable_AddEKDataFields(oTableDefinition:R)
+| i, aHISEK_WertFelder, cFeldBez, cFeldPraefix |
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'STO_IS_IC',   0, 0, ftBoolean,        'Ist "Intercompany-Bestellung"?',            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IC_ABSSTO',   0, 0, gl_PCKGU_ftShort, 'IC: Nr. des Absender-Standorts',            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'IC_ABSFFN',   0, 0, ftInteger,        'IC: Firmen-Nr. des Absender-Standorts',     '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                           // 1 = fspArtNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTNR',       mBeArtNoLen, 0, ftString, 'Artikelnummer',                           '', 1, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTTYP',      1, 0, ftString,         'Artikel-Typ',                               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ARTGRUPPE',   0, 0, ftInteger,        'Artikelgruppe',                             '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                           // 5 = fspMAccount
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'SACHKONTO',   0, 0, ftInteger,        'Sachkonto',                                 '', 5, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                           // 6 = fspSAccount
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'KOSTENST',    0, 0, ftInteger,        'Kostenstelle',                              '', 6, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                                           // 3 = fspSuppNo
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LIEFNR',      0, 0, ftInteger,        'Lieferanten-Nummer',                        '', 3, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LANDNR',      3, 0, ftString,         'Absender-Land',                             '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'LAND_REG',    0, 0, gl_PCKGU_ftShort, 'Absender-Region',                           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BESTAETIGT',  0, 0, ftBoolean,        'Bestellung ist bestätigt?',                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'PRJ_ID',      0, 0, ftInteger,        'Projekt-ID',                                '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'WAEKZ',       0, 0, gl_PCKGU_ftShort, 'Währung',                                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DATUMB',      0, 0, ftDate,           'Datum der Bestellung',                      '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINS',     8, 0, ftString,         'Solltermin',                                '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINSD',    0, 0, ftDate,           'Solltermin (Date)',                         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMIN',      8, 0, ftString,         'Liefertermin',                              '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMIND',     0, 0, ftDate,           'Liefertermin (Date)',                       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'TERMINAW',    0, 0, ftInteger,        '"Abstand in Wochen" des Liefer-Termins',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABRUF_AUF',   0, 0, ftBoolean,        'Rahmen-Auftrag',                            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ABRUF_POS',   0, 0, ftInteger,        'Abruf-Positions-Nr.',                       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'BESTPOSNR',   8, 0, ftString,         'Bestell-Pos-Nr.',                           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'DAB035_ID',   0, 0, ftInteger,        'DAB035:ID',                                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   // Mengen-Umrechnungs-Infos
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ME_UMR',      0, 0, ftFloat,          'Umrechnung Einkaufs- zu Lagereinheit',      '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(oTableDefinition, 'ME_RUNDEN',   0, 0, ftInteger,        'Rundung auf NK-Stellen, aus Dab010',        '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   // Wert-Felder (jeweils 4 Felder je Kennzahl)
+   aHISEK_WertFelder :=   {{'Bestellrückstand',  'BR'},
+                           {'Im Wareneingang',   'WE'}},
+   for i := 1 to ALen(aHISEK_WertFelder) do
+      cFeldBez     := aHISEK_WertFelder[i, 1],
+      cFeldPraefix := aHISEK_WertFelder[i, 2],
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_MENGE',   0, 0, ftFloat, cFeldBez + ' Menge',                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_MENG_EK', 0, 0, ftFloat, cFeldBez + ' Menge EK-Eh.',             '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_RE_WTFW', 0, 0, ftFloat, cFeldBez + ' Rechn.wert Fremdw.',       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+      PCKGU_TableDefinition_AddField(oTableDefinition, cFeldPraefix + '_RE_WT',   0, 0, ftFloat, cFeldBez + ' Rechn.wert',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// Index-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function HIS_DetailTable_AddDefaultDetailIndices(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'HISKOPF_ID', {'HISKOPF_ID'}, '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'STANDORT',   {'STANDORT'},   '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'STATUS',     {'STATUS'},     '', '', False, False, False, 512),
+end,
+
+//******************************************************************************
+function HIS_DetailTable_AddVKDataFieldIndices(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ARTNR',           {'ARTNR'},             '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'KDNR',            {'KDNR'},              '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LLAND_REG',       {'LLAND_REG'},         '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'WAEKZ',           {'WAEKZ'},             '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'AUF_ART',         {'AUF_ART'},           '', '', False, False, False, 512),
+end,
+
+//******************************************************************************
+function HIS_DetailTable_AddEKDataFieldIndices(oTableDefinition:R)
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'ARTNR',           {'ARTNR'},             '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LIEFNR',          {'LIEFNR'},            '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'LAND_REG',        {'LAND_REG'},          '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(oTableDefinition, 'WAEKZ',           {'WAEKZ'},             '', '', False, False, False, 512),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen, die die Tabellen-Definitionen zusammenbauen + zurück geben
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function Get_TableDef_HISKOPF()
+   Result := PCKGU_TableDefinition_Create('HISKOPF',  nWorkarea_HISKOPF, 'Historisierung: Kopfdaten',         '', True,  False),
+
+   // Felddefinitionen
+   PCKGU_TableDefinition_AddField(Result, 'TYP',        0, 0, gl_PCKGU_ftShort, 'Typ',                            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'STATUS',     0, 0, gl_PCKGU_ftShort, 'Status',                         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'STANDORT',   0, 0, gl_PCKGU_ftShort, 'Standort',                       '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(Result, 'DATUM',      0, 0, ftDate,           'Stichtag der Historisierung',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'MONAT_KAL',  0, 0, gl_PCKGU_ftShort, 'Monat zu DATUM',                 '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'JAHR_KAL',   0, 0, gl_PCKGU_ftShort, 'Jahr zu DATUM',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'KW',         0, 0, gl_PCKGU_ftShort, 'Kalenderwoche zu DATUM',         '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'JAHR_KW',    0, 0, gl_PCKGU_ftShort, 'Jahr zur Kalenderwoche',
+                                                                                           'Kann abweichen vom Datums-Jahr',     0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'PER_VON',    0, 0, ftDate,           'Periode von',
+                                                                                           'Bei Periodenbezug: Werte beziehen sich auf diese Periode',
+                                                                                                                                 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'PER_BIS',    0, 0, ftDate,           'Periode bis',
+                                                                                           'Bei Periodenbezug: Werte beziehen sich auf diese Periode.' + CRLF +
+                                                                                           'Der Wert muss immer identisch sein mit DATUM, es sei denn die Historisierung würde später gemacht z.B. Am Monatsende für die erste Woche des Monats.',
+                                                                                                                                 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(Result, 'FERTIG_DAT', 0, 0, ftDateTime,       'Hist. abgeschlossen am / um',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'DAUER_SEK',  0, 0, ftInteger,        'Lautzeit der Historisierung',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LOESCH_USR', 3, 0, ftString,         'Historisierung gelöscht durch',  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LOESCH_DAT', 0, 0, ftDateTime,       'Hist. gelöscht am/um',           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'KOMMENTAR',  0, 0, ftMemo,           'Kommentar',
+                                                                                           'Kann individuell befüllt werden',    0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(Result, 'FEHLER_ANZ', 0, 0, gl_PCKGU_ftShort, 'Anzahl aufgetretener Fehler',
+                                                                                           'Gilt nur für Historisierungs-Läufe, die nicht schon beim ersten Fehler abbrechen.',
+                                                                                                                                 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'FEHLER',     0, 0, ftMemo,           'Fehlertexte',
+                                                                                           'Das Feld wird befüllt, sobald Fehler beim Historisierungslauf aufgetreten sind (STATUS = 80)',
+                                                                                                                                 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   PCKGU_TableDefinition_AddField(Result, 'STDWAE_NR',  0, 0, gl_PCKGU_ftShort, 'Eigenwährungs-Nr.',
+                                                                                           'Wird aus DABPAR:STDWAE_NR befüllt',  0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LAG_VERFG',  0, 0, ftMemo,           'Liste verfügbarer Lager',
+                                                                                           'Wird aus DABPAR:LAG_VERFG befüllt',  0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+
+   // Index-Definitionen für Tabelle HISKOPF
+   PCKGU_TableDefinition_AddIndex(Result, 'STANDORT',     {'STANDORT'},           '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(Result, 'TYP',          {'TYP'},                '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(Result, 'STATUS',       {'STATUS'},             '', '', False, False, False, 512),
+   PCKGU_TableDefinition_AddIndex(Result, 'DATUM_TYP_ID', {'DATUM', 'TYP', 'ID'}, '', '', False, False, False, 512),
+end,
+
+//******************************************************************************
+function Get_TableDef_HISLAG()
+| i |
+   Result := PCKGU_TableDefinition_Create('HISLAG',   nWorkarea_HISLAG,  'Historisierung: Lagerbestand',      '', True,  False),,
+
+   // Felddefinitionen
+   HIS_DetailTable_AddInitialFields(Result),
+                                                                                                                              // 1 = fspArtNo
+   PCKGU_TableDefinition_AddField(Result, 'ARTNR',       mBeArtNoLen, 0, ftString, 'Artikelnummer',                '', 1, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'ARTTYP',      1, 0, ftString,         'Artikel-Typ',                    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'PROD_ABT',    3, 0, ftString,         'Produktionsabteilung',           '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'ARTGRUPPE',   0, 0, ftInteger,        'Artikelgruppe',                  '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+                                                                                                                              // 6 = fspSAccount
+   PCKGU_TableDefinition_AddField(Result, 'KOSTENST',    0, 0, ftInteger,        'Kostenstelle',                   '', 6, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'PE',          0, 0, ftInteger,        'Preiseinheit',                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'EKP',         0, 0, ftFloat,          'Standard-EKP',                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LTZTEKP',     0, 0, ftFloat,          'Letzter EK-Preis',               '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'DURCHSCHEK',  0, 0, ftFloat,          'Durchschn. EK-Preis',            '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   for i := 0 to 59 do // Lager-Felder "LAGER0" - "LAGER59" anlegen
+      PCKGU_TableDefinition_AddField(Result, 'LAGER' + Str(i), 0, 0, ftFloat, 'Lager ' + Str(i),                   '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   next,
+
+   PCKGU_TableDefinition_AddField(Result, 'LAGERP',      0, 0, ftFloat,          'Bestand in Produktion',          '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LAGERV',      0, 0, ftFloat,          'Bestand in Versand',             '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LAGERM',      0, 0, ftFloat,          'Bestand in Vermietung',          '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LAGERW',      0, 0, ftFloat,          'Bestand in Wareneingang',        '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+   PCKGU_TableDefinition_AddField(Result, 'LAGER_VER',   0, 0, ftFloat,          'Verfügb. Lagerbestand',          '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+
+   // Index-Definitionen
+   HIS_DetailTable_AddDefaultDetailIndices(Result),
+   PCKGU_TableDefinition_AddIndex(Result, 'STATUS_STANDORT_ARTNR_DATUM', {'STATUS', 'STANDORT', 'ARTNR', 'DATUM'}, '', '', False, False, False, 512),
+end,
+
+//******************************************************************************
+function Get_TableDef_HISVK()
+   Result := PCKGU_TableDefinition_Create('HISVK',    nWorkarea_HISVK,   'Historisierung: Verkauf',           '', True,  False),
+
+   // Felddefinitionen
+   HIS_DetailTable_AddInitialFields(Result),
+   HIS_DetailTable_AddVKDataFields(Result),
+   // Index-Definitionen
+   HIS_DetailTable_AddDefaultDetailIndices(Result),
+   HIS_DetailTable_AddVKDataFieldIndices(Result),
+end,
+
+//******************************************************************************
+function Get_TableDef_HISVKAKT()
+   Result := PCKGU_TableDefinition_Create('HISVKAKT', nWorkarea_HISVKAKT, 'Historisierung: Verkauf akt.',   '', False,  False), // Achtung: keine Default-Felder!
+
+   // Felddefinitionen
+   HIS_DetailTable_AddInitialFields(Result),
+   HIS_DetailTable_AddVKDataFields(Result),
+
+   // Index-Definitionen
+   HIS_DetailTable_AddDefaultDetailIndices(Result),
+   HIS_DetailTable_AddVKDataFieldIndices(Result),
+end,
+
+//******************************************************************************
+function Get_TableDef_HISEK()
+   Result := PCKGU_TableDefinition_Create('HISEK',    nWorkarea_HISEK,   'Historisierung: Einkauf',           '', True,  False),
+
+   // Felddefinitionen
+   HIS_DetailTable_AddInitialFields(Result),
+   HIS_DetailTable_AddEKDataFields(Result),
+
+   // Index-Definitionen
+   HIS_DetailTable_AddDefaultDetailIndices(Result),
+   HIS_DetailTable_AddEKDataFieldIndices(Result),
+end,
+
+//******************************************************************************
+function Get_TableDef_HISEKAKT()
+   Result := PCKGU_TableDefinition_Create('HISEKAKT', nWorkarea_HISEKAKT, 'Historisierung: Einkauf akt.', '', False,  False), // Achtung: keine Default-Felder!
+
+   // Felddefinitionen
+   HIS_DetailTable_AddInitialFields(Result),
+   HIS_DetailTable_AddEKDataFields(Result),
+
+   // Index-Definitionen
+   HIS_DetailTable_AddDefaultDetailIndices(Result),
+   HIS_DetailTable_AddEKDataFieldIndices(Result),
+end,
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', True),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       True)
+      },
+      {mrOK, mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+            //          müssen die folgenden Zeilen einkommentiert werden:
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISKOPF,  'HISKOPF',  cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISLAG,   'HISLAG',   cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISVK,    'HISVK',    cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISVKAKT, 'HISVKAKT', cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISEK,    'HISEK',    cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_HISEKAKT, 'HISEKAKT', cUsername, cPassword),
+
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISKOPF(),  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISLAG(),   cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISVK(),    cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISVKAKT(), cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISEK(),    cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, Get_TableDef_HISEKAKT(), cUsername, cPassword),
+
+            oDM.CbTransaction_Commit(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

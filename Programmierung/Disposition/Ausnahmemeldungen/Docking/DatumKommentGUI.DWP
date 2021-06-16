@@ -1,0 +1,202 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   - Eingabe-Dialog, kann aufgerufen werden über die Funktion "Datum und Kommentar"
+//     aus dem Fenster "Ausnahmemeldungen - Docking" heraus.
+//   - Ermögicht die Eingabe eines Wiedervorlage-Datums und Kommentar zum
+//     Setzen einer Wiedervorlage für eine aufgetretene Ausnahmemeldung
+//
+//
+//   Rückgabe: Array mit {WVDatum, Kommentar}
+//
+//##############################################################################
+//##############################################################################
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_nKDNDAMID:P3:=28,
+
+   m_cFormID, m_cPositionSaveID, m_aResultArray, m_oMemGui,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Ok, al_Main, btn_Cancel, btn_OK, ds_MemGui, dtp_WV_TS,
+   lbl_comment, lbl_wvDatum, pnl_main, richedt_WV_KOMMENT
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@AUSEXT', // ID der zugewiesenen F12-Maske
+m_cPositionSaveID := '@AUSEXT', // ID zum Speichern der Fenster-Position/-Größe
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion überträgt die Infos aus der GUI in das Result-Array
+// @Result: null
+//******************************************************************************
+function FillResultArray()
+   m_aResultArray[1] := SToD(DToS(m_oMemGui:WV_TS)),
+   m_aResultArray[2] := m_oMemGui:WV_KOMMENT,
+end,
+
+//******************************************************************************
+// Aktuelle Wiedervorlage-Werte der übergebenen Ausnahme in die GUI laden
+// @Result: null
+//******************************************************************************
+function LoadCurrentDataToGui()
+| oKdnDAM |
+   m_aResultArray    := Dim(2),
+   m_aResultArray[1] := 0,
+   m_aResultArray[2] := '',
+
+   m_oMemGui         := CreateObject('TBeMemTable'),
+   m_oMemGui.CbAddField('WV_TS',         ftDateTime, 0),
+   m_oMemGui.CbAddField('WV_KOMMENT',    ftMemo,     0),
+   m_oMemGui.Active  := True,
+   ds_MemGui.DataSet := m_oMemGui,
+
+   // Die Daten der übergebenen Ausnahmemeldung anzeigen
+   //  -> bisheriges Datum und Kommentar
+   oKdnDAM := BeOpen(waKdnDAM, 'ID'),
+   startseq
+      MySeek({m_nKDNDAMID}, oKDNDAM),
+      MyAppend(m_oMemGui),
+      m_oMemGui:WV_TS      := oKDNDAM:WV_TS,
+      m_oMemGui:WV_KOMMENT := oKDNDAM:WV_KOMMENT,
+      MyPost(m_oMemGui),
+   always
+      BeClose(oKdnDAM),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function A_CancelExecute( Sender )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function A_OkExecute( Sender )
+   if not empty(dtp_WV_TS.Date) and dtp_WV_TS.Date < Date() then
+      meld('Ein Wiedervorlagedatum in der Vergangenheit ist nicht zulässig.'),
+   else
+      FillResultArray(),
+      CloseForm(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.BorderStyle    := bsDialog,
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+   // Events zuweisen
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel           := FindObject(oForm, "A_Cancel"),
+   A_Ok               := FindObject(oForm, "A_Ok"),
+   al_Main            := FindObject(oForm, "al_Main"),
+   btn_Cancel         := FindObject(oForm, "btn_Cancel"),
+   btn_OK             := FindObject(oForm, "btn_OK"),
+   ds_MemGui          := FindObject(oForm, "ds_MemGui"),
+   dtp_WV_TS          := FindObject(oForm, "dtp_WV_TS"),
+   lbl_comment        := FindObject(oForm, "lbl_comment"),
+   lbl_wvDatum        := FindObject(oForm, "lbl_wvDatum"),
+   pnl_main           := FindObject(oForm, "pnl_main"),
+   richedt_WV_KOMMENT := FindObject(oForm, "richedt_WV_KOMMENT"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI() zeigt das GUI an, das vorher mit LoadGUI() geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   LoadCurrentDataToGui(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+m_aResultArray

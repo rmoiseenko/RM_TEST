@@ -1,0 +1,318 @@
+//##############################################################################
+// package-manager Funktionen für die Interaktion mit dem NPM Repository
+//##############################################################################
+
+
+
+//##############################################################################
+// Includes
+//##############################################################################
+
+//#p Tools\package-manager\utils-npm-unpack
+
+
+
+
+// Im Metadata JSON-Objekt, das von der npm Registry kommt, gibt es ein
+// Unterobjekt ("versions"), das jede existierende Version des Pakets als
+// Eigenschaft hat. Diese Property ist wiederum ein Objekt mit weiteren
+// Eigenschaften
+//
+// z.B.
+// {
+//   ...
+//   "versions": {
+//      "1.0.0": {...}
+//      "1.0.1": {...}
+//      "2.0.0": {...}
+//      usw...
+//   }
+// }
+//
+// Der Codeblock-JSON-Parser erlaubt jedoch keine Sonderzeichen oder Nummern im
+// Eigenschaftsnamen und kann daher nicht verwendet werden.
+// Deshalb werden in dieser Datei zwei Funktionen definiert, welche die
+// benoetigten Information per RegEx aus dem JSON-String ermitteln
+// WICHTIG: Das ist nur ein Workaround und nicht 100% akurat. Es ist durchaus
+//          moeglich, dass die Codeblock-Funktionen zu viele oder die falschen
+//          Daten ermitteln.
+
+
+// Diese Funktion soll die Version ermitteln, welche als "latest" getaggt ist.
+// Das Objekt sieht z.B. so aus:
+// {
+//   ...
+//   "dist-tags": {
+//      "stable": "4.1.5",
+//      "latest": "4.2.0"
+//      usw...
+//   }
+// }
+// Die Funktion ermittelt einen Substring, der das dist-tags Objekt enthaelt.
+// In diesem Substring wird per RegEx der Wert fuer die Eigenschaft "latest"
+// ermittelt.
+function BPM_npm_ExtractLatestVersionFromMetaData(cJson)
+| oRegExpr, nDistTagStart, nDistTagEnd, cDistTags  |
+   Result := '',
+   oRegExpr := CreateObject('TBeCBRegExpr'),
+   startseq,
+        nDistTagStart             := At("dist-tags", cJson),
+        nDistTagEnd               := At('}', SubStr(cJson, nDistTagStart, Len(cJson) - nDistTagStart)) + nDistTagStart,
+        oRegExpr.SearchText       := SubStr(cJson, nDistTagStart, nDistTagEnd - nDistTagStart),
+        oRegExpr.SearchExpression := '"latest"\s*:\s*"(\S[^"]+)"',
+        if oRegExpr.ExecSearch then
+           Result := oRegExpr.Matches[2],
+        endif,
+        SetErrorIf(Result == '', 'error in <BPM_npm_ExtractLatestVersionFromMetaData()>: could not find latest version', 1),
+   always
+      DestroyObject(oRegExpr),
+   stopseq,
+end,
+
+function BPM_npm_AppendVersionToVersionArrayString(cRegExMatch, aArrAsString)
+| cVersion |
+   // cRegExMatch ist in dieser Form `"1.3.0":`
+   // per Token den Teil links vom Doppelpunkt ermitteln
+   cVersion := Token(cRegExMatch, ':', 1),
+   if At(cVersion, aArrAsString) = 0 then
+      aArrAsString += cVersion + ',',
+   endif,
+   Result := aArrAsString,
+end,
+
+// Die Funktion ermittelt die existierenden Versionen des Pakets. Das Versions-
+// Objekt ist oben genauer beschrieben.
+// Im Metadaten-Json gibt es ausserdem ein weiteres Objekt, welches als
+// Eigenschaften die existierenden Versionen hat. Das Versions-Array wird als
+// String behandelt, um einfach pruefen zu koennen ob eine Version bereits im
+// Array ist.
+function BPM_npm_ExtractAllVersionsFromMetaData(cJson)
+| oRegExpr, aArrAsString |
+
+   oRegExpr := CreateObject('TBeCBRegExpr'),
+   startseq,
+        aArrAsString        := '{',
+        oRegExpr.SearchText := cJson,
+        // Dieses RegEx ermittelt alle Eigenschaften des JSON-Objektes, welche
+        // mit einer Zahl beginnen, indem es nach Text sucht, der zwischen
+        // Anfuehrungszeichen steht und nach dem einen Doppelpunkt ist.
+        oRegExpr.SearchExpression := '"(\d[^"]+?)"\s*:',
+        if oRegExpr.ExecSearch then
+           aArrAsString := BPM_npm_AppendVersionToVersionArrayString(oRegExpr.Matches[1], aArrAsString),
+           while oRegExpr.ExecSearchNext do
+              aArrAsString := BPM_npm_AppendVersionToVersionArrayString(oRegExpr.Matches[1], aArrAsString),
+           end,
+        endif,
+        aArrAsString += '}',
+        Result := StrToArr(aArrAsString),
+
+        SetErrorIf(ALen(Result) = 0, 'error in <BPM_npm_ExtractAllVersionsFromMetaData()>: no versions found', 1),
+   always
+      DestroyObject(oRegExpr),
+   stopseq,
+end,
+
+function BPM_npm_GetPackageMetaData(aRepositoryData, cPackageName)
+| cRepositoryUrl, cApiUrl, oHttp, cUserName, cPassword, oJson, cJsonData, oParam, cLatestVersion, cTarBallFileName |
+
+  Result       := {},
+
+  cRepositoryUrl := KVU_GetAssert(aRepositoryData, 'REPOSITORY_URL'),
+  cUserName      := KVU_GetAssert(aRepositoryData, 'USERNAME'), // Auth verpflichtend
+  cPassword      := KVU_GetAssert(aRepositoryData, 'PASSWORD'),
+
+  cApiUrl        := cRepositoryUrl + cPackageName,
+
+  oHttp        := CreateObject('TBeCbHTTP'),
+  startseq
+    oHTTP.CbAuthentificationMode     := BPM_DetermineAuthentificationMode(),
+    oHTTP.CbAuthentificationUserName := cUserName,
+    oHTTP.CbAuthentificationPassword := cPassword,
+    oHTTP.CbConnectTimeout           := 2000,
+    oHTTP.CbReadTimeout              := 2000,
+    startseq
+       oHTTP.CbGetURL(cApiUrl),
+       cJsonData := oHTTP.CbHTTPBody,
+
+       SetErrorIf(empty(cJsonData), 'server returned empty body - reason might be incorrect authentication'),
+
+       cLatestVersion := BPM_npm_ExtractLatestVersionFromMetaData(cJsonData),
+       KVU_Set(Result, 'LATEST_VERSION',     cLatestVersion),
+
+       // Diese Info könnte man auch aus dem JSON entnehmen und nicht selber basteln... wenn es dann lesbar ist :)
+       // bei packages mit scope im Namen (@scope/package) erscheint der scope nicht im tarball-name, daher hier weg-splitten
+       if Left(cPackageName, 1) = '@' then
+          cPackageName := AllTrim(Token(cPackageName, '/', 2)),
+       endif,
+       cTarBallFileName := cPackageName + '-' + cLatestVersion + '.tgz',
+       KVU_Set(Result, 'LATEST_TARBALL_FILE_NAME',                   cTarBallFileName),
+       KVU_Set(Result, 'LATEST_TARBALL_URL',       cApiUrl + '/-/' + cTarBallFileName),
+
+       KVU_Set(Result, 'AVAILABLE_VERSIONS', BPM_npm_ExtractAllVersionsFromMetaData(cJsonData)),
+    onerror
+       SetError(
+          'Error downloading package metadata'                          + crlf +
+          '  ' + GetErrorText()                                         + crlf +
+          IIf(GetErrorCode() = 1, '',
+          '  ErrorHTTPStatusCode = ' + Str(oHTTP.CbErrorHTTPStatusCode) + crlf +
+          '  ErrorHTTPStatusText = ' +     oHTTP.CbErrorHTTPStatusText  + crlf +
+          '  ErrorHTTPBody       = ' +     oHTTP.CbErrorHTTPBody)),
+    stopseq,
+  always
+     DestroyObject(oHttp),
+  stopseq,
+end,
+
+//******************************************************************************
+// Gibt den Default-Download / Speicherort für das 7Zip Tool zurück
+// @Result: KVU Array mit (File-Name, Version)
+//******************************************************************************
+function BPM_Default_7zip_Data()
+| cVersion |
+   Result   := {},
+   cVersion := '1900',
+   KVU_Set(Result, 'FILENAME', GetTempPath() + 'beMPI\7zip\' + '7za-' + cVersion + '.exe'),
+   KVU_Set(Result, 'VERSION',  cVersion),
+end,
+
+//******************************************************************************
+// Lädt ein *.tgz Paket aus dem NPM Repo und entpackt dieses im gleichen Ordner
+//  Result = KVU Array
+//******************************************************************************
+function BPM_DownloadAndUnZipPackage_From_NPM_Repo(aRepositoryData, cPackageName)
+| aNPMMetaDataResult, cLatestVersion, cLatestTarBallUrl, cLatestTabBallFileName,
+  cUserName, cPassword, oHTTP, cBuffer, oFile, cDownloadPath, cDownloadedFile,
+  aRawToolsRepoData, a7ZipDefaults, c7ZipToolFileName, cExtractedFolderPath,
+  c7ZipVersion, aUnZipResult |
+
+  // Welches ist die "Latest" Version und was ist die Download-URL?
+  aNPMMetaDataResult     := BPM_npm_GetPackageMetaData(aRepositoryData, cPackageName),
+  cLatestVersion         := KVU_GetAssert(aNPMMetaDataResult, 'LATEST_VERSION'),
+  cLatestTarBallUrl      := KVU_GetAssert(aNPMMetaDataResult, 'LATEST_TARBALL_URL'),
+  cLatestTabBallFileName := KVU_GetAssert(aNPMMetaDataResult, 'LATEST_TARBALL_FILE_NAME'),
+
+  cUserName          := KVU_GetAssert(aRepositoryData, 'USERNAME'), // Auth verpflichtend
+  cPassword          := KVU_GetAssert(aRepositoryData, 'PASSWORD'),
+
+  Result := {},
+
+  oHTTP    := CreateObject('TBeCbHTTP'),
+  startseq,
+    oHTTP.CbAuthentificationMode     := BPM_DetermineAuthentificationMode(),
+    oHTTP.CbAuthentificationUserName := cUserName,
+    oHTTP.CbAuthentificationPassword := cPassword,
+
+    oHTTP.CbConnectTimeout := 2000,
+    oHTTP.CbReadTimeout    := 2000,
+    startseq
+       oHTTP.CbGetURL(cLatestTarBallUrl), // HTTP-Get-Request auslösen
+       cBuffer             := oHTTP.CbHTTPBody,
+       SetErrorIf(empty(cBuffer), 'server returned empty body - reason might be incorrect authentication'),
+
+       cDownloadPath       := GetTempPath() + 'beMPI\' + FormatDateTime('YYYYMMDD-HHMMSS-ZZZ', Now()),                             WriteLn('temp. download path: "' + cDownloadPath + '"'),
+
+       SetErrorIf(DirectoryExists(cDownloadPath), 'temporary download directory already exists - something wrong'),
+
+       ForceDirectories(cDownloadPath),                                                                                            // ShellExecute(cDownloadPath),
+
+       cDownloadedFile := cDownloadPath + '\' + cLatestTabBallFileName,                                                            WriteLn(cDownloadedFile),
+
+       SetErrorIf(File(cDownloadedFile), 'file "' + cDownloadedFile + '" already exists in temporary download folder - something wrong!'),
+
+       // Runterladen und abspeichern
+       oFile := FOpen(cDownloadedFile, fo_Create),
+       startseq
+         FWrite(oFile, cBuffer),
+       always
+         FClose(oFile),
+       stopseq,
+
+       // *.tgz Entpacker--Tool runterladen, wenn es noch nicht verfügbar ist
+       // (Username und Passwort von NPM-repo übernehmen, URL ist abweichend)
+       aRawToolsRepoData  := aRepositoryData,
+       KVU_Set(aRawToolsRepoData, 'REPOSITORY_URL', 'https://nexus.dontenwill.de/repository/be_packages_raw'),
+
+       a7ZipDefaults       := BPM_Default_7zip_Data(),
+       c7ZipToolFileName   := KVU_GetAssert(a7ZipDefaults, 'FILENAME'),
+       c7ZipVersion        := KVU_GetAssert(a7ZipDefaults, 'VERSION'),
+
+       if not File(c7ZipToolFileName) then
+          BPM_7Zip_DownloadZipTool(aRawToolsRepoData, c7ZipVersion, c7ZipToolFileName),
+       endif,
+
+       // Paket entzippen
+       aUnZipResult         := BPM_UnZip_Package(cDownloadedFile, c7ZipToolFileName),
+       cExtractedFolderPath := KVU_GetAssert(aUnZipResult, 'UNZIPPED_PACKAGE_FOLDER'),
+
+       // *.tgz Archiv löschen
+       DeleteFile(cDownloadedFile),
+
+       KVU_Set(Result, 'EXTRACTED_PACKAGE_FOLDER_PATH',   cExtractedFolderPath),
+
+    onerror
+       SetError(
+          'Error downloading package-file'                              + crlf +
+          '  ' + GetErrorText()                                         + crlf +
+          '  ErrorHTTPStatusCode = ' + Str(oHTTP.CbErrorHTTPStatusCode) + crlf +
+          '  ErrorHTTPStatusText = ' +     oHTTP.CbErrorHTTPStatusText  + crlf +
+          '  ErrorHTTPBody       = ' +     oHTTP.CbErrorHTTPBody),
+    stopseq,
+  always,
+    DestroyObject(oHTTP),
+  stopseq,
+
+
+end,
+
+//##############################################################################
+//##############################################################################
+// Test-Code
+//##############################################################################
+//##############################################################################
+
+function TestGetPackageMetaData(aRepositoryData)
+| aMetaData |
+   if ALen(aRepositoryData) > 0 then
+      aMetaData := BPM_npm_GetPackageMetaData(aRepositoryData, 'basic-package'),
+
+      Writeln("latest",         KVU_GetAssert(aMetaData, 'LATEST_VERSION')),
+      WriteLn("latest tarball", KVU_GetAssert(aMetaData, 'LATEST_TARBALL_URL')),
+      WriteLn("versions",       KVU_GetAssert(aMetaData, 'AVAILABLE_VERSIONS')),
+   endif,
+end,
+
+function TestDownloadAndUnZipPackage(aRepositoryData)
+| aData  |
+   if ALen(aRepositoryData) > 0 then
+      aData := BPM_DownloadAndUnZipPackage_From_NPM_Repo(aRepositoryData, InputBox('paketname', 'paketname', 'basic-package')),
+      Writeln(KVU_GetAssert(aData, 'EXTRACTED_PACKAGE_FOLDER_PATH')),
+   endif,
+end,
+
+function TestGetRepoData(cUserNamePreset, cRepoUrlPreset)
+| aDialogResult, cUsername, cPassword |
+   Result := {},
+   aDialogResult := DU_InputDialog(
+      'Test',
+      '',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, cUserNamePreset, True),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',              True)
+      },
+      {mrOK, mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      KVU_Set(Result, 'REPOSITORY_URL', cRepoUrlPreset),
+      KVU_Set(Result, 'USERNAME',       cUsername),
+      KVU_Set(Result, 'PASSWORD',       cPassword),
+   endif,
+end,
+
+
+// TestGetPackageMetaData(      TestGetRepoData('develop', 'https://nexus.dontenwill.de/repository/be_packages_npm_proxy/'))
+// TestDownloadAndUnZipPackage( TestGetRepoData('develop', 'https://nexus.dontenwill.de/repository/be_packages_npm_proxy/'))
+

@@ -1,0 +1,265 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//    Vorlage für ein Standard F12-Fenster mit allen benötigten Funktionalitäten
+//    um über die GFU-Funktionen auch als MDI-Child aufgerufen zu werden.
+//
+// Hinweise zur Verwendung:
+//    1. Neues Programm anlegen
+//    2. Inhalt dieses Programms kopieren
+//    3. Vorlagen-Maske exportieren
+//    4. Vorlagen-Maske unter neuer ID im
+//    5. IDs für die Maske und die PositionSaveID im neuen Programm im Abschnitt
+//       "Konstanten" anpassen.
+//
+// Mögliche Aufrufe:
+//    Als MDI-Child:       GFU_ShowMDIChild('REFKEY', 'Vorlagen\Standard-F12-Maske mit Tabelle')
+//    Als modales Fenster: GFU_ShowModal('Vorlagen\Standard-F12-Maske mit Tabelle'),
+//##############################################################################
+//##############################################################################
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aCustomInfoArr:P4,
+
+   m_cFormID, m_cPositionSaveID, m_cBrowserID,
+   m_oDM, m_oMainTable,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_New, A_Save, AL_Main, bar_Main, bardock_Top,
+   barmngr_Main, bipnl_Headline, btn_Cancel, btn_Delete, btn_New, btn_Post,
+   ds_MainTable, grd_MainBrowser, lbl_TemplateInfo, pnl_Options
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@STDF12MWT', // ID der zugewiesenen F12-Maske
+m_cPositionSaveID := '@STDF12PWT', // ID zum Speichern der Fenster-Position/-Größe
+m_cBrowserID      := 'ART_GRP',    // ID des Browsers
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode, bMainTableIsEmpty |
+   bInEditMode       := EditModes(m_oMainTable),
+   bMainTableIsEmpty := BOF(m_oMainTable) and EOF(m_oMainTable),
+
+   // Buttons in der Toolbar En-/Disablen
+   A_New.Enabled    := not bInEditMode,
+   A_Delete.Enabled := not bInEditMode and not bMainTableIsEmpty,
+   A_Save.Enabled   := bInEditMode,
+   A_Cancel.Enabled := bInEditMode,
+end,
+
+//******************************************************************************
+// Alle Standard-Einstellungen setzen z. B. Dynamische Captions eines
+// Labels o. ä.
+//******************************************************************************
+function SetDefaults()
+   bipnl_Headline.Caption := oForm.OrigCapt,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'INDPRGDM', oForm), // Name Ggf. anpassen
+
+   // Tabelle(n) öffnen
+   m_oMainTable         := DBGetTable(m_oDM, waDab310), // TODO: WorkArea anpassen
+   ds_MainTable.DataSet := m_oMainTable,                // DataSet dem DataSource zuweisen (Ab jetzt kommen Events des DataSource)
+
+   // Tabelle mit Browser verbinden
+   grd_MainBrowser.DataSource      := ds_MainTable, // DataSource zuweisen
+   grd_MainBrowser.RegisterDataSet := m_oMainTable, // DataSet im Browser registrieren
+   grd_MainBrowser.ID              := m_cBrowserID, // Browser-ID zuweisen
+   grd_MainBrowser.ReadWriteProps  := False,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Vor dem Schließen prüfen, ob die Haupttabelle noch in Bearbeitung ist
+//        und ggf. rückfragen.
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+  bCanClose := not EditModes(m_oMainTable) or
+               JN('Ein Datensatz befindet sich noch in Bearbeitung.' + crlf +
+                  'Möchten Sie die Bearbeitung abbrechen und das Fenster schließen?'),
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MainTableStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Neuen Datensatz anlegen
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      MyAppend(m_oMainTable),
+   onerror
+      MessageDlg('Fehler bei der Neuanlage' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   startseq
+      MyDelete(m_oMainTable),
+   onerror
+      MessageDlg('Fehler beim Löschen' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   startseq
+      MyPost(m_oMainTable),
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      DBCancel(m_oMainTable),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.OrigCapt       := 'Vorlagen\Standard-F12-Maske mit Tabelle',
+   oForm.ImageIndex     := 1,    // Image-Index für den Window-Navigator setzen
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel         := FindObject( oForm, "A_Cancel" ),
+   A_Delete         := FindObject( oForm, "A_Delete" ),
+   A_New            := FindObject( oForm, "A_New" ),
+   A_Save           := FindObject( oForm, "A_Save" ),
+   AL_Main          := FindObject( oForm, "AL_Main" ),
+   bar_Main         := FindObject( oForm, "bar_Main" ),
+   bardock_Top      := FindObject( oForm, "bardock_Top" ),
+   barmngr_Main     := FindObject( oForm, "barmngr_Main" ),
+   bipnl_Headline   := FindObject( oForm, "bipnl_Headline" ),
+   btn_Cancel       := FindObject( oForm, "btn_Cancel" ),
+   btn_Delete       := FindObject( oForm, "btn_Delete" ),
+   btn_New          := FindObject( oForm, "btn_New" ),
+   btn_Post         := FindObject( oForm, "btn_Post" ),
+   ds_MainTable     := FindObject( oForm, "ds_MainTable" ),
+   grd_MainBrowser  := FindObject( oForm, "grd_MainBrowser" ),
+   lbl_TemplateInfo := FindObject( oForm, "lbl_TemplateInfo" ),
+   pnl_Options      := FindObject( oForm, "pnl_Options" ),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI() zeigt das GUI an, das vorher mit LoadGUI() geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

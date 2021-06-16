@@ -1,0 +1,103 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses globale Programm bietet eine Schnittstelle zu die
+//   Kernfunktionalitäten der EDI-Toolbox.
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+function _EDI_Core_ValidateDataModuleAndTable_Internal(oDM:O,
+                                                       oTable:O:=nil,
+                                                       bExpectDataModuleInTransaction:L:=false) ... end,
+function _EDI_Core_GetFileContent_Internal(cFileName:C) ... end,
+function _EDI_Core_GetTemporaryFilePath_Internal() ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Allgemein)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion konvertiert die Dateigröße (Angabe in Bytes) als String in ein
+// visuell lesbares Format.
+//
+// @result: string - Dateigröße in visuell lesbarem Format
+//******************************************************************************
+function _EDI_Core_FileSizeToString(nSizeInByte:N)
+   result := BP_FU_FileSizeToString(nSizeInByte),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Validiert Datenmodul und übergebene Tabelle.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Core_ValidateDataModuleAndTable_Internal(oDM:O,
+                                                       oTable:O:=nil,
+                                                       bExpectDataModuleInTransaction:L:=false)
+   SetErrorIf(empty(oDM), 'data module must not be empty'),
+   SetErrorIf(bExpectDataModuleInTransaction and not oDM.CbTransaction_Active(), 'data module must be in active transaction'),
+   SetErrorIf(not empty(oTable) and GetOwner(oTable) <> oDM, 'given data module does not contain given table instance'),
+end,
+
+//******************************************************************************
+// Diese Funktion liest den Inhalt einer Datei aus und gibt diesen als String
+// zurück.
+//
+// @result: string - Dateiinhalt
+//******************************************************************************
+function _EDI_Core_GetFileContent_Internal(cFileName:C)
+| oFile |
+
+   SetErrorIf(
+      not File(cFileName),
+      'file <' + cFileName + '> does not exist'
+   ),
+
+   result := '',
+   oFile := FOpen(cFileName, FO_READ),
+   startseq
+      FRead(oFile, result, oFile.Size),
+   always
+      FClose(oFile),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt ein temporäres Verzeichnis im Temp-Verzeichnis des
+// aktuellen Users.
+// Dieses wird in dieser Funktion angelegt und zurückgegeben.
+//
+// @result: string - Temporärer Verzeichnispfad
+//******************************************************************************
+function _EDI_Core_GetTemporaryDirectoryPath_Internal()
+   result := GetTempPath() + 'be_edi_temp',
+   ForceDirectories(result),
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt einen temporären Dateinamen und gibt diesen inkl. Pfad
+// zurück. Dabei wird sichergestellt, dass das Verzeichnis, in dem sich die
+// Datei befinden soll existiert.
+//
+// @result: string - Temporärer Dateipfad
+//******************************************************************************
+function _EDI_Core_GetTemporaryFilePath_Internal()
+   result := EDI_Core_GetTemporaryDirectoryPath_Internal() + '\' +
+             FormatDateTime('YYYY-MM-DD_HH-NN-SS-ZZZ', GetAdsServerTime()) + '.dat',
+end,
+

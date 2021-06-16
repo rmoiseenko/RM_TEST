@@ -1,0 +1,303 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Dieses Programm druckt eine Übersicht für das übergebene
+//               Projekt
+//##############################################################################
+//##############################################################################
+
+|  m_nProjectID:P1:=9, m_bUseLayoutMode:P2:=True, m_nOldCursor |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erzeugt eine Druck-MemTable für den Projekt-Stamm
+// @Result: MemTable
+//******************************************************************************
+function Create_DabPRJ_PrintMemTable(oDM, nProjectID)
+| oCalcPRJ, oMemSQL  |
+   // Projekttabelle öffnen
+   oCalcPRJ           := DbGetTable(oDM, waDabPRJ),
+   oCalcPRJ.IndexName := 'ID',
+   DBFilter('ID = ' + Str(nProjectID), oCalcPRJ),
+
+   // MemTable erzeugen & Daten übernehmen
+   Result                   := CreateObject('TMemCalcTable', 'MEM_PROJEKT', oDM, oDM),
+   Result.AliasName         := 'PROJEKT',
+   Result.BorrowFromDataset := oCalcPRJ,
+   AddMemField(Result, 'CALC_MENGE_PLAN_SUM',   'N', 15, 2),  // Summe Plan-Werte
+   AddMemField(Result, 'CALC_MENGE_PLAN_SUM_C', 'C', 15, 0),  //   "" (Anzeige-Wert)
+   AddMemField(Result, 'CALC_MENGE_IST_SUM',    'N', 15, 2),  // Summe Ist-Werte
+   AddMemField(Result, 'CALC_MENGE_IST_SUM_C',  'C', 15, 0),  //   "" (Anzeige-Wert)
+   AddMemField(Result, 'CALC_MENGE_REST_SUM',   'N', 15, 2),  // Summe Rest-Werte
+   AddMemField(Result, 'CALC_MENGE_REST_SUM_C', 'C', 15, 0),  //   "" (Anzeige-Wert)
+   AddMemField(Result, 'CALC_EK_WRTPLAN_SUM',   'N', 15, 2),  // Gesamtwert der Plan-Summe
+   AddMemField(Result, 'CALC_EK_WRTIST_SUM',    'N', 15, 2),  // Gesamtwert der Ist-Summe
+   Result.Active            := True,
+   Result.LoadFromDataSet   := oCalcPRJ,
+   Result.OrderBy           := 'ID',
+
+   // MemTable mit berechneten Felder analog des GUI-Browsers "Gesamtübersicht Projekt" erstellen
+   oMemSQL := CreateObject('TMemCalcTable', 'MEM_PRJ_OVERVIEW', oDM),
+   startseq
+      oMemSQL.AliasName     := 'MEM_PRJ_OVERVIEW',
+      // Struktur erstellen
+      ProjMgmt_GetProjectOverviewWithValues(oMemSQL, True,  ''),
+      // Daten befüllen
+      ProjMgmt_GetProjectOverviewWithValues(oMemSQL, False, 'ID = ' + Str(nProjectID)),
+
+      // Daten in Druck-MemTable übernehmen
+      MyEdit(Result),
+      Result:CALC_MENGE_PLAN_SUM   := oMemSQL:CALC_MENGE_PLAN_SUM,
+      Result:CALC_MENGE_PLAN_SUM_C := ProjMgtGUI_CalcDisplayValueForQuantityValue(oMemSQL:CALC_MENGE_PLAN_SUM),
+      Result:CALC_MENGE_IST_SUM    := oMemSQL:CALC_MENGE_IST_SUM,
+      Result:CALC_MENGE_IST_SUM_C  := ProjMgtGUI_CalcDisplayValueForQuantityValue(oMemSQL:CALC_MENGE_IST_SUM),
+      Result:CALC_MENGE_REST_SUM   := oMemSQL:CALC_MENGE_REST_SUM,
+      Result:CALC_MENGE_REST_SUM_C := ProjMgtGUI_CalcDisplayValueForQuantityValue(oMemSQL:CALC_MENGE_REST_SUM),
+
+      Result:CALC_EK_WRTPLAN_SUM   := oMemSQL:CALC_EK_WRTPLAN_SUM,
+      Result:CALC_EK_WRTIST_SUM    := oMemSQL:CALC_EK_WRTIST_SUM,
+      MyPost(Result),
+   always
+      DestroyObject(oMemSQL),
+   stopseq,
+end,
+
+//******************************************************************************
+// Zusätzliche Felder in der MemPRV-Tabelle berechnen
+// @Result: null
+//******************************************************************************
+function Calc_DabPRV_PrintMemTable(oMemPRV)
+| nDauer, nPlanAZ, nRestAZ, nRestOffenAZ, nIstAZ, cLastOrderBy, bErledigt |
+
+   //***************************************************************************
+   // Die Funktion setzt auf die oMemPRV einen Scope auf den übergeben Wert
+   // @Result: null
+   //***************************************************************************
+   function Scope_MemPRV(nScopeOnId)
+      if Empty(nScopeOnId) then
+         DBScope(nil, oMemPRV),
+      else
+         DBScope({nScopeOnId}, {nScopeOnId}, oMemPRV),
+      endif,
+   end,
+
+   //***************************************************************************
+   // Die Zeit untergeordneter Vorgänge für deren Sammel-Vorgang rekursiv
+   // summieren
+   // @Result: null
+   //***************************************************************************
+   function MemPRV_SumUpTaskTimes(nID)
+   | nSammelPlanAZ, nSammelIstAZ, nSammelRestAZ, nSammelRestOffenAZ, nLastPositionID |
+      nSammelPlanAZ      := 0,
+      nSammelIstAZ       := 0,
+      nSammelRestAZ      := 0,
+      nSammelRestOffenAZ := 0,
+
+      Scope_MemPRV(nID), // Alle Vorgänge finden, die zu einem Sammelvorgang gehören
+
+      // Die "gescopte" oMemPRV durchskippen und Plan-, Ist- und Restzeit aufsummieren
+      DBGoTop(oMemPRV),
+      while not EoF(oMemPRV) do
+         if oMemPRV:TYP = bcPRV_Type_GroupTask then
+            nLastPositionID := oMemPRV:ID,
+            // Falls es einen untergeordneten Sammelvorgang gibt,
+            // MemPRV_SumUpTaskTime rekursiv aufrufen, um die Zeiten der untergeordneten
+            // Vorgänge für diesen extra zu berechnen
+            MemPRV_SumUpTaskTimes(nLastPositionID),
+            // Da für alle rekursive Aufrufe die selbe Tabelle verwendet wird,
+            // muss hier der Scope wieder zurückgesetz werden und wieder auf den
+            // zuletzt bearbeiteten Datensatz gesprungen werden
+            Scope_MemPRV(nID),
+            DBLocate('ID', nLastPositionID, 0, oMemPRV)
+         endif,
+
+         // Plan-, Ist- und Restzeit aufsummieren
+         nSammelPlanAZ      := nSammelPlanAZ      + oMemPRV:CALC_PLANARBZ_N,
+         nSammelIstAZ       := nSammelIstAZ       + oMemPRV:CALC_ISTARBZ_N,
+         nSammelRestAZ      := nSammelRestAZ      + oMemPRV:CALC_RESTARBZ_N,
+         nSammelRestOffenAZ := nSammelRestOffenAZ + oMemPRV:CALC_RESTARBZ_OFFEN_N,
+
+         DBSkip(1, oMemPRV),
+      end,
+
+      // Scope aufheben, auf den ursprünglichen Sammelvorgang positionieren
+      // und Zeiten in die oMemPRV schreiben
+      DBScope(nil, oMemPRV),
+      if DBLocate('ID', nID, 0, oMemPRV) then
+         MyEdit(oMemPRV),
+         oMemPRV:CALC_PLANARBZ_N       := nSammelPlanAZ,
+         oMemPRV:CALC_PLANARBZ         := ProjMgtGUI_CalcDisplayValueForQuantityValue(nSammelPlanAZ),
+         oMemPRV:CALC_ISTARBZ_N        := nSammelIstAZ,
+         oMemPRV:CALC_ISTARBZ          := ProjMgtGUI_CalcDisplayValueForQuantityValue(nSammelIstAZ),
+         oMemPRV:CALC_RESTARBZ_N       := nSammelRestAZ,
+         oMemPRV:CALC_RESTARBZ         := ProjMgtGUI_CalcDisplayValueForQuantityValue(nSammelRestAZ),
+         oMemPRV:CALC_RESTARBZ_OFFEN_N := nSammelRestOffenAZ,
+         oMemPRV:CALC_RESTARBZ_OFFEN   := ProjMgtGUI_CalcDisplayValueForQuantityValue(nSammelRestOffenAZ),
+         MyPost(oMemPRV),
+      endif,
+   end,
+
+   //***************************************************************************
+   // 1. Für alle Vorgänge des Typs "Vorgang" die Zeiten berechnen
+   //***************************************************************************
+   DBGoTop(oMemPRV),
+   while not EoF(oMemPRV) do
+
+      if oMemPRV:TYP = bcPRV_Type_Task then
+         nDauer  := iif( oMemPRV:ID > 0 and not empty(oMemPRV:ENDE), Max(0, Day_Diff(oMemPRV:BEGINN, oMemPRV:ENDE) + 1), 0),
+         nPlanAZ := LookUp(waDabPVL, 'VORG_ID', {{oMemPRV:ID}, {oMemPRV:ID}}, 'iif(LEIST_ART = 10 and RESTYP = "M", MENGE_PLAN, 0)',                     0, lm_Sum),
+         nIstAZ  := LookUp(waDabPVL, 'VORG_ID', {{oMemPRV:ID}, {oMemPRV:ID}}, 'iif(LEIST_ART = 10 and RESTYP = "M", MENGE_IST, 0)',                      0, lm_Sum),
+
+         // Summe der Rest-Mitarbeiter-Minuten
+         // => Achtung: Überarbeit bei einer einzelnen Leistung wird nicht auf andere Plan-Werte angerechnet!
+         nRestAZ      := LookUp(waDabPVL, 'VORG_ID', {{oMemPRV:ID}, {oMemPRV:ID}}, 'iif(LEIST_ART = 10 and RESTYP = "M", Max(0, MENGE_PLAN - Max(0, MENGE_IST)), 0)', 0, lm_Sum),
+
+         // Summe des "Offen-Budgets"
+         // -> ohne erledigte Aufgaben (hier würden positive Rest-Budgets die Summe fälschlicherweise erhöhen, negative gelten durch "erledigt" bereits als besprochen / irrelevant
+         // -> ohne Verrechnung von negativen Rest-Budgets in die Vorgangs-Summen, d.h. das "Offen"-Budget ist immer 0 oder positiv
+         // -> außerdem wird hier im Gegensatz zum o.a. Rest-Budget zwischen Vorgangsleistungen verrechnet
+         bErledigt    := LookUp(waDabPRV, 'ID', {{oMemPRV:ID}}, 'ERLEDIGT', false),
+         nRestOffenAZ := iif(bErledigt,
+                             0,
+                             Max(0, nPlanAZ - nIstAZ)),
+
+         MyEdit(oMemPRV),
+         oMemPRV:CALC_PLANARBZ_N       := nPlanAZ,
+         oMemPRV:CALC_PLANARBZ         := ProjMgtGUI_CalcDisplayValueForQuantityValue(nPlanAZ),
+         oMemPRV:CALC_ISTARBZ_N        := nIstAZ,
+         oMemPRV:CALC_ISTARBZ          := ProjMgtGUI_CalcDisplayValueForQuantityValue(nIstAZ),
+         oMemPRV:CALC_RESTARBZ_N       := nRestAZ,
+         oMemPRV:CALC_RESTARBZ         := ProjMgtGUI_CalcDisplayValueForQuantityValue(nRestAZ),
+         oMemPRV:CALC_RESTARBZ_OFFEN_N := nRestOffenAZ,
+         oMemPRV:CALC_RESTARBZ_OFFEN   := ProjMgtGUI_CalcDisplayValueForQuantityValue(nRestOffenAZ),
+         oMemPRV:CALC_DAUER            := iif(nDauer > 0 and oMemPRV:TYP <> 30, Str(nDauer) + ' ' + iif(nDauer = 1, 'Tag', 'Tage'), ''),
+         MyPost(oMemPRV),
+      endif,
+      DBSkip(1, oMemPRV),
+
+   end,
+
+   //***************************************************************************
+   // 2. Für alle Sammel-Vorgänge die Zeiten untergeordneter Vorgänge
+   //    rekursiv aufsummieren
+   //***************************************************************************
+   cLastOrderBy := oMemPRV.OrderBy,
+   startseq
+      oMemPRV.OrderBy := 'VORG_SAM',
+      MemPRV_SumUpTaskTimes(0),
+   always
+      oMemPRV.OrderBy := cLastOrderBy, // oMemPRV muss für die Ausgabe wieder richtig sortiert werden
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine Druck-MemTable für die Projekt-Vorgänge
+// @Result: MemTable
+//******************************************************************************
+function Create_DabPRV_PrintMemTable(oDM, nProjectID)
+| oCalcPRV |
+   // Vorgänge-Tabelle öffnen
+   oCalcPRV           := DbGetTable(oDM, waDabPRV),
+   oCalcPRV.IndexName := 'PRJ_ID', // Expression = "PRJ_ID;SORT"
+   DBScope({nProjectID}, {nProjectID}, oCalcPRV),
+
+   // MemTable erzeugen & Daten übernehmen
+   Result                   := CreateObject('TMemCalcTable', 'MEM_VORGAENGE', oDM, oDM),
+   Result.AliasName         := 'VORGAENGE',
+   Result.BorrowFromDataset := oCalcPRV,
+
+   AddMemField(Result, 'CALC_PLANARBZ_N',       'N', 15, 2),
+   AddMemField(Result, 'CALC_PLANARBZ',         'C', 15, 0),
+   AddMemField(Result, 'CALC_RESTARBZ_N',       'N', 15, 2), // Rest-Budget
+   AddMemField(Result, 'CALC_RESTARBZ',         'C', 15, 0),
+   AddMemField(Result, 'CALC_RESTARBZ_OFFEN_N', 'N', 15, 2), // "Offene" Rest-Werte
+   AddMemField(Result, 'CALC_RESTARBZ_OFFEN',   'C', 15, 0),
+   AddMemField(Result, 'CALC_ISTARBZ_N',        'N', 15, 2),
+   AddMemField(Result, 'CALC_ISTARBZ',          'C', 15, 0),
+   AddMemField(Result, 'CALC_DAUER',            'C', 15, 0),
+
+   Result.Active            := True,
+   Result.LoadFromDataSet   := oCalcPRV,
+   Result.OrderBy           := 'PRJ_ID;SORT',
+
+   Calc_DabPRV_PrintMemTable(Result),
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine Druck-MemTable für die Projekt-Verkauferlöse
+// @Result: MemTable
+//******************************************************************************
+function Create_DabPRE_PrintMemTable(oDM, nProjectID)
+| oCalcPRE |
+   // Verkaufserlöse-Tabelle öffnen
+   oCalcPRE           := DbGetTable(oDM, waDabPRE),
+   oCalcPRE.IndexName := 'PRJ_ID_TYP_ANUMMER', // Expression = "PRJ_ID;ZEILEN_TYP;ANUMMER"
+   DBFilter('PRJ_ID = ' + Str(nProjectID), oCalcPRE),
+
+   // MemTable erzeugen & Daten übernehmen
+   Result                   := CreateObject('TMemCalcTable', 'MEM_VERKAUFS_ERLOESE', oDM, oDM),
+   Result.AliasName         := 'VERKAUFS_ERLOESE',
+   Result.BorrowFromDataset := oCalcPRE,
+   Result.Active            := True,
+   Result.LoadFromDataSet   := oCalcPRE,
+   Result.OrderBy           := 'PRJ_ID;ZEILEN_TYP;ANUMMER',
+end,
+
+//******************************************************************************
+// Funktion druckt die Projektübersicht
+// @Result: null
+//******************************************************************************
+function PrintProjektOverview(nProjectID, bUseLayoutMode)
+| bProjectIdValid, oDM, oPrintMemPRJ, oPrintMemPRV, oPrintMemPRE, oReport |
+
+   startseq,
+      // Projekt existiert?
+      bProjectIdValid := not empty(nProjectID) and Lookup(waDabPRJ, 'ID', {{nProjectID}}, 'not EoF()', false),
+
+      if not bProjectIdValid then
+         MessageDlg( 'Keine Projekt-ID übergeben oder Projekt existiert nicht. ' + crlf +
+                     'Der Druck kann nicht ausgeführt werden.',
+                     mtError ),
+         exit,
+      endif,
+
+      // Druck
+      oDM := CreateObject('TBeDBGet', 'PROJ_PRINT_DM'),
+      startseq
+
+         oPrintMemPRJ := Create_DabPRJ_PrintMemTable(oDM, m_nProjectID),
+         oPrintMemPRV := Create_DabPRV_PrintMemTable(oDM, m_nProjectID),        // Browse('', oPrintMemPRV),
+         oPrintMemPRE := Create_DabPRE_PrintMemTable(oDM, m_nProjectID),        // Browse('', oPrintMemPRE),
+
+         // Report drucken / designen
+         oReport := ReportInit('ProjUebersicht', {oPrintMemPRJ, oPrintMemPRV, oPrintMemPRE}),
+         startseq
+            ReportPrint(oReport, iif(m_bUseLayoutMode, rm_Layout, rm_Print)),
+         always
+            DestroyObject(oReport),
+         stopseq,
+
+      always
+         DestroyObject(oDM),
+      stopseq,
+  onerror
+     MessageDlg("Fehler beim Druck der Projektübersicht. " + crlf + ArrToStr(GetErrorStack(True))),
+  stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_nOldCursor := SetCursor(crHourGlass),
+startseq
+   PrintProjektOverview(m_nProjectID, m_bUseLayoutMode),
+always
+   SetCursor(m_nOldCursor),
+stopseq,

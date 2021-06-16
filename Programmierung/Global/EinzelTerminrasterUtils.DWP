@@ -1,0 +1,1451 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Funktionen für das Einzelterminraster
+//
+//##############################################################################
+//##############################################################################
+
+|
+  gl_ETRU_Typ_HeuteInfo:_N:=                      1,  // "heute"
+  gl_ETRU_Typ_EndeWBZInfo:_N:=                   10,  // Ende WBZ Info-Zeile
+  gl_ETRU_Typ_VerfuegBestand:_N:=                 5,  // aktueller, verfügbarer Bestand
+  gl_ETRU_Typ_EisernerBestand:_N:=               15,  // (virtueller Abgang) für Eisernen Bestand des Artikels
+  gl_ETRU_Typ_WareneingangsBestand:_N:=          16,  // Bestand im Wareneingang (informativ)
+  gl_ETRU_Typ_ProdReservKommissioniert:_N:=      20,  // Prod.Reservierung Abgang (FA = kommissioniert)
+  gl_ETRU_Typ_ProdReservOffen:_N:=               25,  // Prod.Reservierung Abgang (FA = offen)
+
+  gl_ETRU_Typ_GrobPlanProdAbgangDab220:_N:=      30,  // Prod.         Grobplanung Abgang (Dab220, "Produktion Bedarfsplanung")
+  gl_ETRU_Typ_GrobPlanProdAbgangDab215:_N:=      40,  // Prod.         Grobplanung Abgang (Dab215, "Produktion Dispo-Planung")
+  gl_ETRU_Typ_GrobPlanAbgangAnonym:_N:=          50,  // Prod./Einkauf Grobplanung Abgang (anonym)
+  gl_ETRU_Typ_GrobPlanProdAbgangDab320:_N:=      60,  // Prod.         Grobplanung Abgang (Dab320, "Einkauf/Produkt. Dispositionen")
+
+  gl_ETRU_Typ_GrobPlanProdZugangDab220:_N:=      70,  // Prod.         Grobplanung Zugang (Dab220, "Produktion Bedarfsplanung")
+  gl_ETRU_Typ_GrobPlanProdZugangDab215:_N:=      80,  // Prod.         Grobplanung Zugang (Dab215, "Produktion Dispo-Planung")
+  gl_ETRU_Typ_GrobPlanEinkaufZugangDab315:_N:=   90,  // Einkauf       Grobplanung Zugang (Dab315, "Einkauf Dispo-Planung")
+  gl_ETRU_Typ_GrobPlanProdZugangDab320:_N:=     100,  // Prod.         Grobplanung Zugang (Dab320, "Einkauf/Produkt. Dispositionen")
+  gl_ETRU_Typ_GrobPlanEinkaufZugangDab320:_N:=  105,  // Einkauf       Grobplanung Zugang (Dab320, "Einkauf/Produkt. Dispositionen")
+  gl_ETRU_Typ_GrobPlanZugangAnonym:_N:=         110,  // Prod.         Grobplanung Zugang (anonym)
+
+
+  gl_ETRU_Typ_ProdZugangKommissioniert:_N:=     150,  // Prod. Zugang (FA = kommissioniert)
+  gl_ETRU_Typ_ProdZugangOffen:_N:=              160,  // Prod. Zugang (FA = offen)
+
+  gl_ETRU_Typ_EinkaufZugangBestaetigt:_N:=      200,  // Einkauf Zugang (bestätigt)
+  gl_ETRU_Typ_EinkaufZugangNichtBestaetigt:_N:= 210,  // Einkauf Zugang (nicht bestätigt)
+
+  gl_ETRU_Typ_VerkaufAbgang:_N:=                250,  // Verkauf Abgang (aus Dab055)
+  // TODO: Unterscheidung "Verkauf unbestätigt" vs. "Verkauf bestätigt" (hauptsächlich wichtig bzgl. Termin...)
+  // TODO: Abgänge aus Dab160 - eigener Typ? oder mit zusätzlicher Spalte!?
+  // TODO: Abgänge aus Absatzplanung (inkl. entspr. Verrechnung)
+
+
+  gl_ETRU_IndiOnlineHelp_SQLWhere:_C:=          'MEMO_ID = 5',  // Aufruf-Filter für die Individuelle Online-Hilfe aus dem Einzelterminraster heraus
+  gl_ETRU_nAnzahlSelektierteStandorte:_N:=      1               // Anzahl ausgewählte Standorte im ETR. Als globale Variable, da im Browser Spalten dynamisch ein/ausgeblendet werden
+|
+
+// TODO: Multistandort: Die Programm-Struktur und die Performance wäre besser, wenn nicht jede einzelne
+//       Funktion die Standorte umschaltet sondern einfach auf dem DM umgeschalten wird und dann je Standort alle Funktionen aufgerufen werden.
+
+// TODO: noch fehlende "Zeilen-Typen"
+//    - Abgänge VK
+//       - Normal - OK!
+//       - Dab160 (Sets / Varianten / Auftragsstücklisten)
+//       - Prior VK (gibt es das im Terminraster?)
+//    - Verbrauchs-gesteuert
+//       - MindBest()
+//       - Absatzplanung (drei Spalten im Terminraster!)
+//
+//    - Werkzeug: ggf. muss ein zusätzlicher Zugangs-Datensatz zum Ende des FAs erzeugt werden?
+//                -> relevant für alle Typen, die Produktions-Abgänge darstellen ?
+
+// TODO: Prüf-Methode einzel-VS-Summen-terminraster: Einzel-Sätze kumulieren und dann vergleichen
+
+// TODO: Alle einzelnen funktionen sollten noch zwei Parameter bekommen
+//        - "nur Typen" (3x gibt es das schon)
+//        - "bis Termin" (ggf. auch "von termin" notwendig?)
+//        - "maximale Anzahl Datensätze" (Performance... natürlich nur sinnvoll bei Verwendung in der GUI)
+
+//******************************************************************************
+// Funktion erzeugt aus dem Termin @cTermin (Format wie für DateStr())
+//   eine Termin-Index. Wenn kein Termin angegeben ist, ist die Rückgabe leer.
+//   => Ohne diese Sonderbehandlung entsteht sonst ein String
+//      der Form <"        T">.
+// @Result: Termin-Index-String
+//******************************************************************************
+function _ETRU_DateStr(cTermin)
+   Result := DateStr(cTermin),
+   if Result == '        T' then
+      Result := '',
+   endif,
+end,
+
+//******************************************************************************
+// Wandelt ein Datum in die Darstellung für die Speicherung in Char, 8-Feldern um
+// mit Sonderbehandlung für "leeren" Datumswert.
+//   => Ohne diese Sonderbehandlung entsteht sonst ein String
+//      der Form <"  .  .  ">.
+// @Result: Datum als String
+//******************************************************************************
+function _ETRU_DToC(dDate)
+   Result := DToc(dDate),
+   if Result == '  .  .  ' then
+      Result := '',
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _ETRU_CreateMem(oOwner)
+   Result           := CreateObject('TMemCalcTable', 'EINZEL_TERMINRASTER', oOwner),
+   Result.AliasName := 'EINZEL_TERMINRASTER',
+
+
+   MyAddMemField(Result, 'ARTNR',            'ftString',   mBeArtNoLen, 0),   // eigentlich nicht notwendig aber hilfreich für das Browser-Design etc.
+   MyAddMemField(Result, 'STANDORT',         'ftInteger',   0, 0),            // Standort des Vorgangs
+   MyAddMemField(Result, 'STO_LIEF',         'ftInteger',   0, 0),            // liefernder Standort
+
+   MyAddMemField(Result, 'BAUGRUPPE',        'ftString',   mBeArtNoLen, 0),   // bei Eigenfertigung: Bedarf für Baugruppe
+   MyAddMemField(Result, 'PROD_ABT',         'ftString',   3, 0),             // bei Eigenfertigung: Produktions-Abteilung
+
+   MyAddMemField(Result, 'LIEFNR',           'ftInteger',  0, 0),               // bei Einkauf: Lieferanten-Nr.
+   MyAddMemField(Result, 'BESTPOSNR',        'ftString',   8, 0),               // bei Einkauf / Fertigungs-Rückstand
+   MyAddMemField(Result, 'KOMMISS',          'ftString',   mbecommisslen, 0),   // bei Einkauf / Fertigung => Kommission der DAB035
+
+   MyAddMemField(Result, 'KDNR',             'ftInteger',  0, 0),             // bei VK-Abgängen
+   MyAddMemField(Result, 'APNUMMER',         'ftString',   9, 0),             // bei VK-Abgängen
+
+   MyAddMemField(Result, 'ZEILEN_TYP',       'ftInteger',  0, 0),             // -> Für mögl. Zeilentypen siehe globale Variablen "gl_ETRU_Typ..."
+
+   MyAddMemField(Result, 'DATENSATZ_ID',     'ftInteger',  0, 0),
+                         // ID des zugrunde liegenden Datensatzes (aus diversen Tabellen, je nach ZEILEN_TYP)
+                         //
+                         //   Zeilentyp          ID-Feld
+                         //   ----------------   -------------
+                         //   20                 Dab240:ID
+                         //   25                 Dab240:ID
+                         //   30, 40, 60         Dab280:REC_ID               // Achtung: ID des Grobplanungs-Verursachers, nicht ID des Dab280-Satzes!
+                         //   50                 0 (anonyme Grobplanung)
+                         //   70, 80, 90, 100    Dab280:REC_ID               // Achtung: ID des Grobplanungs-Verursachers, nicht ID des Dab280-Satzes!
+                         //   110                0 (anonyme Grobplanung)
+                         //   150, 160           Dab035:ID
+                         //   200, 210           Dab035:ID
+                         //   250                vorerst "DbRecNo(Dab055)" (noch kein ID-Feld in Dab055 vorhanden)
+
+   MyAddMemField(Result, 'IST_ZUGANG',       'ftBoolean',  0, 0),             // Handelt es sich um eine Zugangszeile?
+   MyAddMemField(Result, 'IST_ABGANG',       'ftBoolean',  0, 0),             // Handelt es sich um eine Abgangszeile?
+   MyAddMemField(Result, 'IST_KONKRETE_BEW', 'ftBoolean',  0, 0),             // Handelt es sich um eine konkrete Bewegung und nicht um einen Grobplanungszeile?
+
+   MyAddMemField(Result, 'TERMIN',           'ftString',   8, 0),
+   MyAddMemField(Result, 'TERMIN_INDEX',     'ftString',   9, 0),
+
+   MyAddMemField(Result, 'MENGE',            'ftFloat',    0, 0),             // Zugangsmenge / Bedarfsmenge (Abgang)
+   MyAddMemField(Result, 'RMENGE',           'ftFloat',    0, 0),             // RMENGE der Position (bei Dab055 Abgang)
+   MyAddMemField(Result, 'MENGE_VERFUEG',    'ftFloat',    0, 0),             // verfügbarer Bestand (Summe über alle berücksichtigten Standorte)
+   MyAddMemField(Result, 'MENGE_VERFUEG_STO','ftFloat',    0, 0),             // verfügbarer Bestand (Summe im Standort der Bewegung)
+
+   MyAddMemField(Result, 'B_POS_LFD',        'ftString',   11, 0),
+
+   MyAddMemField(Result, 'SORT',             'ftString',   15, 0),            // Sortierungs-Schlüssel
+
+
+   // Die beiden folgenden Felder werden genutzt im Programm "Produktion\Verfuegbarkeitspruefung\GUI"
+   MyAddMemField(Result, 'MARKIERUNG_ABGANG',        'ftBoolean',   0, 0),            // "Markier-Feld" für eine beliebige Markierungs-Logik von Abgängen (z.B. für die Markierung des Bedarfs- bzw. Zugangs-Datensatzes, der bei Anzeige an der GUI im Masterfenster gerade betrachtet wird)
+   MyAddMemField(Result, 'MARKIERUNG_ZUGANG',        'ftBoolean',   0, 0),            // "Markier-Feld" für eine beliebige Markierungs-Logik von Zugängen ( '' )
+   MyAddMemField(Result, 'MARKIERUNG_IST_SIMULIERT', 'ftBoolean',   0, 0),            // "Markier-Feld" => Bewegungszeile ist simuliert, soll optisch anders dargestellt werden
+
+   Result.OrderBy := 'SORT',
+   Result.Active  := true,
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine leere Memtable-Struktur für das Einzelterminraster
+//    (und optional mit weiteren Feldern für die
+//     Verfügbarkeits-Prüfungs-Funktionen nach "ATP")
+// @Result: TBeMemtable-Instanz
+//******************************************************************************
+function _ETRU_CreateMem_NewMem(oOwner, bIncludeATPFields)
+
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'EINZEL_TERMINRASTER',
+
+   Result.CbAddField('ARTNR',            ftString,   mBeArtNoLen),   // eigentlich nicht notwendig aber hilfreich für das Browser-Design etc.
+
+   Result.CbAddField('STANDORT',         ftinteger,   0),            // Standort des Vorgangs
+   Result.CbAddField('STO_LIEF',         ftinteger,   0),            // liefernder Standort
+
+   Result.CbAddField('BAUGRUPPE',        ftString,   mBeArtNoLen),   // bei Eigenfertigung: Bedarf für Baugruppe
+   Result.CbAddField('PROD_ABT',         ftString,   3),             // bei Eigenfertigung: Produktions-Abteilung
+
+   Result.CbAddField('LIEFNR',           ftInteger,  0),             // bei Einkauf: Lieferanten-Nr.
+   Result.CbAddField('BESTPOSNR',        ftString,   8),             // bei Einkauf / Fertigungs-Rückstand
+   Result.CbAddField('KOMMISS',          ftString,   mbecommisslen), // bei Einkauf / Fertigung - Kommission der DAB035
+
+   Result.CbAddField('KDNR',             ftInteger,  0),             // bei VK-Abgängen
+   Result.CbAddField('APNUMMER',         ftString,   9),             // bei VK-Abgängen
+
+   Result.CbAddField('ZEILEN_TYP',       ftInteger,  0),             // -> Für mögl. Zeilentypen siehe globale Variablen "gl_ETRU_Typ..."
+
+   Result.CbAddField('DATENSATZ_ID',     ftInteger,  0),
+                         // ID des zugrunde liegenden Datensatzes (aus diversen Tabellen, je nach ZEILEN_TYP)
+                         //
+                         //   Zeilentyp          ID-Feld
+                         //   ----------------   -------------
+                         //   20                 Dab240:ID
+                         //   25                 Dab240:ID
+                         //   30, 40, 60         Dab280:REC_ID               // Achtung: ID des Grobplanungs-Verursachers, nicht ID des Dab280-Satzes!
+                         //   50                 0 (anonyme Grobplanung)
+                         //   70, 80, 90, 100    Dab280:REC_ID               // Achtung: ID des Grobplanungs-Verursachers, nicht ID des Dab280-Satzes!
+                         //   110                0 (anonyme Grobplanung)
+                         //   150, 160           Dab035:ID
+                         //   200, 210           Dab035:ID
+                         //   250                vorerst "DbRecNo(Dab055)" (noch kein ID-Feld in Dab055 vorhanden)
+
+   Result.CbAddField('IST_ZUGANG',       ftBoolean,  0),             // Handelt es sich um eine Zugangszeile?
+   Result.CbAddField('IST_ABGANG',       ftBoolean,  0),             // Handelt es sich um eine Abgangszeile?
+   Result.CbAddField('IST_KONKRETE_BEW', ftBoolean,  0),             // Handelt es sich um eine konkrete Bewegung und nicht um einen Grobplanungszeile?
+
+   Result.CbAddField('TERMIN',           ftString,   8),
+   Result.CbAddField('TERMIN_INDEX',     ftString,   9),
+
+   Result.CbAddField('MENGE',            ftFloat,    0),             // Zugangsmenge / Bedarfsmenge (Abgang)
+   Result.CbAddField('RMENGE',           ftFloat,    0),             // RMENGE der Position (bei Dab055 Abgang)
+   Result.CbAddField('MENGE_VERFUEG',    ftFloat,    0),             // verfügbarer Bestand
+
+   Result.CbAddField('B_POS_LFD',        ftString,   11),
+
+   Result.CbAddField('SORT',             ftString,   15),            // Sortierungs-Schlüssel
+
+
+   // Die beiden folgenden Felder werden genutzt im Programm "Produktion\Verfuegbarkeitspruefung\GUI"
+   Result.CbAddField('MARKIERUNG_ABGANG',        ftBoolean,   0),            // "Markier-Feld" für eine beliebige Markierungs-Logik von Abgängen (z.B. für die Markierung des Bedarfs- bzw. Zugangs-Datensatzes, der bei Anzeige an der GUI im Masterfenster gerade betrachtet wird)
+   Result.CbAddField('MARKIERUNG_ZUGANG',        ftBoolean,   0),            // "Markier-Feld" für eine beliebige Markierungs-Logik von Zugängen ( '' )
+   Result.CbAddField('MARKIERUNG_IST_SIMULIERT', ftBoolean,   0),            // "Markier-Feld" => Bewegungszeile ist simuliert, soll optisch anders dargestellt werden
+
+   // Felder für die ATP-Berechnung
+   if bIncludeATPFields then
+      Result.CbAddField('ATP_ISTRELEVANT',                    ftBoolean, 0),    // Ist die Bewegung in der ATP-Prüfung relevant (Zeilentyp wird berücksichtigt?)
+      Result.CbAddField('ATP_IST_IN_PRUEFHORZ',               ftBoolean, 0),    // Ist die Bewegung innerhalb des Prüfhorizonts (relevant, wenn mit Prüfhorizont (z.B. WBZ) gearbeitet wird)
+      Result.CbAddField('ATP_MENGE_VERFUEG',                  ftFloat,   0),    // Menge, die noch verfügbar ist                (nur für Zugangs- und Bestandszeilen sinnvoll)
+      Result.CbAddField('ATP_MENGE_VERFUEG_KUM',              ftFloat,   0),    // kumulierte ATP-Menge, die noch verfügbar ist (kann erst berechnet werden, wenn die Zuordnungen berechnet wurden)
+      Result.CbAddField('ATP_IST_PRUEF_BEDARF',               ftBoolean, 0),    // Zeigt an, ob die Zeile in der aktuellen Prüfsituation der zu prüfende, "eigene" Bedarf ist
+
+      Result.CbAddField('ATP_MENGE_BESTAETIGT_IN_TIME',       ftFloat,   0),    // Menge, die laut ATP rechtzeitig bestätigt werden kann (nur für Bedarfszeilen sinnvoll)
+      Result.CbAddField('ATP_KOMPL_BESTAETIGT_IN_TIME',       ftBoolean, 0),    // Zeigt an, ob die gesamte Menge rechtzeitig bestätigt werden konnte
+      Result.CbAddField('ATP_MENGE_BESTAETIGT_NOT_IN_TIME',   ftFloat,   0),    // Menge, die laut ATP zugeordnet wurde, aber nicht rechtzeitig bestätigt werden kann (nur für Bedarfszeilen sinnvoll)
+      Result.CbAddField('ATP_MENGE_BESTAETIGT_PER_PRUEFHORZ', ftFloat,   0),    // Menge, die nach ATP-Logik aufgrund der Prüfhorizont-Endes bestätigt wurden (kann 0, Teilmenge oder komplette Menge sein)
+      Result.CbAddField('ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN', ftString,  8),    // Verfügbarkeitstermin (ohne ggf. notwendiger Sicherheitzeit) des spätest notwendigen Zugangstermins (nur bei komplett-Lieferbarkeit definiert)
+      Result.CbAddField('ATP_BEDARF_GEDECKT_DURCH_LAGER',     ftString,  1),    // Ist der Bedarf durch Lagerbestand gedeckt?
+                                                                                //   'N' - nein      (es sind Zugänge erforderlich, um den Bedarf zu decken)
+                                                                                //   'T' - teilweise
+                                                                                //   'J' - ja        (der Bedarf ist komplett gedeckt durch heute verfügbaren Lagerbestand)
+                                                                                // => Hat Aufgrund der ATP-Logik nicht viel Aussage-Kraft, da ein späterer Abgang ggf. Lagerbestand "zieht" und ein
+                                                                                //    früherer ggf. den davor liegenden Zugang (Feld wurde übernommen von vorheriger Zuordnungs-Logik)
+
+      Result.CbAddField('ATP_ABGANG_ARR',               ftMemo,        0),      // Array der Abgänge, für welche die Zugangsmenge verwendet wird               (nur für Zugangszeilen sinnvoll)
+      Result.CbAddField('ATP_ZUGANG_ARR',               ftMemo,        0),      // Array der Zugänge, die für die Bestätigung der Abgangsmenge verwendet wird  (nur für Abgangszeilen sinnvoll)
+      Result.CbAddField('ATP_KUERZEST_DIFF_ZU_ABGANG',  ftInteger,     0),      // Anzahl Kalendertage Abstand zum chronologisch ersten zugeordneten Abgang    (nur für Zugangszeilen sinnvoll)
+                                                                                //    (kann negativ, 0 oder positiv sein. Negativ => Der Zugang wurde eingeplant, um einen Abgang verspätet zu decken)
+   endif,
+
+   Result.CbAddIndex('SORT', 'SORT', ixPrimary),
+   Result.Active      := true,
+   Result.CbIndexName := 'SORT',
+end,
+
+//******************************************************************************
+// Prüft, ob 'nZeilenTyp' in 'aZeilenTypenArr' enthalten ist oder
+//    'aZeilenTypenArr' leer ist
+// @Result: Boolean
+//******************************************************************************
+function _ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypenArr, nZeilenTyp)
+   Result :=    ALen(aZeilenTypenArr) = 0
+             or SeekInArray(nZeilenTyp, aZeilenTypenArr) > -1,
+end,
+
+//******************************************************************************
+// Prüft, ob die aktuell in der Memtable positionierte Bewegung der Abgang ist, der über
+//   nBedarfsTyp & uBedarfsId eindeutig identifiziert wird
+// @Result: Boolean
+//******************************************************************************
+function _ETRU_CheckCurrentRecordIsGivenBedarf(oMemTermRast, nBedarfsTyp, nBedarfsId)
+   Result :=     not empty(oMemTermRast)
+             and oMemTermRast:ZEILEN_TYP   = nBedarfsTyp
+             and oMemTermRast:DATENSATZ_ID = nBedarfsId,
+end,
+
+//******************************************************************************
+// Durchläuft die übergebene @oMemTermRast und positioniert auf den Datensatz mit
+//   (ZEILEN_TYP = @nZeilenTyp and DATENSATZ_ID = @nDatensatzID)
+//   @bFailIfNotFound: Fehler auslösen, wenn Satz nicht gefunden werden kann
+// @Result: die Funktion hat keine Rückgabe
+//******************************************************************************
+function _ETRU_FindRecordByTypeAndID(oMemTermRast, nZeilenTyp, nDatensatzID, bFailIfNotFound)
+| oRec, bFound |
+   bFound := false,
+   foreach oRec in oMemTermRast do
+      if ETRU_CheckCurrentRecordIsGivenBedarf(oMemTermRast, nZeilenTyp, nDatensatzID) then
+         bFound := true,
+         break,
+      endif,
+   next,
+   SetErrorIf(bFailIfNotFound and not bFound, 'record (ZEILEN_TYP = ' + Str(nZeilenTyp) + ' and DATENSATZ_ID = ' + Str(nDatensatzID) + ') not found'),
+end,
+
+//******************************************************************************
+// Funktion gibt für "nZeilenTyp" <true> zurück, wenn es sich um einen Abgangs-Typen
+//    handelt
+// @Result: ja/nein
+//******************************************************************************
+function _ETRU_IsAbgang(nZeilenTyp)       // TODO: Array einmalig global definieren
+| aTypen, nPos |
+   aTypen   := {
+                 gl_ETRU_Typ_EisernerBestand,
+
+                 gl_ETRU_Typ_ProdReservKommissioniert,
+                 gl_ETRU_Typ_ProdReservOffen,
+
+                 gl_ETRU_Typ_VerkaufAbgang,
+
+                 gl_ETRU_Typ_GrobPlanProdAbgangDab220,
+                 gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                 gl_ETRU_Typ_GrobPlanAbgangAnonym,
+                 gl_ETRU_Typ_GrobPlanProdAbgangDab320
+               },
+   nPos     := SeekInArray(nZeilenTyp, aTypen),
+   Result   := nPos > 0,
+end,
+
+//******************************************************************************
+// Funktion gibt für "nZeilenTyp" <true> zurück, wenn es sich um einen Zugangs-Typen
+//    handelt
+// @Result: ja/nein
+//******************************************************************************
+function _ETRU_IsZugang(nZeilenTyp)      // TODO: Array einmalig global definieren
+| aTypen, nPos |
+   aTypen   := {
+                 gl_ETRU_Typ_VerfuegBestand,
+
+                 gl_ETRU_Typ_ProdZugangKommissioniert,
+                 gl_ETRU_Typ_ProdZugangOffen,
+
+                 gl_ETRU_Typ_EinkaufZugangBestaetigt,
+                 gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+
+                 gl_ETRU_Typ_GrobPlanProdZugangDab220,
+                 gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                 gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                 gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                 gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                 gl_ETRU_Typ_GrobPlanZugangAnonym
+               },
+   nPos     := SeekInArray(nZeilenTyp, aTypen),
+   Result   := nPos > 0,
+end,
+
+//******************************************************************************
+// Funktion gibt für "nZeilenTyp" <true> zurück, wenn es sich um eine konkrete
+//    Bewegung (und nicht um eine Grobplanungs-Bewegung) handelt
+// @Result: ja/nein
+//******************************************************************************
+function _ETRU_IsKonkreteBewegung(nZeilenTyp)  // TODO: Array einmalig global definieren
+| aTypen, nPos |
+   aTypen   := { gl_ETRU_Typ_VerfuegBestand,
+                 gl_ETRU_Typ_EisernerBestand,
+                 gl_ETRU_Typ_ProdReservKommissioniert,
+                 gl_ETRU_Typ_ProdReservOffen,
+                 gl_ETRU_Typ_ProdZugangKommissioniert,
+                 gl_ETRU_Typ_ProdZugangOffen,
+                 gl_ETRU_Typ_EinkaufZugangBestaetigt,
+                 gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                 gl_ETRU_Typ_VerkaufAbgang },
+   nPos     := SeekInArray(nZeilenTyp, aTypen),
+   Result   := nPos > 0,
+end,
+
+//******************************************************************************
+// Funktion definiert einen Sortierschlüssel für alle möglichen Zeilen-Typen.
+//  _-> Die Sortierung ist insb. innerhalb eines Tages wichtig, da sich
+//      hieraus Konsequenzen für die Berechnung der "verfügbaren Menge" ergeben.
+//
+//   -> Grundgedanke: Jeden Tag werden erst die Zugänge und dann die Abgänge angezeigt.
+//                    Außerdem kommen erst konkrete (als eher verlässliche) Bewegungen,
+//                    dann die weniger konkreten
+// @Result: string, Sortierschlüssel
+//******************************************************************************
+function _ETRU_GetSortSchluesselForZeile(oMemTermRast)
+| nZeilenTyp, cTermIndex |
+  Result     := '',
+  nZeilenTyp := oMemTermRast:ZEILEN_TYP,
+  cTermIndex := oMemTermRast:TERMIN_INDEX,
+  case nZeilenTyp
+
+     // Diese Bestands-Zeilen kommen immer als erstes
+     of gl_ETRU_Typ_VerfuegBestand               :: Result := Replicate(' ', 9) + 'A',
+     of gl_ETRU_Typ_EisernerBestand              :: Result := Replicate(' ', 9) + 'C',
+     of gl_ETRU_Typ_WareneingangsBestand         :: Result := Replicate(' ', 9) + 'E',
+
+     // Diese Info-Zeilen kommen am jeweiligen Tag immer vor allen Bewegungs-Zeilen dieses Tages
+     of gl_ETRU_Typ_HeuteInfo                    :: Result := cTermIndex + 'A',
+     of gl_ETRU_Typ_EndeWBZInfo                  :: Result := cTermIndex + 'B',
+
+     // Sortierung innerhalb eines "TERMIN_INDEX":
+     //    -> Erst die Zugänge (je konkreter, desto früher)
+     of gl_ETRU_Typ_ProdZugangKommissioniert     :: Result := cTermIndex + 'C',
+     of gl_ETRU_Typ_ProdZugangOffen              :: Result := cTermIndex + 'D',
+
+     of gl_ETRU_Typ_EinkaufZugangBestaetigt      :: Result := cTermIndex + 'E',
+     of gl_ETRU_Typ_EinkaufZugangNichtBestaetigt :: Result := cTermIndex + 'F',
+
+     of gl_ETRU_Typ_GrobPlanProdZugangDab320     :: Result := cTermIndex + 'G',
+     of gl_ETRU_Typ_GrobPlanEinkaufZugangDab320  :: Result := cTermIndex + 'H',
+     of gl_ETRU_Typ_GrobPlanProdZugangDab215     :: Result := cTermIndex + 'I',
+     of gl_ETRU_Typ_GrobPlanEinkaufZugangDab315  :: Result := cTermIndex + 'J',
+     of gl_ETRU_Typ_GrobPlanProdZugangDab220     :: Result := cTermIndex + 'K',
+     of gl_ETRU_Typ_GrobPlanZugangAnonym         :: Result := cTermIndex + 'L',
+
+     //    -> Dann die Abgänge (je konkreter, desto früher)
+     of gl_ETRU_Typ_ProdReservKommissioniert     :: Result := cTermIndex + 'M',
+     of gl_ETRU_Typ_ProdReservOffen              :: Result := cTermIndex + 'N',
+
+     of gl_ETRU_Typ_VerkaufAbgang                :: Result := cTermIndex + 'O',
+
+     of gl_ETRU_Typ_GrobPlanProdAbgangDab320     :: Result := cTermIndex + 'P',
+     of gl_ETRU_Typ_GrobPlanProdAbgangDab215     :: Result := cTermIndex + 'Q',
+     of gl_ETRU_Typ_GrobPlanProdAbgangDab220     :: Result := cTermIndex + 'R',
+     of gl_ETRU_Typ_GrobPlanAbgangAnonym         :: Result := cTermIndex + 'S',
+
+  otherwise
+     SetError('not implemented for ZEILEN_TYP ' + Str(nZeilenTyp)),
+  endcase,
+  
+  // Identische Zeilen-Sortierungen anschließend nach Standort aufsteigend sortieren
+  Result += Str(oMemTermRast:STANDORT),
+end,
+
+//******************************************************************************
+// Funtkion fügt eine Zeile mit dem aktuell verfügbaren Lagerbestand ein
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_VerfuegBestand(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| oDab010, nStoreQuant, aStandorte, nStandort, nOldUseLocation010 |
+
+   oDab010            := DbGetTable(oDM, waDab010),
+   oDab010.IndexName  := 'DAB011',
+
+   nOldUseLocation010 := oDab010.UseLocation,
+   startseq
+      aStandorte := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab010.UseLocation := nStandort,
+
+         // Info: Nicht jeder Artikel-Stamm-Satz existiert in jedem Standort, daher prüfen...
+         if DbSeek({cArtnr}, oDab010) then
+            nStoreQuant := Round(Lager('', oDab010, false), oDab010:ME_RUNDEN),  // Bestand aller "verfügbaren Lager" abzüglich Reservierungen
+
+            MyAppend(oMemTermRast),
+            oMemTermRast:ZEILEN_TYP       := gl_ETRU_Typ_VerfuegBestand,
+            oMemTermRast:DATENSATZ_ID     := 0,
+            oMemTermRast:IST_ZUGANG       := true,
+            oMemTermRast:IST_KONKRETE_BEW := true,
+            oMemTermRast:ARTNR            := cArtnr,
+            oMemTermRast:MENGE            := nStoreQuant,
+            oMemTermRast:TERMIN           := '',
+            oMemTermRast:TERMIN_INDEX     := ETRU_DateStr(oMemTermRast:TERMIN),
+            oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+            oMemTermRast:STANDORT         := nStandort,
+            oMemTermRast:STO_LIEF         := -1,
+            MyPost(oMemTermRast),
+         endif,
+      next,
+   always
+      oDab010.UseLocation := nOldUseLocation010,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt den "Eisernen Bestand" als Abgang hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_EisernerBestand_Abgang(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| oDab010, nEisernerBestand, aStandorte, nStandort, nOldUseLocation010 |
+
+   oDab010            := DbGetTable(oDM, waDab010),
+   oDab010.IndexName  := 'DAB011',
+
+   nOldUseLocation010 := oDab010.UseLocation,
+   startseq
+      aStandorte        := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab010.UseLocation := nStandort,
+
+         // Info: Nicht jeder Artikel-Stamm-Satz existiert in jedem Standort, daher prüfen...
+         if DbSeek({cArtnr}, oDab010) then
+
+            // negative Werte von "eiserner Bestand" ignorieren (-1 Auslauf, -2 Gesperrt, -3 Muster ...)
+            nEisernerBestand := 0,
+            if oDab010:RESERVBEST > 0 then
+               nEisernerBestand := Round(oDab010:RESERVBEST, oDab010:ME_RUNDEN),
+
+               if nEisernerBestand > 0 then
+                  MyAppend(oMemTermRast),
+                  oMemTermRast:ZEILEN_TYP       := gl_ETRU_Typ_EisernerBestand,
+                  oMemTermRast:DATENSATZ_ID     := 0,
+                  oMemTermRast:IST_ABGANG       := true,
+                  oMemTermRast:IST_KONKRETE_BEW := true,
+                  oMemTermRast:ARTNR            := cArtnr,
+                  oMemTermRast:MENGE            := nEisernerBestand * -1, // als Abgang
+                  oMemTermRast:TERMIN           := '',
+                  oMemTermRast:TERMIN_INDEX     := ETRU_DateStr(oMemTermRast:TERMIN),
+                  oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+                  oMemTermRast:STANDORT         := nStandort,
+                  oMemTermRast:STO_LIEF         := -1,
+                  MyPost(oMemTermRast),
+               endif,
+
+            endif,
+         endif,
+      next,
+   always
+      oDab010.UseLocation := nOldUseLocation010,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt eine Zeile mit dem aktuell im Wareneingang befindlichen
+// Bestand ein, sofern vorhanden
+//    Dieser Bestand läuft nach be-Standard nie in die Verfügbarkeitsberechnung
+//    ein, die Zeile dient zu Informationszwecken für den User an der GUI.
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_WareneingangsBestand(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| oDab010, nWareneingangsBestand, aStandorte, nStandort, nOldUseLocation010 |
+
+   oDab010            := DbGetTable(oDM, waDab010),
+   oDab010.IndexName  := 'DAB011',
+
+   nOldUseLocation010 := oDab010.UseLocation,
+   startseq
+      aStandorte      := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDAB010.UseLocation := nStandort,
+
+         // Info: Nicht jeder Artikel-Stamm-Satz existiert in jedem Standort, daher prüfen...
+         if DbSeek({cArtnr}, oDab010) then
+
+            nWareneingangsBestand := oDab010:LAGERW,
+
+            if nWareneingangsBestand <> 0 then
+               MyAppend(oMemTermRast),
+               oMemTermRast:ZEILEN_TYP       := gl_ETRU_Typ_WareneingangsBestand,
+               oMemTermRast:DATENSATZ_ID     := 0,
+               oMemTermRast:ARTNR            := cArtnr,
+               oMemTermRast:MENGE            := 0,  // Die Bewegungsmenge wird nicht gesetzt, sonst müsste diese bei Verfügbarkeitsberechnungen ignoriert werden. Außerdem
+                                                    // ist bei Wareneingang zu einer Bestellung die Bestellungsbewegung ja auch im ETR vorhanden.
+               oMemTermRast:TERMIN           := '',
+               oMemTermRast:TERMIN_INDEX     := '',
+               oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+               oMemTermRast:STANDORT         := nStandort,
+               oMemTermRast:STO_LIEF         := -1,
+               MyPost(oMemTermRast),
+            endif,
+         endif,
+      next,
+   always
+      oDab010.UseLocation := nOldUseLocation010,
+   stopseq,
+end,
+
+//******************************************************************************
+// Erzeugt eine Info-Zeile, die optisch im Verlauf der Bewegungen "heute"
+//    anzeigt. Das ist insbesondere dann sinnvoll, wenn Bewegungen in der
+//    Vergangenheit vorliegen.
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_Heute(oDM, cArtnr, oMemTermRast)
+   MyAppend(oMemTermRast),
+   oMemTermRast:ZEILEN_TYP    := gl_ETRU_Typ_HeuteInfo,
+   oMemTermRast:DATENSATZ_ID  := 0,
+   oMemTermRast:ARTNR         := cArtnr,
+   oMemTermRast:MENGE         := 0,
+   oMemTermRast:TERMIN        := ETRU_DToC(GetAdsServerTime()),
+   oMemTermRast:TERMIN_INDEX  := ETRU_DateStr(oMemTermRast:TERMIN),
+   oMemTermRast:SORT          := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+   oMemTermRast:STANDORT      := mStandort,
+   oMemTermRast:STO_LIEF      := -1,
+   MyPost(oMemTermRast),
+end,
+
+//******************************************************************************
+// Funktion für die vorwärts-Terminierung eines Arbeitstages um x Arbeitstage
+//
+//   ---------------------------------------------------------------------------
+//   ACHTUNG: Codeblock-"Umwandlung" von U_ProdPlanUtils.pas => PlanGetPriorWorkDate
+//            für die Vorwärtsterminierung
+//   TODO:    Feiertage interpretieren!
+//   ---------------------------------------------------------------------------
+//
+// @Result: vorterminiertes Datum (TDateTime)
+//******************************************************************************
+function _ETRU_Internal_DPU_Temp_DayPlan_GetNextWorkDate(aStartDate, aDivision, aDayCount)
+   | aWorkDays, aWorkDaysLeft, aCurrentDayIsWorkDay, i, bFirstWorkDayFound |
+
+   //***************************************************************************
+   // Funktion prüft, ob der übergebene Tag ein Werktag ist
+   //***************************************************************************
+   function DayIsWorkDay(dDate)
+    | i, aCurWorkDayElem |
+      Result := false,
+      for i := 1 to ALen(aWorkDays) do
+         aCurWorkDayElem := aWorkDays[i],
+         if aCurWorkDayElem[1] = DoW(dDate) then
+            if aCurWorkDayElem[aDivision] then
+               Result := True,
+               // break, // kein 'break', auch wenn hier die Schleifenausführung beendet werden könnte.
+                         // -> Warum? Weil ein 'break' im Codeblock ziemlich langsam ist. Die Schleife
+                         //    einfach durchgehen ist bei weitem schneller.
+            endif,
+         endif,
+      next,
+   end,
+
+   Result := aStartDate,
+
+   if aDayCount > 0 then
+      aWorkDays := DPU_PlanGetWorkDays(),                                       // prs('DPU_temp_GetNextWorkDate', 'start datum    ' + FormatDateTime('ddd, DD.MM.YY', aStartDate) + ', addiere << ' + Str(aDayCount) + ' >> Werktage'),
+
+      // sofern das Startdatum ein Arbeitstag ist, zählt dieses als Start, sonst der nächste Arbeitstag => diesen Suchen!
+      aCurrentDayIsWorkDay := false,
+      Result--,
+      repeat
+         Result++,
+         aCurrentDayIsWorkDay := DayIsWorkDay(Result),
+      until aCurrentDayIsWorkDay end,                                           // prs('DPU_temp_GetNextWorkDate', 'erster werktag ' + FormatDateTime('ddd, DD.MM.YY', Result) + crlf),
+
+
+      aWorkDaysLeft      := aDayCount,
+      while aWorkDaysLeft > 0 do
+         Result++,
+
+         aCurrentDayIsWorkDay := DayIsWorkDay(Result),
+
+         if aCurrentDayIsWorkDay then
+            aWorkDaysLeft --,
+         endif,
+         // prs('DPU_temp_GetNextWorkDate', 'getestetes datum ' + FormatDateTime('ddd, DD.MM.YY', Result) + ' => ' + iif(aCurrentDayIsWorkDay, 'Werktag', 'frei   ') + ', verbleiben <' + Str(aWorkDaysLeft) + '> Werktage'),
+      next,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion führt eine "einfache" Vorwärtsterminierung auf Basis von
+//    Kalender oder Werktagen durch
+// @Result: Datums-Wert
+//******************************************************************************
+function _ETRU_Vorwaertsterminierung(bIsDayPlan, cPlanungsmodus, dStartDate, nDays)
+| aDivision |
+   SetErrorIf(bIsDayPlan and not cPlanungsmodus $ 'EF', 'cPlanungsmodus must be "E" or "F" when bIsDayPlan = true'),
+   SetErrorIf(nDays < 0, 'nDays < 0 not allowed'),
+
+   if bIsDayPlan then
+      case cPlanungsmodus
+         of 'E' :: aDivision := 3,   // Unternehmensbereich "Wareneingang"
+         of 'F' :: aDivision := 4,   // Unternehmensbereich "Produktion"
+      endcase,
+
+      Result := ETRU_Internal_DPU_Temp_DayPlan_GetNextWorkDate(dStartDate, aDivision, nDays),
+   else
+      Result := dStartDate + nDays,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt für den Artikel @cArtnr das Ende der WBZ per
+//    Vorwärtsterminierung von Heute aus
+// @Result: Datums-Wert
+//******************************************************************************
+function _ETRU_CalcEndeDerWBZ(oDM, cArtnr, nStandort:N:=0)
+| oDab010, cPlanungsmodus, bIsDayPlan, nOldUseLocation010 |
+
+   oDab010                := DbGetTable(oDM, waDab010),
+   oDab010.IndexName      := 'DAB011',
+
+   nOldUseLocation010     := oDab010.UseLocation,
+   startseq
+      oDab010.UseLocation := nStandort,
+
+      // Info: Nicht jeder Artikel-Stamm-Satz existiert in jedem Standort, daher prüfen...
+      if DbSeek({cArtnr}, oDab010) then
+         bIsDayPlan       := DPU_IsDayPlan(oDab010),
+         cPlanungsmodus   := '',
+         if bIsDayPlan then
+            cPlanungsmodus := DPU_GetPlanungsModusForArtikel(oDM, cArtnr, Date()), // Liefert 'E'inkauf oder 'F'ertigung, nur relevant für Tagesgenaue Planung, sonst kostet es überflüssig Performance
+         endif,
+
+         Result := ETRU_Vorwaertsterminierung(bIsDayPlan, cPlanungsmodus, Date(), oDab010:WBZ),
+      else
+         Result := -1,
+      endif,
+   always
+      oDab010.UseLocation := nOldUseLocation010,
+   stopseq,
+end,
+
+//******************************************************************************
+// Die Funktion für eine Info-Zeile ein, die das Ende der
+//    Wiederbeschaffungszeit anzeigt.
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_EndeWBZInfo(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| dEndeWbz, aStandorte, nStandort |
+
+   aStandorte := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+   foreach nStandort in aStandorte do
+      dEndeWbz := ETRU_CalcEndeDerWBZ(oDM, cArtnr, nStandort),
+      if dEndeWbz >= 0 then
+         MyAppend(oMemTermRast),
+         oMemTermRast:ZEILEN_TYP   := gl_ETRU_Typ_EndeWBZInfo,
+         oMemTermRast:DATENSATZ_ID := 0,
+         oMemTermRast:ARTNR        := cArtnr,
+         oMemTermRast:MENGE        := 0,
+         oMemTermRast:TERMIN       := ETRU_DToC(dEndeWbz),
+         oMemTermRast:TERMIN_INDEX := ETRU_DateStr(oMemTermRast:TERMIN),
+         oMemTermRast:SORT         := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+         oMemTermRast:STANDORT     := nStandort,
+         oMemTermRast:STO_LIEF     := -1,
+         MyPost(oMemTermRast),
+      endif,
+   next
+end,
+
+//******************************************************************************
+// Gibt für eine Dab240-Position den Zeilen-Typ zurück
+// @Result: Integer, Zeilen-Typ
+//******************************************************************************
+function _ETRU_Get_ProduktionsAbgangsZeilenTyp(oDab240)
+   if D240_IstKommissioniert(oDab240) then
+      Result := gl_ETRU_Typ_ProdReservKommissioniert,
+   else
+      Result := gl_ETRU_Typ_ProdReservOffen,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion fügt Abgänge/Bedarfe durch Produktions-Reservierungen
+//   (offen + kommissioniert) der Einzel-Terminraster-MemTable hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_ProduktionsAbgaenge(oDM, cArtnr, oMemTermRast, aZeilenTypen, cBisTerminIndex, cStandorteArr:C:='')
+| oDab010, oDab240, oDab035, oDab055, cBestPosNr, cFertigstellungsTerminAuftrag,
+  cBedarfsTerminPosition, cBedarfsTerminIndex, nZeilenTyp, aStandorte, nStandort,
+  nOldUseLocation010, nOldUseLocation035, nOldUseLocation055 |
+
+   oDab010            := DbGetTable(oDM, waDab010),
+   oDab010.IndexName  := 'DAB011',
+   oDab240            := DbGetTable(oDM, waDab240),
+   oDab240.IndexName  := 'DAB243', // Bedingung: "!(RUECKS_PR=0 OR RUECKS_PR=NULL)"
+   oDab035            := DbGetTable(oDM, waDab035),
+   oDab035.IndexName  := 'DAB036', // Ausdruck: "LIEFNR;BESTPOSNR;TERM_INDEX"
+   oDab055            := DbGetTable(oDM, waDab055),
+   oDab055.IndexName  := 'DAB056', // Ausdruck: "APNUMMER"
+
+   nOldUseLocation010 := oDab010.UseLocation,
+   nOldUseLocation035 := oDab035.UseLocation,
+   nOldUseLocation055 := oDab055.UseLocation,
+   startseq
+      aStandorte        := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab010.UseLocation := nStandort,
+         oDab035.UseLocation := nStandort,
+
+         // Info: Nicht jeder Artikel-Stamm-Satz existiert in jedem Standort, daher prüfen...
+         if DbSeek({cArtnr}, oDab010) then
+
+            // Gibt es überhaupt Prod.Rückstände?
+            if oDab010:RUECKS_PR <> 0 then
+
+               DbScope({cArtnr}, {cArtnr}, oDab240),
+               DbGoTop(oDab240),
+
+               while not eof(oDab240) do
+                  if oDAB240:STANDORT = nStandort then // Dab240 ist nicht per Default auf aktuellen Standort gefiltert...
+                     cBestPosNr := D240_B_POS_LFD_2_BESTPOSNR(oDab240:B_POS_LFD),
+                     MySeek({-1, cBestPosNr}, oDab035),
+                     cFertigstellungsTerminAuftrag := oDab035:TERMIN,
+
+                     nZeilenTyp := ETRU_Get_ProduktionsAbgangsZeilenTyp(oDab240),
+
+                     // Zeilentyp angefordert?
+                     if ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, nZeilenTyp) then
+                        // TODO: Die Bestimmung des Bedarfs-Termins müsste eig. 100% nach Standard gehen,
+                        //       die DPU_CalcPlanungsStartTermin()-Funktion
+                        //       ist gemacht für den Start-Termin des FA's (Funktion ignoriert z.B. die
+                        //       Allg. Parameter DABPAR:TRMR_PRTAG und DABPAR:TRMR_PRWBZ)
+                        cBedarfsTerminPosition    := DPU_CalcPlanungsStartTermin(oDab035:ARTNR, cFertigstellungsTerminAuftrag),
+                        cBedarfsTerminIndex       := ETRU_DateStr(cBedarfsTerminPosition),
+
+                        if cBedarfsTerminIndex <= cBisTerminIndex or empty(cBisTerminIndex) then
+                           MyAppend(oMemTermRast),
+                           oMemTermRast:ZEILEN_TYP       := nZeilenTyp,
+                           oMemTermRast:DATENSATZ_ID     := oDab240:ID,
+                           oMemTermRast:IST_ABGANG       := true,
+                           oMemTermRast:IST_KONKRETE_BEW := true,
+                           oMemTermRast:B_POS_LFD        := oDab240:B_POS_LFD,
+                           oMemTermRast:ARTNR            := cArtnr,
+                           oMemTermRast:BAUGRUPPE        := oDab035:ARTNR,
+                           oMemTermRast:KOMMISS          := oDab035:KOMMISS,
+
+                           oDab055.UseLocation := nStandort,
+                           if not empty(oMemTermRast:KOMMISS) and DbSeek({Kom_2_ApNr(oMemTermRast:KOMMISS)}, oDab055) then
+                              oMemTermRast:KDNR          := oDab055:KDNR,
+                              oMemTermRast:APNUMMER      := oDab055:APNUMMER,
+                           endif,
+
+                           oMemTermRast:PROD_ABT         := D240_ProdDepart(oDab240, oDab035),
+                           oMemTermRast:MENGE            := Round(oDab240:RUECKS_PR * -1, oDab010:ME_RUNDEN), // als Bedarf
+                           oMemTermRast:TERMIN           := cBedarfsTerminPosition,
+                           oMemTermRast:TERMIN_INDEX     := cBedarfsTerminIndex,
+                           oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+                           oMemTermRast:STANDORT         := nStandort,
+                           oMemTermRast:STO_LIEF         := -1,
+                           MyPost(oMemTermRast),
+                        else
+                           break,
+                        endif,
+                     endif,
+                  endif,
+                  DbSkip(1, oDab240),
+               end,
+            endif,
+         endif,
+      next,
+   always
+      oDab010.UseLocation := nOldUseLocation010,
+      oDab035.UseLocation := nOldUseLocation035,
+      oDab055.UseLocation := nOldUseLocation055,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt Abgänge/Bedarfe durch Produktions-Grobplanungs-Aufträge
+//   der Einzel-Terminraster-MemTable hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_ProduktionsGrobplanungsAbgaenge(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| oDab280, oDab010_BG, cBedarfsTerminPosition, nZeilenTyp, cProdAbt, aStandorte, nStandort, nOldUseLocation280 |
+
+   oDab280              := DbGetTable(oDM, waDab280),
+   oDab280.IndexName    := 'DAB283', // Ausdruck: "ARTNR2;TERM_INDEX"
+
+   nOldUseLocation280   := oDab280.UseLocation,
+   startseq
+      aStandorte        := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab280.UseLocation := nStandort,
+
+         DbScope({cArtnr}, {cArtnr}, oDab280),
+         DbGoTop(oDab280),
+
+         oDab010_BG := DbGetTable(oDM, waDab010),
+         oDab010_BG.IndexName := 'DAB011',
+
+         while not eof(oDab280) do
+
+            // In der Grobplanungstabelle ist der "TERMIN" bereits der Bedarfstermin
+            cBedarfsTerminPosition    := oDab280:TERMIN,
+
+            MySeek({oDab280:ARTNR1}, oDab010_BG), // Baugruppe suchen
+
+            case oDab280:WORKAREA
+               of waDab220 :: nZeilenTyp := gl_ETRU_Typ_GrobPlanProdAbgangDab220,
+                              cProdAbt   := oDab010_BG:PROD_ABT,
+               of waDab215 :: nZeilenTyp := gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                              cProdAbt   := LookUp(waDab215, 'AUTOINC', {{oDab280:REC_ID}}, 'PROD_ABT', '???',,, nStandort),
+               of 0        :: nZeilenTyp := gl_ETRU_Typ_GrobPlanAbgangAnonym,
+                              cProdAbt   := oDab010_BG:PROD_ABT,
+               of waDab320 :: nZeilenTyp := gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                              cProdAbt   := LookUp(waDab320, 'AUTOINC', {{oDab280:REC_ID}}, 'PROD_ABT', '???',,, nStandort),
+            otherwise
+               SetError('unknown oDab280:WORKAREA'),
+            endcase,
+
+            MyAppend(oMemTermRast),
+            oMemTermRast:ZEILEN_TYP   := nZeilenTyp,
+            oMemTermRast:DATENSATZ_ID := oDab280:REC_ID,
+            oMemTermRast:IST_ABGANG   := true,
+            oMemTermRast:B_POS_LFD    := '',
+            oMemTermRast:ARTNR        := cArtnr,
+            oMemTermRast:BAUGRUPPE    := oDab280:ARTNR1,
+            oMemTermRast:PROD_ABT     := cProdAbt,
+            oMemTermRast:MENGE        := oDab280:MENGE * -1, // als Bedarf
+            oMemTermRast:TERMIN       := cBedarfsTerminPosition,
+            oMemTermRast:TERMIN_INDEX := ETRU_DateStr(oMemTermRast:TERMIN),
+            oMemTermRast:SORT         := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+            oMemTermRast:STANDORT     := nStandort,
+            oMemTermRast:STO_LIEF     := -1,
+            MyPost(oMemTermRast),
+
+            DbSkip(1, oDab280),
+         end,
+      next,
+   always
+      oDab280.UseLocation := nOldUseLocation280,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt Zugänge durch Produktions-Grobplanungs-Aufträge oder
+//    Einkaufs-Vorschläge der Einzel-Terminraster-MemTable hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_GrobplanungsZugaenge(oDM, cArtnr, oMemTermRast, cStandorteArr:C:='')
+| oDab280, cZugangsTermin, nZeilenTyp, nLiefNr, cProdAbt, aStandorte, nStandort, nOldUseLocation280 |
+
+   oDab280              := DbGetTable(oDM, waDab280),
+   oDab280.IndexName    := 'DAB281', // Ausdruck: "ARTNR1;TERM_INDEX" Bedingung: "(RTRIM(ARTNR2)=="" .OR. Empty(ARTNR2))" (also: nur Zugänge)
+
+   nOldUseLocation280   := oDab280.UseLocation,
+   startseq
+      aStandorte        := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab280.UseLocation := nStandort,
+         DbScope({cArtnr}, {cArtnr}, oDab280),
+         DbGoTop(oDab280),
+
+         while not eof(oDab280) do
+
+            // In der Grobplanungstabelle ist der "TERMIN" bereits der Zugangstermin
+            cZugangsTermin := oDab280:TERMIN,
+
+            case oDab280:WORKAREA
+               of waDab220 :: nZeilenTyp  := gl_ETRU_Typ_GrobPlanProdZugangDab220,  // Zugang Produktion Bedarfsplanung
+                              nLiefNr     := -1,
+                              cProdAbt    := LookUp(waDab010, 'DAB011', {{oDab280:ARTNR1}}, 'PROD_ABT', '???',,, nStandort),
+
+               of waDab215 :: nZeilenTyp  := gl_ETRU_Typ_GrobPlanProdZugangDab215,  // Zugang Produktion Dispo-Planung
+                              nLiefNr     := -1,
+                              cProdAbt    := LookUp(waDab215, 'AUTOINC', {{oDab280:REC_ID}}, 'PROD_ABT', '???',,, nStandort),
+
+               of waDab315 :: nZeilenTyp  := gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,  // Zugang Einkauf Dispo-Planung
+                              nLiefNr     := LookUp(waDab315, 'AUTOINC', {{oDab280:REC_ID}}, 'LIEFNR', 0,,, nStandort),
+                              cProdAbt    := '',
+
+               of waDab320 :: nLiefNr     := LookUp(waDab320, 'AUTOINC', {{oDab280:REC_ID}}, 'LIEFNR', 0,,, nStandort),
+                              if nLiefNr = -1 then
+                                 nZeilenTyp := gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                 cProdAbt   := LookUp(waDab320, 'AUTOINC', {{oDab280:REC_ID}}, 'PROD_ABT', '???',,, nStandort),
+                              else
+                                 nZeilenTyp := gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                 cProdAbt := '',
+                              endif,
+
+               of 0        :: nZeilenTyp  := gl_ETRU_Typ_GrobPlanZugangAnonym, // Zugang anonym
+                              nLiefNr     := 0,
+                              cProdAbt    := LookUp(waDab010, 'DAB011', {{oDab280:ARTNR1}}, 'PROD_ABT', '???',,, nStandort),
+            otherwise
+               SetError('unknown oDab280:WORKAREA'),
+            endcase,
+
+            MyAppend(oMemTermRast),
+            oMemTermRast:ZEILEN_TYP   := nZeilenTyp,
+            oMemTermRast:DATENSATZ_ID := oDab280:REC_ID,
+            oMemTermRast:IST_ZUGANG   := true,
+            oMemTermRast:B_POS_LFD    := '',
+            oMemTermRast:ARTNR        := cArtnr,
+            oMemTermRast:BAUGRUPPE    := '',
+            oMemTermRast:PROD_ABT     := cProdAbt,
+            oMemTermRast:LIEFNR       := nLiefNr,
+            oMemTermRast:MENGE        := oDab280:MENGE, // als Zugang
+            oMemTermRast:TERMIN       := cZugangsTermin,
+            oMemTermRast:TERMIN_INDEX := ETRU_DateStr(oMemTermRast:TERMIN),
+            oMemTermRast:SORT         := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+            oMemTermRast:STANDORT     := nStandort,
+            oMemTermRast:STO_LIEF     := -1,
+            MyPost(oMemTermRast),
+
+            DbSkip(1, oDab280),
+         end,
+      next,
+   always
+      oDab280.UseLocation := nOldUseLocation280,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt Zugänge durch Einkauf / Produktion
+//    der Einzel-Terminraster-MemTable hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_Zugaenge(oDM, cArtnr, oMemTermRast, aZeilenTypen, cBisTerminIndex, cStandorteArr:C:='')
+| oDab035, oDab055, cZugangsTermin, cZugangsTerminIndex, nZeilenTyp, cProdAbt,
+  bKommissioniert, bBestaetigt, nZugangsMenge, aStandorte, nStandort,
+  nOldUseLocation035, nOldUseLocation055 |
+
+   oDab035           := DbGetTable(oDM, waDab035),
+   oDab035.IndexName := 'DAB038', // Ausdruck: "ARTNR;KOMMISS;TERM_INDEX;BESTPOSNR"
+   oDab055           := DbGetTable(oDM, waDab055),
+   oDab055.IndexName := 'DAB056', // Ausdruck: "APNUMMER"
+
+   nOldUseLocation035 := oDab035.UseLocation,
+   nOldUseLocation055 := oDab055.UseLocation,
+   startseq
+      aStandorte        := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab035.UseLocation := nStandort,
+
+         DbScope({cArtnr}, {cArtnr}, oDab035),
+         DbGoTop(oDab035),
+
+         while not eof(oDab035) do
+
+            nZeilenTyp := 0,
+            cProdAbt   := '',
+            if oDab035:LIEFNR = -1 then
+               bKommissioniert := oDab035:TEILE_V = 'K', // TODO: also nur bei AKA-Druck über alle Positionen, ggf. später unterscheiden zw. "komplett kommiss." und "teilweise kommiss."
+
+               nZeilenTyp      := iif(bKommissioniert, gl_ETRU_Typ_ProdZugangKommissioniert, gl_ETRU_Typ_ProdZugangOffen),
+               cProdAbt        := oDab035:PROD_ABT,
+               nZugangsMenge   := oDab035:MENGE_EK, // vmlt. auch MENGE i.O.?  // TODO:
+            else
+               bBestaetigt     := not empty(oDab035:LIEF_AB),
+
+               nZeilenTyp      := iif(bBestaetigt, gl_ETRU_Typ_EinkaufZugangBestaetigt, gl_ETRU_Typ_EinkaufZugangNichtBestaetigt),
+               cProdAbt        := '',
+               nZugangsMenge   := oDab035:MENGE, // Menge in Lager-Einheit!
+            endif,
+
+            // Zeilentyp angefordert?
+            if ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, nZeilenTyp) then
+               cZugangsTermin      := DPU_CalcTermRasterTermin(oDab035:TERMIN), // TODO: Dab035:TERMIN_FE & Dab035:TERMIN_AB berücksichtigen, was ist mit Dab035:SOLLTERMIN?
+               cZugangsTerminIndex := ETRU_DateStr(cZugangsTermin),
+
+               if cZugangsTerminIndex <= cBisTerminIndex or empty(cBisTerminIndex) then
+                  MyAppend(oMemTermRast),
+                  oMemTermRast:ZEILEN_TYP       := nZeilenTyp,
+                  oMemTermRast:DATENSATZ_ID     := oDab035:ID,
+                  oMemTermRast:IST_ZUGANG       := true,
+                  oMemTermRast:IST_KONKRETE_BEW := true,
+                  oMemTermRast:B_POS_LFD        := '',
+                  oMemTermRast:ARTNR            := cArtnr,
+                  oMemTermRast:BAUGRUPPE        := '',
+                  oMemTermRast:PROD_ABT         := cProdAbt,
+                  oMemTermRast:LIEFNR           := oDab035:LIEFNR,
+                  oMemTermRast:BESTPOSNR        := oDab035:BESTPOSNR,
+                  oMemTermRast:KOMMISS          := oDab035:KOMMISS,
+
+                  oDab055.UseLocation := nStandort,
+                  if not empty(oMemTermRast:KOMMISS) and DbSeek({Kom_2_ApNr(oMemTermRast:KOMMISS)}, oDab055) then
+                    oMemTermRast:KDNR           := oDab055:KDNR,
+                    oMemTermRast:APNUMMER       := oDab055:APNUMMER,
+                  endif,
+
+                  oMemTermRast:MENGE            := nZugangsMenge,
+                  oMemTermRast:TERMIN           := cZugangsTermin,
+                  oMemTermRast:TERMIN_INDEX     := cZugangsTerminIndex,
+                  oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+                  oMemTermRast:STANDORT         := nStandort,
+                  oMemTermRast:STO_LIEF         := -1,
+                  MyPost(oMemTermRast),
+               endif,
+            endif,
+
+            DbSkip(1, oDab035),
+         end,
+      next,
+   always
+      oDab035.UseLocation := nOldUseLocation035,
+      oDab055.UseLocation := nOldUseLocation055,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion fügt Abgänge durch Verkauf
+//    der Einzel-Terminraster-MemTable hinzu
+// @Result: null
+//******************************************************************************
+function _ETRU_Add_VerkaufAbgaenge(oDM, cArtnr, oMemTermRast, aZeilenTypen, cBisTerminIndex, cStandorteArr:C:='')
+| oDab010, oDab055, cAbgangsTermin, nZeilenTyp, nOffeneBedarfsMenge, cTermIndex,
+  cFilter, aStandorte, nStandort, nOldUseLocation010, nOldUseLocationFilter055 |
+
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   oDab055           := DbGetTable(oDM, waDab055),
+   oDab055.IndexName := 'DAB057', // Ausdruck: "ARTNR;APNUMMER"
+                                  // Bedingung: "((!(EMPTY(AMENGE) .OR. (AMENGE=0)) .AND. (EMPTY(BMENGE) .OR. (BMENGE=0))) .OR. ( !(Empty(BMENGE) .OR. (BMENGE=0)) .AND. (BMENGE<>FMENGE) ) )"
+
+   nOldUseLocation010       := oDab010.UseLocation,
+   nOldUseLocationFilter055 := oDab055.UseLocationFilter,
+   startseq
+      aStandorte         := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+      foreach nStandort in aStandorte do
+         oDab010.UseLocation := nStandort,
+         if DbSeek({cArtnr}, oDab010) then
+
+            // Gibt es überhaupt Kunden-Auftrags-Rückstände / Abruf-Aufträge ? (Prüfung für Performance-Steigerung)
+            if oDab010:RUECKSTAND <> 0 or oDab010:ABRUF_VK <> 0 then
+               oDab055.UseLocationFilter := 2,      // Standortfilter ausschalten wegen Intercompany Aufträge
+
+               // auf Artikel einschränken
+               DbScope({cArtnr}, {cArtnr}, oDab055),
+
+               // Offene Angebote wegfiltern (Die sind auch im Index enthalten)
+               // -> mit "negativem Filter" enstpr. dem gesetzten Scope => Performance!
+               cFilter := '(ARTNR <> ''' + cArtnr + ''') OR (((BMENGE - (VMENGE + LMENGE)) <> 0) and STO_LIEF = ' + Str(nStandort) + ')',
+               DbFilter(cFilter, oDab055),
+               startseq
+                  DbGoTop(oDab055),
+
+                  while not eof(oDab055) do
+
+                     cAbgangsTermin := oDab055:TERMIN,
+                     cAbgangsTermin := DPU_CalcTermRasterTermin(cAbgangsTermin),
+                     cTermIndex     := ETRU_DateStr(cAbgangsTermin),
+
+                     if cTermIndex <= cBisTerminIndex or empty(cBisTerminIndex) then
+                        nZeilenTyp          := gl_ETRU_Typ_VerkaufAbgang,
+                        if ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, nZeilenTyp) then
+                           nOffeneBedarfsMenge := Round(oDab055:BMENGE - oDab055:VMENGE - oDab055:LMENGE - oDab055:RMENGE, oDab010:ME_RUNDEN), // ohne Reservierungsmenge, da diese auch nicht im verf. Lagerbestand enthalten ist.
+
+                           MyAppend(oMemTermRast),
+                           oMemTermRast:ZEILEN_TYP       := nZeilenTyp,
+                           oMemTermRast:DATENSATZ_ID     := DbRecNo(oDab055), // TODO: ID-Feld in Dab055 gibt es noch nicht im Standard... -> oDab055:ID. So lange mal die RecNo()...
+                           oMemTermRast:IST_ABGANG       := true,
+                           oMemTermRast:IST_KONKRETE_BEW := true,
+                           oMemTermRast:B_POS_LFD        := '',
+                           oMemTermRast:APNUMMER         := oDab055:APNUMMER,
+                           oMemTermRast:KDNR             := oDab055:KDNR,
+                           oMemTermRast:ARTNR            := cArtnr,
+                           oMemTermRast:BAUGRUPPE        := '',
+                           oMemTermRast:PROD_ABT         := '',
+                           oMemTermRast:LIEFNR           := 0,
+                           oMemTermRast:MENGE            := nOffeneBedarfsMenge * -1, // Menge als Abgang
+                           oMemTermRast:RMENGE           := oDab055:RMENGE      * -1, // R-Menge als Abgang in separater Spalte als Grundlage für Info-Darstellung im GUI-ETR-Browser
+                           oMemTermRast:TERMIN           := cAbgangsTermin,
+                           oMemTermRast:TERMIN_INDEX     := cTermIndex,
+                           oMemTermRast:SORT             := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+                           oMemTermRast:STANDORT         := oDAB055:STANDORT,
+                           oMemTermRast:STO_LIEF         := oDAB055:STO_LIEF,
+                           MyPost(oMemTermRast),
+                        endif,
+                     else
+                        break,
+                     endif,
+
+                     DbSkip(1, oDab055),
+                  end,
+               always
+                  DbFilter(, oDab055),
+                  DbScope(, oDab055),
+               stopseq
+            endif,
+         endif,
+      next,
+   always
+      oDab010.UseLocation       := nOldUseLocation010,
+      oDab055.UseLocationFilter := nOldUseLocationFilter055,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Verfügbarkeits-Berechnungs-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion läuft die Memtable durch und berechnet das Feld "Menge verfügbar"
+//
+// Parameter:
+//     aZeilenTypen        : Nur diese Zeilen-Typen berücksichtigen (leeres Array = alle Typen)
+//     nBedarfsTyp         : "Eigener" Bedarf hat diesen Typ
+//     uBedarfsId          : "Eigener" Bedarf hat diese ID (z.B. Dab240:ID)
+// @Result: null
+//******************************************************************************
+function _ETRU_Calc_VerfuegbareMenge(oDM, cArtnr, oMemTermRast, aZeilenTypen, nBedarfsTyp, nBedarfsId, cStandorteArr:C:='')
+| oDab010, nStoreQuant, aStandorte, i, aStoreQuant, nStoreQuantSto, nStoRelevant |
+
+   aStandorte  := iif(empty(cStandorteArr), {mStandort}, StrToArr(cStandorteArr)),
+   aStoreQuant := {},
+   for i := 1 to ALen(aStandorte) do
+      AAdd(aStoreQuant, 0),
+   next,
+
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   if DbSeek({cArtnr}, oDab010) then
+
+      nStoreQuant    := 0,
+      nStoreQuantSto := 0,
+      DbGoTop(oMemTermRast),
+
+      while not eof(oMemTermRast) do
+
+         // Aktuelle Zeile ist "Eigener Bedarf" oder ist einer der zu berücksichtigen Zeilen-Typen?
+         //  -> dann hat die Bewegung Auswirkung auf die Entwicklung der "verfügbaren Menge"
+         if    ETRU_CheckCurrentRecordIsGivenBedarf(oMemTermRast, nBedarfsTyp, nBedarfsId)
+            or ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, oMemTermRast:ZEILEN_TYP) then
+
+            nStoreQuant := Round(nStoreQuant + oMemTermRast:MENGE, oDab010:ME_RUNDEN), // Info: Dab010:ME_RUNDEN ist nicht standort-fähig, daher kann hier der Wert aus irgendeinem Sto. genutzt werden.
+            for i := 1 to ALen(aStandorte) do
+               nStoRelevant := iif(oMemTermRast:STO_LIEF <> -1, oMemTermRast:STO_LIEF, oMemTermRast:STANDORT),
+               if aStandorte[i] = nStoRelevant then
+                  nStorequantSto := Round(aStoreQuant[i] + oMemTermRast:MENGE, oDab010:ME_RUNDEN),
+                  aStorequant[i] := nStorequantSto,
+               endif,
+            next,
+
+         endif,
+
+         MyEdit(oMemTermRast),
+         oMemTermRast:MENGE_VERFUEG     := nStoreQuant,
+         oMemTermRast:MENGE_VERFUEG_STO := nStoreQuantSto,
+         MyPost(oMemTermRast),
+
+         DbSkip(1, oMemTermRast),
+      end,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine "neue, simulierte" Bewegung in der übergebenen
+//    Einzelterminraster-Memtable
+//
+//    Simulierte Bewegungen sind für Verfügbarkeitsberechnungen relevant.
+//
+// @Result: Datensatz-ID der simulierten Bewegung
+//******************************************************************************
+function _ETRU_CreateSimulierteBewegung(oMemTermRast, cArtnr, nZeilenTyp, cTerminNeu, nMengeNeu)
+| nDatensatzID | // TODO: Aktuell kann nur eine simulierte Bewegung gleichzeitig eindeutig identifiziert werden
+   nDatensatzID := -99,
+
+   // TODO: Einige Felder werden noch nicht geschrieben für die simulierte Bewegung
+   //       Je nachdem, was mit der Zeile passieren soll, ist das ein Problem oder nicht.
+
+   MyAppend(oMemTermRast),
+   oMemTermRast:MARKIERUNG_IST_SIMULIERT := true,
+
+   oMemTermRast:ARTNR                    := cArtnr,
+   oMemTermRast:BAUGRUPPE                := '', // TODO ?
+   oMemTermRast:PROD_ABT                 := '', // TODO ?
+   oMemTermRast:LIEFNR                   := 0,  // TODO ?
+   oMemTermRast:BESTPOSNR                := '', // TODO ?
+   oMemTermRast:KDNR                     := 0,  // TODO ?
+   oMemTermRast:APNUMMER                 := '', // TODO ?
+   oMemTermRast:IST_ZUGANG               := ETRU_IsZugang(nZeilenTyp),
+   oMemTermRast:IST_ABGANG               := ETRU_IsAbgang(nZeilenTyp),
+   oMemTermRast:IST_KONKRETE_BEW         := ETRU_IsKonkreteBewegung(nZeilenTyp),
+   oMemTermRast:ZEILEN_TYP               := nZeilenTyp,
+   oMemTermRast:DATENSATZ_ID             := nDatensatzID,
+   oMemTermRast:TERMIN                   := cTerminNeu,
+   oMemTermRast:TERMIN_INDEX             := ETRU_DateStr(oMemTermRast:TERMIN),
+   oMemTermRast:MENGE                    := nMengeNeu,
+   oMemTermRast:RMENGE                   := 0,  // TODO ?
+   oMemTermRast:MENGE_VERFUEG            := 0,  // TODO ?
+   oMemTermRast:B_POS_LFD                := '', // TODO ?
+   oMemTermRast:SORT                     := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+   MyPost(oMemTermRast),
+
+   Result := nDatensatzID,
+end,
+
+//******************************************************************************
+// Funktion aktualisiert eine Bewegung in der übergebenen
+//    Einzelterminraster-Memtable
+//    Wenn die Zeile nicht gefunden wird, wird ein Fehler ausgelöst.
+//
+//    Manuelle Änderungen an den geladenen Daten sind für
+//    Simulationen / Verfügbarkeitsberechnungen relevant.
+//
+// @Result: keine Rückgabe
+//******************************************************************************
+function _ETRU_UpdateBewegung(oMemTermRast, nZeilenTyp, nDatensatzID, cTerminNeu, nMengeNeu)
+
+   if DbLocate('ZEILEN_TYP;DATENSATZ_ID', {nZeilenTyp, nDatensatzID}, 0, oMemTermRast) then
+      MyEdit(oMemTermRast),
+   else
+      SetError('record (ZEILEN_TYP = ' + Str(nZeilenTyp) + ' and DATENSATZ_ID = ' + Str(nDatensatzID) + ') not found'),
+   endif,
+
+   oMemTermRast:TERMIN        := cTerminNeu,
+   oMemTermRast:TERMIN_INDEX  := ETRU_DateStr(oMemTermRast:TERMIN),
+   oMemTermRast:MENGE         := nMengeNeu,
+   oMemTermRast:SORT          := ETRU_GetSortSchluesselForZeile(oMemTermRast),
+
+   MyPost(oMemTermRast),
+end,
+
+//##############################################################################
+//##############################################################################
+// GUI-Funktionen (für Browser)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Ermittelt für den "Einzel-Terminraster-Browser" eine Anzeige-Farbe je Zeilen-Typ
+// @Result: Farb-Code
+//******************************************************************************
+function _ETRU_GUI_ColorForTyp(nZeilenTyp)
+   | nColor |
+   nColor := clNone,
+   case nZeilenTyp
+      of gl_ETRU_Typ_ProdReservKommissioniert       ::  nColor := GetBeDesignColor(dcbRed,    dcgLevel2),
+      of gl_ETRU_Typ_ProdReservOffen                ::  nColor := GetBeDesignColor(dcbRed,    dcgLevel1),  // Prod.Reservierung (offen)
+
+      of {gl_ETRU_Typ_GrobPlanProdAbgangDab220,
+          gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+          gl_ETRU_Typ_GrobPlanAbgangAnonym}         :: nColor := RGB( 230, 230, 255 ),                    // Prod. Grobplanung Abgang  (Farbe wie in "Produktions-Rückstände")
+
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab320       :: nColor := GetBeDesignColor(dcbPurple, dcgLevel3),
+
+      of {gl_ETRU_Typ_GrobPlanProdZugangDab220,
+          gl_ETRU_Typ_GrobPlanProdZugangDab215,
+          gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+          gl_ETRU_Typ_GrobPlanZugangAnonym}         :: nColor := RGB(230, 255, 230),
+
+      of {gl_ETRU_Typ_GrobPlanProdZugangDab320,
+          gl_ETRU_Typ_GrobPlanEinkaufZugangDab320}  :: nColor := RGB(170, 255, 170),                      // Prod. / Einkauf Grobplanung Zugang aus Dab320
+
+      // Zugänge EK (bestätigt) / Prod. (FA = kommissioniert)
+      of {gl_ETRU_Typ_ProdZugangKommissioniert,
+          gl_ETRU_Typ_EinkaufZugangBestaetigt}      :: nColor := GetBeDesignColor(dcbGreen, dcgBase),
+
+      // Zugänge EK (nicht bestätigt) / Prod. (FA = offen)
+      of {gl_ETRU_Typ_ProdZugangOffen,
+          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt} :: nColor := RGB(150, 255, 150),
+
+      of gl_ETRU_Typ_VerkaufAbgang                  :: nColor := GetBeDesignColor(dcbRed, dcgLevel1),  // Verkaufs-Abgang (Dab055)
+   endcase,
+   Result := nColor,
+end,
+
+//******************************************************************************
+// Ermittelt für den "Einzel-Terminraster-Browser" die Schrift-Farbe und Schriftstil
+//   je Zeilen-Typ
+// @Result: Farb-Code
+//******************************************************************************
+function _ETRU_GUI_BrowserForegroundColorAndStyle(nZeilenTyp, oColumnFont)
+  | nFontStyle, nColor |
+
+  nColor :=  clNone,
+
+  if not empty(oColumnFont) then
+     case nZeilenTyp
+        of gl_ETRU_Typ_HeuteInfo            :: nFontStyle := fsItalic,
+        of gl_ETRU_Typ_EndeWBZInfo          :: nFontStyle := fsItalic,
+        of gl_ETRU_Typ_WareneingangsBestand :: nFontStyle := fsItalic,
+                                               nColor     := RGB( 0, 0, 200 ), // Blau wie im Standard-Browser "Lagerbestand"
+     otherwise
+        nFontStyle := 0,
+     endcase,
+     oColumnFont.Style := nFontStyle,
+  endif,
+
+  Result := nColor,
+end,
+
+//******************************************************************************
+// Ermittelt für den "Einzel-Terminraster-Browser" die Hintergrund-Farbe
+// @Result: Farb-Code
+//******************************************************************************
+function _ETRU_GUI_BrowserBackgroundColor(oMemEinzelTermRast)
+   Result := clNone,
+   case oMemEinzelTermRast:ZEILEN_TYP
+      of gl_ETRU_Typ_HeuteInfo            :: Result := GetBeDesignColor(dcbOrange, dcgLevel3),
+      of gl_ETRU_Typ_VerfuegBestand       :: Result := RGB( 230, 230, 230 ),
+      of gl_ETRU_Typ_EndeWBZInfo          :: Result := GetBeDesignColor(dcbYellow, dcgLevel1),
+      of gl_ETRU_Typ_EisernerBestand      :: Result := RGB( 240, 240, 240 ),
+      of gl_ETRU_Typ_WareneingangsBestand :: Result := RGB( 240, 240, 240 ),
+   otherwise
+      Result := iif( oMemEinzelTermRast:MARKIERUNG_ABGANG or oMemEinzelTermRast:MARKIERUNG_ZUGANG,
+                     ETRU_GUI_ColorForTyp(oMemEinzelTermRast:ZEILEN_TYP),
+                     Result ),
+   endcase,
+end,
+
+//******************************************************************************
+// Ermittelt für den "Einzel-Terminraster-Browser" einen Anzeige-Text je Zeilen-Typ
+// @Result: String, Text
+//******************************************************************************
+function _ETRU_GUI_DisplayTextForTyp(nZeilenTyp)
+   Result := Str(nZeilenTyp),
+   case nZeilenTyp
+      of gl_ETRU_Typ_VerfuegBestand               :: Result := 'Bestand',
+      of gl_ETRU_Typ_HeuteInfo                    :: Result := '',
+      of gl_ETRU_Typ_EndeWBZInfo                  :: Result := '',
+      of gl_ETRU_Typ_EisernerBestand              :: Result := 'Eiserner Bestand',
+      of gl_ETRU_Typ_WareneingangsBestand         :: Result := 'Wareneingang Bestand',
+      of gl_ETRU_Typ_ProdReservKommissioniert     :: Result := 'Prod. Res. (kommiss.)',
+      of gl_ETRU_Typ_ProdReservOffen              :: Result := 'Prod. Res.',
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab220     :: Result := 'Prod. GP-Bedarf',
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab215     :: Result := 'Prod. GP-Bedarf',
+      of gl_ETRU_Typ_GrobPlanAbgangAnonym         :: Result := 'Prod. GP-Bedarf',
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab320     :: Result := 'Prod. GP-Bedarf',
+      of gl_ETRU_Typ_GrobPlanProdZugangDab220     :: Result := 'Prod. GP-Zugang',
+      of gl_ETRU_Typ_GrobPlanProdZugangDab215     :: Result := 'Prod. GP-Zugang',
+      of gl_ETRU_Typ_GrobPlanEinkaufZugangDab315  :: Result := 'EK. GP-Zugang',
+      of gl_ETRU_Typ_GrobPlanProdZugangDab320     :: Result := 'Prod. GP-Zugang',
+      of gl_ETRU_Typ_GrobPlanEinkaufZugangDab320  :: Result := 'EK. GP-Zugang',
+      of gl_ETRU_Typ_GrobPlanZugangAnonym         :: Result := 'Prod. GP-Zugang',
+
+      of gl_ETRU_Typ_ProdZugangKommissioniert     :: Result := 'Prod. Zugang (kommiss.)',
+      of gl_ETRU_Typ_ProdZugangOffen              :: Result := 'Prod. Zugang',
+      of gl_ETRU_Typ_EinkaufZugangBestaetigt      :: Result := 'EK Zugang (bestätigt)',
+      of gl_ETRU_Typ_EinkaufZugangNichtBestaetigt :: Result := 'EK Zugang',
+
+      of gl_ETRU_Typ_VerkaufAbgang                :: Result := 'VK Bedarf',
+   endcase,
+end,
+
+//******************************************************************************
+// Ermittelt für den "Einzel-Terminraster-Browser" einen Erweiterten Info-Anzeige-Text
+//    je Zeilen-Typ
+// @Result: String, Text
+//******************************************************************************
+function _ETRU_GUI_DisplayInfoTextForTyp(oMemEinzelTermRast)
+   | cRes, cSplit |
+
+   cRes := '',
+   case oMemEinzelTermRast:ZEILEN_TYP
+      of  gl_ETRU_Typ_HeuteInfo                  :: cRes := 'heute',
+      of  gl_ETRU_Typ_VerfuegBestand             :: cRes := 'verfügbar',
+      of  gl_ETRU_Typ_WareneingangsBestand       :: cRes := 'Menge: ' + LookUp(waDab010, 'DAB011', {{oMemEinzelTermRast:ARTNR}}, 'Str(LAGERW) + " " + AllTrim(ME)', '??', , , oMemEinzelTermRast:STANDORT),
+      of  gl_ETRU_Typ_EndeWBZInfo                :: cRes := 'Ende Wiederbeschaffungszeit (' + LookUp(waDab010, 'DAB011', {{oMemEinzelTermRast:ARTNR}}, 'Str(WBZ) + iif(BEST_PLG = 0, " Wochentage", " Arbeitstage")', '??',,, oMemEinzelTermRast:STANDORT) + ')',
+      of  {gl_ETRU_Typ_ProdReservKommissioniert,
+           gl_ETRU_Typ_ProdReservOffen}
+             :: cRes := 'FA ' + SubStr(oMemEinzelTermRast:B_POS_LFD, 1, 6) +
+                        iif( empty(SubStr(oMemEinzelTermRast:B_POS_LFD, 7, 2)),
+                             '',
+                             ', Pos ' + SubStr(oMemEinzelTermRast:B_POS_LFD, 7, 2)) +
+                        ', Lfd ' + Str(Val(SubStr(oMemEinzelTermRast:B_POS_LFD, 9, 3))),
+
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab220    :: cRes := 'Bedarfsplanung (Primär), Nr. ' + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab215    :: cRes := 'Dispositionsplanung, Nr. '     + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanProdAbgangDab320    :: cRes := 'Disposition, Nr. '             + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanAbgangAnonym        :: cRes := 'anonym',
+
+      of gl_ETRU_Typ_GrobPlanProdZugangDab220    :: cRes := 'Bedarfsplanung (Primär), Nr. ' + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanProdZugangDab215    :: cRes := 'Dispositionspl. Prod., Nr. '   + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanEinkaufZugangDab315 :: cRes := 'Dispositionspl. Eink., Nr. '   + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanProdZugangDab320    :: cRes := 'Disposition, Nr. '             + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanEinkaufZugangDab320 :: cRes := 'Disposition, Nr. '             + Str(oMemEinzelTermRast:DATENSATZ_ID),
+      of gl_ETRU_Typ_GrobPlanZugangAnonym        :: cRes := 'anonym',
+
+      of {gl_ETRU_Typ_ProdZugangKommissioniert,
+          gl_ETRU_Typ_ProdZugangOffen}
+             :: cSplit := AllTrim(SubStr(oMemEinzelTermRast:BESTPOSNR, 7, 2)),
+                cRes   := 'FA ' + AllTrim(SubStr(oMemEinzelTermRast:BESTPOSNR, 1, 6)) + iif(empty(cSplit), '', ' Split ' + cSplit),
+
+      of {gl_ETRU_Typ_EinkaufZugangBestaetigt,
+          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt}
+             :: cRes := 'Best. ' + AllTrim(SubStr(oMemEinzelTermRast:BESTPOSNR, 1, 6)) + ' Pos ' + AllTrim(SubStr(oMemEinzelTermRast:BESTPOSNR, 7, 2)),
+
+      of gl_ETRU_Typ_VerkaufAbgang :: cRes :=   'KA ' + AllTrim(SubStr(oMemEinzelTermRast:APNUMMER, 1, 6))
+                                              + ', Pos ' + AllTrim(SubStr(oMemEinzelTermRast:APNUMMER, 7, 3))
+                                              + iif(oMemEinzelTermRast:RMENGE <> 0, ', reserviert: ' + Str(oMemEinzelTermRast:RMENGE), ''),
+   endcase,
+
+   Result := cRes,
+end,
+

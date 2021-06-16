@@ -1,0 +1,735 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//  Oberfläche zur Administration der "Kapazitätsauswertung Grobplanung"
+//
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM_GUI,
+   m_cFormID, m_cWinPosSaveId,
+
+   m_oKapaBedarfKopf, m_oKapaBedarfDetail,
+   m_oPGKBDK, m_oPGKBDP,
+   m_cKapaBedarfKopfBrowserID, m_cKapaBedarfDetailBrowserID,
+   m_c_PGKBDKBrowserID, m_c_PGKBDPBrowserID,
+
+   m_oChartComponent, m_oTreeItemList, m_oChartItemList,
+   m_oChart, m_oMenuManager, m_oChartParameter,
+   pnl_ChartOptions,
+   m_nDefaultSelectedColor, m_nDefaultFocusedColor,
+
+   m_nAuftragsResID,
+   m_nEigenleistungResID,
+   m_nExternleistungsResID,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_DLTtesten, A_ShowIndiHelp, actions, bipnl_TopInfo, btn_DLTTest,
+   btn_ShowIndiHelp, cmb_workarea, DS_DLTDetail, ds_DLTKopf, ds_PGKBDK,
+   ds_PGKBDP, edt_DLTdauer, edt_DLTTestFANummer, grd_PGKBDK, grd_PGKBDP,
+   grid_DLTTestDetailMem, grid_DLTTestKopfMem, lbl_DLTTestFANummer,
+   lbl_GrafischeDarstellung, lbl_Kopfdaten, lbl_PGKDetail, lbl_PGKKopf,
+   lbl_TabellarischeDarstellung, lbl_workarea, pbl_DLTTestMain, pc_Main,
+   pnl_DLTTestDetailMem, pnl_DLTTestKopfMem, pnl_DLTTestTop,
+   pnl_GrafischeDarstellung, pnl_pgkDetail, pnl_pgkKopf, pnl_TopInfo,
+   pnl_ZeigePGK_mail, pnl_Zeitmessung, ts_DLTTest, ts_ShowPGKBedarfTabellen
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                    := "@PGKUDT",
+m_cWinPosSaveId              := "@PGKUDT",
+
+m_cKapaBedarfKopfBrowserID   := '@PGKU_BK',
+m_cKapaBedarfDetailBrowserID := '@PGKU_BD',
+m_c_PGKBDKBrowserID          := '@PGKU_DK',
+m_c_PGKBDPBrowserID          := '@PGKU_DP',
+// Farben für selektionen
+m_nDefaultSelectedColor := GetBeDesignColor(dcbLightBlue, dcgLevel1),
+m_nDefaultFocusedColor  := GetBeDesignColor(dcbLightBlue, dcgLevel2),
+
+m_nAuftragsResID         := 3,
+m_nEigenleistungResID    := 1,
+m_nExternleistungsResID  := 2,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM_GUI := CreateObject('TBeDbGet', '', oForm),
+   // notwendige Tabelle(n) öffnen
+
+   // MemTables für Kapa-Bedarf
+   m_oKapaBedarfKopf                     := PGKU_CreateKapaBedarfKopfMem(m_oDM_GUI),
+   m_oKapaBedarfKopf.AliasName           := 'MEM_DLTKOPF',
+   ds_DLTKopf.DataSet                    := m_oKapaBedarfKopf,
+   grid_DLTTestKopfMem.DataSource        := ds_DLTKopf,
+   grid_DLTTestKopfMem.RegisterDataSet   := m_oKapaBedarfKopf,
+   grid_DLTTestKopfMem.ID                := m_cKapaBedarfKopfBrowserID,
+   grid_DLTTestKopfMem.ReadWriteProps    := False,
+
+   m_oKapaBedarfDetail                   := PGKU_CreateKapaBedarfDetailMem(m_oDM_GUI),
+   m_oKapaBedarfDetail.AliasName         := 'MEM_DLTDETAIL',
+   ds_DLTDetail.DataSet                  := m_oKapaBedarfDetail,
+   grid_DLTTestDetailMem.DataSource      := ds_DLTDetail,
+   grid_DLTTestDetailMem.RegisterDataSet := m_oKapaBedarfDetail,
+   grid_DLTTestDetailMem.ID              := m_cKapaBedarfDetailBrowserID,
+   grid_DLTTestDetailMem.ReadWriteProps  := False,
+
+   m_oPGKBDK := MyGetTable(m_oDM_GUI, waPGKBDK,),
+   m_oPGKBDP := MyGetTable(m_oDM_GUI, waPGKBDP,),
+   ds_PGKBDK.DataSet                    := m_oPGKBDK,
+   grd_PGKBDK.DataSource                := ds_PGKBDK,
+   grd_PGKBDK.RegisterDataSet           := m_oPGKBDK,
+   grd_PGKBDK.ID                        := m_c_PGKBDKBrowserID,
+   grd_PGKBDK.ReadWriteProps            := False,
+
+   m_oPGKBDP := MyGetTable(m_oDM_GUI, waPGKBDP,),
+   ds_PGKBDP.DataSet                    := m_oPGKBDP,
+   grd_PGKBDP.DataSource                := ds_PGKBDP,
+   grd_PGKBDP.RegisterDataSet           := m_oPGKBDP,
+   grd_PGKBDP.ID                        := m_c_PGKBDPBrowserID,
+   grd_PGKBDP.ReadWriteProps            := False,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+
+end,
+
+//******************************************************************************
+// Berechnen des Ansichtsbereichs. Beginn und Ende des ersten und letzten
+// im Chart vorhandenen Eintrages.
+//******************************************************************************
+function AdjustVisibleRangeToMinAndMaxItemTime()
+|
+   dViewStartDateTime, dViewEndDateTime, nDaysToShow, nMaxShowableDays,
+   nMaxShowableDaysAsWeeks, nIntervalType, nStartAdjustDays, nEndAdjustDays,
+
+   dStartTimeOfDay, dEndTimeOfDay
+|
+
+   dStartTimeOfDay             := StrToTime('00:00:00'), // Zeit an dem alle Einträge starten
+   dEndTimeOfDay               := StrToTime('23:59:59'), // Zeit an dem alle Einträge enden
+
+   //***************************************************************************
+   // Berechnet anhand der Chart-Elemente den Start des ersten und das Ende des
+   // letzten Elements, um bestimmen zu können wie viele Tage angezeigt werden
+   // müssen
+   //***************************************************************************
+   function MinAndMaxStartAndEndDateTimeOfElements(dViewStartDateTime:R, dViewEndDateTime:R)
+   | i, oCurrentChartItem |
+      for i := 1 to CollCount(m_oChartItemList.DataItems) do
+         oCurrentChartItem := CollItem(m_oChartItemList.DataItems, i),
+
+         // Neuer Beginn?
+         if empty(dViewStartDateTime) or oCurrentChartItem.StartTime < dViewStartDateTime then
+            dViewStartDateTime := oCurrentChartItem.StartTime,
+         endif,
+
+         // Neues Ende?
+         if dViewEndDateTime < oCurrentChartItem.EndTime then
+            dViewEndDateTime := oCurrentChartItem.EndTime,
+         endif,
+      next,
+
+      // Da es Fälle gibt, bei denen überhaupt kein Start oder Ende gepflegt ist,
+      // und somit auch kein Chart-Element exisitert, werden hier Default-Werte
+      // belegt
+      if empty(dViewStartDateTime) and empty(dViewEndDateTime) then
+          dViewStartDateTime := Date(),
+          dViewEndDateTime   := Date() + dEndTimeOfDay,
+      endif,
+
+      // Für die Berechnung muss hier mit dem reinen Datum gearbeitet werden
+      dViewEndDateTime   := Trunc(dViewEndDateTime),
+      dViewStartDateTime := Trunc(dViewStartDateTime),
+   end,
+
+   // Berechnen des im Chart anzuzeigenden Zeitraums ***************************
+   dViewStartDateTime := 0,
+   dViewEndDateTime   := 0,
+   MinAndMaxStartAndEndDateTimeOfElements(dViewStartDateTime, dViewEndDateTime),
+
+   // Berechnen welche Ansicht für die Anzahl an darzustellenden Tage verwendet
+   // werden muss. *************************************************************
+   nStartAdjustDays        := 0,
+   nEndAdjustDays          := 0,
+   nDaysToShow             := dViewEndDateTime - dViewStartDateTime,
+   nMaxShowableDays        := 4 * 7, // In der Tagesansicht  können maximal 4 Wochen angezeigt werden
+   nMaxShowableDaysAsWeeks := 7 * 7, // In der Wochenansicht können maximal 7 Wochen angezeigt werden
+
+   // Anpassung des Ansichtszeitraums ******************************************
+   dViewStartDateTime := dViewStartDateTime - nStartAdjustDays,
+   dViewEndDateTime   := dViewEndDateTime   + nEndAdjustDays,
+   dViewStartDateTime := dViewStartDateTime + dStartTimeOfDay, // Uhrzeit für Start hinzufügen
+   dViewEndDateTime   := dViewEndDateTime   + dEndTimeOfDay,   // Uhrzeit für Ende hinzufügen
+
+   // Berechnete Werte setzen **************************************************
+   m_oChart.CbIntervalType := nIntervalType,
+   m_oChart.StartTime      := dViewStartDateTime,
+   m_oChart.EndTime        := dViewEndDateTime,
+end,
+
+//******************************************************************************
+// Erzeugt einen Eintrag im Baum für den FA
+//******************************************************************************
+function AddAuftragsElementToTree(nID, cCaption)
+|
+   oCurrentTreeElement,
+   nFontStyle, nFontColor, nTreeItemType, nImageIndex,
+   //nRowHeight,
+   aLevelHeights
+|
+
+   nTreeItemType := rtPerson,
+   case nID
+      of m_nEigenleistungResID   :: nImageIndex   := 251,
+                                    aLevelHeights := {30, 30, 30},
+      of m_nAuftragsResID        :: nImageIndex   := -1,
+                                    aLevelHeights := {30},
+      of m_nExternleistungsResID :: nImageIndex   := 499,
+                                    aLevelHeights := {30, 30},
+   endcase,
+
+   nFontStyle    := fsNormal,
+   nFontColor    := clBlack,
+
+   oCurrentTreeElement                := m_oTreeItemList.CbNewItem,
+
+   oCurrentTreeElement.ResID          := nID,
+   oCurrentTreeElement.ResType        := nTreeItemType,
+   oCurrentTreeElement.Caption        := cCaption,
+   oCurrentTreeElement.CBLevelHeights := ArrToStr(aLevelHeights), // '{' + Str(nRowHeight) + '}',
+   oCurrentTreeElement.SelectedColor  := m_nDefaultSelectedColor,
+   oCurrentTreeElement.FocusedColor   := m_nDefaultFocusedColor,
+   oCurrentTreeElement.Font.Style     := nFontStyle,
+   oCurrentTreeElement.Font.Color     := nFontColor,
+   oCurrentTreeElement.ImageIndex     := nImageIndex,
+end,
+
+//******************************************************************************
+// Fügt ein einzelnes Element (z.B. Wartezeit, Rüstzeit, ...) eines Arbeitsgangs
+// dem Chart hinzu
+//******************************************************************************
+function AddSingleArbeitsgangElementToChart(nID, nArbgID, cElementType, cCaption, cHint, dStartTime, dEndTime, dEndOfDLZ)
+|
+   oCurrentChartElement, nChartItemType, nFontStyle, nFontColor,
+   nElementTypeColor, nDrawPattern, nDrawPatternColor, nLevel
+|
+
+
+   // Elemente werden nur hinzugefügt, wenn sie ein Start und Ende haben
+   if dStartTime <> dEndTime then
+
+      //************************************************************************
+      // Berechnung der Informationen für die Darstellung des Elements etc.
+      //************************************************************************
+      nDrawPattern      := 0,
+      nDrawPatternColor := GetBeDesignColor(dcbWhite, dcgLevel2),
+
+      case cElementType
+         // Wartezeit
+         of 'W' ::
+            nChartItemType    := rtPerson,
+            nFontStyle        := fsNormal,
+            nFontColor        := clBlack,
+            nElementTypeColor := GetBeDesignColor(dcbCyan, dcgLevel2),
+            nLevel            := 0,
+
+         // Durchlaufzeit
+         of 'D' ::
+            nChartItemType    := rtPerson,
+            nFontStyle        := fsNormal,
+            nFontColor        := clBlack,
+            nElementTypeColor := GetBeDesignColor(dcbGreen, dcgLevel2),
+            case nID
+               of m_nEigenleistungResID   :: nLevel := 2,
+               of m_nExternleistungsResID :: nLevel := 1,
+            endcase,
+
+         // Bearbeitungszeit
+         of 'B' ::
+            nChartItemType    := rtPerson,
+            nFontStyle        := fsNormal,
+            nFontColor        := clBlack,
+            nElementTypeColor := GetBeDesignColor(dcbGreen, dcgLevel4),
+            nLevel            := 0,
+
+         // Auftragszeit
+         of 'A' ::
+            nChartItemType    := rtPerson,
+            nFontStyle        := fsNormal,
+            nFontColor        := clBlack,
+            nElementTypeColor := GetBeDesignColor(dcbRed, dcgLevel2),
+            nLevel            := 0,
+
+         // Sicherheitszeit
+         of 'S' ::
+            nChartItemType    := rtPerson,
+            nFontStyle        := fsNormal,
+            nFontColor        := clBlack,
+            nElementTypeColor := GetBeDesignColor(dcbWhite, dcgLevel2),
+            nLevel            := 0,
+      endcase,
+
+      if dEndTime = dEndOfDLZ then
+         dEndTime          := Max(dStartTime, dEndTime - EnCodeTime(0, 10, 0, 0)), // Ende-Zeit leicht reduzieren, damit man optisch einen Trenner zwischen zwei Chart-Einträgen hat
+      endif,
+
+
+      //***************************************************************************
+      // Element im Chart erstellen
+      //***************************************************************************
+      oCurrentChartElement                     := m_oChartItemList.CbNewItem,
+
+      oCurrentChartElement.ResID               := nID,
+      oCurrentChartElement.HierarchyID         := PadR(nArbgID, 10),
+      oCurrentChartElement.Level               := nLevel,
+      oCurrentChartElement.ResType             := nChartItemType,
+      oCurrentChartElement.Caption             := cCaption,
+      oCurrentChartElement.Hint                := cHint,
+      oCurrentChartElement.StartTime           := dStartTime,
+      oCurrentChartElement.EndTime             := dEndTime,
+      oCurrentChartElement.ShowHint            := True,
+      oCurrentChartElement.Font.Style          := nFontStyle,
+      oCurrentChartElement.Font.Color          := nFontColor,
+      oCurrentChartElement.OffsetTop           := 1,
+      oCurrentChartElement.OffsetBottom        := 1,
+      oCurrentChartElement.CBDrawPatterns      := nDrawPattern,
+      oCurrentChartElement.DrawPatternColor    := nDrawPatternColor,
+      oCurrentChartElement.Color               := nElementTypeColor,
+      oCurrentChartElement.FocusedColor        := m_nDefaultFocusedColor,
+      oCurrentChartElement.SelectedColor       := m_nDefaultSelectedColor,
+      // oCurrentChartElement.BorderColor         := nElementTypeColor,
+      // oCurrentChartElement.FocusedBorderColor  := nElementTypeColor,
+      // oCurrentChartElement.SelectedBorderColor := nElementTypeColor,
+
+      // WriteLn(oCurrentChartElement.StartTime, oCurrentChartElement.EndTime, oCurrentChartElement.RESID, oCurrentChartElement.HierarchyID),
+   endif,
+
+end,
+
+//******************************************************************************
+// Fügt alle Elemente eines Arbeitsgangs zum Chart hinzu
+//******************************************************************************
+function AddArbeitsgangElementeToChart(oMemDetail)
+| nID, cHint |
+
+   function CalcCaption(cType, oMemDetail)
+   | cElementType |
+
+      cElementType := '',
+      case cType
+         of 'W' :: cElementType := 'Wartezeit',
+         of 'D' :: cElementType := 'Durchlaufzeit',
+         of 'B' :: cElementType := 'Bearbeitungszeit',
+      endcase,
+      Result := AllTrim(oMemDetail:POSNR) + ' ' + cElementType,
+   end,
+
+   if oMemDetail:ARTTYP = 'E' then
+      nID := m_nExternleistungsResID,
+   else
+      nID := m_nEigenleistungResID,
+   endif,
+   cHint := oMemDetail:POSNR + ' ' + trim(oMemDetail:ARTNR) + ' Wartezeit ' + crlf + FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:START_FR) + ' - ' +  FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:START_SP)
+         + crlf + Str(oMemDetail:K_REST_WAR) + ' Minuten',
+   AddSingleArbeitsgangElementToChart(nID, oMemDetail:ID, 'W', CalcCaption('W', oMemDetail), cHint, oMemDetail:START_FR, oMemDetail:START_SP, oMemDetail:ENDE_SP),
+   cHint := oMemDetail:POSNR + ' ' + trim(oMemDetail:ARTNR) + ' Durchlaufzeit ' + crlf + FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:START_FR) + ' - ' +  FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:ENDE_SP)
+         + crlf + Str(oMemDetail:K_REST_DLZ) + ' Minuten',
+   AddSingleArbeitsgangElementToChart(nID, oMemDetail:ID, 'D', CalcCaption('D', oMemDetail), cHint, oMemDetail:START_FR, oMemDetail:ENDE_SP,  oMemDetail:ENDE_SP),
+   cHint := oMemDetail:POSNR + ' ' + trim(oMemDetail:ARTNR) + ' Bearbeitungszeit ' + crlf + FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:START_SP) + ' - ' +  FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:ENDE_SP)
+         + crlf + Str(oMemDetail:K_REST_BEA) + ' Minuten',
+   AddSingleArbeitsgangElementToChart(nID, oMemDetail:ID, 'B', CalcCaption('B', oMemDetail), cHint, oMemDetail:START_SP, oMemDetail:ENDE_SP,  oMemDetail:ENDE_SP),
+
+//   Result.CbAddField('START_FR',           ftDateTime, 0), //                  ->  frühester Start     - die ersten 4 sind redundant aus den unteren
+//   Result.CbAddField('START_SP',           ftDateTime, 0), //                  ->  spätester Start
+//   Result.CbAddField('ENDE_FR',            ftDateTime, 0), //                      frühestes Ende
+//   Result.CbAddField('ENDE_SP
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function LoadDLTMemsToChart(oMemKopf, oMemDetail)
+   | nOldCursor, cHint |
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+
+      // Bisherige Einträge entfernen
+      m_oTreeItemList.CbClear,
+      m_oChartItemList.CbClear,
+
+      // Einen Eintrag für den gesamten Auftrag anlegen
+      AddAuftragsElementToTree(m_nAuftragsResID,        'Auftrag '          + oMemKopf:BESTPOSNR),
+      AddAuftragsElementToTree(m_nEigenleistungResID,   'Eigenleistung '    + oMemKopf:BESTPOSNR),
+      AddAuftragsElementToTree(m_nExternleistungsResID, 'Externleistungen ' + oMemKopf:BESTPOSNR),
+
+
+      // Arbeitsgänge ins Chart eintragen
+      DBGoTop(oMemDetail),
+      while not EOF(oMemDetail) do
+         if oMemDetail:ARTTYP = 'E' or (oMemDetail:ARTTYP = 'A' AND oMemDetail:HAS_RESANF) then
+            AddArbeitsgangElementeToChart(oMemDetail),
+         endif,
+         DBSkip(1, oMemDetail),
+      end,
+      // Auftragsdaten direkt in Chart eintragen
+      cHint := 'Auftragszeit ' + crlf + FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:START_FR) + ' - ' +  FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:ENDE_FR),
+      AddSingleArbeitsgangElementToChart(m_nAuftragsResID,  oMemDetail:ID, 'A', 'Auftragszeit',    cHint, oMemKopf:START_FR, oMemKopf:ENDE_FR,  oMemKopf:ENDE_FR),
+      cHint := 'Sicherheitszeit ' + crlf + FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:ENDE_FR) + ' - ' +  FormatDateTime('DD.MM.YYYY hh:mm:ss', oMemDetail:ENDE_SP)
+               + crlf + Str(PGKU_CalcWartezeitMinuten(oMemKopf:SICH_DELTA, oMemKopf:SICH_DFAKT)) + ' Minuten' ,
+      AddSingleArbeitsgangElementToChart(m_nAuftragsResID,  oMemDetail:ID, 'S', 'Sicherheitszeit', cHint, oMemKopf:ENDE_FR,  oMemKopf:ENDE_SP,  oMemKopf:ENDE_SP),
+
+      AdjustVisibleRangeToMinAndMaxItemTime(),
+      m_oChart.CbRefresh,
+
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//   Event: Beim Scollen der PGKNDK wird die PGKBDP gescopt
+//******************************************************************************
+function ds_PGKBDKScroll_Update( Sender )
+   m_oPGKBDP.IndexName := 'EIND_SCHL',
+   dbscope({trim(m_oPGKBDK:EIND_SCHL)},{trim(m_oPGKBDK:EIND_SCHL)+'ZZZZZZZ'},m_oPGKBDP),
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Führt die Durchlaufterminierung (DLT) für einen Produktionsauftrag durch
+//******************************************************************************
+function A_DLTtestenExecute( Sender )
+   | dEndTermin, nTime, aTimes, oCbPCData, nWorkarea |
+
+   //***************************************************************************
+   // Funktion misst die Zeit seit dem letzten Aufruf der Funktion und schreibt
+   //   diese gemeinsam mit einem Bezeichnger in ein Array weg für die spätere
+   //   Debug-Ausgabe.
+   // @Result: null
+   //***************************************************************************
+   function TimeLap(aTimeArray:R, cText)
+   | aTimeElem, nLap |
+      nTime           := GetExTimer() - nTime,
+      aTimeElem       := {nTime * 1000, cText},
+      nLap            := ALen(aTimeArray) + 1,
+      ReDim(aTimeArray, nLap),
+
+      aTimeArray[nLap]:= aTimeElem,
+      nTime           := GetExTimer(),
+   end,
+
+   //***************************************************************************
+   // Funktion formatiert das übergebene aTimeArray für die Ausgabe in einem Log
+   // @Result: Text
+   //***************************************************************************
+   function PrintTimeArray(aTimeArray)
+   | i |
+      Result := '',
+      for i := 1 to ALen(aTimeArray) do
+         Result += PadR(aTimeArray[i, 2], 50) + ' ' + PadL(FormatStd(aTimeArray[i, 1], 2) + ' mSec', 20) + crlf,
+      end,
+   end,
+
+   aTimes     := {},
+   nTime      := GetExTimer(),
+
+   startseq
+      DBDisableControls(m_oKapaBedarfDetail),
+      DBDisableControls(m_oKapaBedarfKopf),
+      startseq
+         m_oKapaBedarfKopf.CbEmptyTable(),
+         m_oKapaBedarfDetail.CbEmptyTable(),
+         TimeLap(aTimes, 'leeren der Memtables'),
+         nWorkarea := Val(cmb_workarea.Value),
+         PGKU_FillKapaBedarfKopfMem(m_oDM_GUI,  m_oKapaBedarfKopf, nWorkarea, iif(nWorkarea = 13, 0, Val(edt_DLTTestFANummer.Text)), iif(nWorkarea = 13, edt_DLTTestFANummer.Text, '')),
+         TimeLap(aTimes, 'Befüllen der Kopf-Mem'),
+
+         PGKU_FillKapaBedarfDetailMem(m_oDM_GUI, m_oKapaBedarfKopf, m_oKapaBedarfDetail),
+         TimeLap(aTimes, 'Befüllen der Positions-Mem'),
+
+         // DLZ-Berechnung (bislang nur)
+         PGKU_ReCalc(m_oKapaBedarfDetail),
+         TimeLap(aTimes, 'Positions-Mem - ReCalc'),
+
+         PGKU_CalcBereitschaft(m_oKapaBedarfDetail),
+         TimeLap(aTimes, 'Positions-Mem - Bereitschafts-Berechnung'),
+
+//         browse(,m_oKapaBedarfKopf),
+//         browse(,m_oKapaBedarfDetail),
+
+         SetErrorIf(empty(gl_PGKU_PCData_CacheObject_InitMinDate), 'kein Planungsstart-Datum für die globale PCData-Instanz definiert => InitVars nutzen!'),
+         SetErrorIf(empty(gl_PGKU_PCData_CacheObject_InitMaxDate), 'kein Planungsende-Datum für die globale PCData-Instanz definiert => InitVars nutzen!'),
+
+         // Durchlaufterminierung
+         // oCbPCData := PGKU_CreatePCData(Date() - (18 * 30), Date() + (18 * 30), '', m_oDM_GUI),
+         oCbPCData := PGKU_CreatePCData(gl_PGKU_PCData_CacheObject_InitMinDate, gl_PGKU_PCData_CacheObject_InitMaxDate, '', m_oDM_GUI),
+         startseq
+            TimeLap(aTimes, 'Durchlaufterminierung - PCData erzeugt'),
+            PGKU_Durchlaufterminierung_PCDataHandling(m_oDM_GUI, oCbPCData, m_oKapaBedarfDetail,  m_oKapaBedarfKopf),
+         always
+            DestroyObject(oCbPCData),
+         stopseq,
+         TimeLap(aTimes, 'Durchlaufterminierung - Terminierung ist erfolgt'),
+
+         // Übertragung ins Chart
+         LoadDLTMemsToChart(m_oKapaBedarfKopf, m_oKapaBedarfDetail),
+         TimeLap(aTimes, 'Übertragung ins Chart'),
+
+         edt_DLTdauer.Text := PrintTimeArray(aTimes),
+      always
+         DBEnableControls(m_oKapaBedarfDetail),
+         DBEnableControls(m_oKapaBedarfKopf),
+      stopseq,
+   onerror
+      MessageDlg('Fehler beim Test der Durchlaufterminierung: ' + crlf +
+                  GetErrorText()  + crlf + crlf +
+                  'error stack: ' + crlf +
+                  DebugArr(GetErrorStack(true)), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_PGKU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   | aCmbWorkarea |
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_DLTtesten                  := FindObject(oForm, "A_DLTtesten"),
+   A_ShowIndiHelp               := FindObject(oForm, "A_ShowIndiHelp"),
+   actions                      := FindObject(oForm, "actions"),
+   bipnl_TopInfo                := FindObject(oForm, "bipnl_TopInfo"),
+   btn_DLTTest                  := FindObject(oForm, "btn_DLTTest"),
+   btn_ShowIndiHelp             := FindObject(oForm, "btn_ShowIndiHelp"),
+   cmb_workarea                 := FindObject(oForm, "cmb_workarea"),
+   DS_DLTDetail                 := FindObject(oForm, "DS_DLTDetail"),
+   ds_DLTKopf                   := FindObject(oForm, "ds_DLTKopf"),
+   ds_PGKBDK                    := FindObject(oForm, "ds_PGKBDK"),
+   ds_PGKBDP                    := FindObject(oForm, "ds_PGKBDP"),
+   edt_DLTdauer                 := FindObject(oForm, "edt_DLTdauer"),
+   edt_DLTTestFANummer          := FindObject(oForm, "edt_DLTTestFANummer"),
+   grd_PGKBDK                   := FindObject(oForm, "grd_PGKBDK"),
+   grd_PGKBDP                   := FindObject(oForm, "grd_PGKBDP"),
+   grid_DLTTestDetailMem        := FindObject(oForm, "grid_DLTTestDetailMem"),
+   grid_DLTTestKopfMem          := FindObject(oForm, "grid_DLTTestKopfMem"),
+   lbl_DLTTestFANummer          := FindObject(oForm, "lbl_DLTTestFANummer"),
+   lbl_GrafischeDarstellung     := FindObject(oForm, "lbl_GrafischeDarstellung"),
+   lbl_Kopfdaten                := FindObject(oForm, "lbl_Kopfdaten"),
+   lbl_PGKDetail                := FindObject(oForm, "lbl_PGKDetail"),
+   lbl_PGKKopf                  := FindObject(oForm, "lbl_PGKKopf"),
+   lbl_TabellarischeDarstellung := FindObject(oForm, "lbl_TabellarischeDarstellung"),
+   lbl_workarea                 := FindObject(oForm, "lbl_workarea"),
+   pbl_DLTTestMain              := FindObject(oForm, "pbl_DLTTestMain"),
+   pc_Main                      := FindObject(oForm, "pc_Main"),
+   pnl_DLTTestDetailMem         := FindObject(oForm, "pnl_DLTTestDetailMem"),
+   pnl_DLTTestKopfMem           := FindObject(oForm, "pnl_DLTTestKopfMem"),
+   pnl_DLTTestTop               := FindObject(oForm, "pnl_DLTTestTop"),
+   pnl_GrafischeDarstellung     := FindObject(oForm, "pnl_GrafischeDarstellung"),
+   pnl_pgkDetail                := FindObject(oForm, "pnl_pgkDetail"),
+   pnl_pgkKopf                  := FindObject(oForm, "pnl_pgkKopf"),
+   pnl_TopInfo                  := FindObject(oForm, "pnl_TopInfo"),
+   pnl_ZeigePGK_mail            := FindObject(oForm, "pnl_ZeigePGK_mail"),
+   pnl_Zeitmessung              := FindObject(oForm, "pnl_Zeitmessung"),
+   ts_DLTTest                   := FindObject(oForm, "ts_DLTTest"),
+   ts_ShowPGKBedarfTabellen     := FindObject(oForm, "ts_ShowPGKBedarfTabellen"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   // Liste der Workarea in der Combobox
+   aCmbWorkarea                 := {},
+   aAdd(aCmbWorkarea, 'Dab035 Fertigungsauftrag'   + chr(9) + '13'),
+   aAdd(aCmbWorkarea, 'Dab215 Dispositionsplanung' + chr(9) + '17'),
+   cmb_workarea.MapList := true,
+   cmb_workarea.Items   := aCmbWorkarea,
+end,
+
+//******************************************************************************
+// Funktion initialisiert die Oberfläche
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt           := 'Durchlaufterminierung Test',
+   bipnl_TopInfo.Caption    := oForm.OrigCapt,
+   oForm.ImageIndex         := 217,
+
+   pc_main.ActivePage       := ts_DLTTest,
+   oForm.ActiveControl      := edt_DLTTestFANummer,
+
+   edt_DLTTestFANummer.Text := '600015',
+   cmb_workarea.Value       := '13',
+end,
+
+//******************************************************************************
+// Dieses Docking erzeugt den Chart ohne jegliche Daten-Interpretierung
+//******************************************************************************
+function CreateChartControl()
+   // Grundobjekte für den Chart erzeugen
+   m_oChartComponent := CreateObject('TBePlanningChartComp',     'CHARTCOMP',  oForm, pnl_GrafischeDarstellung),
+   m_oChartItemList  := CreateObject('TBePlanningDataContainer', 'CHARTITEMS', oForm, oForm),
+   m_oTreeItemList   := CreateObject('TBePlanningResContainer',  'TREEITEMS',  oForm, oForm),
+
+   // Chart-Componente auf gesamten Fensterbereich ausdehnen lassen
+   m_oChartComponent.Align := alClient,
+
+   // Für eine einfachere Programmierung einzelne Unterobjekte der
+   // PlanningChartComponent in Hilfsvariablen laden
+   m_oChart          := m_oChartComponent.PlanningChart,
+   m_oChartParameter := m_oChart.ChartParameter,
+   m_oMenuManager    := m_oChart.MenuManager,
+
+   // Die beiden Container mit den Ressourcen- und Chart-Item-Informationen dem
+   // Chart zuweisen
+   m_oChart.ResContainer  := m_oTreeItemList,
+   m_oChart.DataContainer := m_oChartItemList,
+
+   // Charteinstellungen setzen
+   m_oChartItemList.HierarchyIDLen := 10,
+
+   // Erstmaliges initialisieren der Komponente
+   m_oChartComponent.CbInitChart,
+   m_oChartComponent.CBInitFormHook,
+end,
+
+//******************************************************************************
+// Diese Funktion verschiebt die Toolbar die im F12-Designer oben angeordnet
+// ist in den Menübereich der Chart-Komponente
+//******************************************************************************
+function ConfigureChartOptionControl()
+| oOptionControl |
+   // Panel für den Optionsbereich erzeugen
+   pnl_ChartOptions                  := CreateObject('TBePanel', 'ChartOptionPanel', m_oChartComponent),
+   pnl_ChartOptions.BevelOuter       := bvNone,
+   pnl_ChartOptions.Caption          := '',
+   pnl_ChartOptions.Align            := alClient,
+   pnl_ChartOptions.AlignWithMargins := True,
+
+   // Toolbar in das Panel verschieben
+   // (hierfür muss nur das Toolbar-Dock-Control verschoben werden)
+   // SetParent(bardock_MainToolbarDock, pnl_ChartOptions),
+
+   // Fertiges Panel der Chart-Komponente zuweisen
+   m_oChartComponent.OptionControl := pnl_ChartOptions,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   CreateChartControl(),
+   ConfigureChartOptionControl(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText()  + crlf + crlf +
+               'error stack: ' + crlf +
+               DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

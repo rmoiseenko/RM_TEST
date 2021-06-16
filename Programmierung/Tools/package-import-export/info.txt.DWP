@@ -1,0 +1,110 @@
+###########################################################################
+Informationen zum Ex- und Import
+###########################################################################
+ Für den Export müssen in einer zu übergebenen 'package.BCP' Datei alle für
+ den Ex- oder Import relevanten Daten mit den folgenden Kürzeln markiert werden:
+-----------------------------------------------------------------------------
+                                 PACKAGE_PATH
+Definiert den Haupt Ex- und Import-Pfad.
+• Bei keiner Angabe wird der Pfad der Package-Info-Datei verwendet.
+• Bei einer Angabe wie z.B. \Programmdateien\ werden alle Daten in das
+  Verzeichnis <Pfad-zur-Package-Info-Date>\Programmdateien\ exportiert oder
+  von dort importiert.
+• Bei einer Angabe eines Absoluten Pfads wird dieser verwendet.
+-----------------------------------------------------------------------------
+                                     TYPE
+Definiert ob es sich um ein/e:
+• PROG    = Programm
+• MASK    = Maske
+• BROW    = Browser (auch Standard-Browser)
+• MENUE   = Individualmenü
+• STDMASK = Standard-Maske
+• LAYOUT  = Layout
+• BELEG   = Beleg
+handelt. Der Typ muss immer angegeben werden!
+-----------------------------------------------------------------------------
+                                    FOLDER
+Definiert in welchem Unterverzeichnis, relativ zum Exportverzeichnis,
+die jeweiligen Daten abgelegt oder importiert werden sollen.
+Z. B.
+Pfad = C:\Temp\
+Folder = Programm\Browser
+=> Daten werden in C:\Temp\Programm\Browser\ abgelegt oder von dort importiert.
+
+Ein Unterverzeichnis ist keine Pflichtangabe. Wenn Sie nichts angeben werden
+Browser und Masken in das Hauptverzeichnis abgelegt oder umgekehrt von dort
+Importiert.
+Programme werden bei keiner Angabe anhand Ihres Namens exportiert/importiert.
+Z. B.
+Pfad = C:\Temp\
+Programmname = Test\TestExportProgramm
+=> Daten werden in C:\Temp\Test\ abgelegt oder von dort importiert.
+Die Programmdatei heißt entsprechend nur noch TestExportProgram.DWP
+
+Möchte man das Hauptverzeichnis verwenden so gibt man FOLDER=\ an
+z. B.
+Pfad = C:\Temp\
+Programmname = Test\TestExportProgramm
+=> Daten werden in C:\Temp\TestExportProgramm abgelegt oder von dort importiert.
+-----------------------------------------------------------------------------
+ACHTUNG: Generell ist darauf zu achten, dass außer der reinen Info nichts in
+         der selben Zeile stehen darf!!! (Auch keine Kommentare)
+###########################################################################
+                                    Export:
+- Es werden nur aktive, freigegebene (grüne) Programme exportiert.
+- Es wird immer der Default-Browser exportiert.
+###########################################################################
+                                    Import:
+---------------------------------------------------------------------------
+                                   PROGRAMME
+TYPE=PROG;FOLDER=<NAME>;NAME=<Programmname>
+
+Soll einem Programm automatisch eine bestimmte Maske zugewiesen werden so muss dies in der Package-Info-Datei mit dem Kürzel USE_MASK=<Masken-ID> angegeben werden.
+z.B. TYPE=PROG;FOLDER=TESTFOLDER;NAME=TESTPROGRAMM;USE_MASK=@TESTMASK
+
+Soll einem Programm automatisch ein bestimmtest Ereignis zugewiesen werden so muss dies in der Package-Info-Datei mit dem Kürzel USE_POPT=<J/N> angegeben werden.
+(Ereignis steht im Feld DABPRG:OPTIONS)
+z.B. TYPE=PROG;FOLDER=TESTFOLDER;NAME=TESTPROGRAMM;USE_POPT=J
+
+Ein importiertes Programm wird immer als aktives, freigegebenes Programm gesetzt (grün).
+Gleichnamige Programmversionen werden als alt (grau) markiert.
+---------------------------------------------------------------------------
+                                    BROWSER
+TYPE=BROW;FOLDER=<NAME>;NAME=<Browser-ID>;COPYTOALL=<J/N>;COPYTOZERO=<J/N>
+Ein importierter Browser wird immer als Default-Browser gesetzt.
+Ein gleichnamiger existierender Browser wird hierbei überschrieben.
+Die durch Benutzer angepassten Browser bleiben erhalten.
+                                STANDARD-BROWSER
+Die selbe Syntax wie bei den Individual-Browsern.
+Export: Es wird der Browser des exportierenden Users exportiert.
+Import: Es wird der Browser des importierenden Users überschrieben.
+
+Zusätzlich gibt es die Option, dass Browser beim Import auf alle User bzw. auf User 0
+kopiert werden. Bei Standardbrowsern wird das kopieren auf User 0 jedoch abgefangen.
+---------------------------------------------------------------------------
+                                   F12-MASKEN
+TYPE=MASK;FOLDER=<NAME>;NAME=<Masken-ID>;AS_JSON=<J>
+Eine importierte Maske überschreibt bereits existierende, gleichnamige Masken.
+Ab Version 7.2 ist der Import und Export im JSON-Format möglich. Dadurch werden Änderungen im git 
+vergleichbar und somit nachvollziehbar.
+---------------------------------------------------------------------------
+                            STANDARD-MASKEN = DABFRM
+TYPE=STDMASK;FOLDER=<NAME>;NAME=<BEZ>;ID=<MASK_ID>
+Beim Import einer Standard-Maske wird die existierende, gleichnamige Maske erst kopiert:
+---> "Standard Maske (Datum von Heute)" - Danach wird das "Original" überschrieben (Behält die ID).
+---------------------------------------------------------------------------
+                                 LAYOUTS = DABR10
+TYPE=LAYOUT;FOLDER=<NAME>;BEZ=<BEZ>;REPORT_ID=<REPORT_ID>;REPORT_NR=<REPORT_NR>;REPORT_TYP=<REPORT_TYP>
+REPORT_NR definiert an welcher Stelle das Layout in der DropDown-Auswahl des Druckdialogs angezeigt wird.
+Das aktuelle Layout wird vom importierten Layout überschrieben, wenn die REPORT_ID und REPORT_NR
+identisch sind. Also ist es nicht (!) abhängig von der Bezeichnung.
+---------------------------------------------------------------------------
+                                 BELEGE = DABR70
+TYPE=BELEG;FOLDER=;BEZ=<BEZ>;REPORT_PR=<REPORT_PR>;BELEG_ART=<BELEG_ART>;ARCHIV=<AR_OHNE>;DIALOG=<DLG_OHNE>;ARCTYP=<ARCH_TYP>
+Falls die Nummer (BELEG_ART) eines zu importierenden Belegs schon vergeben ist, wird diese hochgezählt.
+Falls die REPORT_PR des Belegs (@xxxxx) schon vergeben ist, wird dieser nicht importiert.
+---------------------------------------------------------------------------
+                                 INDIVIDUALMENÜS
+TYPE=MENUE;FOLDER=<NAME>;ID=<Individualmenü-ID>
+Ein gleichnamiges, bereits existierendes Individualmenü wird überschrieben.
+###########################################################################

@@ -1,0 +1,134 @@
+//##############################################################################
+//##############################################################################
+//
+// Preiskonvertierungs-Funktionen (Preisobjekt)
+//
+//   Die folgenden Funktionen dienen der einfachen Umrechnung zwischen
+//   verschiedenen Preisbezugssystemen wie z.B.
+//   "Preis je Lagereinheit" oder "Preis je Preiseinheit"
+//
+// Author: LK
+//
+//##############################################################################
+//##############################################################################
+
+function _PO_Create()
+   Result := CreateObject('TMemCalcTable', , Application),
+   addmemfield(Result, 'ARTNR',     'C', mBeArtNoLen, 0),
+   addmemfield(Result, 'MODE',      'C', 2, 0),  // 1. Stelle: 'L'=Lager, 'P'=Preis, 'E'=Einkauf,
+                                                 // 2. Stelle: '1'=je 1,  'N'=je entprechender Einheit
+   addmemfield(Result, 'VALUE',     'N', 13,4),
+   addmemfield(Result, 'ME_UMR_PE', 'N', 13,4),
+   addmemfield(Result, 'ME_UMR',    'N', 13,4),
+   addmemfield(Result, 'PE',        'N', 13,4),
+   addmemfield(Result, 'PE_EK',     'N', 13,4),
+   addmemfield(Result, 'DIM_UMR',   'N', 13,4),
+   Result.Active := true,
+   MyAppend(Result),
+   MyPost(Result),
+end,
+
+function _PO_InitByArtNr(oPO, cArtNr, oDM)
+| oDAB010 |
+   oDAB010 := instanceTable(oDM, 2,,cArtNr),
+   myedit(oPO),
+   oPO:ARTNR     := cArtNr,
+   oPO:ME_UMR_PE := e2v(oDAB010:ME_UMR_PE, 1),
+   oPO:ME_UMR    := e2v(oDAB010:ME_UMR,    1),
+   oPO:PE        := e2v(oDAB010:PE,        1),
+   oPO:PE_EK     := e2v(oDAB010:PE_EK,     1),
+   oPO:DIM_UMR   := e2v(oDAB010:DIM_UMR,   1),
+   mypost(oPO),
+end,
+
+function _PO_SetValue(oPO, nValue, cMode)
+| cM1, cM2 |
+   cM1 := substr(cMode, 1,1),
+   cM2 := substr(cMode, 2,1),
+   if !(cM1 $ 'LPE') then
+      seterror('Mode not supported (1):' + cMode),
+   endif,
+   if !(cM2 $ '1N') then
+      seterror('Mode not supported (2)'),
+   endif,
+   myedit(oPO),
+   oPO:VALUE := nValue,
+   oPO:MODE  := cMode,
+   mypost(oPO),
+end,
+
+function _PO_GetValue(oPO, cMode)
+ | cMI1, cMI2,  // Interne Repräsentation
+   cMO1, cMO2,  // Output
+   nFaktorI, nFaktorO |
+
+   // Semantik des 1.Faktors:
+   // "Eine Lagereinheit enspricht n anderen Einheiten"
+   cMI1:=substr(oPO:MODE, 1,1),
+   cMI2:=substr(oPO:MODE, 2,1),
+   if !(cMI1 $ 'LPE') then
+      seterror('Mode not supported (1I)'),
+   endif,
+   if !(cMI2 $ '1N') then
+      seterror('Mode not supported (2I):' + oPO:MODE),
+   endif,
+
+   cMO1:=substr(cMode, 1,1),
+   cMO2:=substr(cMode, 2,1),
+
+   // 1. Stelle ******
+   if !(cMO1 $ 'LPES') then
+      seterror('Mode not supported (1O)'),
+   endif,
+   if !(cMO2 $ '1N') then
+      seterror('Mode not supported (2O)'),
+   endif,
+   result:=oPO:VALUE,
+   if cMI1 $'L' then
+      nFaktorI:=1,
+   else
+      if cMI1='P' then
+         nFaktorI := oPO:ME_UMR_PE,
+      else
+         nFaktorI := 1/e2v(oPO:ME_UMR, 1),     // Einkaufseinheiten
+      endif,
+   endif,
+   if cMO1='L' then
+      nFaktorO := 1,
+   endif,
+   if cMO1='P' then
+      nFaktorO := oPO:ME_UMR_PE,
+   endif,
+   if cMO1='E' then
+      nFaktorO := 1/e2v(oPO:ME_UMR,1),
+   endif,
+   if cMO1='S' then
+      nFaktorO := oPO:DIM_UMR,
+   endif,
+   writeln(nFaktorO,nFaktorI),
+
+   Result *= nFaktorI / nFaktorO,
+
+   // 2. Stelle ******
+   if cMI2='1' then
+      nFaktorI:=1,
+   else
+      if cMI1='E' then
+         nFaktorI:=oPO:PE_EK,
+      else
+         nFaktorI:=oPO:PE,
+      endif,
+   endif,
+   if cMO2='1' then
+      nFaktorO:=1,
+   else
+      if cMO1='E' then
+         nFaktorO:=oPO:PE_EK,
+      else
+         nFaktorO:=oPO:PE,
+      endif,
+   endif,
+   WriteLn(nFaktorO,nFaktorI),
+
+   Result *= nFaktorO / nFaktorI,
+end,

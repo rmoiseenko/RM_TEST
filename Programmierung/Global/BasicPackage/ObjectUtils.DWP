@@ -1,0 +1,97 @@
+//******************************************************************************
+// Setzt zu einem beliebigen Objekt einen String-Wert
+//   Wird primär genutzt für den Transport von Werten mit einem Datenmodul-Objekt.
+// @Result: null
+//******************************************************************************
+function _ObjectSetProp(oObj:O, cName:C, cValue:C, cValueLong:C:='')
+| oMemTable |
+   SetErrorIf(empty(cName)              , 'Kein Name übergeben!'),
+   SetErrorIf(Len(cName) > 50           , 'Wert für Name ist zu lang! Die Länge darf höchstens 50 Zeichen betragen.'),
+   SetErrorIf(ValType(cValue) <> 'C'    , 'Falscher Wert für Value! Nur String zugelassen.'),
+   SetErrorIf(ValType(cValueLong) <> 'C', 'Falscher Wert für ValueLong! Nur String zugelassen.'),
+   SetErrorIf(Len(cValue) > 30          , 'Wert für Values ist zu lang! Die Länge darf höchstens 30 Zeichen betragen.'),
+
+   oMemTable := FindObject(oObj, 'X_PROPERTIES'),
+   // MemTable erstellen
+   if empty(oMemTable) then
+      oMemTable := CreateObject('TbeMemTable', 'X_PROPERTIES', oObj),
+      oMemTable.CbAddField('NAME'      , ftString, 50),
+      oMemTable.CbAddField('VALUE'     , ftString, 30),
+      oMemTable.CbAddField('VALUE_LONG', ftMemo  ,  0),
+      oMemTable.Active    := true,
+      oMemTable.CbOrderBy('NAME'),
+   endif,
+   // Wert setzen
+   oMemTable.CbSetRangeEx({Trim(cName)}),
+   oMemTable.CbFirst(),
+   if oMemTable.CbEof then
+      MyAppend(oMemTable),
+      oMemTable:NAME := Trim(cName),
+   else
+      MyEdit(oMemTable),
+   endif,
+   oMemTable:VALUE      := cValue,
+   oMemTable:VALUE_LONG := cValueLong,
+   MyPost(oMemTable),
+end,
+
+//******************************************************************************
+// Liest zu einem beliebigen Objekt eine Eigenschaft aus.
+// Ist die Eigenschaft nicht gesetzt, ist die Rückgabe "".
+// @Result: String
+//******************************************************************************
+function _ObjectGetProp(oObj:O, cName:C, bGetValueLong:B:=false)
+|oMemTable|
+   Result    := '',
+   oMemTable := FindObject(oObj, 'X_PROPERTIES'),
+   if not empty(oMemTable) then // keine Fehlermeldung, wenn die Object-MemTable noch nicht existiert!
+      oMemTable.CbSetRangeEx({Trim(cName)}),
+      oMemTable.CbFirst(),
+      if not oMemTable.CbEof then
+         if bGetValueLong then
+            Result := oMemTable:VALUE_LONG,
+         else
+            Result := oMemTable:VALUE,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Liest zu einem beliebigen Objekt eine Eigenschaft aus.
+// Ist die Eigenschaft nicht gesetzt, wird ein Fehler geworfen.
+// @Result: String
+//******************************************************************************
+function _ObjectGetPropAssert(oObj:O, cName:C, bGetValueLong:B:=false)
+| oMemTable |
+   Result    := '', 
+   oMemTable := FindObject(oObj, 'X_PROPERTIES'),
+   if empty(oMemTable) then
+      SetError('Keine Property-Tabelle gefunden!'),
+   else
+      oMemTable.CbSetRangeEx({Trim(cName)}),
+      oMemTable.CbFirst(),
+      if oMemTable.CbEof then
+         SetError('ObjectGetPropAssert: Eigenschaft "' + cName + '" existiert nicht!'),
+      else
+         if bGetValueLong then
+            Result := oMemTable:VALUE_LONG,
+         else
+            Result := oMemTable:VALUE,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Leert die Memtable für die Properties
+// @Result: null
+//******************************************************************************
+function _ObjectEmptyPropTable(oObj:O)
+| oMemTable |
+   oMemTable := FindObject(oObj, 'X_PROPERTIES'),
+   if not empty(oMemTable) then
+      oMemTable.CbEmptyTable(),
+   endif,
+end,
+

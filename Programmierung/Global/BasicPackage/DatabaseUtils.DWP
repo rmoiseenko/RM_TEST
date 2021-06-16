@@ -1,0 +1,132 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Allgemeine Datenbank- und Tabellen-Funktionen.
+//               Der Prefix "DBU" steht für "Database-Utils".
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// REQ-502
+//******************************************************************************
+// Ermittelt den winbehid-Pfad (DABPAR:ADS_PATH) des Datenbestandes.
+// Es wird sichergestellt, dass der Pfad mit einem Backslash am Ende
+// zurückgegeben wird.
+//
+// @Result: string - Pfad zum winbehid-Verzeichnis
+// neu ab 7.x - ADS_PATH wird nicht mehr benötigt
+// IN 09.11.19 - Funktion an Version 7 Abfrage angepasst
+//******************************************************************************
+function _DBU_GetBeHiddenPath()
+   if ISBEDBVERSION7() then
+      result := strtran(upper(mbedefault),"WINBE","WINBEHID"),
+   else,
+      Result := Lookup(waDabPAR, 'STANDORT', {{mStandort, mAbteilung}}, 'ADS_PATH', ''),
+      Result := Result + iif(Right(Result, 1) == '\', '', '\'),
+   endif,
+end,
+
+//******************************************************************************
+// REQ-477
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    * DBU_SQLExecute()             [REQ-478]
+//    * DBU_SQLExecute_DM()          [REQ-479]
+//    * DBU_SQLExecute_Credentials() [REQ-480]
+//
+//******************************************************************************
+// SQL-Statement (kein SELECT) ausführen.
+//
+// Sofern sich das übergebene Datenmodul in einer Transaktion befindet, werden
+//  alle Daten-Veränderungsoperationen (wie z.B. UPDATE, INSERT, DELETE)
+//  ebenfalls innerhalb der Transaktion ausgeführt.
+// Strukturänderungen (wie z.B. CREATE TABLE, DROP TABLE, ALTER TABLE, etc.)
+//  sind davon nicht betroffen.
+//
+// @Result: null
+//******************************************************************************
+function _DBU_SQLExecute_Internal(cSQLText:C, oDM:O, oConnection:O, cQueryName:C)
+| oQuery, bHasOwner, bCustomConnection |
+
+   // Sicherstellen, dass kein SELECT-Statement ausgeführt wird
+   SetErrorIf(Upper(LTrim(cSQLText)) = 'SELECT', 'SELECT-Statements are not allowed!'),
+
+   // Connection validieren
+   bCustomConnection := not Empty(oConnection),
+   SetErrorIf(bCustomConnection and not ClassOf(oConnection, 'TBeAdsConnection'), 'Expecting oConnection to be of type TBeAdsConnection'),
+
+   // Datenmodul validieren
+   bHasOwner := not Empty(oDM),
+   SetErrorIf(bHasOwner and not ClassOf(oDM, 'TBeDbGet'), 'Expecting oDM to be of type TBeDbGet'),
+
+   cQueryName := iif(Empty(AllTrim(cQueryName)), '', cQueryName),
+   bHasOwner  := not Empty(oDM),
+   oQuery     := CreateObject('TBeAdsQuery', cQueryName, oDM),
+   startseq
+      if bCustomConnection then
+         oQuery.AdsFindConnect := False,
+         oQuery.AdsConnection  := oConnection,
+      endif,
+      oQuery.SQL := cSQLText,
+      oQuery.CbExecSQL(),
+   always
+      if not bHasOwner then
+         DestroyObject(oQuery),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ-478
+//******************************************************************************
+// SQL-Statement (kein SELECT) ausführen.
+// @Result: null
+//******************************************************************************
+function _DBU_SQLExecute(cSQLText:C)
+   DBU_SQLExecute_Internal(cSQLText, nil, nil, ''),
+end,
+
+//******************************************************************************
+// REQ-479
+//******************************************************************************
+// SQL-Statement (kein SELECT) ausführen.
+// @Result: null
+//******************************************************************************
+function _DBU_SQLExecute_DM(cSQLText:C, oDM:O)
+   // Datenmodul validieren
+   SetErrorIf(Empty(oDM), 'oDM must be set'),
+
+   DBU_SQLExecute_Internal(cSQLText, oDM, nil, ''),
+end,
+
+//******************************************************************************
+// REQ-480
+//******************************************************************************
+// SQL-Statement (kein SELECT) mit den Berechtigungen eines bestimmten ADS-Users
+// ausführen.
+//
+// @Result: null
+//******************************************************************************
+function _DBU_SQLExecute_Credentials(cSQLText:C, cAdsUsername:C, cAdsPassword:C)
+| cQueryName, oConnection |
+
+   oConnection := CreateObject('TBeAdsConnection', 'DBU_SQLExecute_Credentials_CustomConnection'),
+   startseq
+      oConnection.ConnectPath := mBeDefault,
+      oConnection.Username    := cAdsUsername,
+      oConnection.Password    := cAdsPassword,
+      oConnection.IsConnected := True,                                          prs('_DBU_SQLExecute_Credentials()', {cAdsUsername, '********'}),
+      DBU_SQLExecute_Internal(cSQLText, nil, oConnection, ''),
+   always
+      DestroyObject(oConnection),
+   stopseq,
+end,
+

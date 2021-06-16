@@ -1,0 +1,681 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Testframework für Codeblock
+//
+// Verwendung:
+//    Einzelne UnitTesten:
+//       function <Testcase_Function_Name>()
+//          TEST_CheckTrue() / Test_CheckFalse() / TEST_CheckEquals / TEST_CheckException
+//       end,
+//       function AddTests()
+//          TEST_AddTestCase('<testcase_function_name>'),
+//          ...
+//       end,
+//       TEST_RunFile(),
+//    Directories:
+//       TEST_RunDirectory(<dirname>),
+//    System:
+//       TEST_RunAll(),
+//
+// Falls Zugriffsverletzung passiert, einmal das folgende Codeblock ausführen:
+//    gl_TEST_InfoArray := {},
+//##############################################################################
+//##############################################################################
+
+|
+
+   // Struktur des Arrays:
+   //    { {'ResultMemTable',      oMemTable:O},
+   //      {'Current_TestCase_ID', nID:N},
+   //      {'Current_Check_ID',    nID:N},
+   //      {'Test_Init_By',        cMode:C},
+   //      {'Directory',           cDirectory:C},   //nur für cMode directory
+   //      {'TimeStamp',           dTimeStamp:N},
+   //      {'File_TimeStamp',      dFileTimeStamp:N} }
+   //    cMode = 'file', 'directory', oder 'all'
+   gl_TEST_InfoArray:_U
+
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen (internal)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    TEST_AddTestCase()
+//    TEST_RunFile()
+//
+//******************************************************************************
+// Diese Funktion erzeugt ein TBeAction Objekt mit der übergebenen Funktion als
+// OnExecute Callback.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _TEST_Internal_CreateCallbackAction(cCallbackFunctionName:C, cActionname:C, oOwner:O)
+   result := CreateObject('TBeAction', cActionname, oOwner),
+   if empty(AssignEvent(result, 'OnExecute', cCallbackFunctionName)) then
+      SetError('Unable to assign callback function <' + cCallbackFunctionName + '>'),
+   endif,
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//  * TEST_CheckTrue()
+//  * TEST_CheckFalse()
+//  * TEST_CheckEquals()
+//  * TEST_CheckException()
+//
+//******************************************************************************
+// Interne Funktion zum Verarbeiten einen Checks
+// @result: null
+//******************************************************************************
+function _TEST_Check_Internal(cCheckType:C,
+                              bCheckSuccessful:L,
+                              cSuccessText:C:='',
+                              cFailureText:C:='',
+                              bCrashed:L:=false)
+| oResultTable, cMessageText, nTestCaseID, nCurrentCheckID |
+
+   oResultTable     := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+   nCurrentCheckID  := KVU_Get(gl_TEST_InfoArray, 'Current_Check_ID', 0) + 1,
+   SetErrorIf(
+      not oResultTable.CbFindKey({KVU_GetAssert(gl_TEST_InfoArray, 'Current_Testcase_ID'), 0}),
+      'Error with value of key <Current_TestCase_ID>'
+   ),
+   nTestCaseID      := oResultTable:ID,
+
+   // Increment 'TestCase'
+   oResultTable.CbEdit(),
+   if bCrashed then
+      oResultTable:EXCEPTION    := true,
+   else
+      oResultTable:CHECKTOTAL   += 1,
+      if bCheckSuccessful then
+         oResultTable:SUCCESSES += 1,
+      else
+         oResultTable:FAILURES  += 1,
+      endif,
+   endif,
+   oResultTable.CbPost(),
+
+   // Create Check-Record
+   oResultTable.CbInsert(), //TODO: sortierung + ID für testcases
+   oResultTable:FUNC_NAME   := cCheckType,
+   oResultTable:ID          := nTestCaseID,
+   oResultTable:CHECK_ID    := nCurrentCheckID,
+   KVU_Set(gl_TEST_InfoArray, 'Current_Check_ID', nCurrentCheckID),
+   if bCrashed then
+      oResultTable:LINE_TYPE   := 'EXCEPTION',
+      oResultTable:CHECKTOTAL  := 0,
+   else
+      oResultTable:LINE_TYPE   := 'CHECK',
+      oResultTable:CHECKTOTAL  := 1,
+   endif,
+   if bCheckSuccessful then
+      oResultTable:SUCCESSES := 1,
+      oResultTable:FAILURES  := 0,
+      cMessageText           := Replicate(' ', 3) + '[[SUCCESS]] ' + cSuccessText,
+      oResultTable:MESSAGE   := cMessageText,
+   else
+      if bCrashed then
+         oResultTable:SUCCESSES := 0,
+         oResultTable:FAILURES  := 1,
+         oResultTable:EXCEPTION := true,
+         cMessageText           := Replicate(' ', 3) + '[[EXCEPTION]] ' + cFailureText,
+         oResultTable:MESSAGE   := cMessageText,
+      else
+         oResultTable:SUCCESSES := 0,
+         oResultTable:FAILURES  := 1,
+         cMessageText           := Replicate(' ', 3) + '[[FAILURE]] ' + cFailureText,
+         oResultTable:MESSAGE   := cMessageText,
+      endif,
+   endif,
+   oResultTable.CbPost(),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    TEST_Internal_Initialize()
+//
+//******************************************************************************
+// Erstellt das ResultMemtable und fügt es in InfoArray ein
+//
+// @Result: null
+//******************************************************************************
+function _TEST_Internal_ResultMemTable_Create()
+   Result := CreateObject('TBeMemTable'),
+   Result.CbAddField('ID',         ftInteger,     0),
+   Result.CbAddField('CHECK_ID',   ftInteger,     0),
+   Result.CbAddField('AC_NAME',    ftString,      6),
+   Result.CbAddField('PROG_NAME',  ftString,      255),
+   Result.CbAddField('FUNC_NAME',  ftString,      255),
+   Result.CbAddField('LINE_TYPE',  ftString,      10),
+   Result.CbAddField('CHECKTOTAL', ftInteger,     0),
+   Result.CbAddField('SUCCESSES',  ftInteger,     0),
+   Result.CbAddField('FAILURES',   ftInteger,     0),
+   Result.CbAddField('EXCEPTION',  ftBoolean,     0),
+   Result.CbAddField('DURATION',   ftInteger,     0),
+   Result.CbAddField('MESSAGE',    ftMemo,        0),
+   Result.CbAddIndex('ID',         'ID;CHECK_ID', 0),
+   Result.CbIndexName := 'ID',
+   Result.Active := true,
+end,
+
+//******************************************************************************
+// Erstellt ein Duration-Datensatz
+// @Result: null
+//******************************************************************************
+function _TEST_Internal_CreateDurationRecord()
+| oResultTable, nID, nTimeStamp |
+   oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+   oResultTable.CbLast(),
+   nID := oResultTable:ID,
+
+   oResultTable.CbAppend(),
+   oResultTable:ID        := nID + 1,
+   oResultTable:CHECK_ID  := 0,
+   oResultTable:LINE_TYPE := 'DURATION',
+   oResultTable:PROG_NAME := ProgName(),
+   oResultTable:FUNC_NAME := 'Duration_of_' + ProgName(),
+   nTimeStamp := KVU_GetAssert(gl_TEST_InfoArray, 'File_TimeStamp'),
+   oResultTable:DURATION  := FormatStd((GetExTimer() - nTimeStamp) * 1000, 0),
+   oResultTable.CbPost(),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    TEST_Internal_Finalize()
+//
+//******************************************************************************
+// Schreibt das Summary in die Konsole ein.
+//
+// @Result: null
+//******************************************************************************
+function _TEST_Internal_WriteSummary()
+|
+  oResultTable, nChecksTotal, nCheckSuccesses, nCheckFailures, cCheckText,
+  nTests, nTestSuccesses, nTestFailures, bIsFailure, bIsFileMode,
+  nExpectedPos, nActualPos, nExpectedLength, bHasChecks, cLineType,
+  cMode, cIndent, cProgName, nTimeStamp, aProgrammes, aPrintableProgrammes, aDurations
+|
+
+   function AFind(aArray:A, uValue:U)
+   | uElement |
+      result := false,
+      foreach uElement in aArray do
+          if uElement == uValue then
+             result := true,
+             break,
+          endif,
+      next,
+   end,
+
+   function BeginGroup()
+      if AllTrim(cProgName) <> AllTrim(oResultTable:PROG_NAME) then
+         cProgName := AllTrim(oResultTable:PROG_NAME),
+         AAdd(aProgrammes, cProgName),
+      endif,
+   end,
+
+   function PrintProgrammes()
+   | cProg, aWritten, cPiece, nTokenCount, nIndent, bIsFileName, i |
+      aWritten := {},
+      foreach cProg in aProgrammes do
+         // Reset Indent
+         nIndent := 0,
+         nTokenCount := TokenCount(cProg, '\'),
+
+         for i := 1 to nTokenCount do
+            // Take piece of Path
+            cPiece      := Token(cProg, '\', i),
+            bIsFileName := i = nTokenCount,
+            // Piece not written
+            if KVU_Find(aWritten, cPiece) = -1 then  // if not KVU_Find
+               // Add to written-pieces Array
+               if not bIsFileName then
+                  KVU_Set(aWritten, cPiece, nIndent),
+               endif,
+               // Write
+               Writeln(
+                  '# ' +
+                  Replicate(' ', nIndent * 3) +
+                  iif(bIsFileName, '[', '') +
+                  cPiece +
+                  iif(bIsFileName, ']' + ' ' + Str(KVU_Get(aDurations, cProg, 0)) + ' ms', '')
+               ),
+               // Increase Indent
+               nIndent++,
+            // Piece already written
+            else
+               // Take the piece's Indent and increment it
+               nIndent := KVU_Get(aWritten, cPiece, 0) + 1,
+            endif,
+         next,
+      next,
+   end,
+
+   function PrintSummary()
+      WriteLn(Replicate('#', 80)),
+      WriteLn('# Test Summary: Mode: <' + cMode + '> ' + KVU_Get(gl_TEST_InfoArray, 'Directory', '')),
+      PrintProgrammes(),
+      WriteLn(Replicate('#', 80)),
+      WriteLn(
+         '# ' +
+         Str(nTestSuccesses) +
+         ' TestCases out of ' +
+         Str(nTests) +
+         ' successful' +
+         iif(nTestFailures > 0, ', ' + Str(nTestFailures) + ' failed.', '.')
+      ),
+      WriteLn('#' + Replicate('-', 79)),
+      WriteLn(
+         '# ' +
+         Str(nCheckSuccesses) +
+         ' Checks successful' +
+         iif(nCheckFailures > 0, ', ' + Str(nCheckFailures) + ' failed.', '.')
+      ),
+      WriteLn(Replicate('#', 80)),
+      WriteLn('#    STATUS: ' + iif(Empty(nTestFailures), '[[SUCCESS]]', '[[FAILURE]]')),
+      WriteLn('# UnitTest finished after ' + FormatStd(nTimeStamp * 1000, 0) + ' ms'),
+      WriteLn(Replicate('#', 80)),
+   end,
+
+
+   nChecksTotal         := 0,
+   nCheckSuccesses      := 0,
+   nCheckFailures       := 0,
+   nTests               := 0,
+   nTestSuccesses       := 0,
+   nTestFailures        := 0,
+   cIndent              := Replicate(' ', 3),
+   cProgName            := '',
+   aProgrammes          := {},
+   aPrintableProgrammes := {},
+
+   cMode := KVU_Get(gl_TEST_InfoArray, 'Test_Init_By', '???'),
+   bIsFileMode := Upper(cMode) == 'FILE',
+
+   oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+   oResultTable.CbFirst(),
+   while not oResultTable.CbEoF do
+      cLineType := AllTrim(oResultTable:LINE_TYPE),
+      case AllTrim(oResultTable:LINE_TYPE)
+         of 'TESTCASE'  ::
+            bHasChecks := oResultTable:CHECKTOTAL > 0,
+            bIsFailure := not Empty(oResultTable:FAILURES) or oResultTable:EXCEPTION or not bHasChecks,
+            nTests++,
+            iif(bIsFailure , nTestFailures++, nTestSuccesses++),
+            BeginGroup(),
+
+            if bIsFailure or bIsFileMode then
+		       if not AFind(aPrintableProgrammes, cProgName) then
+                  AAdd(aPrintableProgrammes, cProgName),
+                  WriteLn(cProgName),
+               endif,
+               WriteLn(cIndent + AllTrim(oResultTable:FUNC_NAME)),
+               if not bHasChecks and not oResultTable:EXCEPTION then
+                  WriteLn(Replicate(cIndent, 10) + '[[FAILURE]] No Checks in the function'),
+               endif,
+            endif,
+			
+         of 'CHECK'     ::
+            bIsFailure := not Empty(oResultTable:FAILURES),
+            nChecksTotal++,
+            cCheckText := AllTrim(oResultTable:FUNC_NAME) + ':' +  Replicate(' ', 24),
+            cCheckText := cIndent + SubStr(cCheckText, 0, 24),   // lineup für alle CheckNames
+            if bIsFailure then
+               nCheckFailures++,
+               nExpectedPos    := At('expected', AllTrim(oResultTable:MESSAGE)),
+               nActualPos      := At('but was',  AllTrim(oResultTable:MESSAGE)),
+               nExpectedLength := nActualPos - nExpectedPos,
+               WriteLn(cIndent + cCheckText + SubStr(AllTrim(oResultTable:MESSAGE), 0, nExpectedPos - 1)),
+               WriteLn(Replicate(cIndent, 3) + SubStr(AllTrim(oResultTable:MESSAGE), nExpectedPos, nExpectedLength)),
+               WriteLn(Replicate(cIndent, 3) + SubStr(AllTrim(oResultTable:MESSAGE), nActualPos)),
+            else
+               nCheckSuccesses++,
+               if bIsFileMode then
+               WriteLn(
+                  cIndent +
+                  cCheckText +
+                  AllTrim(oResultTable:MESSAGE)
+               ),
+               endif,
+            endif,
+			
+         of 'DURATION'  ::
+            KVU_Set(aDurations, AllTrim(oResultTable:PROG_NAME), oResultTable:DURATION),
+			
+         of 'EXCEPTION' ::
+            cCheckText := AllTrim(oResultTable:FUNC_NAME) + ':' +  Replicate(' ', 24),
+            cCheckText := cIndent + SubStr(cCheckText, 0, 24),   // lineup für alle CheckNames
+            WriteLn(cIndent + cCheckText + AllTrim(oResultTable:MESSAGE)),
+			
+         otherwise
+            SetError('Line type <' + AllTrim(oResultTable:LINE_TYPE) + '> not supported'),
+      endcase,
+      oResultTable.CbNext(),
+   end,
+   nTimeStamp := GetExTimer() - KVU_GetAssert(gl_TEST_InfoArray, 'TimeStamp'),
+   PrintSummary(),
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    TEST_RunFile()
+//    TEST_RunDirectory()
+//    TEST_RunAll()
+//
+//******************************************************************************
+// Initializiert das Array und TestMemTable.
+//
+// @Result: null
+//******************************************************************************
+function _TEST_Internal_Initialize(cMode:C)
+| oResultTable |
+   if empty(gl_TEST_InfoArray) or ALen(gl_TEST_InfoArray) = 0 then
+      KVU_Set(gl_TEST_InfoArray, 'Test_Init_By', cMode),
+      oResultTable := TEST_Internal_ResultMemTable_Create(),
+      KVU_Set(gl_TEST_InfoArray, 'ResultMemTable', oResultTable),
+      KVU_Set(gl_TEST_InfoArray, 'TimeStamp', GetExTimer()),
+   endif,
+end,
+
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Wird intern von folgenden Funktionen aufgerufen:
+//    TEST_RunFile()
+//    TEST_RunDirectory()
+//    TEST_RunAll()
+//
+//******************************************************************************
+// Löst das Array und TestMemTable aus.
+// cMode muss 'testcase', 'file', 'dir', oder 'system' sein
+//
+// @Result: null
+//******************************************************************************
+function _TEST_Internal_Finalize(cMode:C)
+| cCurrentMode, oResultTable |
+   cCurrentMode := KVU_Get(gl_TEST_InfoArray, 'Test_Init_By', '???'),
+   if Lower(cMode) == Lower(cCurrentMode) then
+      TEST_Internal_WriteSummary(),
+
+      oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+//      browse(, oResultTable),        // FOR DEBUGGING
+      DestroyObject(oResultTable),
+
+      gl_TEST_InfoArray := {},
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Die Funktion fügt ein Testcase hinzu und erstellt eine Action dafür
+// @Result: null
+//******************************************************************************
+function _TEST_AddTestCase(cTestCaseName:C)
+
+   function CreateRecordForResultTable()
+   | oResultTable |
+      oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+      oResultTable.CbLast(),
+      result := iif(Empty(oResultTable:ID), 0, oResultTable:ID),
+
+      oResultTable.CbAppend(),
+      oResultTable:ID         := result + 1,
+      oResultTable:CHECK_ID   := 0,
+      oResultTable:AC_NAME    := 'A_' + Str(oResultTable:ID),
+      oResultTable:PROG_NAME  := ProgName(),
+      oResultTable:FUNC_NAME  := cTestCaseName,
+      oResultTable:LINE_TYPE  := 'TESTCASE',
+      oResultTable:CHECKTOTAL := 0,
+      oResultTable:SUCCESSES  := 0,
+      oResultTable:FAILURES   := 0,
+      oResultTable.CbPost(),
+
+      KVU_Set(gl_TEST_InfoArray, 'Current_TestCase_ID', oResultTable:ID),
+   end,
+
+   function CreateAction()
+   | oResultTable |
+      oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+      TEST_Internal_CreateCallbackAction(
+         AllTrim(oResultTable:FUNC_NAME),
+         AllTrim(oResultTable:AC_NAME),
+         oResultTable
+      ),
+   end,
+
+   CreateRecordForResultTable(),
+   CreateAction(),
+end,
+
+
+//******************************************************************************
+// Die Funktion lässt alle Programme eines Verzeichnises mit Dateinamenendung
+// '_Test' (rekursiv) ausführen.
+// @Result: null
+//******************************************************************************
+function _TEST_RunDirectory(cDirectory:C, cExtension:C:='')
+| aTestFiles, cCurrentProgName |
+
+   function GetAllTestFilesInDirectory(cDirectory:C)
+   | oDabPrg, oRec, cProgName, cExtension |
+
+      function GetCurrentDirectory()
+      | cPathName,  cFileName |
+         cPathName := ProgName(),
+         cFileName := Token(cPathName, '\', TokenCount(cPathName, '\')),
+         result := SubStr(
+            cPathName,
+            0,
+            At(cFileName, cPathName)-1
+         )
+      end,
+
+      result     := {},
+      cExtension := iif(Empty(cExtension), '_Test', cExtension),
+      oDabPrg    := BeOpen(waDabPRG, 'BEZ'),
+      startseq
+         DbScope({cDirectory}, {cDirectory + 'ZZZ'}, oDabPrg),
+
+         foreach oRec in oDabPrg do
+            cProgName := AlLTrim(oDabPrg:BEZ),
+            if cProgName <> ProgName() then
+               if Upper(Right(cProgname, Len(cExtension))) == Upper(cExtension) then
+                  AAdd(result, cProgname),
+               endif,
+            endif,
+         next,
+      always
+         BeClose(oDabPrg),
+      stopseq,
+   end,
+
+   TEST_Internal_Initialize('directory'),
+   startseq,
+      KVU_Set(gl_TEST_InfoArray, 'Directory', cDirectory),
+      aTestFiles := GetAllTestFilesInDirectory(cDirectory),
+      foreach cCurrentProgName in aTestFiles do
+         Call(cCurrentProgName),
+      next,
+   always
+      TEST_Internal_Finalize('directory'),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion führt alle Programme mit Dateinamenendung '_Test' innerhalb
+// des Datenbestandes aus.
+// @Result: null
+//******************************************************************************
+function _TEST_RunAll()
+   TEST_Internal_Initialize('all'),
+   startseq,
+      TEST_RunDirectory(''),
+   always
+      TEST_Internal_Finalize('all'),
+   stopseq,
+end,
+
+//******************************************************************************
+// Läuft durch alle UnitTests die in die Funktion 'AddTests' des jetzigen
+// Programms durch TEST_AddTestCase hizugefügt wurden.
+// @Result: null
+//******************************************************************************
+function _TEST_RunFile(cAddTestsFunctionName:C:='AddTests')
+| oResultTable, oTestCaseAction, oRec |
+
+   function AddTestsFromCurrentProg()
+   | oAction |
+      oAction := TEST_Internal_CreateCallbackAction(cAddTestsFunctionName, 'A_AddTests', oResultTable),
+      ActionExecute(oAction),
+      DestroyObject(oAction),
+   end,
+
+   TEST_Internal_Initialize('file'),
+   startseq,
+      KVU_Set(gl_TEST_InfoArray, 'File_TimeStamp', GetExTimer()),
+      oResultTable := KVU_GetAssert(gl_TEST_InfoArray, 'ResultMemTable'),
+      AddTestsFromCurrentProg(),
+      oResultTable.CbFilter   := "LINE_TYPE = 'TESTCASE' AND PROG_NAME = '" + ProgName() + "'",
+      oResultTable.CbFiltered := true,
+      startseq
+         foreach oRec in oResultTable do
+            startseq
+               KVU_Set(gl_TEST_InfoArray, 'Current_TestCase_ID', oResultTable:ID),
+               KVU_Set(gl_TEST_InfoArray, 'Current_Check_ID', 0),
+
+               oTestCaseAction := FindObject(oResultTable, AllTrim(oResultTable:AC_NAME)),
+               ActionExecute(oTestCaseAction),
+            onerror
+               TEST_Check_Internal(
+                  'UnexpectedException',
+                  false,
+                  '',
+                  ClassName(GetErrorObj()) + ': ' + GetErrorText(),
+                  true
+               ),
+            stopseq,
+         next,
+      always
+         oResultTable.CbFiltered := false,
+      stopseq,
+      TEST_Internal_CreateDurationRecord(),
+   always
+      TEST_Internal_Finalize('file'),
+   stopseq,
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob der übergebene Ausdruck zu true evaluiert
+// @result: null
+//******************************************************************************
+function _TEST_CheckTrue(bExpression:L, cSuccessText:C:='', cCustomErrorText:C:='')
+| cFailureText |
+
+   cFailureText := iif(Empty(cCustomErrorText), 'expected <true> but was <false>', cCustomErrorText),
+   TEST_Check_Internal('CheckTrue', bExpression, cSuccessText, cFailureText),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob der übergebene Ausdruck zu false evaluiert
+// @result: null
+//******************************************************************************
+function _TEST_CheckFalse(bExpression:L, cSuccessText:C:='', cCustomErrorText:C:='')
+| cFailureText |
+
+   cFailureText := iif(Empty(cCustomErrorText), 'expected <false> but was <true>', cCustomErrorText),
+   TEST_Check_Internal('CheckFalse', not bExpression, cSuccessText, cFailureText),
+end,
+
+//******************************************************************************
+// Check equals
+// @result: null
+// TODO:  "TEST_CheckNotEquals()" wäre noch eine schöne Funktion
+//******************************************************************************
+function _TEST_CheckEquals(uExpected:U, uActual:U, cSuccessText:C:='', cCustomErrorText:C:='')
+| bIsEqual, cFailureText |
+
+   //***************************************************************************
+   // Prüfen zweier Codeblock-Werte auf Gleicheheit
+   // @result: boolean - Werte sind gleich Ja/Nein
+   //***************************************************************************
+   function IsEqual(uValue1:U, uValue2:U)
+   | cDataType |
+
+      cDataType := ValType(uValue1),
+      result    := cDataType == ValType(uValue2),
+      if result then
+         case cDataType
+            of 'C' :: result := uValue1 == uValue2,
+            of 'A' :: result := ArrToStr(uValue1) == ArrToStr(uValue2),
+            of 'D' :: result := CompareDates(uValue1, uValue2),
+            otherwise
+               result := uValue1 = uValue2,
+         endcase,
+      endif,
+   end,
+
+   bIsEqual     := IsEqual(uExpected, uActual),
+   cFailureText := iif(Empty(cCustomErrorText), 'expected <' + ToString(uExpected) + '> but was <' + ToString(uActual) + '>', cCustomErrorText),
+   TEST_Check_Internal('CheckEquals', bIsEqual, cSuccessText, cFailureText),
+end,
+
+//******************************************************************************
+// Diese Funktion prüft, ob die aufgetretene Exception der erwarteten Exception
+// entspricht
+//
+// @result: null
+//******************************************************************************
+function _TEST_CheckException(cExpectedErrorMessage:C,
+                              nExpectedErrorCode:N,
+                              oActualExceptionObject:O,
+                              cSuccessText:C:='')
+| cActualErrorMessage, nActualErrorCode, bCheckSuccessful |
+
+
+   //***************************************************************************
+   function SanatizeExceptionMessage(cExceptionMessage:C)
+   | nPosition, nLength |
+      result    := cExceptionMessage,
+      nPosition := RAt(CRLF + 'Context: BCT_USER', result),
+      if nPosition > 0 then
+         nLength := Len(result),
+         result  := Left(result, nLength - (nLength - nPosition) - 1),
+         result  := StrTran(result, CRLF, ' '), // Alle Zeilenumbrüche entfernen
+      endif,
+   end,
+
+   cActualErrorMessage := SanatizeExceptionMessage(GetErrorText(oActualExceptionObject)),
+   nActualErrorCode    := GetErrorCode(),
+
+   bCheckSuccessful := (cExpectedErrorMessage == cActualErrorMessage) and
+                        (nExpectedErrorCode    =  nActualErrorcode),
+   TEST_Check_Internal(
+      'CheckException',
+      bCheckSuccessful,
+      cSuccessText,
+      'expected exception <Message: "' + cExpectedErrorMessage + '", Code: ' +
+      Str(nExpectedErrorCode) + '> but was <Message: "' +
+      cActualErrorMessage + '", Code: ' + Str(nActualErrorCode) + '>'
+   ),
+end,

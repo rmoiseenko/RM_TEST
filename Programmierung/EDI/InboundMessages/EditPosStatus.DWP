@@ -1,0 +1,109 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//    InputDialogBox, in welcher man den Status einer EDI-Position anpassen kann
+// Rückgabe: InputDialogArray
+//##############################################################################
+//##############################################################################
+
+| m_oEDIPOS:P1, m_oEDIHEAD, m_oDM, m_aInputBoxResult |
+
+if EditorMode() then
+   m_oEDIPOS := MyGetTable(gl_odm, waEDIPOS,),
+endif,
+
+//******************************************************************************
+// Inputbox für Auswahl des Status
+// @Result: null
+//******************************************************************************
+function ShowInputDlg()
+   m_aInputBoxResult :=  DU_InputDialog(
+                       'Anpassung des Positions-Status',
+                       'Bitte wählen Sie den Status für EDI-Kopf [' + ToString(m_oEDIHEAD:ID) + '] / EDI-Position [' + ToString(m_oEDIPOS:ID) + '] aus:',
+                          {
+                             DU_InputDialog_CreateInputControlDefinition('STATUS', 'Status', gl_DU_InputControlType_Attribute, , gl_EDI_MMTID_ProcessStatus, m_oEDIPOS:STATUS, false)
+                          },
+                          {
+                             DU_InputDialog_CreateButtonDefinition('OK',     'OK',     mrOK,     7, False),
+                             DU_InputDialog_CreateButtonDefinition('Cancel', 'Cancel', mrCancel, 8, False)
+                          },
+                          {}
+                       ),
+end,
+
+//******************************************************************************
+// Passt den EDIHEAD an, sofern erforderlich
+//   - wenn alle POS entweder OK oder BEENDET => OK
+//   - wenn alle POS auf BEENDET              => BEENDET
+//   - sonst                                  => FEHLER
+// @Result: null
+//******************************************************************************
+function EditHead()
+   | oEDIPOSCheck, nStatus, nCountOK, nCountBEENDET, nCountFEHLER, nCountPOS |
+
+   oEDIPOSCheck           := MyGetTable(m_oDM, waEDIPOS, 'EDIPOS_SETRANGE'),
+   oEDIPOSCheck.IndexName := 'EDIHEAD_ID',
+
+   nStatus       := -1,
+   nCountOK      := 0,
+   nCountBEENDET := 0,
+   nCountFEHLER  := 0,
+   nCountPOS     := 0,
+
+   oEDIPOSCheck.CbSetRangeEx({m_oEDIHEAD:ID}),
+   oEDIPOSCheck.CbFirst(),
+   while not oEDIPOSCheck.CbEoF do
+      nCountPOS++,
+
+      case oEDIPOSCheck:STATUS
+         of gl_EDI_ProcessStatus_Error    :: nCountFEHLER++,
+         of gl_EDI_ProcessStatus_Canceled :: nCountBEENDET++,
+         otherwise
+            nCountOK++,
+      endcase,
+      oEDIPOSCheck.CbNext(),
+   end,
+   oEDIPOSCheck.CbCancelRange(),
+
+   case true
+      of nCountFEHLER > 0          :: nStatus := gl_EDI_ProcessStatus_Error,
+      of nCountBEENDET = nCountPOS :: nStatus := gl_EDI_ProcessStatus_Canceled,
+      otherwise
+         nStatus := gl_EDI_ProcessStatus_Ok,
+   endcase,
+
+   if not m_oEDIHEAD:STATUS = nStatus then
+      m_oEDIHEAD.CbEdit(),
+      m_oEDIHEAD:STATUS := nStatus,
+      m_oEDIHEAD.CbPost(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   // Datenmodul muss mit dem der EDIPOS übereinstimmen, damit die Tabelle im
+   // Programm (wo dieses aufgerufen wird) korrekt aktualisiert wird
+   m_oDM      := GetOwner(m_oEDIPOS),
+   m_oEDIHEAD := MyGetTable(m_oDM, waEDIHEAD,),
+
+   m_oEDIHEAD.CbFindKey({m_oEDIPOS:EDIHEAD_ID}),
+
+   SetErrorIf(DbState(m_oEDIHEAD) = dsEdit, 'Der EDIHEAD-Datensatz befindet sich noch im Editmodus.'),
+   SetErrorIf(DbState(m_oEDIPOS)  = dsEdit, 'Der EDIPOS-Datensatz befindet sich noch im Editmodus.'),
+
+   ShowInputDlg(),                                                              writeln("=> Inputbox", m_aInputBoxResult),
+
+   if m_aInputBoxResult[1] = mrOk then
+      m_oEDIPOS.CbEdit(),
+      m_oEDIPOS:STATUS := tofloat(KVU_GETAssert(m_aInputBoxResult[2], 'STATUS')),
+      m_oEDIPOS.CbPost(),
+
+      EditHead(),
+   endif,
+onerror
+   GU_SHOWSTDERRORMESSAGE(GetErrorText(GetErrorObj()), GetErrorObj()),
+stopseq,

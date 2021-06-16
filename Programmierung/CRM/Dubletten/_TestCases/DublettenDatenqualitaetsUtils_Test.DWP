@@ -1,0 +1,42 @@
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function TestCase_Dubl_ExplodePLZOrtValue()
+   TEST_BeginGroup('Dubl_ExplodePLZOrtValue()'),
+
+   TEST_AssertEquals({4, 80687, 'München'},           Dubl_ExplodePLZOrtValue('80687 München')),
+
+   TEST_AssertEquals({4, 80687, 'München'},           Dubl_ExplodePLZOrtValue('   80687   München   ')), // sinnfreie Leerzeichen
+
+   TEST_AssertEquals({4, 99, 'Münasd884654?äößchen'}, Dubl_ExplodePLZOrtValue('   99   Münasd884654?äößchen   ')), // sinnfreie Leerzeichen + "komischer Ortsname" + zweistellige PLZ
+
+   TEST_AssertEquals({11, 35660, 'Corralejo'},        Dubl_ExplodePLZOrtValue('E-35660  Corralejo')),
+
+   TEST_AssertEquals({0, 0, ''},                      Dubl_ExplodePLZOrtValue('D-A80687 München')),  // 'A' => darf nicht vorkommen vor der PLZ... oder sonstige andere zeichen...
+
+   TEST_EndGroup(),
+end,
+
+
+//******************************************************************************
+// Testfälle ausführen
+// @result: null
+//******************************************************************************
+function RunTests()
+   TEST_Initialize(),
+   TestCase_Dubl_ExplodePLZOrtValue(),
+   TEST_Finalize(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   RunTests(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,

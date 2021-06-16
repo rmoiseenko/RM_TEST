@@ -1,0 +1,694 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses globale Programm stellt Funktionen zum Handling von EDIFACT-
+//   Nachrichten zur verfügung
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+function _EDI_Edifact_MessageString_ExtractSegmentValue_Internal(cMessageString:C,
+                                                                 cSegmentIdentifier:C,
+                                                                 nSegmentIndex:N,
+                                                                 aPositionInfo:A,
+                                                                 cSegmentTerminator:C,
+                                                                 cElementSeperator:C,
+                                                                 cCompositeElementSeperator:C) ... end,
+function _EDI_Edifact_MessageString_ExtractSegment_Internal(cMessageString:C,
+                                                            cSegmentIdentifier:C,
+                                                            cSegmentTerminator:C,
+                                                            cElementSeperator:C) ... end,
+function _EDI_Edifact_MessageString_StripUNASegment_Internal(cMessageString:C) ... end,
+function _EDI_Edifact_SegmentString_ExtractValue_Internal(cSegmentString:C,
+                                                          aPositionInfo:A,
+                                                          cElementSeperator:C,
+                                                          cCompositeElementSeperator:C,
+                                                          cReleaseIndicator:C:='',
+                                                          cSegmentTerminator:C:='') ... end,
+function _EDI_Edifact_SegmentString_ExtractSegmentIdentifier_Internal(cSegmentString:C,
+                                                                      cElementSeperator:C) ... end,
+function _EDI_Edifact_SegmentString_SetValue_Internal(cSegmentString:C,
+                                                      aDataElementMap:A,
+                                                      uValue:U,
+                                                      cElementSeperator:C,
+                                                      cCompositeElementSeperator:C,
+                                                      cSegmentTerminator:C) ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Allgemein)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion konvertiert eine EDIFACT-Vorgangsart in eine be Beleg-Art.
+// @result: integer - be Beleg-Art
+//******************************************************************************
+function _EDI_Edifact_MessageTypeToBeDocumentType(nMessageType:N)
+   case nMessageType
+      of gl_EDI_EdifactMessageType_ORDRSP :: result := 20, // Delphi-Konstante: valD700_DocTypeAUFB
+      of gl_EDI_EdifactMessageType_DESADV :: result := 60, // Delphi-Konstante: valD700_DocTypeLIEF
+      of gl_EDI_EdifactMessageType_INVOIC :: result := 160, // Delphi-Konstante: valD700 ????
+      otherwise
+         result := -1,
+   endcase,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (DataElementInfo)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @result: array - KVU-Array mit folgenden Informationen:
+//   dataElementMap.compositeDataElementIndex:     Index des Composite-Datenelements
+//   dataElementMap.dataElementIndex:              Index des Datenelements
+//   dataElementMap.compositeDataElementMandatory: Mandatory-Flag des Composite-Datenelements
+//   dataElementMap.dataElementMandatory:          Mandatory-Flag des Datenelements
+//******************************************************************************
+function _EDI_Edifact_DataElementMap_Create(nCompositeDataElementIndex:N,
+                                            nDataElementIndex:N,
+                                            bCompositeDataElementMandatory:L,
+                                            bDataElementMandatory:L)
+   // HINWEIS:
+   //   Hier kann leider nicht ohne weiteres die KVU_Set()-Funktion verwendet
+   //   werden, weil dies in diesem Fall das Result nicht korrekt befüllen
+   //   würde.
+   result := {
+      {'dataElementMap.compositeDataElementIndex',     nCompositeDataElementIndex},
+      {'dataElementMap.dataElementIndex',              nDataElementIndex},
+      {'dataElementMap.compositeDataElementMandatory', bCompositeDataElementMandatory},
+      {'dataElementMap.dataElementMandatory',          bDataElementMandatory}
+   },
+//   KVU_Set(result, 'dataElementMap.compositeDataElementIndex',     nCompositeDataElementIndex),
+//   KVU_Set(result, 'dataElementMap.dataElementIndex',              nDataElementIndex),
+//   KVU_Set(result, 'dataElementMap.compositeDataElementMandatory', bCompositeDataElementMandatory),
+//   KVU_Set(result, 'dataElementMap.dataElementMandatory',          bDataElementMandatory),
+end,
+
+//******************************************************************************
+// Index des Composite-Datenelements aus der DataElementMap ermitteln.
+// @result: integer
+//******************************************************************************
+function _EDI_Edifact_DataElementMap_GetCompositeDataElementIndex(aPositionInfo:A)
+   result := KVU_GetAssert(aPositionInfo, 'dataElementMap.compositeDataElementIndex'),
+end,
+
+//******************************************************************************
+// Index des Datenelements aus der DataElementMap ermitteln.
+// @result: integer
+//******************************************************************************
+function _EDI_Edifact_DataElementMap_GetDataElementIndex(aPositionInfo:A)
+   result := KVU_GetAssert(aPositionInfo, 'dataElementMap.dataElementIndex'),
+end,
+
+//******************************************************************************
+// Mandatory-Flag des Composite-Datenelements aus der DataElementMap
+// ermitteln.
+//
+// @result: boolean
+//******************************************************************************
+function _EDI_Edifact_DataElementMap_IsCompositeDataElementMandatory(aPositionInfo:A)
+   result := KVU_GetAssert(aPositionInfo, 'dataElementMap.compositeDataElementMandatory'),
+end,
+
+//******************************************************************************
+// Mandatory-Flag des Datenelements aus der DataElementMap ermitteln.
+// @result: boolean
+//******************************************************************************
+function _EDI_Edifact_DataElementMap_IsDataElementMandatory(aPositionInfo:A)
+   result := KVU_GetAssert(aPositionInfo, 'dataElementMap.dataElementMandatory'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (message string direct access)
+//------------------------------------------------------------------------------
+//
+// Die folgenden Funktionen ermitteln bestimmte Informationen aus einer
+// EDI-Nachricht, ohne diese vorher zu parsen (direct access).
+// Dies ist insbesondere wichtig, um für das Parsen notwendige Informationen wie
+// EDI-Standard und Vorgangsart einer EDI-Nachricht zu ermitteln.
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion ermittelt die zu verwendenden Trennzeichen in der übergebenen
+// EDI-Nachricht.
+// Existiert in der übergebenen EDI-Nachricht kein UNA-Segment, welches die
+// Trennzeichen spezifiziert, werden die Standard-Trennzeichen zurückgegeben.
+//
+// Zitat aus den UN/EDIFACT Syntax Implementation Guidelines:
+//   > The string has a mandatory fixed length of 9 characters.
+//   > The first three are UNA, immediately followed by the 6 characters as
+//   > defined in ISO 9735.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetDelimiters(cMessageString:C,
+                                                  cSegmentTerminator:R,
+                                                  cElementSeperator:R,
+                                                  cCompositeElementSeperator:R,
+                                                  cDecimalSeperator:R,
+                                                  cReleaseIndicator:R,
+                                                  cReservedCharacter:R)
+|
+   nUNASegmentLength,
+   cSegmentString, cSegmentIdentifier, cSegmentValues
+|
+
+   nUNASegmentLength  := 9,
+   cSegmentIdentifier := 'UNA',
+
+   cSegmentString := Left(cMessageString, nUNASegmentLength),
+   if Left(cSegmentString, Len(cSegmentIdentifier)) == cSegmentIdentifier then
+      // Delimiter aus dem UNA-Segment extrahieren
+      cSegmentValues             := SubStr(cSegmentString, Len(cSegmentIdentifier) + 1),
+      cCompositeElementSeperator := SubStr(cSegmentValues, 1, 1),
+      cElementSeperator          := SubStr(cSegmentValues, 2, 1),
+      cDecimalSeperator          := SubStr(cSegmentValues, 3, 1),
+      cReleaseIndicator          := SubStr(cSegmentValues, 4, 1),
+      cReservedCharacter         := SubStr(cSegmentValues, 5, 1),
+      cSegmentTerminator         := SubStr(cSegmentValues, 6, 1),
+   else
+      // Wenn in dem Message-String kein UNA-Segment existiert, werden die
+      // Standard-Delimiter zurückgegeben.
+      cCompositeElementSeperator := gl_EDI_Default_CompositeElementSeperator,
+      cElementSeperator          := gl_EDI_Default_ElementSeperator,
+      cDecimalSeperator          := gl_EDI_Default_DecimalSeperator,
+      cReleaseIndicator          := gl_EDI_Default_ReleaseIndicator,
+      cReservedCharacter         := gl_EDI_Default_ReservedCharacter,
+      cSegmentTerminator         := gl_EDI_Default_SegmentTerminator,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den EDI-Standard (Verzeichnis) aus der übergebenen
+// EDI-Nachricht.
+//
+// @result: string - EDI-Standard (Verzeichnis) als String
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetStandard(cMessageString:C,
+                                                cSegmentTerminator:C,
+                                                cElementSeperator:C,
+                                                cCompositeElementSeperator:C)
+| cCompositeElementValue |
+
+   cCompositeElementValue := EDI_Edifact_MessageString_ExtractSegmentValue_Internal(
+      cMessageString,
+      'UNH',
+      1,
+      EDI_Edifact_DataElementMap_Create(2, 0, true, true),
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+
+   result := Token(cCompositeElementValue, cCompositeElementSeperator, 2) +
+             Token(cCompositeElementValue, cCompositeElementSeperator, 3),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt die Vorgangsart der übergebenen EDI-Nachricht.
+// @result: string - Vorgangsart als String
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetMessageType(cMessageString:C,
+                                                   cSegmentTerminator:C,
+                                                   cElementSeperator:C,
+                                                   cCompositeElementSeperator:C)
+   result := EDI_Edifact_MessageString_ExtractSegmentValue_Internal(
+      cMessageString,
+      'UNH',
+      1,
+      EDI_Edifact_DataElementMap_Create(2, 1, true, true),
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt die GLN des Senders aus dem übergebenen
+// Message-String.
+//
+// @result: string - GLN des Senders
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetSenderGLN(cMessageString:C,
+                                                 cSegmentTerminator:C,
+                                                 cElementSeperator:C,
+                                                 cCompositeElementSeperator:C)
+   result := EDI_Edifact_MessageString_ExtractSegmentValue_Internal(
+      cMessageString,
+      'UNB',
+      1,
+      EDI_Edifact_DataElementMap_Create(2, 1, true, true),
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt die GLN des Empfängers aus dem übergebenen
+// Message-String.
+//
+// @result: string - GLN des Empfängers
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetRecipientGLN(cMessageString:C,
+                                                    cSegmentTerminator:C,
+                                                    cElementSeperator:C,
+                                                    cCompositeElementSeperator:C)
+   result := EDI_Edifact_MessageString_ExtractSegmentValue_Internal(
+      cMessageString,
+      'UNB',
+      1,
+      EDI_Edifact_DataElementMap_Create(3, 1, true, true),
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt, ob die Nachricht mit einem Testflag gekennzeichnet ist
+//
+// @result: numeric - TestFlag der Nachricht    (1 = Test / 0 = Produktiv)
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetTestFlag(cMessageString:C,
+                                                 cSegmentTerminator:C,
+                                                 cElementSeperator:C,
+                                                 cCompositeElementSeperator:C)
+   result := EDI_Edifact_MessageString_ExtractSegmentValue_Internal(
+      cMessageString,
+      'UNB',
+      1,
+      EDI_Edifact_DataElementMap_Create(11, 0, false, true),
+      cSegmentTerminator,
+      cElementSeperator,
+      cCompositeElementSeperator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt alle Segmente aus der Nachricht, welche mit dem
+// übergebenen Segment-Identifier übereinstimmen.
+//
+// @result: array - Liste mit Segment-Strings
+//******************************************************************************
+function _EDI_Edifact_MessageString_GetSegmentsByIdentifier(cMessageString:C,
+                                                            cSegmentIdentifier:C,
+                                                            cSegmentTerminator:C)
+| i, cSegmentString |
+
+   //***************************************************************************
+   // Diese Funktion entfernt alle potentiellen Whitespaces am Anfang des
+   // übergebenen Segment-Strings.
+   //
+   // Alle Zeichen, deren ASCII-Wert kleiner als 33 ist, werden als
+   // Whitespaces behandelt und vom Anfang des Segment-Strings abgeschnitten.
+   //
+   // @result: string
+   //***************************************************************************
+   function StripPrecedingWhitespaces(cSegmentString:C)
+   | i, nAsciiCode, nStripPosition |
+
+      nStripPosition := 0,
+      for i := 1 to Len(cSegmentString) do
+         nAsciiCode := Asc(SubStr(cSegmentString, i, 1)),
+         if nAsciiCode < 33 then
+            nStripPosition := i,
+         else
+            break,
+         endif,
+      next,
+
+      if nStripPosition > 0 then
+         result := SubStr(cSegmentString, nStripPosition + 1),
+      else
+         result := cSegmentString,
+      endif,
+   end,
+
+   result := {},
+   for i := 1 to TokenCount(cMessageString, cSegmentTerminator) do
+       cSegmentString := StripPrecedingWhitespaces(Token(cMessageString, cSegmentTerminator, i)),
+       if cSegmentString = cSegmentIdentifier then
+          AAdd(result, cSegmentString),
+       endif,
+   next,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion extrahiert aus dem übergebenen Message-String den Wert des
+// angegebenen Segment-Identifiers an der entsprechenden Position.
+//
+// Parameter:
+//   * cMessageString:     EDI-Nachricht als String
+//   * cSegmentIdentifier: Segment-Bezeichner (z.B. BGM, DTM, LIN, etc.)
+//   * nSegmentIndex:      Da verschiedene Segmente ggf. mehrfach in einer
+//                         Nachricht vorkommen können, muss der Index für das
+//                         n-te Segment in der Liste von Segmenten angegen
+//                         werden. Existiert das angegebene Segment in der
+//                         Nachricht nur ein mal, so muss der Index 1 übergeben
+//                         werden.
+//   * nElementIndex:      Position des Elements im Segment-String
+//   * nSubElementIndex:   (optional) Position des Wertes im Element (Default: 0 = keine Sub-Elementwerte)
+//
+// @result: string - Segment-Wert
+//******************************************************************************
+function _EDI_Edifact_MessageString_ExtractSegmentValue_Internal(cMessageString:C,
+                                                                 cSegmentIdentifier:C,
+                                                                 nSegmentIndex:N,
+                                                                 aPositionInfo:A,
+                                                                 cSegmentTerminator:C,
+                                                                 cElementSeperator:C,
+                                                                 cCompositeElementSeperator:C)
+|
+   aSegments, nSegmentCount
+|
+
+   // Segmente extrahieren
+   aSegments := EDI_Edifact_MessageString_ExtractSegment_Internal(
+      cMessageString,
+      cSegmentIdentifier,
+      cSegmentTerminator,
+      cElementSeperator
+   ),
+   nSegmentCount := ALen(aSegments),
+
+   // Entsprechendes Segment am angegebenen Index ermitteln
+   SetErrorIf(
+      nSegmentIndex > nSegmentCount,
+      'Unable to extract ' + cSegmentIdentifier + ' segment at index ' + str(nSegmentIndex) + ' (only ' + str(nSegmentCount) + ' occurrence(s) available)'
+   ),
+
+   result := EDI_Edifact_SegmentString_ExtractValue_Internal(
+      aSegments[nSegmentIndex],
+      aPositionInfo,
+      cElementSeperator,
+      cCompositeElementSeperator,
+      '',
+      cSegmentTerminator
+   ),
+end,
+
+//******************************************************************************
+// Diese Funktion extrahiert aus dem übergebenen Message-String alle Vorkommen
+// des angegebenen Segment-Identifiers.
+//
+// HINWEIS:
+//   Diese Funktion setzt voraus, dass die Segmente zusätzlich durch ein CRLF
+//   getrennt sind.
+//
+// @result: array - Alle Vorkommen des übergebenen Segment-Identifiers
+//******************************************************************************
+function _EDI_Edifact_MessageString_ExtractSegment_Internal(cMessageString:C,
+                                                            cSegmentIdentifier:C,
+                                                            cSegmentTerminator:C,
+                                                            cElementSeperator:C)
+| cSegmentString, i |
+
+   //***************************************************************************
+   // Diese Funktion entfernt alle potentiellen Whitespaces am Anfang des
+   // übergebenen Segment-String.
+   //
+   // Alle Zeichen, die sich nicht im ASCII-Bereich 65 - 90 befinden, werden als
+   // Whitespaces behandelt und vom Segment-String abgeschnitten.
+   //
+   // @result: string
+   //***************************************************************************
+   function StripPrecedingWhitespaces(cSegmentString:C)
+   | i, nAsciiCode, nStripPosition |
+
+      nStripPosition := 0,
+      for i := 1 to Len(cSegmentString) do
+         nAsciiCode := Asc(SubStr(cSegmentString, i, 1)),
+         if (nAsciiCode < 65) or (nAsciiCode > 90) then
+            nStripPosition := i,
+         else
+            break,
+         endif,
+      next,
+
+      if nStripPosition > 0 then
+         result := SubStr(cSegmentString, nStripPosition + 1),
+      else
+         result := cSegmentString,
+      endif,
+   end,
+
+   result := {},
+
+   for i := 1 to TokenCount(cMessageString, cSegmentTerminator) do
+      cSegmentString := Token(cMessageString, cSegmentTerminator, i),
+      cSegmentString := StripPrecedingWhitespaces(cSegmentString),
+
+      if EDI_Edifact_SegmentString_ExtractSegmentIdentifier_Internal(cSegmentString, cElementSeperator) == cSegmentIdentifier then
+         AAdd(result, cSegmentString),
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Diese Funktion extrahiert aus dem übergebenen Segment-String den Wert des
+// angegebenen Elements.
+//
+// Parameter:
+//   * cSegmentString:             Komplettes Segment als String
+//   * nElementIndex:              Position des Elements im Segment-String
+//   * nSubElementIndex:           Position des Wertes im Element (0 = keine Sub-Elementwerte)
+//   * cElementSeperator:          Trennzeichen für Elemente
+//   * cCompositeElementSeperator: Trennzeichen für Element-Werte
+//
+// @result: string - Segment-Wert
+//******************************************************************************
+function _EDI_Edifact_SegmentString_ExtractValue_Internal(cSegmentString:C,
+                                                          aPositionInfo:A,
+                                                          cElementSeperator:C,
+                                                          cCompositeElementSeperator:C,
+                                                          cReleaseIndicator:C:='',
+                                                          cSegmentTerminator:C:='')
+|
+   nElementIndex, nElementCount, cElementValue, nSubElementIndex, nSubElementCount,
+   cSegmentIdentifierString, i, cReleasedElementSeperator, cReleasedCompositeElementSeperator,
+   cReleasedReleaseIndicator, cReleasedSegmentTerminator
+|
+
+   SetErrorIf(empty(cElementSeperator),          'Invalid element seperator'),
+   SetErrorIf(empty(cCompositeElementSeperator), 'Invalid composite element seperator'),
+   cReleaseIndicator := iif(Empty(cReleaseIndicator), gl_EDI_Default_ReleaseIndicator, cReleaseIndicator),
+   cSegmentTerminator := iif(Empty(cSegmentTerminator), gl_EDI_Default_SegmentTerminator, cSegmentTerminator), //10.12.2018 hinzugefügt - Grund: Wenn Wert aus letztem Element eines Segments, war immer noch der SeqmentTerminator im Output
+
+   // Segment-String formatieren
+   cSegmentIdentifierString := Token(cSegmentString, cElementSeperator, 1),
+   cSegmentString := SubStr(                                        // Segmentbezeichner am Anfang entfernen
+      cSegmentString,
+      Len(cSegmentIdentifierString) + Len(cElementSeperator) + 1
+   ),
+   if not Empty(cSegmentTerminator) and Right(cSegmentString, 1) == cSegmentTerminator then
+      cSegmentString := left(cSegmentString, Len(cSegmentString) - 1), // Segmenttrenner am Ende entfernen
+   endif,
+
+   cSegmentTerminator := iif(Empty(cSegmentTerminator), gl_EDI_Default_SegmentTerminator, cSegmentTerminator),
+
+   cReleasedElementSeperator          := cReleaseIndicator + '1',
+   cReleasedCompositeElementSeperator := cReleaseIndicator + '2',
+   cReleasedReleaseIndicator          := cReleaseIndicator + '3',
+   cReleasedSegmentTerminator         := cReleaseIndicator + '4',
+
+   cSegmentString := StrTran(cSegmentString, cReleaseIndicator + cElementSeperator,          cReleasedElementSeperator),
+   cSegmentString := StrTran(cSegmentString, cReleaseIndicator + cCompositeElementSeperator, cReleasedCompositeElementSeperator),
+   cSegmentString := StrTran(cSegmentString, cReleaseIndicator + cReleaseIndicator,          cReleasedReleaseIndicator),
+   cSegmentString := StrTran(cSegmentString, cReleaseIndicator + cSegmentTerminator,         cReleasedSegmentTerminator),
+
+   // Composite-Datenelment aus dem Segment-String extrahieren
+   nElementIndex := EDI_Edifact_DataElementMap_GetCompositeDataElementIndex(aPositionInfo),
+   nElementCount := TokenCount(cSegmentString, cElementSeperator),
+   if nElementIndex > nElementCount then
+      if EDI_Edifact_DataElementMap_IsCompositeDataElementMandatory(aPositionInfo) then
+         SetError('Unable to extract element at index ' + str(nElementIndex) + ' (only ' + str(nElementCount) + ' elements available)'),
+      else
+         cElementValue := '',
+      endif,
+   else
+      cElementValue := Token(cSegmentString, cElementSeperator, nElementIndex),
+   endif,
+
+   // Ggf. Wert eines Sub-Elements aus dem Composite-Datenelement-String extrahieren
+   nSubElementIndex := EDI_Edifact_DataElementMap_GetDataElementIndex(aPositionInfo),
+   if nSubElementIndex > 0 then
+      nSubElementCount := TokenCount(cElementValue, cCompositeElementSeperator),
+      if nSubElementIndex > nSubElementCount then
+         if EDI_Edifact_DataElementMap_IsDataElementMandatory(aPositionInfo) then
+            SetError('Unable to extract sub-element at index ' + str(nSubElementIndex) + ' (only ' + str(nSubElementCount) + ' sub-elements available)'),
+         else
+            result := '',
+         endif,
+      else
+         result := Token(cElementValue, cCompositeElementSeperator, nSubElementIndex),
+      endif,
+   else
+      result := cElementValue,
+   endif,
+
+   result := StrTran(result, cReleasedElementSeperator,          cElementSeperator),
+   result := StrTran(result, cReleasedCompositeElementSeperator, cCompositeElementSeperator),
+   result := StrTran(result, cReleasedReleaseIndicator,          cReleaseIndicator),
+   result := StrTran(result, cReleasedSegmentTerminator,         cSegmentTerminator),
+end,
+
+//******************************************************************************
+// Diese Funktion extrahiert den Segment-Bezeichner des übergebenen
+// Segment-Strings.
+//
+// @result: string - Segment-Bezeichner
+//******************************************************************************
+function _EDI_Edifact_SegmentString_ExtractSegmentIdentifier_Internal(cSegmentString:C,
+                                                                      cElementSeperator:C)
+   result := Token(cSegmentString, cElementSeperator, 1),
+end,
+
+//******************************************************************************
+// Diese Funktion setzten den übergebenen Wert an der enstprechenden Stelle im
+// Segment-String.
+//
+// @result: string - modifizierter Segment-String
+//******************************************************************************
+function _EDI_Edifact_SegmentString_SetValue_Internal(cSegmentString:C,
+                                                      aDataElementMap:A,
+                                                      uValue:U,
+                                                      cElementSeperator:C,
+                                                      cCompositeElementSeperator:C,
+                                                      cSegmentTerminator:C)
+|
+   cRawSegmentString, cSegmentIdentifierString,
+   nCompositeDataElementIndex,
+   nDataElementIndex, nAvailableDataElements,
+   cCurrentElementValue,
+   i, nSegmentPrefixLength, nTokenPosition
+|
+
+   //***************************************************************************
+   // Diese Funktion ermittelt die Position des Tokens, der durch nTokenIndex
+   // angegeben wurde.
+   //
+   // @result: integer - Position des Tokens im String
+   //***************************************************************************
+   function TokenPosition(cString:C, cDelimiter:C, nTokenIndex:N)
+   | nDelimiterLength, nDelimiterPosition, i |
+
+      if nTokenIndex > 0 then
+         // Initiale Position ermitteln
+         nDelimiterPosition := At(cDelimiter, cString),
+         if nDelimiterPosition = 0 then
+            result := 0,
+         else
+            result := 1,
+
+            nDelimiterLength := Len(cDelimiter),
+            for i := 1 to nTokenIndex - 1 do
+               nDelimiterPosition := At(cDelimiter, SubStr(cString, result)),
+               if nDelimiterPosition = 0 then
+                  result := 0,
+                  break,
+               else
+                  result := result + nDelimiterPosition + nDelimiterLength - 1,
+               endif,
+            next,
+
+         endif,
+      else
+         result := 0,
+      endif,
+   end,
+
+   //***************************************************************************
+   // Diese Funktion fügt dem übergebenen String ggf. weitere Delimiter hinzu,
+   // um die Mindestanzahl an Token (angegeben durch nCount) zu erreichen.
+   //
+   // @result: string
+   //***************************************************************************
+   function AppendMissingElements(cString:C, cDelimiter:C, nCount:N)
+   | nAvailableElements, i |
+
+      result             := cString,
+      nAvailableElements := TokenCount(cString, cDelimiter),
+      for i := 1 to nCount - nAvailableElements do
+         result += cDelimiter,
+      next,
+   end,
+
+   SetErrorIf(empty(cElementSeperator),          'Invalid element seperator'),
+   SetErrorIf(empty(cCompositeElementSeperator), 'Invalid composite element seperator'),
+
+   cSegmentIdentifierString := Token(cSegmentString, cElementSeperator, 1),
+   nSegmentPrefixLength     := Len(cSegmentIdentifierString) + Len(cElementSeperator),
+
+   cRawSegmentString := SubStr(
+      cSegmentString,
+      nSegmentPrefixLength + 1,
+      Len(cSegmentString) - nSegmentPrefixLength - Len(cSegmentTerminator)
+   ),
+
+   nCompositeDataElementIndex := EDI_Edifact_DataElementMap_GetCompositeDataElementIndex(aDataElementMap),
+   nDataElementIndex          := EDI_Edifact_DataElementMap_GetDataElementIndex(aDataElementMap),
+
+   cRawSegmentString := AppendMissingElements(cRawSegmentString, cElementSeperator, nCompositeDataElementIndex),
+
+   if nDataElementIndex > 0 then
+      cCurrentElementValue := Token(cRawSegmentString, cElementSeperator, nCompositeDataElementIndex),
+      cCurrentElementValue := AppendMissingElements(cCurrentElementValue, cCompositeElementSeperator, nDataElementIndex),
+
+      nTokenPosition := TokenPosition(cCurrentElementValue, cCompositeElementSeperator, nDataElementIndex),
+      uValue := Stuff(
+         cCurrentElementValue,
+         nTokenPosition,
+         Len(Token(cCurrentElementValue, cCompositeElementSeperator, nDataElementIndex)),
+         ToString(uValue)
+      ),
+   endif,
+
+   nTokenPosition := TokenPosition(cRawSegmentString, cElementSeperator, nCompositeDataElementIndex),
+   cRawSegmentString := Stuff(
+      cRawSegmentString,
+      nTokenPosition,
+      Len(Token(cRawSegmentString, cElementSeperator, nCompositeDataElementIndex)),
+      ToString(uValue)
+   ),
+
+   result := cSegmentIdentifierString + cElementSeperator + cRawSegmentString + cSegmentTerminator,
+end,
+
+//******************************************************************************
+// Diese Funktion entgernt ggf. das UNA-Segment aus dem
+// Edifact-Nachrichten-String.
+//
+// @result: string - Edifact-Nachrichten-String ohne UNA-Service-Segmente
+//******************************************************************************
+function _EDI_Edifact_MessageString_StripUNASegment_Internal(cMessageString:C)
+   if left(cMessageString, 3) == 'UNA' then
+      result := SubStr(cMessageString, 10),
+      if left(result, 2) == CRLF then
+         result := SubStr(result, 3),
+      endif,
+   else
+      result := cMessageString,
+   endif,
+end,
+

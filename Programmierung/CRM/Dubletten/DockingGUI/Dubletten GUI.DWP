@@ -1,0 +1,619 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3, m_oParams:P4,
+
+  m_oMemtable, m_oMemtableGUI, m_MinimumDublScore, m_Settings_DublMinScoreSaveId,
+  m_TotalRefreshCount, m_cLastRecArrayStr, m_LastRefreshTime,
+  m_TotalRefreshTime, m_bFirstTimeCalc,
+  m_oTestModeDM,
+
+  m_cFormClassID, m_cWinPosSaveId, m_cBrowserId, m_nLastTableState,
+  m_oDM, m_oDab510,
+  m_oPARAM_MAINTABLE_DATASOURCE, m_oDAB000,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CancelConfig, A_ChangeConfig, A_DeleteZielKDNR_1,
+   A_DeleteZielKDNR_2, A_GoToCustomer, A_OpenAnonymMailHosts, A_Refresh,
+   A_SaveConfig, A_Ueberfuehren_1, A_Ueberfuehren_2, Actions, BeBarButton2,
+   BeBarControlContainerItem_Label, BeBarControlContainerItem_LabelPruefD,
+   BeBarDockControlMain, BeBarManager, BeBarManagerBar1, bipnl_ErrorOccured,
+   btn_Aktualisieren, btn_CancelConfig, btn_DeleteZielKDNR_1,
+   btn_DeleteZielKDNR_2, btn_EHOSTS, btn_GoToCustomer, btn_SaveConfig,
+   btn_SubItem, btn_Ueberfuehren_1, btn_Ueberfuehren_2, ds_dubletten,
+   ds_maintable, edt_MinDublScore, grd_main, lbl_DublMinScoreSetting,
+   lbl_PruefDatumInfo, lbl_RefreshInfo, pnl_ConfigArea, timer_refresh
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@DUBLET",
+m_cWinPosSaveId := "@DUBL",
+m_cBrowserId    := "@DUBLET",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| cMatchcodeMaster, bCanChangeRecord |
+   cMatchcodeMaster              := '',
+   bCanChangeRecord              := not EditModes(m_oMasterTable),
+   A_ChangeConfig.Enabled        := not pnl_ConfigArea.Visible,
+   A_SaveConfig.Enabled          :=     pnl_ConfigArea.Visible,
+   A_CancelConfig.Enabled        :=     pnl_ConfigArea.Visible,
+   A_OpenAnonymMailHosts.Enabled := CbUserHasRole(gl_DUBL_Rolle_Admin), 
+   btn_SubItem.Enabled           := false,
+   if m_oMemTable:KDNR > 0 and DbSeek({m_oMemTable:MASTER_KDNR}, m_oDAB000) then     // mit DbSeek anstatt MySeek da ansonsten beim Insert-Modus Fehler erscheinen (Kunde kann nicht gefunden werden, da noch nicht in DB gespeichert)
+      A_GoToCustomer.Enabled        :=  true,
+      btn_SubItem.Enabled           :=  true,
+      cMatchcodeMaster              :=  m_oDAB000:MATCHCODE,,
+      btn_Ueberfuehren_1.Caption    :=  "Überführen: " + AllTrim(cMatchcodeMaster) + " ("+Str(m_oMemTable:MASTER_KDNR)+")" + " ---> " + AllTrim(m_oMemTable:MC) + " ("+Str(m_oMemTable:KDNR)+")",
+      btn_Ueberfuehren_2.Caption    :=  "Überführen: " + AllTrim(cMatchcodeMaster) + " ("+Str(m_oMemTable:MASTER_KDNR)+")" + " <--- " + AllTrim(m_oMemTable:MC) + " ("+Str(m_oMemTable:KDNR)+")",
+      btn_DeleteZielKDNR_1.Caption  :=  "Ziel Kunden-Nr. entfernen",
+      btn_DeleteZielKDNR_2.Caption  :=  "Ziel Kunden-Nr. entfernen",
+
+      A_Ueberfuehren_1.Enabled      := Empty(AsVariant(gl_DUBL_TargetKDNR_Field, m_oDAB000)) and Empty(m_oMemTableGUI:ZIEL_KDNR),
+      A_Ueberfuehren_2.Enabled      := Empty(AsVariant(gl_DUBL_TargetKDNR_Field, m_oDAB000)) and Empty(m_oMemTableGUI:ZIEL_KDNR),
+      A_DeleteZielKDNR_1.Enabled    :=  not Empty(AsVariant(gl_DUBL_TargetKDNR_Field, m_oDAB000)),
+      A_DeleteZielKDNR_2.Enabled    :=  not Empty(m_oMemTableGUI:ZIEL_KDNR),
+   endif,
+end,
+
+//******************************************************************************
+// Einstellungen zur Dubletten-Erkennung laden
+//******************************************************************************
+function LoadDublettenSettings()
+   // Einstellungen laden
+   m_MinimumDublScore     := Val( GetBeParam(m_Settings_DublMinScoreSaveId + c_Usr) ),
+   // keine Einstellungen vorhanden ? => Defaults setzen
+   if m_MinimumDublScore = 0 then
+      m_MinimumDublScore := gl_DUBL_MinimumDublScore,
+      SetBeParam( m_Settings_DublMinScoreSaveId + c_Usr, Str(m_MinimumDublScore) ),
+   endif,
+end,
+
+//******************************************************************************
+// Timer zum Ermitteln der Dubletten
+//******************************************************************************
+function timer_refreshTimer( Sender )
+  | oDab000Master, lInsertMode, nTime, cFilter, cInfoText |
+
+  timer_refresh.enabled := false,
+
+  nTime                   := GetExTimer(),
+  lbl_RefreshInfo.Caption := Space(3) + 'Berechn. aktiv... (bish. ' + Str(m_TotalRefreshCount) + ' Berechn.)',
+  ProcessMsg(), // damit die GUI-Aktualisierung der Caption ankommt
+  startseq,
+     DbDisableControls(m_oMemTable),
+     DbDisablecontrols(m_oMemTableGUI),
+     startseq,
+
+        // Dab000 holen => im Insert bzw. Edit-Mode ist das eine MemTable,
+        // die von der BeSemaphoreTable verwaltet wird!
+        oDab000Master := m_oPARAM_MAINTABLE_DATASOURCE.DataSet,
+        if empty(oDab000Master) then
+           exit,
+        endif,
+        if not Empty(AsVariant(gl_DUBL_TargetPruef_Field, oDab000Master)) then
+           lbl_PruefDatumInfo.Caption := " Kunde " + Str(oDab000Master:KDNR) + " markiert als keine Dublette am: " + FormatDateTime("YYYY-MM-DD", AsVariant(gl_DUBL_TargetPruef_Field, oDab000Master) ) + " ",
+        else,
+           lbl_PruefDatumInfo.Caption := "|",
+        endif,
+
+        lInsertMode := DBState(oDab000Master) = dsEdit or
+                       DBState(oDab000Master) = dsInsert,
+
+        if empty(m_cLastRecArrayStr) then
+           m_cLastRecArrayStr := ArrToStr(oDab000Master.RecAsArray),
+        endif,
+
+        // Aktuell im Browse-Mode oder aber Inhalt des Datensatzes hat sich geändert?
+        if (not lInsertMode) or (lInsertMode and m_cLastRecArrayStr <> ArrToStr(oDab000Master.RecAsArray)) then
+           m_cLastRecArrayStr := ArrToStr(oDab000Master.RecAsArray),
+
+           m_oMemTable.Filtered := false,
+           m_oMemTable.Filter   := '',
+
+           // Memtable leeren
+           DeleteAllData(m_oMemTable),
+
+           // Dubletten mit div. Methoden suchen und in MemTable übernehmen
+           Dubl_Dab000_SearchAll(m_oDM, m_oMemTable, oDab000Master),
+
+           // Filtern entspr. den Einstellungen => nur Matches mit relevantem Score anzeigen
+           cFilter            := 'SCORE >= ' + Str(m_MinimumDublScore),
+           m_oMemTable.Filter   := cFilter,
+           m_oMemTable.Filtered := true,
+
+           // MemTable kopieren und übernehmen in GUI MemTable
+           m_oMemTableGUI.CbLoadFromDataSet(m_oMemTable, True),
+           m_oMemTableGUI.CbFirst(),
+        endif,
+
+        if lInsertMode then
+           timer_refresh.Interval := 2000,
+           timer_refresh.Enabled  := true,
+        else
+           timer_refresh.Interval := 250,
+           timer_refresh.Enabled  := false,
+        endif,
+     always,
+        DbEnableControls(m_oMemTable),
+        DbEnableControls(m_oMemTableGUI),
+     stopseq,
+     bipnl_ErrorOccured.Visible := false,
+  onerror,
+     bipnl_ErrorOccured.Caption := 'Fehler bei der Dubletten-Ermittlung: ' + GetErrorText() + CRLF + DebugArr(GetErrorStack(true)),
+     bipnl_ErrorOccured.Visible := true,
+     WriteLn( 'Fehler im Programm ' + ProgName() + ' Methode timer_refreshTimer(): ' + GetErrorText()),
+  stopseq,
+
+  m_LastRefreshTime  := GetExTimer() - nTime,
+  m_TotalRefreshCount++,
+
+  cInfoText := Space(3) + '# Berechnungen: ' + Str(m_TotalRefreshCount),
+
+  // Die erste Berechnung dauert wegen zu öffnnder Tabellen etc. deutlich länger => nicht mit einrechnen
+  if not m_bFirstTimeCalc then
+     m_TotalRefreshTime += m_LastRefreshTime,
+     cInfoText          += ', Durchs.: ' + FormatFloat('#,#0.00 msec', m_TotalRefreshTime / (m_TotalRefreshCount-1) * 1000),
+  endif,
+
+  if not mBeSuperVisor then
+     cInfoText := '',
+  endif,
+  cInfoText := ' Zuletzt berechnet um ' + FormatDateTime('HH:MM:SS', GetAdsServerTime()) + '  ' + cInfoText,
+
+  lbl_RefreshInfo.Caption := cInfoText,
+  m_bFirstTimeCalc        := false,
+end,
+
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Datenmodul erzeugen
+   m_oDM                   := CreateObject('TBeDbGet', 'DM_Dubletten', oForm),
+   m_oDAB000               := MyGetTable(m_oDM, waDAB000, "oDAB000Seek"),
+   m_oDAB000.IndexName     := 'DAB003',
+   m_oDAB000.WriteProtocol := true,
+
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_Maintable, waDAB000, 'TBeRightsTable'),
+
+   m_oMemTable                := Dubl_Dab000_CreateMemTable(),
+   m_oMemTable.Active         := true,
+   //grd_main.cbChangeOrder     := false,    // Browser darf nicht sortierbar sein, da es ansonsten nicht mehr funktioniert...
+
+   // MemTable für GUI erstellen - mit eigenem Index, damit nach Score absteigend sortiert wird
+   m_oMemTableGUI             := Dubl_Dab000_CreateMemTable(),
+   m_oMemTableGUI.AliasName   := 'DUBLDOCK_GUI',
+   m_oMemTableGUI.CbAddIndex('SCORE', 'SCORE;MASTER_KDNR;KDNR', ixDescending),
+   m_oMemTableGUI.CbIndexName := 'SCORE',
+   m_oMemTableGUI.Active      := true,
+   grd_main.cbChangeOrder     := false,
+   GU_LinkTableToGUI(m_oMemTableGUI, ds_dubletten, grd_main, m_cBrowserID, false),
+
+   AssignEvent(m_oMemTableGUI, "AfterScroll", "AfterScroll"),
+end,
+
+
+//******************************************************************************
+//
+//******************************************************************************
+function LoadSettingsToGui()
+  edt_MinDublScore.Text := Str(m_MinimumDublScore),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function SaveSettingsFromGui()
+| cNewValue |
+  cNewValue := Str( Max(1, Val(AllTrim(edt_MinDublScore.Text))) ),
+  SetBeParam( m_Settings_DublMinScoreSaveId + c_Usr, cNewValue ),
+end,
+
+//******************************************************************************
+// Springe im Kundenstamm zum aktuell selektierten Kunden
+//******************************************************************************
+function GoToCustomer()
+   if m_oMemTableGUI:KDNR > 0 then
+      ShowBewindow( bwCustomer, m_oMemTableGUI:KDNR ),
+   endif,
+end,
+
+
+//******************************************************************************
+// Ziel-Kdnr. in den Kundenstamm schreiben
+// @Result: null
+//******************************************************************************
+function SetZielKDNR(nKDNRSeek, nKDNRZielKDNR)
+   | oTargetField |
+   startseq,
+      MySeek({nKDNRSeek}, m_oDAB000),
+      MyEdit(m_oDAB000),
+      oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetKDNR_Field),
+      DBReplace(oTargetField, nKDNRZielKDNR),
+      MyPost(m_oDAB000),
+   onerror
+      GU_ShowStdErrorMessage('Fehler in Funktion SetZielKDNR() ' + ProgName(), GetErrorObj()),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Ziel-Kdnr. in den Kundenstamm löschen
+// @Result: null
+//******************************************************************************
+function DeleteZielKDNR(nKDNRSeek)
+   | oTargetField |
+   startseq,
+      MySeek({nKDNRSeek}, m_oDAB000),
+      MyEdit(m_oDAB000),
+      oTargetField := m_oDAB000.CbFieldByName(gl_DUBL_TargetKDNR_Field),
+      DBReplace(oTargetField, nil),
+      MyPost(m_oDAB000),
+   onerror
+      GU_ShowStdErrorMessage('Fehler in Funktion DeleteZielKDNR() ' + ProgName(), GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event um GUI-MemTable mit der Funktions-MemTable zu synchronisieren
+// @Result: null
+//******************************************************************************
+function AfterScroll( Sender )
+   m_oMemTable.CbFindKey({m_oMemTableGUI:MASTER_KDNR, m_oMemTableGUI:KDNR}),
+end,
+
+
+//******************************************************************************
+// Event: DataChange des MemTable-DS
+//******************************************************************************
+function ds_dublettenDataChange( Sender )
+  ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: DataChange des Dab000-Master-DS
+//******************************************************************************
+function ds_maintableDataChange( Sender )                                       // WriteLn('ds_maintableDataChange => timer_refresh starten'),
+  timer_refresh.Enabled  := false,
+  timer_refresh.Enabled  := true,
+end,
+
+//******************************************************************************
+// Event: StateChange des Dab000-Master-DS
+//******************************************************************************
+function ds_maintableStateChange( Sender )                                      // WriteLn('ds_maintableStateChange => timer_refresh starten'),
+  timer_refresh.Enabled  := false,
+  timer_refresh.Enabled  := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := DbState(m_oMasterTable) = dsBrowse,
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Browser => zu Kunde springen
+//******************************************************************************
+function grd_mainDblClick( Sender )
+   GoToCustomer(),
+end,
+
+
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)                                           prs('FormExClose', 'START'),
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   timer_refresh.Enabled := false,
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Sofort-Refresh auslösen
+//******************************************************************************
+function A_RefreshExecute( Sender )
+  timer_refresh.Enabled  := false,
+  timer_refresh.Interval := 10,
+  timer_refresh.Enabled  := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_DeleteZielKDNR_2Execute( Sender )
+   DeleteZielKDNR(m_oMemTableGUI:KDNR),
+   A_RefreshExecute( nil ),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_DeleteZielKDNR_1Execute( Sender )
+   DeleteZielKDNR(m_oMemTableGUI:MASTER_KDNR),
+   A_RefreshExecute( nil ),
+end,
+
+
+//******************************************************************************
+// Ziel-Kunden-Nr. wird beim gefundenen Dubletten-Kunden der Haupttabelle (Master) geschrieben
+//******************************************************************************
+function A_Ueberfuehren_1Execute( Sender )
+   SetZielKDNR(m_oMemTableGUI:MASTER_KDNR, m_oMemTableGUI:KDNR),
+   A_RefreshExecute( nil ),
+end,
+
+//******************************************************************************
+// Ziel-Kunden-Nr. wird beim gefundenen Dubletten-Kunden der Memtable geschrieben
+//******************************************************************************
+function A_Ueberfuehren_2Execute( Sender )
+   SetZielKDNR(m_oMemTableGUI:KDNR, m_oMemTableGUI:MASTER_KDNR),
+   A_RefreshExecute( nil ),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_ChangeConfigExecute( Sender )
+  LoadSettingsToGui(),
+  pnl_ConfigArea.Visible := true,
+  ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SaveConfigExecute( Sender )
+  SaveSettingsFromGui(),
+  LoadDublettenSettings(), // Einstellungen aktuell laden (wurden gerade gespeichert)
+  pnl_ConfigArea.Visible := false,
+  ActionsEnabled(),
+  timer_refresh.enabled  := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_CancelConfigExecute( Sender )
+  LoadSettingsToGui(),
+  pnl_ConfigArea.Visible := false,
+  ActionsEnabled(),
+end,
+
+
+//******************************************************************************
+// Action: Fenster zur Pflege der E-Mail-Hosts öffnen
+//******************************************************************************
+function A_OpenAnonymMailHostsExecute( Sender )
+  Call('CRM\Dubletten\MailhostGUI\AnonymeHostsGUI'),
+end,
+
+//******************************************************************************
+// Action: Gehe zu Kunde
+//******************************************************************************
+function A_GoToCustomerExecute( Sender )
+  GoToCustomer(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Übergabeparameter verarbeiten
+// Wird verwendet, wenn das Programm mit einer GFU_*_CustomInfo()-Funktion auf-
+// gerufen wird.
+// Dabei wird Paramter 4 (P4) für die Übergabe der Parameter als Array genutzt.
+//
+// @Result: null
+//******************************************************************************
+function ParseParams()
+   m_oPARAM_MAINTABLE_DATASOURCE := KVU_GET(m_oParams, 'DS_MAINTABLE', nil),
+end,
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CancelConfig                        := FindObject(oForm, "A_CancelConfig"),
+   A_ChangeConfig                        := FindObject(oForm, "A_ChangeConfig"),
+   A_DeleteZielKDNR_1                    := FindObject(oForm, "A_DeleteZielKDNR_1"),
+   A_DeleteZielKDNR_2                    := FindObject(oForm, "A_DeleteZielKDNR_2"),
+   A_GoToCustomer                        := FindObject(oForm, "A_GoToCustomer"),
+   A_OpenAnonymMailHosts                 := FindObject(oForm, "A_OpenAnonymMailHosts"),
+   A_Refresh                             := FindObject(oForm, "A_Refresh"),
+   A_SaveConfig                          := FindObject(oForm, "A_SaveConfig"),
+   A_Ueberfuehren_1                      := FindObject(oForm, "A_Ueberfuehren_1"),
+   A_Ueberfuehren_2                      := FindObject(oForm, "A_Ueberfuehren_2"),
+   Actions                               := FindObject(oForm, "Actions"),
+   BeBarButton2                          := FindObject(oForm, "BeBarButton2"),
+   BeBarControlContainerItem_Label       := FindObject(oForm, "BeBarControlContainerItem_Label"),
+   BeBarControlContainerItem_LabelPruefD := FindObject(oForm, "BeBarControlContainerItem_LabelPruefD"),
+   BeBarDockControlMain                  := FindObject(oForm, "BeBarDockControlMain"),
+   BeBarManager                          := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1                      := FindObject(oForm, "BeBarManagerBar1"),
+   bipnl_ErrorOccured                    := FindObject(oForm, "bipnl_ErrorOccured"),
+   btn_Aktualisieren                     := FindObject(oForm, "btn_Aktualisieren"),
+   btn_CancelConfig                      := FindObject(oForm, "btn_CancelConfig"),
+   btn_DeleteZielKDNR_1                  := FindObject(oForm, "btn_DeleteZielKDNR_1"),
+   btn_DeleteZielKDNR_2                  := FindObject(oForm, "btn_DeleteZielKDNR_2"),
+   btn_EHOSTS                            := FindObject(oForm, "btn_EHOSTS"),
+   btn_GoToCustomer                      := FindObject(oForm, "btn_GoToCustomer"),
+   btn_SaveConfig                        := FindObject(oForm, "btn_SaveConfig"),
+   btn_SubItem                           := FindObject(oForm, "btn_SubItem"),
+   btn_Ueberfuehren_1                    := FindObject(oForm, "btn_Ueberfuehren_1"),
+   btn_Ueberfuehren_2                    := FindObject(oForm, "btn_Ueberfuehren_2"),
+   ds_dubletten                          := FindObject(oForm, "ds_dubletten"),
+   ds_maintable                          := FindObject(oForm, "ds_maintable"),
+   edt_MinDublScore                      := FindObject(oForm, "edt_MinDublScore"),
+   grd_main                              := FindObject(oForm, "grd_main"),
+   lbl_DublMinScoreSetting               := FindObject(oForm, "lbl_DublMinScoreSetting"),
+   lbl_PruefDatumInfo                    := FindObject(oForm, "lbl_PruefDatumInfo"),
+   lbl_RefreshInfo                       := FindObject(oForm, "lbl_RefreshInfo"),
+   pnl_ConfigArea                        := FindObject(oForm, "pnl_ConfigArea"),
+   timer_refresh                         := FindObject(oForm, "timer_refresh"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+   oForm.OrigCapt   := '',
+   oForm.ImageIndex := 332,
+end,
+//******************************************************************************
+// Defaults laden
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   m_TotalRefreshCount        := 0,
+   m_LastRefreshTime          := 0,
+   m_TotalRefreshTime         := 0,
+   m_bFirstTimeCalc           := true,
+   lbl_RefreshInfo.Caption    := Space(3),
+   bipnl_ErrorOccured.Visible := false,
+
+   LoadDublettenSettings(),
+   LoadSettingsToGui(),
+   
+   timer_refresh.enabled      := true,
+   pnl_ConfigArea.Visible     := false,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+
+//******************************************************************************
+// Test-Funktion für den EditorMode
+// @Result: null
+//******************************************************************************
+function TestInitMasterDB()
+| oDab000Master, oDsMaster |
+
+  m_oTestModeDM := CreateObject('TBeDbGet', 'TESTDM'),
+  oDsMaster     := CreateObject('TDataSourceEx', 'TEST_DS', m_oTestModeDM),
+
+  m_oParams     := {},
+  KVU_SET(m_oParams, 'DS_MAINTABLE', oDsMaster),
+
+
+  oDab000Master     := DbGetTable(m_oTestModeDM, waDab000, 'DAB000_TEST_MASTER'),
+  oDsMaster.DataSet := oDab000Master,
+  if not DbSeek({10000002}, oDab000Master) then
+     DbGoTop(oDab000Master),
+  endif,
+
+  m_oMasterTable := oDab000Master,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oTestModeDM := nil,
+   if EditorMode() then
+      TestInitMasterDB(),
+   endif,
+
+   startseq
+      if not empty(m_oMasterTable) and not ClassOf(m_oMasterTable, 'TBeRightsTable') then
+         MessageDlg('Das Dubletten-Docking-Fenster kann nicht gestartet werden, wenn der Master-Datensatz aktuell bearbeitet wird. ' + crlf + crlf +
+                     'Bitte beenden Sie den Bearbeitungsmodus, rufen das Fenster auf und docken es an. Anschließend wird die Dubletten-Prüfung direkt bei der Neuanlage oder Veränderung parallel zur Dateneingabe durchgeführt.'),
+      else
+         ParseParams(),
+         InitForm(),
+         LoadGUI(),
+         OpenDataBaseAndLinkToGUI(),
+         SetDefaults(),
+         ShowGUI(),
+      endif,
+   always
+      if not empty(m_oTestModeDM) then
+         DestroyObject(m_oTestModeDM),
+      endif,
+   stopseq,
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText()  + crlf + crlf +
+               'error stack: ' + crlf +
+               DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+
+oForm
+

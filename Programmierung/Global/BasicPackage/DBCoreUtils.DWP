@@ -1,0 +1,325 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler DBCore-Funktionen
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_ErrorCode_MyEdit:_N                 := 100001,
+   gl_ErrorCode_MyPost:_N                 := 100002,
+   gl_ErrorCode_MyAppend:_N               := 100003,
+   gl_ErrorCode_MyDelete:_N               := 100004,
+   gl_ErrorCode_MyGoto:_N                 := 100005,
+   gl_ErrorCode_DeleteAllData:_N          := 100006,
+   gl_DBCU_Beas_FastRecordLockAbort:_L    := false // In MyEdit() nach dem Default-Timeout von be (3 Sekunden) sofort abbrechen
+|
+
+//******************************************************************************
+// Richtet eine Tabelle für standardmäßigen Codeblock-Gebrauch ein
+// @Result: null
+//******************************************************************************
+function _CBS(oTable)
+   SuspendEx(oTable, true),
+   
+   // ShowLockErr := true sorgt dafür, dass ein "Warten auf Datensatz-Sperre"
+   //    Fenster erscheint, sofern ein Satz nicht gesperrt werden kann.
+   //    Mit ShowLockErr := false würde ein Edit-Versuch sofort abbrechen, wenn
+   //    der Satz gesperrt ist.
+   oTable.ShowLockErr := true,
+end,
+
+//******************************************************************************
+// @Result: Numeric - Workarea
+//******************************************************************************
+function _TryWorkArea(oTable:O)
+   startseq
+      Result := oTable.WorkArea,
+   onerror
+      Result := -1,
+   stopseq,
+end,
+
+//******************************************************************************
+// @Result: String - Aliasname
+//******************************************************************************
+function _TryAliasName(oTable:O)
+   startseq
+      Result := oTable.AliasName,
+   onerror
+      Result := '',
+   stopseq,
+end,
+
+//******************************************************************************
+// @Result: String - Tabellenname
+//******************************************************************************
+function _TryTableName(oTable:O)
+   startseq
+      Result := oTable.TableName,
+   onerror
+      Result := iif(Empty(oTable), '', ClassName(oTable)),
+   stopseq,
+end,
+
+//******************************************************************************
+// Interne Fehlermeldung fuer My-Funktionen
+// @Result: null
+//******************************************************************************
+function __DBError_Internal(bSuccess:L, oTable:O, nOldState:N, cCustomText:C, nErrorCode:N)
+   if not bSuccess then
+      SetError(
+         cCustomText + crlf +
+         'Tabellenname: ' + TryTableName(oTable) + crlf +
+         'Tabellenalias: ' + TryAliasName(oTable) + crlf +
+         'Workarea: ' + Str(TryWorkArea(oTable)) + crlf +
+         'Tabellenstatus vor dem Fehler: ' + Str(nOldState) + crlf +
+         'Tabellenstatus nach dem Fehler: ' + Str(DBState(oTable)),
+         nErrorCode),
+   endif,
+end,
+
+//******************************************************************************
+// DbEdit() mit Exception im Fehlerfall
+//   'nTimeOutInSeconds': Sofern der Parameter > 0 angegeben wird, wird der "Warte auf Datensatz-Sperre"
+//                        Dialog nach x Sekunden selbstständig geschlossen und die Funktion löst einen Fehler aus.
+//                        Das ist insbesondere dann wünschenswert, wenn Verbuchungs-Prozesse
+//                        o.ä. Hintergrund-Aktionen durchgeführt werden.
+//
+//    TODO: Idealerweise würde man die TimeOut-Steuerung im Datenmodul
+//          hinterlegen (mittels ObjectSetProp()) und dann hier auslesen
+// @Result: true im Erfolgsfall
+//******************************************************************************
+function _MyEdit(oTable, nTimeOutInSeconds:N:=0)
+   | nOldState, bOldShowLockError |
+   nOldState  := DBState(oTable),
+
+   // Im beas kann ein individueller Timeout aktuell nicht definiert werden,
+   // -> sofern man DbWaitLocked() nutzt oder auch nur .ShowLockErr = true gesetzt
+   //    hat, wird immer nur die be-Standard-Grund-Wartezeit abgewartet
+   //    (3 Sekunden, siehe U_WaitLock.pas -> function WaitLocked )
+   // -> Diese Logik ist über den folgenden Schalter für alle MyEdit() Aufrufe global aktivierbar
+   if gl_DBCU_Beas_FastRecordLockAbort and LoadedModule = belmBeas and ClassOf(oTable, 'TBeRightsTable') then
+      nTimeOutInSeconds := 1, // Welchen Timeout man hier setzt ist im Prinzip egal, da ohnehin nur die 3 Sekunden gewartet wird...
+   endif,
+
+   if nTimeOutInSeconds > 0 then
+      SetErrorIf(not ClassOf(oTable, 'TBeRightsTable'), 'param "nTimeOutInSeconds" is only valid for TBeRightsTable objects'),
+      bOldShowLockError := oTable.ShowLockErr,
+      startseq
+         oTable.ShowLockErr := false, // Wenn ShowLockErr = true ist, führt DbWaitLocked() zu einem Dauer-Lock (ohne Timeout)
+         Result             := DbWaitLocked(oTable, nTimeOutInSeconds, 'Datensatz sperren', false, false),
+      always
+         oTable.ShowLockErr := bOldShowLockError,
+      stopseq,
+   else
+      Result     := DBEdit(oTable),
+   endif,
+
+   _DBError_Internal(Result, oTable, nOldState, 'MyEdit: Fehler bei dem Versuch zum Editieren der Tabelle',
+      gl_ErrorCode_MyEdit),
+end,
+
+//******************************************************************************
+// DbPost() mit Exception im Fehlerfall
+// @Result: true im Erfolgsfall
+//******************************************************************************
+function _MyPost(oTable)
+   | nOldState |
+   nOldState := DBState(oTable),
+   Result    := DBPost(oTable),
+   _DBError_Internal(Result, oTable, nOldState, 'MyPost: Fehler bei dem Versuch zum Speichern in der Tabelle',
+      gl_ErrorCode_MyPost),
+end,
+
+//******************************************************************************
+// DbAppend() mit Exception im Fehlerfall
+// @Result: true im Erfolgsfall
+//******************************************************************************
+function _MyAppend(oTable)
+   | nOldState |
+   nOldState := DBState(oTable),
+   Result    := DBAppend(oTable),
+   _DBError_Internal(Result, oTable, nOldState, 'MyAppend: Fehler bei dem Versuch zum Einfügen der Tabelle',
+      gl_ErrorCode_MyAppend),
+end,
+
+//******************************************************************************
+// DbDelete() mit Exception im Fehlerfall
+// @Result: true im Erfolgsfall
+//******************************************************************************
+function _MyDelete(oTable)
+   | nOldState |
+   nOldState  := DBState(oTable),
+   Result     := DBDelete(oTable),
+   _DBError_Internal(Result, oTable, nOldState, 'MyDelete: Fehler bei dem Versuch zu Löschen aus der Tabelle',
+      gl_ErrorCode_MyDelete),
+end,
+
+//******************************************************************************
+// DbGoto() mit Exception im Fehlerfall
+// @Result: true im Erfolgsfall
+//******************************************************************************
+function _MyGoto(nRecno, oTable)
+   | nOldState |
+   nOldState := DBState(oTable),
+   Result    := DBGoto(nRecno, oTable),
+   _DBError_Internal(Result, oTable, nOldState, 'MyGoto: Fehler bei dem Versuch zum Springen in der Tabelle',
+      gl_ErrorCode_MyGoto),
+end,
+
+//******************************************************************************
+// Prüft, ob die Tabelle (im aktuell sichtbaren Bereich) "leer" ist
+// @Result: boolean
+//******************************************************************************
+function _NoDS(oTable)
+   Result := BoF(oTable) and EoF(oTable),
+end,
+
+//******************************************************************************
+// DbSeek() mit Exception im Fehlerfall
+// @Result: null
+//******************************************************************************
+function _MySeek(uKey, oTable)
+   | cMeld |
+   if not DbSeek(uKey, oTable) then
+      if Upper(ClassName(oTable)) = 'TBERIGHTSTABLE' then
+         cMeld := Str(oTable.Workarea) + '/' + oTable.IndexName + '/' +  ToString(uKey),
+      else
+         cMeld := ToString(uKey),
+      endif,
+      SetError('Seek fehlgeschlagen:' + cMeld),
+   endif,
+end,
+
+//******************************************************************************
+// Prüft, ob sich die Tabelle im Edit oder Insert-Mode befindet
+// @Result: boolean
+//******************************************************************************
+function _EditModes(oTable)
+   Result := DbState(oTable) = dsInsert or DbState(oTable) = dsEdit,
+end,
+
+//******************************************************************************
+// Die Funktion prüft ob die übergebene Tabelle im Insert-Modus ist
+// @Result: boolean
+//******************************************************************************
+function _InsertMode(oTable)
+   Result := DBState(oTable) = dsInsert,
+end,
+
+//******************************************************************************
+// Hinzufügen eines Feldes in einer MemTable
+// @Result: null
+// TODO: Case-Anweisung statt if's, Upper() nur einmal zu Beginn
+//******************************************************************************
+function _MyAddMemField(oMemTable, cField, cType, nSize, nNachkomma)
+   | oField, nType |
+   oField      := CollAdd(oMemTable.FieldsDefinition),
+   oField.Name := cField,
+   nType := 0,
+   nType := if(Upper(cType) = 'FTSTRING'  ,  1, nType),
+   nType := if(Upper(cType) = 'FTINTEGER' ,  3, nType),
+   nType := if(Upper(cType) = 'FTBOOLEAN' ,  5, nType),
+   nType := if(Upper(cType) = 'FTFLOAT'   ,  6, nType),
+   nType := if(Upper(cType) = 'FTDATE'    ,  9, nType),
+   nType := if(Upper(cType) = 'FTTIME'    , 10, nType),
+   nType := if(Upper(cType) = 'FTDATETIME', 11, nType),
+   nType := if(Upper(cType) = 'FTMEMO'    , 16, nType),
+   nType := if(Upper(cType) = 'FTFMTMEMO' , 18, nType),
+   nType := if(Upper(cType) = 'FTARRAY'   , 27, nType),
+   
+   oField.DataType := nType,
+   if nType = 1 or nType = 3 then
+      oField.Size := nSize,
+   endif,
+   if nType = 6 then
+      oField.Size      := nSize,
+      oField.Precision := nNachkomma,
+   endif,
+end,
+
+//******************************************************************************
+// VERALTET => MyAddMemField() nutzen, bietet mehr Feldtypen
+//******************************************************************************
+// Hinzufügen eines Feldes in einer MemTable
+// @Result: null
+//******************************************************************************
+function _AddMemField(oMemTable, cField, cType, nSize, nNachkomma)
+   |oField|
+   oField := CollAdd( oMemTable.FieldsDefinition ),
+   oField.Name     := cField,
+   oField.DataType := RAt(cType, 'CXXXBXXNDXXXXXXM'),
+   if cType $ 'CN' then
+      oField.Size     := nSize,
+   endif,
+   if cType=='N' then
+      oField.Precision:= nNachkomma,
+   endif,
+end,
+
+//******************************************************************************
+// Analog DbGetTable() mit anschließender cbs()
+// @Result: Rightstable-Instanz aus dem Datenmodul
+//******************************************************************************
+function _MyGetTable(oDM:R, nWA, cAliasName:C:='')
+   Result := DbGetTable(oDM, nWA, cAliasName),
+   cbs(Result),
+end,
+
+//******************************************************************************
+// Öffnen / Bereitstellen einer Tabelle mit der Idee, die "Instanz" des
+// "Business Objekts / Entität" (z.B. ein Artikel) darzustellen
+// => Eine Tabelle, welche auf diesem Wege "geholt" wurde sollte zu keinem
+//    anderen Zweck verwendet werden (Skip, Filter, Scope etc. NICHT anwenden)!
+// @Result: RightsTable-Tabellen-Objekt aus dem Datenmodul
+//******************************************************************************
+function _InstanceTable(oDM, nWorkarea, cAlias, uSeekKey, cIndexName:C:='')
+   | aKey |
+   if ValType(uSeekKey) = 'A' then
+      aKey := uSeekKey,
+   else
+      aKey := {uSeekKey},
+   endif,
+   Result := MyGetTable(oDM, nWorkarea, cAlias), // Achtung: hier ist der Unterscheid zu DbGetTableAndMySeek()
+   if not empty(cIndexName) then
+      Result.IndexName := cIndexName,
+   endif,
+   MySeek(aKey, Result),
+end,
+
+//******************************************************************************
+// Wie InstanceTable(), aber die Tabelle wird per DbGetTable() und nicht mit MyGetTable() geöffnet
+// => Rechte werden nicht default-mäßig ausgeschalten
+//******************************************************************************
+function _DbGetTableAndMySeek(oDM, nWorkarea, cAlias, uSeekKey, cIndexName:C:='')
+   | aKey |
+   if ValType(uSeekKey) = 'A' then
+      aKey := uSeekKey,
+   else
+      aKey := {uSeekKey},
+   endif,
+   Result := DbGetTable(oDM, nWorkarea, cAlias), // Der Index wird hier nicht umgeschalten, es wird vom Standard-Index ausgegangen
+   if not empty(cIndexName) then
+      Result.IndexName := cIndexName,
+   endif,
+   MySeek(aKey, Result),
+end,
+
+//******************************************************************************
+// Löscht alle (aktuell sichtbaren) Datensätze in der übergebenen Tabelle
+// @Result: null
+//******************************************************************************
+function _DeleteAllData(oTable)
+   | nOldState  |
+   nOldState  := DBState(oTable),
+   startseq
+      while not NoDS(oTable) do
+         MyDelete(oTable),
+      end,
+   onerror
+      _DBError_Internal(false, oTable, nOldState, 'DeleteAllData: Fehler bei dem Versuch von Löschen aller Daten in der Tabelle',
+         gl_ErrorCode_DeleteAllData),
+   stopseq,
+end,

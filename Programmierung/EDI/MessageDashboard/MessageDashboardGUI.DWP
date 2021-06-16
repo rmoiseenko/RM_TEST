@@ -1,0 +1,945 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zur Ansicht aller Nachrichten (EDIMSG).
+//   Außerdem bietet diese Benutzeroberfläche u.a. folgende Filtermöglichkeiten:
+//     * Datensatz-ID
+//     * Dateiname der Nachricht
+//     * Prozessrichtung
+//     * Prozessschritt
+//     * Einlese-Zeitstempel (von/bis)
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden, um die Benutzeroberfläche anzuzeigen:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MESSAGE_DASHBOARD',
+//        self,
+//        'EDI\MessageDashboard\MessageDashboardGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI, m_oEDIMSG,
+   m_cPositionSaveId, m_cFormId, m_cBrowserId,
+
+   m_bExplicitPost, m_aCustomArray,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Back, A_Cancel, A_CancelStep, A_ClearFilters, A_DeleteMessageInfo,
+   A_Identify, A_Import, A_Parse, A_Refresh, A_Save, A_SendMessage,
+   A_ShowMessageContent, al_Actions, bar_FilterControls, bar_Top,
+   bardock_Bottom, bardock_FilterControls, barmngr_Main, bbtn_Cancel,
+   bbtn_ClearFilters, bbtn_Identify, bbtn_Parse, bbtn_Refresh, bbtn_Save,
+   bbtn_SendMessage, bbtn_ShowMessageContent, bcc_FilterControls1,
+   bcc_FilterControls2, BePanel1, Bevel1, bipnl_Title, btn_Back, btn_CancelStep,
+   btn_Import, bvl_Details_Row1_Col1, bvl_Details_Row1_Col2,
+   bvl_Details_Row2_Col1, bvl_Details_Row2_Col2, chk_ProcessMessage,
+   chk_TestMessage, cmb_Direction, cmb_Filter_Direction, cmb_Filter_ProcessStep,
+   cmb_Filter_Status, cmb_ProcessStep, cmb_Status, ds_EDIMSG,
+   dtp_Filter_ReadDateTimeFrom, dtp_Filter_ReadDateTimeUntil, edt_Errors,
+   edt_Id, edt_Kommentar, edt_Search_FileName, edt_Search_Id,
+   edt_Search_ProfileMatchcode, edt_Warnings, grd_EDIMSG,
+   lbl_Details_Row1_Col1_Title, lbl_Details_Row2_Col1_Title,
+   lbl_Details_Row2_Col2_Title, lbl_Details_Row2_Col3_Title, lbl_Direction,
+   lbl_Filter_ReadDateTime, lbl_Id, lbl_ProcessMessage, lbl_ProcessStep,
+   lbl_Status, lbl_TestMessage, pnl_Details, pnl_Details_Row1,
+   pnl_Details_Row1_Col1, pnl_Details_Row1_Col2, pnl_Details_Row2,
+   pnl_Details_Row2_Col1, pnl_Details_Row2_Col2, pnl_FilterControls1,
+   pnl_FilterControls2, pnl_Grid, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormId         := '@EDIMSGUI',
+m_cPositionSaveId := '@EDIMSGPOS',
+m_cBrowserId      := '@EDIMSG',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsEditMode, nProcessStep, nState, bIsOutboundProcess |
+
+   bIsEditMode  := EditModes(m_oEDIMSG),
+   nProcessStep := m_oEDIMSG:PROC_STEP,
+   nState       := m_oEDIMSG:STATUS,
+
+   A_Save.Enabled         := bIsEditMode,
+   A_Cancel.Enabled       := bIsEditMode,
+   A_ClearFilters.Enabled := not bIsEditMode,
+   A_Refresh.Enabled      := not bIsEditMode,
+
+   A_ShowMessageContent.Enabled := not bIsEditMode and not empty(trim(m_oEDIMSG:D_GUID_STR)),
+
+   bIsOutboundProcess := (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Outbound_Created or
+                          nProcessStep = gl_EDI_ProcessStep_EDIMSG_Outbound_Sent),
+
+   // Outbound-Actions
+
+   // Aktiv wenn
+   // Nachricht erstellt wurde oder Fehler beim Nachrichten versenden
+   A_SendMessage.Enabled := not bIsEditMode and
+                            (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Outbound_Created or
+                             (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Outbound_Sent and
+                              nState = gl_EDI_ProcessStatus_Error)),
+
+   // Inbound-Actions
+   A_Identify.Enabled :=  not bIsEditMode and
+                          nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Read and
+                          not nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Identified and
+                          not nState = gl_EDI_ProcessStatus_Canceled,
+
+   A_Parse.Enabled    :=  not bIsEditMode and
+                          nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Identified and
+                          not nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed and
+                          not nState = gl_EDI_ProcessStatus_Canceled,
+
+   A_Import.Enabled   :=  not bIsEditMode and
+                          nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed or
+                          (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed and
+                           nState = gl_EDI_ProcessStatus_Error) or
+                          (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Imported and
+                           nState = gl_EDI_ProcessStatus_Error),
+
+   A_Back.Enabled     :=  not bIsEditMode and
+                          not bIsOutboundProcess and
+                         (not nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Read or
+                          nState = gl_EDI_ProcessStatus_Canceled) and
+                          not (nState = gl_EDI_ProcessStatus_Canceled and
+                               nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Imported) and
+                          not (nState = gl_EDI_ProcessStatus_OK and
+                               nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Imported),
+
+   A_CancelStep.Enabled :=  not bIsEditMode and
+                           (nProcessStep = gl_EDI_ProcessStep_EDIMSG_Inbound_Read or
+                            nState = gl_EDI_ProcessStatus_Error) and
+                            not nState = gl_EDI_ProcessStatus_Canceled,
+
+   InputControl_SetReadOnlyState(edt_Search_Id,                bIsEditMode),
+   InputControl_SetReadOnlyState(edt_Search_FileName,          bIsEditMode),
+   InputControl_SetReadOnlyState(edt_Search_ProfileMatchcode,  bIsEditMode),
+   InputControl_SetReadOnlyState(cmb_Filter_Direction,         bIsEditMode),
+   InputControl_SetReadOnlyState(cmb_Filter_ProcessStep,       bIsEditMode),
+   InputControl_SetReadOnlyState(cmb_Filter_Status,            bIsEditMode),
+   InputControl_SetReadOnlyState(dtp_Filter_ReadDateTimeFrom,  bIsEditMode),
+   InputControl_SetReadOnlyState(dtp_Filter_ReadDateTimeUntil, bIsEditMode),
+   InputControl_SetReadOnlyState(edt_Kommentar, not nState = gl_EDI_ProcessStatus_Canceled),
+end,
+
+//******************************************************************************
+// GUI mit der Datenbank verbinden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_MessageDashboardGUI',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_MessageDashboardGUI_GUI', oForm),
+
+   // GUI-Tabellen erstellen
+   m_oEDIMSG := DbGetTable(m_oDM_GUI, waEDIMSG),
+
+   m_oEDIMSG.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDIMSG, ds_EDIMSG, grd_EDIMSG, m_cBrowserId, false),
+
+   // Flags initialisieren
+   m_bExplicitPost := false,
+
+   // Events zuweisen
+   AssignEvent(ds_EDIMSG, 'OnScroll_Update', 'ds_EDIMSGScroll_Update'),
+   AssignEvent(m_oEDIMSG, 'BeforeInsert',    'EDIMSG_BeforeInsert'),
+   AssignEvent(m_oEDIMSG, 'BeforePost',      'EDIMSG_BeforePost'),
+end,
+
+//******************************************************************************
+// Diese Funktion gibt den Dateinamen der aktuellen Nachricht zurück.
+// @result: string - Dateiname
+//******************************************************************************
+function EDIMSG_GetFileName()
+   result := trim(m_oEDIMSG:FILE_NAME),
+end,
+
+//******************************************************************************
+// Diese Funktion befüllt die übergebene Combobox mit den Elementen der
+// übergebenen Merkmalstabellen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function FillComboControl(oDM:O, oCombobox:O, nAttributeTableId:N)
+| oDabMDT, aAttributes |
+
+   aAttributes := {},
+
+   oDabMDT := MyGetTable(oDM, waDabMDT, 'DABMDT_FILL_COMBO'),
+   oDabMDT.CbIndexName := 'SORT_ID',
+   oDabMDT.CbSetRangeEx({nAttributeTableId}),
+   startseq
+      oDabMDT.CbFirst(),
+      while not oDabMDT.CbEof do
+         AAdd(aAttributes, trim(oDabMDT:BEZ1) + chr(9) + trim(oDabMDT:WERT)),
+         oDabMDT.CbNext(),
+      end,
+   always
+      oDabMDT.CbCancelRange(),
+   stopseq,
+
+   oCombobox.MapList := true,
+   oCombobox.Items   := aAttributes,
+end,
+
+//******************************************************************************
+// Diese Funktion setzt alle Filter-Controls auf den jeweiligen Standard-Wert
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ResetFilters()
+   edt_Search_Id.Text                := '',
+   edt_Search_ProfileMatchcode.Text  := '',
+   edt_Search_FileName.Text          := '',
+   cmb_Filter_Direction.Value        := '',
+   cmb_Filter_ProcessStep.Value      := '',
+   cmb_Filter_Status.Value           := '',
+   dtp_Filter_ReadDateTimeFrom.Date  := 0,
+   dtp_Filter_ReadDateTimeUntil.Date := 0,
+end,
+
+//******************************************************************************
+// Filter ermitteln und anwenden
+// @result: null - keine Rückgabe
+//******************************************************************************
+function Filter()
+|
+   cDefaultDateFormatString, cFilter,
+   cFilter_Id, cFilter_ProfileMatchcode, cFilter_FileName, nFilter_Direction,
+   nFilter_ProcessStep, nFilter_Status, dtFilter_ReadDateTimeForm,
+   dtFilter_ReadDateTimeUntil
+|
+
+   cDefaultDateFormatString := 'YYYYMMDD HH:NN:SS', // YYYY-MM-DD
+   cFilter := '',
+
+   cFilter_Id                 := AllTrim(edt_Search_Id.Text),
+   cFilter_ProfileMatchcode   := AllTrim(edt_Search_ProfileMatchcode.Text),
+   cFilter_FileName           := AllTrim(edt_Search_FileName.Text),
+   nFilter_Direction          := val(cmb_Filter_Direction.Value),
+   nFilter_ProcessStep        := val(cmb_Filter_ProcessStep.Value),
+   nFilter_Status             := val(cmb_Filter_Status.Value),
+   dtFilter_ReadDateTimeForm  := dtp_Filter_ReadDateTimeFrom.Date,
+   dtFilter_ReadDateTimeUntil := dtp_Filter_ReadDateTimeUntil.Date,
+
+   if not empty(cFilter_Id) then
+      cFilter := ConcatTrenner(cFilter, 'ID = ' + cFilter_Id, ' AND '),
+   endif,
+   if not empty(cFilter_ProfileMatchcode) then
+      cFilter := ConcatTrenner(cFilter, '"' + upper(cFilter_ProfileMatchcode) + '" $ upper(PROF_MC)', ' AND '),
+   endif,
+   if not empty(cFilter_FileName) then
+      cFilter := ConcatTrenner(cFilter, '"' + upper(cFilter_FileName) + '" $ upper(FILE_NAME)', ' AND '),
+   endif,
+   if nFilter_Direction > 0 then
+      cFilter := ConcatTrenner(cFilter, 'DIRECTION = ' + str(nFilter_Direction), ' AND '),
+   endif,
+   if nFilter_ProcessStep > 0 then
+      cFilter := ConcatTrenner(cFilter, 'PROC_STEP = ' + str(nFilter_ProcessStep), ' AND '),
+   endif,
+   if nFilter_Status > 0 then
+      cFilter := ConcatTrenner(cFilter, 'STATUS = ' + str(nFilter_Status), ' AND '),
+   endif,
+   if dtFilter_ReadDateTimeForm <> 0 then
+      cFilter := ConcatTrenner(cFilter, 'ERSTELLT >= STOTS("' + FormatDateTime(cDefaultDateFormatString, dtFilter_ReadDateTimeForm) + '")', ' AND '),
+   endif,
+   if dtFilter_ReadDateTimeUntil <> 0 then
+      // Wurde für den Filter "Einlese-Datum (bis)" keine explizite Zeit
+      // angegeben, dann wird genau 1 Tag zum Datum addiert, um ggf. alle
+      // eingelesenen Nachrichten des angegeben Datums zu erwischen.
+      if frac(dtFilter_ReadDateTimeUntil) = 0 then
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT < STOTS("' + FormatDateTime(cDefaultDateFormatString, dtFilter_ReadDateTimeUntil + 1) + '")', ' AND '),
+      else
+         cFilter := ConcatTrenner(cFilter, 'ERSTELLT <= STOTS("' + FormatDateTime(cDefaultDateFormatString, dtFilter_ReadDateTimeUntil) + '")', ' AND '),
+      endif,
+   endif,
+
+   writeln('Filter: [' + cFilter + ']'),
+   if empty(cFilter) then
+      m_oEDIMSG.CbFilter   := '',
+      m_oEDIMSG.CbFiltered := false,
+   else
+      m_oEDIMSG.CbFiltered := false,
+      m_oEDIMSG.CbFilter   := cFilter,
+      m_oEDIMSG.CbFiltered := true,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der Tabelle EDIMSG
+//******************************************************************************
+function ds_EDIMSGScroll_Update(sender:O)
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern des Datensatzes
+//******************************************************************************
+function EDIMSG_BeforePost( Sender )
+   if not m_bExplicitPost then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor der Neuanlage eines Datensatzes
+//******************************************************************************
+function EDIMSG_BeforeInsert( Sender )
+   Abort(true),
+end,
+
+//******************************************************************************
+// Event: Beim Ändern des Wertes in einem Filter-Control
+//******************************************************************************
+function FilterControl_ValueChanged(sender:O)
+   startseq
+      Filter(),
+      MyFocusControl(oForm, pnl_Grid),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Ändern einer Filtereinstellung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oEDIMSG),
+   if not bCanClose then
+      MessageDlg('Das Fenster kann nicht geschlossen werden, weil noch nicht gespeicherte Änderungen vorhanden sind.', mtWarning),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Bei Klicken in Filter-Felder - Focus-auf grd_EDIMSG legen
+//******************************************************************************
+function SetFocusOnpnl_Grid (Sender:O)
+   MyFocusControl(oForm, pnl_Grid),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Setzt den Message-Status auf "beendet" und ermöglicht die Ergänzung eines
+// Kommentars
+//******************************************************************************
+function A_CancelStepExecute( Sender )
+   if Jn('Soll die Verarbeitung der Nachricht komplett abgebrochen werden?', false) then
+      m_oEDIMSG.CbEdit(),
+      m_oEDIMSG:STATUS := gl_EDI_ProcessStatus_Canceled,
+      ActionExecute(A_Save),
+   endif,
+end,
+
+//******************************************************************************
+// Setzt eine ausgewählte Nachricht einen Schritt in der Verarbeitung zurück
+//******************************************************************************
+function A_BackExecute( Sender )
+   | nProcessStep, nState, aCustomArray |
+
+   nProcessStep := m_oEDIMSG:PROC_STEP,
+   nState       := m_oEDIMSG:STATUS,
+   aCustomArray := {},
+
+   case nProcessStep
+      of 10  :: // zurück auf Eingelesen, wenn Fehler
+                m_oEDIMSG.CbEdit(),
+                m_oEDIMSG:STATUS := gl_EDI_ProcessStatus_OK,
+                ActionExecute(A_Save),
+      of 20  :: // zurück auf Eingelesen
+                m_oEDIMSG.CbEdit(),
+                m_oEDIMSG:PROC_STEP := gl_EDI_ProcessStep_EDIMSG_Inbound_Read,
+                m_oEDIMSG:STATUS    := gl_EDI_ProcessStatus_OK,
+                ActionExecute(A_Save),
+      of 30  :: // zurück zu Identifiziert
+                m_oEDIMSG.CbEdit(),
+                m_oEDIMSG:PROC_STEP := gl_EDI_ProcessStep_EDIMSG_Inbound_Identified,
+                m_oEDIMSG:STATUS    := gl_EDI_ProcessStatus_OK,
+                ActionExecute(A_Save),
+      of 40  :: // zurück zu Geparst - alle be-Belege löschen
+                if JN("Beleg-Quelle = EDI. Soll der Beleg tatsächlich gelöscht und der Import zurückgesetzt werden?", false) then
+                   if ActionExecute(A_DeleteMessageInfo) then
+                      m_oEDIMSG.CbEdit(),
+                      m_oEDIMSG:PROC_STEP := gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed,
+                      m_oEDIMSG:STATUS    := gl_EDI_ProcessStatus_OK,
+                      ActionExecute(A_Save),
+                   endif,
+                endif,
+      otherwise
+         GU_ShowStdErrorMessage('Status der Nachricht <' + EDIMSG_GetFileName() + '> fehlerhaft', GetErrorObj()),
+   endcase,
+end,
+
+//******************************************************************************
+// Action: Nachricht versenden (Outbound)
+//******************************************************************************
+function A_SendMessageExecute( Sender )
+| aResult, oProgressCallback, cSendMessage_ScriptName |
+
+   cSendMessage_ScriptName := lookup(waEDITRCH, 'ID', {{m_oEDIMSG:EDITRCH_ID}}, 'SCRIPT_TRA', ''),
+   startseq
+         oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+         startseq
+            ProgressbarShow('', 'Nachricht versenden', true),
+            startseq
+               aResult := EDI_Message_Send(
+                  m_oDM,
+                  cSendMessage_ScriptName,
+                  m_oEDIMSG:ID,
+                  oProgressCallback
+               ),
+               if EDI_ProcessResult_IsSuccess(aResult) then
+                  MessageDlg('Nachricht wurde erfolgreich versandt.', mtInformation),
+               else
+                  MessageDlg('Nachricht konnte nicht versendet werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+               endif,
+               m_oEDIMSG.CbRefresh(),
+            always
+               ProgressbarHide(),
+            stopseq,
+         always
+            DestroyObject(oProgressCallback),
+         stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim versender der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Löscht die importierten Inbound-Daten aus dem BE-System
+// @Result: boolean, erfolgreich zurückgesetzt
+//******************************************************************************
+function A_DeleteMessageInfoExecute( Sender )
+| aResult, oProgressCallback, cSendMessage_ScriptName |
+
+   Result := False,
+   cSendMessage_ScriptName := gl_EDI_DefaultDeleteSkript,
+   startseq
+         oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+         startseq
+            ProgressbarShow('', 'Nachricht zurücksetzen. Daten aus BE entfernen.', true),
+            startseq
+               aResult := Call(cSendMessage_ScriptName, m_oDM, m_oEDIMSG:ID, oProgressCallback, m_aCustomArray),
+               if EDI_ProcessResult_IsSuccess(aResult) then
+                  MessageDlg('Nachricht wurde erfolgreich zurückgesetzt.', mtInformation),
+                  Result := True,
+               else
+                  MessageDlg('Nachricht konnte zurückgesetzt werden:' + CRLF + EDI_ProcessResult_GetErrorMessage(aResult), mtError),
+               endif,
+               m_oEDIMSG.CbRefresh(),
+            always
+               ProgressbarHide(),
+            stopseq,
+         always
+            DestroyObject(oProgressCallback),
+         stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Zurücksetzen der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Nachrichteninhalt anzeigen
+//******************************************************************************
+function A_ShowMessageContentExecute( Sender )
+| oEDIMSG |
+   oEDIMSG := DbGetTable(m_oDM, waEDIMSG),
+   MySeek({m_oEDIMSG:ID}, oEDIMSG),
+   EDI_GUI_ShowMessageContentForm(m_oDM, oEDIMSG),
+end,
+
+//******************************************************************************
+// Action: Nachrichten-Dashboard aktualisieren
+//******************************************************************************
+function A_RefreshExecute( Sender )
+   m_oEDIMSG.CbRefresh(),
+   MyFocusControl(oForm, pnl_Grid),
+end,
+
+//******************************************************************************
+// Action: Nachricht parsen (Inbound)
+//******************************************************************************
+function A_ParseExecute( Sender )
+| cParseMessageScriptName, oProgressCallback, aProcessResult |
+
+   cParseMessageScriptName := lookup(waEDIPROF, 'ID', {{m_oEDIMSG:EDIPROF_ID}}, 'SCRIPT_PAR', ''),
+   startseq
+      oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+      startseq
+         ProgressbarShow('', 'Parsen der Nachricht <' + EDIMSG_GetFileName() + '>', true),
+         startseq
+            aProcessResult := Call(cParseMessageScriptName, m_oDM, m_oEDIMSG:ID, oProgressCallback),
+         always
+            ProgressbarHide(),
+         stopseq,
+      always
+         DestroyObject(oProgressCallback),
+      stopseq,
+
+      if EDI_ProcessResult_IsSuccess(aProcessResult) then
+         MessageDlg('Die Nachricht wurde erfolgreich geparst.'),
+      else
+         MessageDlg(
+            'Die Nachricht konnte nicht erfolgreich geparst werden:' + CRLF +
+            EDI_ProcessResult_GetErrorMessage(aProcessResult),
+            mtError
+         ),
+      endif,
+
+      m_oEDIMSG.CbRefresh(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Parsen der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Nachricht identifizieren (Inbound)
+//******************************************************************************
+function A_IdentifyExecute( Sender )
+| oEDITRCH, nEDITRCHId, oProgressCallback, aResult |
+
+   startseq
+      nEDITRCHId := m_oEDIMSG:EDITRCH_ID,
+
+      oEDITRCH := MyGetTable(m_oDM, waEDITRCH, 'EDITRCH_GET_SCRIPT_IDT'),
+      oEDITRCH.CbIndexName := 'ID',
+
+      SetErrorIf(not oEDITRCH.CbFindKey({nEDITRCHId}), 'EDITRCH record with ID <' + str(nEDITRCHId) + '> does not exist'),
+
+      oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+      startseq
+         ProgressbarShow('', 'Identifikation der Nachricht <' + EDIMSG_GetFileName() + '>', true),
+         startseq
+            aResult := Call(oEDITRCH:SCRIPT_IDT, m_oDM, m_oEDIMSG:ID, oProgressCallback),
+         always
+            ProgressbarHide(),
+         stopseq,
+      always
+         DestroyObject(oProgressCallback),
+      stopseq,
+
+      if EDI_ProcessResult_IsSuccess(aResult) then
+         MessageDlg('Die Nachricht wurde erfolgreich identifiziert.'),
+      else
+         MessageDlg(
+            'Die Nachricht konnte nicht erfolgreich identifiziert werden:' + CRLF +
+            EDI_ProcessResult_GetErrorMessage(aResult),
+            mtError
+         ),
+      endif,
+
+      m_oEDIMSG.CbRefresh(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Identifizieren der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Importieren der Nachricht - ToDo: in Package aufnahmen, IN 30.11.18
+//******************************************************************************
+function A_ImportExecute( Sender )
+| cImportMessageScriptName, oProgressCallback, aProcessResult |
+
+   cImportMessageScriptName := lookup(waEDIPROF, 'ID', {{m_oEDIMSG:EDIPROF_ID}}, 'SCRIPT_IMP', ''),
+   startseq
+      oProgressCallback := CallbackInfo('EDI_Process_DefaultOnProgressHandler'),
+      startseq
+         ProgressbarShow('', 'Import der Nachricht <' + EDIMSG_GetFileName() + '>', true),
+         startseq
+            aProcessResult := Call(cImportMessageScriptName, m_oDM, m_oEDIMSG:ID, oProgressCallback),
+         always
+            ProgressbarHide(),
+         stopseq,
+      always
+         DestroyObject(oProgressCallback),
+      stopseq,
+
+      if EDI_ProcessResult_IsSuccess(aProcessResult) then
+         MessageDlg('Die Nachricht wurde erfolgreich importiert.'),
+      else
+         MessageDlg(
+            'Die Nachricht konnte nicht erfolgreich importiert werden:' + CRLF +
+            EDI_ProcessResult_GetErrorMessage(aProcessResult),
+            mtError
+         ),
+      endif,
+      m_oEDIMSG.CbRefresh(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Importieren der Nachricht <' + EDIMSG_GetFileName() + '>', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Alle Filter zurücksetzen
+//******************************************************************************
+function A_ClearFiltersExecute( Sender )
+   startseq
+      // Filter-Controls zurücksetzen
+      ResetFilters(),
+      // Anschließend Daten neu filtern
+      Filter(),
+      MyFocusControl(oForm, pnl_Grid),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Zurücksetzen der Filter', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDIMSG.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   m_bExplicitPost := true,
+   startseq
+      m_oEDIMSG.CbPost(),
+   always
+      m_bExplicitPost := false,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Nachrichten',
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.ImageIndex     := 308,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Back                       := FindObject(oForm, "A_Back"),
+   A_Cancel                     := FindObject(oForm, "A_Cancel"),
+   A_CancelStep                 := FindObject(oForm, "A_CancelStep"),
+   A_ClearFilters               := FindObject(oForm, "A_ClearFilters"),
+   A_DeleteMessageInfo          := FindObject(oForm, "A_DeleteMessageInfo"),
+   A_Identify                   := FindObject(oForm, "A_Identify"),
+   A_Import                     := FindObject(oForm, "A_Import"),
+   A_Parse                      := FindObject(oForm, "A_Parse"),
+   A_Refresh                    := FindObject(oForm, "A_Refresh"),
+   A_Save                       := FindObject(oForm, "A_Save"),
+   A_SendMessage                := FindObject(oForm, "A_SendMessage"),
+   A_ShowMessageContent         := FindObject(oForm, "A_ShowMessageContent"),
+   al_Actions                   := FindObject(oForm, "al_Actions"),
+   bar_FilterControls           := FindObject(oForm, "bar_FilterControls"),
+   bar_Top                      := FindObject(oForm, "bar_Top"),
+   bardock_Bottom               := FindObject(oForm, "bardock_Bottom"),
+   bardock_FilterControls       := FindObject(oForm, "bardock_FilterControls"),
+   barmngr_Main                 := FindObject(oForm, "barmngr_Main"),
+   bbtn_Cancel                  := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_ClearFilters            := FindObject(oForm, "bbtn_ClearFilters"),
+   bbtn_Identify                := FindObject(oForm, "bbtn_Identify"),
+   bbtn_Parse                   := FindObject(oForm, "bbtn_Parse"),
+   bbtn_Refresh                 := FindObject(oForm, "bbtn_Refresh"),
+   bbtn_Save                    := FindObject(oForm, "bbtn_Save"),
+   bbtn_SendMessage             := FindObject(oForm, "bbtn_SendMessage"),
+   bbtn_ShowMessageContent      := FindObject(oForm, "bbtn_ShowMessageContent"),
+   bcc_FilterControls1          := FindObject(oForm, "bcc_FilterControls1"),
+   bcc_FilterControls2          := FindObject(oForm, "bcc_FilterControls2"),
+   BePanel1                     := FindObject(oForm, "BePanel1"),
+   Bevel1                       := FindObject(oForm, "Bevel1"),
+   bipnl_Title                  := FindObject(oForm, "bipnl_Title"),
+   btn_Back                     := FindObject(oForm, "btn_Back"),
+   btn_CancelStep               := FindObject(oForm, "btn_CancelStep"),
+   btn_Import                   := FindObject(oForm, "btn_Import"),
+   bvl_Details_Row1_Col1        := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row1_Col2        := FindObject(oForm, "bvl_Details_Row1_Col2"),
+   bvl_Details_Row2_Col1        := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   bvl_Details_Row2_Col2        := FindObject(oForm, "bvl_Details_Row2_Col2"),
+   chk_ProcessMessage           := FindObject(oForm, "chk_ProcessMessage"),
+   chk_TestMessage              := FindObject(oForm, "chk_TestMessage"),
+   cmb_Direction                := FindObject(oForm, "cmb_Direction"),
+   cmb_Filter_Direction         := FindObject(oForm, "cmb_Filter_Direction"),
+   cmb_Filter_ProcessStep       := FindObject(oForm, "cmb_Filter_ProcessStep"),
+   cmb_Filter_Status            := FindObject(oForm, "cmb_Filter_Status"),
+   cmb_ProcessStep              := FindObject(oForm, "cmb_ProcessStep"),
+   cmb_Status                   := FindObject(oForm, "cmb_Status"),
+   ds_EDIMSG                    := FindObject(oForm, "ds_EDIMSG"),
+   dtp_Filter_ReadDateTimeFrom  := FindObject(oForm, "dtp_Filter_ReadDateTimeFrom"),
+   dtp_Filter_ReadDateTimeUntil := FindObject(oForm, "dtp_Filter_ReadDateTimeUntil"),
+   edt_Errors                   := FindObject(oForm, "edt_Errors"),
+   edt_Id                       := FindObject(oForm, "edt_Id"),
+   edt_Kommentar                := FindObject(oForm, "edt_Kommentar"),
+   edt_Search_FileName          := FindObject(oForm, "edt_Search_FileName"),
+   edt_Search_Id                := FindObject(oForm, "edt_Search_Id"),
+   edt_Search_ProfileMatchcode  := FindObject(oForm, "edt_Search_ProfileMatchcode"),
+   edt_Warnings                 := FindObject(oForm, "edt_Warnings"),
+   grd_EDIMSG                   := FindObject(oForm, "grd_EDIMSG"),
+   lbl_Details_Row1_Col1_Title  := FindObject(oForm, "lbl_Details_Row1_Col1_Title"),
+   lbl_Details_Row2_Col1_Title  := FindObject(oForm, "lbl_Details_Row2_Col1_Title"),
+   lbl_Details_Row2_Col2_Title  := FindObject(oForm, "lbl_Details_Row2_Col2_Title"),
+   lbl_Details_Row2_Col3_Title  := FindObject(oForm, "lbl_Details_Row2_Col3_Title"),
+   lbl_Direction                := FindObject(oForm, "lbl_Direction"),
+   lbl_Filter_ReadDateTime      := FindObject(oForm, "lbl_Filter_ReadDateTime"),
+   lbl_Id                       := FindObject(oForm, "lbl_Id"),
+   lbl_ProcessMessage           := FindObject(oForm, "lbl_ProcessMessage"),
+   lbl_ProcessStep              := FindObject(oForm, "lbl_ProcessStep"),
+   lbl_Status                   := FindObject(oForm, "lbl_Status"),
+   lbl_TestMessage              := FindObject(oForm, "lbl_TestMessage"),
+   pnl_Details                  := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1             := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1        := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row1_Col2        := FindObject(oForm, "pnl_Details_Row1_Col2"),
+   pnl_Details_Row2             := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_Details_Row2_Col1        := FindObject(oForm, "pnl_Details_Row2_Col1"),
+   pnl_Details_Row2_Col2        := FindObject(oForm, "pnl_Details_Row2_Col2"),
+   pnl_FilterControls1          := FindObject(oForm, "pnl_FilterControls1"),
+   pnl_FilterControls2          := FindObject(oForm, "pnl_FilterControls2"),
+   pnl_Grid                     := FindObject(oForm, "pnl_Grid"),
+   pnl_Main                     := FindObject(oForm, "pnl_Main"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SetDefaults()
+   m_aCustomArray := {},
+
+   // Filter-Comboboxen befüllen
+   FillComboControl(m_oDM_GUI, cmb_Filter_Direction,   gl_EDI_MMTID_ProcessDirection),
+   FillComboControl(m_oDM_GUI, cmb_Filter_ProcessStep, gl_EDI_MMTID_EDIMSG_ProcessStep),
+   FillComboControl(m_oDM_GUI, cmb_Filter_Status,      gl_EDI_MMTID_ProcessStatus),
+
+   // Controls mit Tabellenfeldern verbinden
+   // Bereich: "Allgemein"
+   edt_Id.DataSource               := ds_EDIMSG,
+   edt_Id.DataField                := 'ID',
+   cmb_Direction.DataSource        := ds_EDIMSG,
+   cmb_Direction.DataField         := 'DIRECTION',
+   cmb_ProcessStep.DataSource      := ds_EDIMSG,
+   cmb_ProcessStep.DataField       := 'PROC_STEP',
+   chk_ProcessMessage.DataSource   := ds_EDIMSG,
+   chk_ProcessMessage.DataField    := 'PROCESS',
+   chk_TestMessage.DataSource      := ds_EDIMSG,
+   chk_TestMessage.DataField       := 'TEST',
+   // Bereich: "Status"
+   cmb_Status.DataSource := ds_EDIMSG,
+   cmb_Status.DataField  := 'STATUS',
+
+   edt_Errors.DataSource := ds_EDIMSG,
+   edt_Errors.DataField  := 'ERROR_MSG',
+   edt_Warnings.DataSource := ds_EDIMSG,
+   edt_Warnings.DataField  := 'WARN_MSG',
+   edt_Kommentar.DataSource := ds_EDIMSG,
+   edt_Kommentar.DataField  := 'COMM_MSG',
+
+   // Labels mit Tabellenfeldern verbinden
+   // Bereich: "Allgemein"
+   lbl_Id.DataSource                      := ds_EDIMSG,
+   lbl_Id.DataField                       := 'ID',
+   lbl_Id.UseDefaultCaption               := true,
+   lbl_Direction.DataSource               := ds_EDIMSG,
+   lbl_Direction.DataField                := 'DIRECTION',
+   lbl_Direction.UseDefaultCaption        := true,
+   lbl_ProcessStep.DataSource             := ds_EDIMSG,
+   lbl_ProcessStep.DataField              := 'PROC_STEP',
+   lbl_ProcessStep.UseDefaultCaption      := true,
+   lbl_ProcessMessage.DataSource          := ds_EDIMSG,
+   lbl_ProcessMessage.DataField           := 'PROCESS',
+   lbl_ProcessMessage.UseDefaultCaption   := true,
+   lbl_TestMessage.DataSource             := ds_EDIMSG,
+   lbl_TestMessage.DataField              := 'TEST',
+   lbl_TestMessage.UseDefaultCaption      := true,
+   // Bereich: "Status"
+   lbl_Status.DataSource        := ds_EDIMSG,
+   lbl_Status.DataField         := 'STATUS',
+   lbl_Status.UseDefaultCaption := true,
+
+   InputControl_SetReadOnlyState(edt_Id,          true),
+   InputControl_SetReadOnlyState(cmb_Direction,   true),
+   InputControl_SetReadOnlyState(cmb_ProcessStep, true),
+   InputControl_SetReadOnlyState(cmb_Status,      true),
+   InputControl_SetReadOnlyState(edt_Errors,      true),
+   InputControl_SetReadOnlyState(edt_Warnings,    true),
+   InputControl_SetReadOnlyState(edt_Kommentar,   true),
+   // Spezialbehandlung für TRichEditEx-Controls: ReadOnly-Farbe explizit setzen
+   edt_Errors.Color    := edt_Errors.ReadOnlyColor,
+   edt_Warnings.Color  := edt_Warnings.ReadOnlyColor,
+   edt_Kommentar.Color := edt_Kommentar.ReadOnlyColor,
+
+   SetBrowserBeAttribID(grd_EDIMSG, 'STANDARD',  gl_EDI_MMTID_MessageStandard),
+   SetBrowserBeAttribID(grd_EDIMSG, 'MSG_TYPE',  gl_EDI_MMTID_MessageType),
+   SetBrowserBeAttribID(grd_EDIMSG, 'DIRECTION', gl_EDI_MMTID_ProcessDirection),
+   SetBrowserBeAttribID(grd_EDIMSG, 'PROC_STEP', gl_EDI_MMTID_EDIMSG_ProcessStep),
+   SetBrowserBeAttribID(grd_EDIMSG, 'STATUS',    gl_EDI_MMTID_ProcessStatus),
+
+   
+   m_oEDIMSG.CbRefresh(),
+   ResetFilters(),
+   Filter(),
+   ActionsEnabled(),
+
+   AssignEvent(edt_Search_ProfileMatchcode,  'OnSearchExecute', 'FilterControl_ValueChanged'),
+   AssignEvent(edt_Search_ProfileMatchcode,  'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(edt_Search_ProfileMatchcode,  'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(edt_Search_FileName,          'OnSearchExecute', 'FilterControl_ValueChanged'),
+   AssignEvent(edt_Search_FileName,          'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(edt_Search_FileName,          'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(edt_Search_Id,                'OnSearchExecute', 'FilterControl_ValueChanged'),
+   AssignEvent(edt_Search_Id,                'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(edt_Search_Id,                'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(cmb_Filter_Direction,         'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(cmb_Filter_Direction,         'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(cmb_Filter_Direction,         'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(cmb_Filter_ProcessStep,       'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(cmb_Filter_ProcessStep,       'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(cmb_Filter_ProcessStep,       'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(cmb_Filter_Status,            'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(cmb_Filter_Status,            'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(cmb_Filter_Status,            'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(dtp_Filter_ReadDateTimeFrom,  'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(dtp_Filter_ReadDateTimeFrom,  'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(dtp_Filter_ReadDateTimeFrom,  'OnExit',          'SetFocusOnpnl_Grid'),
+
+   AssignEvent(dtp_Filter_ReadDateTimeUntil, 'OnChange',        'FilterControl_ValueChanged'),
+   AssignEvent(dtp_Filter_ReadDateTimeUntil, 'OnClick',         'SetFocusOnpnl_Grid'),
+   AssignEvent(dtp_Filter_ReadDateTimeUntil, 'OnExit',          'SetFocusOnpnl_Grid'),
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({edt_Id,
+                                  cmb_Direction,
+                                  cmb_ProcessStep,
+                                  chk_ProcessMessage,
+                                  lbl_ProcessMessage,
+                                  chk_TestMessage,
+                                  lbl_TestMessage,
+                                  cmb_Status}),
+
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row1_Col1_Title,
+                                        lbl_Details_Row2_Col1_Title,
+                                        lbl_Details_Row2_Col2_Title,
+                                        lbl_Details_Row2_Col3_Title}),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

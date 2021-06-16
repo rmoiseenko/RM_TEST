@@ -1,0 +1,84 @@
+//##############################################################################
+//##############################################################################
+//
+// Test-Programm für die Funktionalität des 'Groupware Memo Notify'
+//
+//##############################################################################
+//##############################################################################
+
+| cU1, cU2, nMemoId, aSW, iIterations |
+
+//******************************************************************************
+// zu testende Methode aufrufen
+// @Result: null
+//******************************************************************************
+function Test_UpdateNotifyTable(nMemoID, cCurrentUser, cUserlistOld, cUserlistNew)
+   Result := GMNU_UpdateNotifyTable(nMemoID, cCurrentUser, cUserlistOld, cUserlistNew),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm - Testfälle
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erstellt einen User-Nr-String mit Trenner '/' aus einem User-Nr-Array
+// @Result: null
+//******************************************************************************
+function UL(aUserArray)
+| i |
+   Result := '',
+   for i :=  1 to ALen(aUserArray) do
+      Result := ConcatTrenner(Result, aUserArray[i], '/'),
+   end,
+   if not empty(Result) then
+      Result := '/' + Result + '/',
+   endif,
+end,
+
+cU1     := '065',
+cU2     := '066',
+nMemoId := -1,
+
+for iIterations := 1 to 10 do
+
+   nMemoId -= iIterations,
+
+   aSW := STW_Start(),
+
+   //     Aktion / Beschreibung         Durch User      Userliste alt        Userliste neu        Erwartetes Ergebnis in Notify-Tabelle
+   //     ----------------------        ----------      -------------        -------------        -------------------------------------
+
+   // 2   *****************************************************************************************************************************
+   // 2.1 Neues Memo für User 2         User 1          ''                   cU2                                   + {'N', '066'}
+   prs('', '2.1'),
+   Test_UpdateNotifyTable(nMemoId,      cU1,            '',                  UL({     cU2})),
+
+   // 2.2 User 2 "antwortet"            User 2          cU2                  cU1                 + {'N', '065'}    - {'N', '066'}
+   prs('', '2.2'),
+   Test_UpdateNotifyTable(nMemoId,      cU2,            UL({cU2}),           UL({cU1     })),
+
+   // 2.3 Ich habe Rückfrage            User 1          cU1                  cU1/cU2'            - {'N', '065'}    + {'N', '066'}
+   prs('', '2.3'),
+   Test_UpdateNotifyTable(nMemoId,      cU1,            UL({cU1}),           UL({cU1, cU2})),
+
+   // 2.4 User 2 "antwortet"            User 2          cU1/cU2              cU1/cU2'            + {'G', '065'}    - {'N', '066'}
+   prs('', '2.4'),
+   Test_UpdateNotifyTable(nMemoId,      cU2,            UL({cU1,cU2}),       UL({cU1, cU2})),
+
+   // 2.5 User 2 "ergänzt Antwort"      User 2          cU1/cU2              cU1/cU2'            keine Änderung
+   prs('', '2.5'),
+   Test_UpdateNotifyTable(nMemoId,      cU2,            UL({cU1,cU2}),       UL({cU1, cU2})),
+
+   // 2.6 Ich "antworte"                User 1          cU1/cU2              cU1/cU2'            - {'G', '065'}    + {'G', '066'}
+   prs('', '2.6'),
+   Test_UpdateNotifyTable(nMemoId,      cU1,            UL({cU1,cU2}),       UL({cU1, cU2})),
+
+   // 2.7 Ich "setze Erledigt"          User 1          cU1/cU2              ''                                    - {'G', '066'}
+   prs('', '2.7'),
+   Test_UpdateNotifyTable(nMemoId,      cU1,            UL({cU1,cU2}),       ''),
+
+   STW_Lap(aSW),
+
+next,

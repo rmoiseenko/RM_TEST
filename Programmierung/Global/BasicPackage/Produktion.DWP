@@ -1,0 +1,478 @@
+
+//******************************************************************************
+// Funktion stellt sicher, dass die übergebene BESTPOSNR im "korrekten Format"
+// vorliegt, ansonsten wird ein Fehler ausgelöst
+// @Result: string
+//******************************************************************************
+function _D035_NormalizeBestPosNr(cBestPosNr)
+   iif(Len(cBestPosNr) <> 8, SetError('D240_NormalizeBestPosNr(): len <> 8'), ),
+   Result := cBestPosNr,
+end,
+
+//******************************************************************************
+// Diese Funktion wandelt die APNUMMER für einen -2 Artikel in KOMMISS-Syntax
+// um und gibt diese zurück.
+//
+// @result: string - APNUMMER in KOMMISS-Syntax
+//******************************************************************************
+function _D035_APNR_2_KOM(cOrderPositionNumber:C)
+| cOrderNumber, cPositionNumber |
+
+   result := '',
+   if not empty(cOrderPositionNumber) then
+      cOrderNumber    := SubStr(cOrderPositionNumber, 1, 6),
+      cPositionNumber := StrZero(val(SubStr(cOrderPositionNumber, 7, 3)), 3),
+      result          := cOrderNumber + '/' + cPositionNumber,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion gibt für eine Dab240:B_POS_LFD die Dab035:BESTPOSNR zurück
+// @Result: string
+//******************************************************************************
+function _D240_B_Pos_Lfd_2_BestPosNr(cB_Pos_Lfd)
+   Result := Left(cB_Pos_Lfd, 8),
+   Result := D035_NormalizeBestPosNr(Result), // Sicherheitsprüfung!
+end,
+
+//******************************************************************************
+// B_POS_LFD-Key eines Dab240-Kopf-Satzes zusammensetzen
+// @Result: string
+//******************************************************************************
+function _D240_CalcHead_B_Pos_Lfd(cBestPosNr)
+   Result := PadR(cBestPosNr, 8) + '000',
+end,
+
+//******************************************************************************
+// Dab240-Auftragskopf positionieren (Index von oDab240 wird ggf. umgesetzt!)
+// @Result: null
+//******************************************************************************
+function _D240_FindHead(oDab240, cBestPosNr)
+| cHeadB_Pos_Lfd |
+   cHeadB_Pos_Lfd    := D240_CalcHead_B_POS_LFD(cBestPosNr),
+   iif(oDab240.IndexName <> 'DAB241', SetError('oDab240.IndexName must be Dab241 (B_POS_LFD)'), ),
+
+   MySeek({cHeadB_Pos_Lfd}, oDab240),                                           // WriteLn('D240_FindHead(): found Dab240 head for ' + cBestPosNr),
+end,
+
+//******************************************************************************
+// Funktion prüft, ob die überg. Dab240-Head-Tabelle mit der Dab240-Pos-Tabelle
+// "synchron" ist
+// @Result: null
+//******************************************************************************
+function _D240_CheckHeadSyncToPos(oDab240_Pos, oDab240_Head)
+| cBestPosNr, cHead_B_Pos_Lfd |
+   cBestPosNr      := D240_B_Pos_Lfd_2_BestPosNr(oDab240_Pos:B_POS_LFD),
+   cHead_B_Pos_Lfd := D240_CalcHead_B_Pos_Lfd(cBestPosNr),
+   iif(oDab240_Head:B_POS_LFD <> cHead_B_Pos_Lfd, SetError('D240_CheckHeadSyncToPos(): oDab240_Head not sync. with oDab240_Pos'), ),
+end,
+
+//******************************************************************************
+// Funktion setzt auf der übergebenen Dab240-Tabelle
+// @Result: null
+//******************************************************************************
+function _D240_SetScopeOnOrder(oDab240, cBestPosNr, bIncludeOrderHead)
+| cStartKey, cEndKey |
+   iif(oDab240.Workarea <> waDab240,  SetError('D240_SetScopeOnOrder(): oDab240.Workarea <> waDab240'), ),
+   iif(oDab240.IndexName <> 'DAB241', SetError('oDab240.IndexName must be Dab241 (B_POS_LFD)'), ),
+   iif(oDab240.Filtered,              SetError('oDab240.Filtered must be <false>'), ),
+
+   cBestPosNr := D035_NormalizeBestPosNr(cBestPosNr),
+
+   if bIncludeOrderHead then
+      cStartKey := cBestPosNr + '000',
+   else
+      cStartKey := cBestPosNr + '001',
+   endif,
+   cEndKey    := cBestPosNr + '999',
+
+   DbScope({cStartKey}, {cEndKey}, oDab240),
+   DbGoTop(oDab240),
+end,
+
+//******************************************************************************
+// Die Funktion bildet die Logik laut REQ-129 nach
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position die Gesamt-Soll-Menge
+// => Gesamt-Bedarf der fixen und variablen Mengen
+// @Result: double
+//******************************************************************************
+function _D240_SollMenge(oDab240_Pos, oDab240_Head)
+| nNKStellen, nSollMengeFix, nBaugruppenSollMenge, nSollMengeVar, nSollMengeGesamt, nErsatzUmrechnungsfaktor,
+  aArtikelInfos, cD010_ARTTYP, nD010_NKSTELLEN, nD010_ME_RUNDEN |
+   D240_CheckHeadSyncToPos(oDab240_Pos, oDab240_Head),
+
+   nErsatzUmrechnungsfaktor := 1,                // TOOD: Es "fehlt" die Rückrechnung der Sollmenge wegen eines ggf. genutzten
+                                                 //        Ersatz-Artikels mit Umrechnungsfaktor.
+   aArtikelInfos            := LookUp(waDab010, 'DAB011', {{oDab240_Pos:ARTNR2}}, '{ARTTYP, NKSTELLEN, ME_RUNDEN}', {'', 0, 0}),
+   cD010_ARTTYP             := aArtikelInfos[1],
+   nD010_NKSTELLEN          := aArtikelInfos[2],
+   nD010_ME_RUNDEN          := aArtikelInfos[3],
+
+   // Rundungsgenauigkeit der Gesamt-Menge ermitteln
+   if cD010_ARTTYP = 'A' then
+      nNKStellen            := DabPAR:NKSTELLEN,
+   else
+      nNKStellen            := Min(nD010_NKSTELLEN, nD010_ME_RUNDEN),
+   endif,
+
+   // Fertigteil-Menge aus Kopfsatz
+   nBaugruppenSollMenge     := oDab240_Head:SOLL,
+
+   // Soll-Positions-Menge
+   if oDab240_Pos:R_S == 'R' then
+      nSollMengeFix := oDab240_Pos:SOLL,
+      nSollMengeVar := 0,
+   else
+      nSollMengeFix := oDab240_Pos:FIX_SOLL,          // für feste Material-Soll-Mengen oder Werkzeug (nur für Kaufteile und Baugruppen möglich)
+      nSollMengeVar := UpRound( nBaugruppenSollMenge  // der berechnete Variable Gesamt-Bedarf wird aufgerundet
+                                    * oDab240_Pos:SOLL / nErsatzUmrechnungsfaktor
+                                    * (100 + oDab240_Pos:AUSSCHUSS) / 100,
+                                  nNKStellen  ),
+   endif,
+
+   nSollMengeGesamt := Round( nSollMengeFix + nSollMengeVar, nNKStellen ),
+
+   Result           := nSollMengeGesamt,
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position den Soll-Einstandspreis (EKP)
+//   (bezogen auf eine Lagereinheit)
+//
+// HINWEIS: => Das Ergebnis wird nicht (!) gerundet, damit die weitere Verwendung bei
+//             der Berechnung des Soll-Werts der Position präzise erfolgt.
+//          => Sofern mit einer Preiseinheit > 1 gearbeitet wird, würde durch
+//             Rundung an dieser Stelle die Präzision der Berechnung ggf. sinken.
+//
+// @Result: double
+//******************************************************************************
+function _D240_SollEKP_OhneRundung(oDab240_Pos)
+| nSollPreisEinheit, nSollEKP |
+   nSollPreisEinheit := iif(oDab240_Pos:PE > 0, oDab240_Pos:PE, 1),
+   nSollEKP          := oDab240_Pos:EKP / nSollPreisEinheit + oDab240_Pos:ZUSCHLAG,
+
+   Result            := nSollEKP, // ohne Rundung, siehe Kommentar!
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position den Soll-Einstandspreis (EKP)
+//   (bezogen auf eine Lagereinheit)
+//
+// => ACHTUNG: Das Ergebnis wird für die Anzeige an der GUI gerundet.
+//             Wert nicht (!) für die math. Weiterverarbeitung nutzen.
+//
+// @Result: double
+//******************************************************************************
+function _D240_SollEKP(oDab240_Pos)
+| nSollEKP |
+   nSollEKP  := D240_SollEKP_OhneRundung(oDab240_Pos),
+
+   Result    := Round(nSollEKP, CurrDecimals()), // mit Rundung, für die Anzeige an der GUI, siehe Kommentar
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position die Ist-Menge
+// @Result: double
+//******************************************************************************
+function _D240_IstMenge(oDab240_Pos, bWorkInProgress:L:=false)
+| nIstMenge |
+  nIstMenge := iif( oDab240_Pos:WERKZEUG,
+                    oDab240_Pos:FIX_SOLL,  // Für Werkzeuge sagt die 'IST'-Menge nichts aus, da diese vor Ende des FAs wieder aus dem FA gebucht werden müssen
+                    oDab240_Pos:IST - iif(bWorkInProgress,oDAB240_POS:IST_AUSGEB,0) ),
+  Result := nIstMenge,
+end,
+
+
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position den Ist-Einstandspreis (EKP)
+//   (bezogen auf eine Lagereinheit)
+//
+// HINWEIS: => Das Ergebnis wird nicht (!) gerundet, damit die weitere Verwendung bei
+//             der Berechnung des Ist-Werts der Position präzise erfolgt.
+//          => Sofern mit einer Preiseinheit > 1 gearbeitet wird, würde durch
+//             Rundung an dieser Stelle die Präzision der Berechnung ggf. sinken.
+//
+// @Result: double
+//******************************************************************************
+function _D240_IstEKP_OhneRundung(oDab240_Pos)
+| nIstPreisEinheit, nIstEKP |
+   nIstPreisEinheit := iif(oDab240_Pos:PE_E > 0, oDab240_Pos:PE_E, 1),
+   nIstEKP          := oDab240_Pos:EKP_E / nIstPreisEinheit + oDab240_Pos:ZUSCHLAG_E,
+
+   Result           := nIstEKP, // ohne Rundung, siehe Kommentar!
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine Dab240-Position den Ist-Einstandspreis (EKP)
+//   (bezogen auf eine Lagereinheit)
+//
+// => ACHTUNG: Das Ergebnis wird für die Anzeige an der GUI gerundet.
+//             Wert nicht (!) für die math. Weiterverarbeitung nutzen.
+//
+// @Result: double
+//******************************************************************************
+function _D240_IstEKP(oDab240_Pos)
+| nIstEKP |
+   nIstEKP  := D240_IstEKP_OhneRundung(oDab240_Pos),
+
+   Result   := Round(nIstEKP, CurrDecimals()), // mit Rundung, für die Anzeige an der GUI, siehe Kommentar
+end,
+
+//******************************************************************************
+// Funktion berechnet den Soll-Wert einer Dab240-Position
+// @Result: double
+//******************************************************************************
+function _D240_SollWert(oCalc240_Pos, oCalc240_Head)
+| nSollEKP, nSollMenge |
+
+   if empty(oCalc240_Pos:ARTNR_E) then // gelöschte Position? => Soll-Wert = 0
+      Result := 0,
+   else
+      // Ab 6.5.65 steht für 'A'rbeitswert-Positionen ein von der Standard-Logik bereits berechnetes Feld Dab240:EK_WERT zur
+      //   Verfügung, welches bei Anlage der Position berechnet und gefüllt wird.
+      //   Für andere Artikeltypen müssen die Soll-Kosten einer Dab240-Position berechnet werden.
+      //   Bis Version 6.0.62 müssen die Soll-Kosten einer Dab240-Position immer berechnet werden.
+      if oCalc240_Pos:ARTTYP = 'A' then
+         Result     := oCalc240_Pos:EK_WERT,
+      else
+         nSollEKP   := D240_SollEKP_OhneRundung(oCalc240_Pos),
+         nSollMenge := D240_SollMenge(oCalc240_Pos, oCalc240_Head),
+
+         Result     := Round(nSollEKP * nSollMenge, CurrDecimals()),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet den Soll-Zuschlags-Wert einer Dab240-Position
+// @Result: double
+//******************************************************************************
+function _D240_SollZuschlagsWert(oCalc240_Pos, oCalc240_Head)
+| nSollZuschlag, nSollMenge |
+
+   if empty(oCalc240_Pos:ARTNR_E) then // gelöschte Position? => Soll-Wert = 0
+      Result := 0,
+   else
+      // Ab 6.5.65 steht für 'A'rbeitswert-Positionen ein von der Standard-Logik bereits berechnetes Feld Dab240:EK_WERTZ zur
+      //   Verfügung, welches bei Anlage der Position berechnet und gefüllt wird.
+      //   Für andere Artikeltypen müssen die Soll-Kosten einer Dab240-Position berechnet werden.
+      //   Bis Version 6.0.62 müssen die Soll-Kosten einer Dab240-Position immer berechnet werden.
+      if oCalc240_Pos:ARTTYP = 'A' then
+         Result        := oCalc240_Pos:EK_WERTZ,
+      else
+         nSollZuschlag := oCalc240_Pos:ZUSCHLAG,
+         nSollMenge    := D240_SollMenge(oCalc240_Pos, oCalc240_Head),
+
+         Result        := Round(nSollZuschlag * nSollMenge, CurrDecimals()),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet den Soll-Wert einer Dab240-Position ohne Zuschlagswert
+// @Result: Double
+//******************************************************************************
+function _D240_SollWertOhneZuschlag(oCalc240_Pos, oCalc240_Head),
+   Result := Round(D240_SollWert(oCalc240_Pos, oCalc240_Head) - D240_SollZuschlagsWert(oCalc240_Pos, oCalc240_Head), CurrDecimals()),
+end,
+
+//******************************************************************************
+// Funktion berechnet den Ist-Wert einer Dab240-Position
+// @Result: Double
+//******************************************************************************
+function _D240_IstWert(oCalc240_Pos, bWorkInProgress:L:=false)
+| nIstEKP, nSollmenge, nIstMenge, nIstMengeWIP |
+
+   if empty(oCalc240_Pos:ARTNR_E) then // gelöschte Position? => Ist-Wert = 0
+      Result := 0,
+   else
+      // Ab 6.5.65 steht für Arbeitswerte ein von der Standard-Logik bereits berechnetes Feld Dab240:EK_WERT_E zur Verfügung.
+      //    Für andere Artikeltypen müssen die Soll-Kosten einer Dab240-Position berechnet werden.
+      //    Bis Version 6.0.62 müssen die Ist-Kosten einer Dab240-Position immer berechnet werden.
+      if oCalc240_Pos:ARTTYP = 'A' then
+         Result     := oCalc240_Pos:EK_WERT_E,
+         // Anteiligen Wert bei Berechnung WIP
+         if bWorkInProgress then
+            nIstMenge     := D240_IstMenge(oCalc240_Pos,false),
+            if nIstMenge > 0 then
+               nIstMengeWIP  := D240_IstMenge(oCalc240_Pos,true),
+               result        := round(oCalc240_Pos:EK_WERT_E / nIstmenge * nIstMengeWIP,CurrDecimals()),
+            endif,
+         endif,
+      else
+         nIstEKP   := D240_IstEKP_OhneRundung(oCalc240_Pos),
+         nIstMenge := D240_IstMenge(oCalc240_Pos,bWorkInProgress),
+
+         Result    := Round(nIstEKP * nIstMenge, CurrDecimals()),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet den Ist-Zuschlags-Wert einer Dab240-Position
+// @Result: Double
+//******************************************************************************
+function _D240_IstZuschlagsWert(oCalc240_Pos, bWorkInProgress:L:=false)
+| nIstZuschlag, nSollmenge, nIstMenge, nIstMengeWIP |
+
+   if empty(oCalc240_Pos:ARTNR_E) then // gelöschte Position? => Ist-Zuschlags-Wert = 0
+      Result := 0,
+   else
+      // Ab 6.5.65 steht für Arbeitswerte ein von der Standard-Logik bereits berechnetes Feld Dab240:EK_WERTZ_E zur Verfügung.
+      //    Für andere Artikeltypen müssen die Soll-Kosten einer Dab240-Position berechnet werden.
+      //    Bis Version 6.0.62 müssen die Ist-Kosten einer Dab240-Position immer berechnet werden.
+      if oCalc240_Pos:ARTTYP = 'A' then
+         Result     := oCalc240_Pos:EK_WERTZ_E,
+         // Anteiligen Wert bei Berechnung WIP
+         if bWorkInProgress then
+            nIstMenge     := D240_IstMenge(oCalc240_Pos,false),
+            if nIstMenge > 0 then
+               nIstMengeWIP  := D240_IstMenge(oCalc240_Pos,true),
+               result        := round(oCalc240_Pos:EK_WERT_E / nIstmenge * nIstMengeWIP,CurrDecimals()),
+            endif,
+         endif,
+      else
+         nIstZuschlag := oCalc240_Pos:ZUSCHLAG_E,
+         nIstMenge    := D240_IstMenge(oCalc240_Pos, bWorkInProgress),
+
+         Result       := Round(nIstZuschlag * nIstMenge, CurrDecimals()),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet den Ist-Wert einer Dab240-Position ohne Zuschlagswert
+// @Result: Double
+//******************************************************************************
+function _D240_IstWertOhneZuschlag(oCalc240_Pos, bWorkInProgress:L:=false),
+   Result := Round(D240_IstWert(oCalc240_Pos, bWorkInProgress) - D240_IstZuschlagsWert(oCalc240_Pos, bWorkInProgress), CurrDecimals()),
+end,
+
+//******************************************************************************
+// Funktion ermittelt für eine Dab240-Position die gültige Produktions-Abteilung
+// @Result: string
+//******************************************************************************
+function _D240_ProdDepart(oCalc240_Pos, oDab035)
+| cBestPosNr |
+   cBestPosNr := D240_B_Pos_Lfd_2_BestPosNr(oCalc240_Pos:B_POS_LFD),
+   SetErrorIf(cBestPosNr <> oDab035:BESTPOSNR, '_D240_ProdDepart(): Dab035 not in sync with Dab240'),
+   Result := iif( Empty( oCalc240_Pos:PROD_ABT ),
+                         oDab035:PROD_ABT,
+                         oCalc240_Pos:PROD_ABT ),
+end,
+
+//******************************************************************************
+// Position "kommissioniert"? Funktion gibt für einen Dab240-Satz zurück, ob über
+//    diese Position bereits eine Auftragskarte gedruckt wurden.
+//    Hinweis: Das trifft zu, wenn eine Gesamt-AKA oder eine Teil-AKA über
+//             diese Position gedruckt wurde.
+// @Result: boolean, ja/nein
+//******************************************************************************
+function _D240_IstKommissioniert(oDab240_Pos)
+   Result := not empty(oDab240_Pos:B_DATUM),
+end,
+
+//******************************************************************************
+// Berechnet für (offene und kommissionierte) FA's die (Rest-)Bedarfs-Menge
+//    einer Position.
+// @Result: Double, Bedarfs-Menge
+//******************************************************************************
+function _D240_BedarfsMenge(oCalc240_Pos, oCalc240_Head)
+   if D240_IstKommissioniert(oCalc240_Pos) then
+      Result := oCalc240_Pos:RUECKS_PR,
+   else
+      Result := D240_SollMenge(oCalc240_Pos, oCalc240_Head),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet Soll- und Ist-Wert (Kosten) eines Produktionsauftrags
+// @Result: Array {Soll, Ist}
+//******************************************************************************
+function _D240_CalcAuftragsWert(oDM, cBestPosNr, bWorkInProgress:L:=false)
+| oCalc240_Pos, oCalc240_Head, nSollWert, nIstWert  |
+   oCalc240_Head := DBGetTable(oDM, waDab240, 'CALC240_HEAD'),
+   oCalc240_Pos  := DBGetTable(oDM, waDab240, 'CALC240_POS'),
+
+   D240_FindHead(oCalc240_Head, cBestPosNr),
+
+   nSollWert     := 0,
+   nIstWert      := 0,
+   D240_SetScopeOnOrder(oCalc240_Pos, cBestPosNr, false),
+   while not Eof(oCalc240_Pos) do
+      nSollWert  += D240_SollWert(oCalc240_Pos, oCalc240_Head),
+      nIstWert   += D240_IstWert(oCalc240_Pos, bWorkInProgress),
+      DbSkip(1, oCalc240_Pos),
+   end,
+
+   Result := {nSollWert, nIstWert},
+end,
+
+//******************************************************************************
+// Funktion berechnet Soll- und Ist-Mengen und Werte eines Produktionsauftrags
+// und summiert diese nach Artikeltypen
+// @Result: Array { {Artikeltyp, Soll-Menge, Soll-Wert, Ist-Menge, Ist-Wert},
+//                  {} }
+//******************************************************************************
+function _D240_CalcAuftragsSummenNachArtikelTypen(oDM, cBestPosNr, bWorkInProgress:L:=false)
+| oCalc240_Pos, oCalc240_Head,
+  cArtTyp, nSollMenge, nSollWert, nIstMenge, nIstWert,
+  aResultArr, nPos  |
+   oCalc240_Head := DBGetTable(oDM, waDab240, 'CALC240_HEAD'),
+   oCalc240_Pos  := DBGetTable(oDM, waDab240, 'CALC240_POS'),
+
+   D240_FindHead(oCalc240_Head, cBestPosNr),
+
+   aResultArr := { },
+   D240_SetScopeOnOrder(oCalc240_Pos, cBestPosNr, false),
+   while not Eof(oCalc240_Pos) do
+      cArtTyp    := oCalc240_Pos:ARTTYP,
+      nSollMenge := D240_SollMenge(oCalc240_Pos, oCalc240_Head),
+      nSollWert  := D240_SollWert(oCalc240_Pos, oCalc240_Head),
+      nIstMenge  := D240_IstMenge(oCalc240_Pos, bWorkInProgress),
+      nIstWert   := D240_IstWert(oCalc240_Pos, bWorkInProgress),
+
+      nPos := SeekInDimArray(cArtTyp, aResultArr, 1),
+      if nPos = -1 then
+         AAdd(aResultArr, {cArtTyp, nSollMenge, nSollWert, nIstMenge, nIstWert}),
+      else
+         aResultArr[nPos, 2] += nSollMenge,
+         aResultArr[nPos, 3] += nSollWert,
+         aResultArr[nPos, 4] += nIstMenge,
+         aResultArr[nPos, 5] += nIstWert,
+      endif,
+
+      DbSkip(1, oCalc240_Pos),
+   end,
+
+   Result := aResultArr,
+end,
+
+//******************************************************************************
+// Funktion gibt berechnete EKP / Werte / Mengen der Dab240 für einen Auftrag aus
+// => für Tests / Debugging
+// @Result: null
+//******************************************************************************
+function _D240_DebugPrintAuftragsWerte(oDM, cBestPosNr, bWorkInProgress:L:=false)
+| oCalc240_Pos, oCalc240_Head, nSollMenge, nSollEKP, nIstMenge, nIstEKP, nSollWert, nIstWert |
+   oCalc240_Head := DBGetTable(oDM, waDab240, 'CALC240_HEAD'),
+   oCalc240_Pos  := DBGetTable(oDM, waDab240, 'CALC240_POS'),
+
+   D240_FindHead(oCalc240_Head, cBestPosNr),
+
+   WriteLn(PadR('B_POS_LFD', 15) + '|' + PadR('ArtTyp', 7) + '|' + PadR('R/S', 7) + '|' + PadR('Soll-EKP', 15) + '|' + PadR('Soll-Menge', 15) + '|' + PadR('Soll-Wert', 15) + '|' + PadR('Ist-EKP', 15) + '|' + PadR('Ist-Menge', 15) + '|' + PadR('Ist-Wert', 15)),
+
+   D240_SetScopeOnOrder(oCalc240_Pos, cBestPosNr, false),
+   while not Eof(oCalc240_Pos) do
+      nSollMenge := D240_SollMenge(oCalc240_Pos, oCalc240_Head),
+      nSollEKP   := D240_SollEKP(oCalc240_Pos),
+      nIstMenge  := D240_IstMenge(oCalc240_Pos, bWorkInProgress),
+      nIstEKP    := D240_IstEKP(oCalc240_Pos),
+      nSollWert  := D240_SollWert(oCalc240_Pos, oCalc240_Head),
+      nIstWert   := D240_IstWert(oCalc240_Pos, bWorkInProgress),
+
+      WriteLn(PadR(oCalc240_Pos:B_POS_LFD, 15) + '|' + PadR(oCalc240_Pos:ARTTYP, 7)+ '|' + PadR(oCalc240_Pos:R_S, 7) + '|' + PadR(nSollEKP, 15) + '|' + PadR(nSollMenge, 15) + '|' + PadR(nSollWert, 15) + '|' + PadR(nIstEKP, 15) + '|' + PadR(nIstMenge, 15) + '|' + PadR(nIstWert, 15)),
+      DbSkip(1, oCalc240_Pos),
+   end,
+end,

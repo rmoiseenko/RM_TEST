@@ -1,0 +1,646 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking für die Anzeige von Ausnahme-Meldungen zu einem Artikel
+//               Wird typischerweise angedockt in
+//               - Produktion Dispositionsplanung
+//               - Artikelstamm
+//##############################################################################
+//##############################################################################
+
+|
+  m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3,
+
+  m_cFormClassID, m_cWinPosSaveId, m_cBrowserId, m_nLastTableState,
+  m_oDM, m_oKdnDAM,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Delete, A_Save, A_SetWV_1, A_SetWV_14, A_SetWV_2,
+   A_SetWV_21, A_SetWV_7, A_SetWV_All_1, A_SetWV_All_14, A_SetWV_All_2,
+   A_SetWV_All_21, A_SetWV_All_7, A_SetWV_All_DateAndComment,
+   A_SetWV_DateAndComment, A_ShowIndiOnlineHelp, al_Main, bar_Main,
+   barbtn_WV_single, bardock_Main, barmngr_Main, BeBarButton11, BeBarButton5,
+   BeBarButton6, BeBarSeparator1, BeBarSeparator2, BeBarSubItem1, btn_Cancel,
+   btn_Delete, btn_Help, btn_Save, btn_SetWV_1, btn_SetWV_2, btn_SetWV_7,
+   btn_SetWV_All_1, btn_SetWV_All_14, btn_SetWV_All_2, btn_SetWV_All_21,
+   btn_SetWV_All_7, btn_SetWV_All_X, ds_KdnDAM, ds_MasterTable, grid_Ausnahmen,
+   pnl_Main
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID  := "@AM_DGUI",
+m_cWinPosSaveId := "@AM_DGUI",
+m_cBrowserId    := "@AM_DGUI",
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+   | bCanChangeRecord, bCanSetWiedervorlage |
+   bCanChangeRecord               := not EditModes(m_oKdnDAM),
+
+   A_Save.Enabled                 := not bCanChangeRecord,
+   A_Save.Visible                 := false,
+   A_Cancel.Enabled               := not bCanChangeRecord,
+   A_Cancel.Visible               := false,
+
+   A_Delete.Enabled               := bCanChangeRecord and not empty(m_oKdnDAM:ID),
+
+   bCanSetWiedervorlage           := bCanChangeRecord and not empty(m_oKdnDAM:ID),
+
+   barbtn_WV_single.Enabled       := bCanSetWiedervorlage,
+   A_SetWV_1.Enabled              := bCanSetWiedervorlage,
+   A_SetWV_14.Enabled             := bCanSetWiedervorlage,
+   A_SetWV_2.Enabled              := bCanSetWiedervorlage,
+   A_SetWV_21.Enabled             := bCanSetWiedervorlage,
+   A_SetWV_7.Enabled              := bCanSetWiedervorlage,
+   A_SetWV_DateAndComment.Enabled := bCanSetWiedervorlage,
+
+   A_SetWV_All_1.Enabled          := bCanSetWiedervorlage,
+   A_SetWV_All_14.Enabled         := bCanSetWiedervorlage,
+   A_SetWV_All_2.Enabled          := bCanSetWiedervorlage,
+   A_SetWV_All_21.Enabled         := bCanSetWiedervorlage,
+   A_SetWV_All_7.Enabled          := bCanSetWiedervorlage,
+   A_SetWV_All_DateAndComment.Enabled := bCanSetWiedervorlage,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+   m_oDM               := CreateObject('TBeDbGet', '', oForm),
+   m_oKdnDAM           := DbGetTable(m_oDM, waKdnDAM),
+   m_oKdnDAM.IndexName := 'PRIORI',
+
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, -1, 'TBeRightsTable'),
+
+   // notwendige Tabelle(n) öffnen
+   m_nLastTableState              := DbState(m_oKdnDAM),
+   ds_KdnDAM.DataSet              := m_oKdnDAM,
+   grid_Ausnahmen.DataSource      := ds_KdnDAM,
+   grid_Ausnahmen.RegisterDataSet := m_oKdnDAM,
+   grid_Ausnahmen.ID              := m_cBrowserId,
+   grid_Ausnahmen.ReadWriteProps  := False,
+end,
+
+//******************************************************************************
+// Funktion stößt die Neu-Berechnung der "Hinweis-Datensätz in Dispo-Tabellen" an
+//
+//  Warum:
+//    Nachdem eine Ausnahme in der KdnDAM durch eine Aktion des Benutzers in
+//    diesem Fenster geändert oder gelöscht wurde, kann eine Aktualisierung
+//    der (redundanten) Infos in den Dispo-Planungs-Tabellen notwendig sein,
+//    denn es könnte
+//        1) gar keine Ausnahme mehr für den Artikel geben, die in der
+//           Dispo-Tabelle angezeigt werden soll (alle gelöscht oder alle auf WV in
+//           der Zukunft)
+//        2) eine andere Ausnahme als bisher diejenige mit der höchsten Prio sein
+//        3) ...
+//
+// @Result: null
+//******************************************************************************
+function ReCalcDispoTableForArtnr(oDM, cArtNr)
+| nTime, aAusnahmeTypen |
+
+   nTime := GetExTimer(),
+
+   // Hinweis: Hier kein "DAMU_DispoHintRecords_DeleteAll(...)", denn für einzelne
+   //          Artikel kann die Funktion DAMU_Transfer_Hints_To_DispoTables()
+   //          "aktualisieren".
+
+   // TODO: Diese Liste muss hier weg, denn sie muss cutomizing-Fähig sein.
+   //       Außerdem nur einmal zentral definiert....
+   aAusnahmeTypen := { gl_DAMU_MengenUnterdeckung,
+                       gl_DAMU_MengenUeberdeckung,
+                       gl_DAMU_KonkreterAbgangInDerVergangenheit,
+                       gl_DAMU_KonkreterZugangInDerVergangenheit,
+                       gl_DAMU_AuftragsbestaetigungUeberfaellig
+                     },
+
+   DAMU_Transfer_Hints_To_DispoTables( oDM,
+                                       true,           // in Prod.-Dispo übertragen                        // TODO: Je nachdem, welches Fenster aktuell das Master-Fenster ist? Oder immer gleich?
+                                       waDab215,       //    -> Ziel-Tabelle in Prod-Dispo = Dab215
+                                       true,           // in Einkaufs-Dispo übertragen (Dab315)
+                                       cArtNr,
+                                       '',
+                                       aAusnahmeTypen ),
+
+   nTime := GetExTimer() - nTime,
+   WriteLn('ReCalcDispoTableForArtnr(): Ausnahmen für Artikel <' + AllTrim(cArtNr) + '> neu in die Dispo-Tabelle übertragen in ' + FloatToStr(nTime * 1000, 2) + ' mSec'),
+end,
+
+//******************************************************************************
+// Wiedervorlage für die aktuelle oder alle (bAll = true) Ausnahmen des Artikels
+//   auf "heute + nTage" setzen.
+//
+// @Result: null
+//******************************************************************************
+function SetWiedervorlageWithKomment(bAll, nTage, cKommentarRtf:C:='')
+| cCurArtnr, nOldAusnahmeID, oKdnDAMSeek |
+
+   //***************************************************************************
+   // Funktion setzt die Wiedervorlagedaten für genau eine Ausnahmemeldung
+   // @Result: null
+   //***************************************************************************
+   function SetEineWiedervorlage(oKdnDam, nTage, cKommentRtf)
+      BeginSuspend(oKdnDAM),
+      startseq
+         MyEdit(oKdnDAM),
+         oKdnDAM:WV_TS      := Trunc(GetAdsServerTime()) + nTage,
+         oKdnDAM:WV_USER    := c_usr,
+         oKdnDAM:WV_GEAEND  := GetAdsServerTime(),
+         // Kommentar nur überschreiben, wenn er definiert ist (das ist dann
+         //   der Fall, wenn das Fenster zur Kommentar-Eingabe genutzt wurde und
+         //   nicht einer der Schnell-Funktionen für das Setzen des WV-Datums)
+         if not empty(cKommentRtf) then
+            oKdnDAM:WV_KOMMENT := cKommentRtf,
+         endif,
+         MyPost(oKdnDAM),
+      always
+         EndSuspend(oKdnDAM),
+      stopseq,
+   end,
+
+   startseq
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         cCurArtnr      := m_oKdnDAM:ARTNR,
+         nOldAusnahmeID := m_oKdnDAM:ID,
+
+         DbDisableControls(m_oKdnDAM),
+         startseq
+
+            // 1. Wiedervorlage(n) setzen
+            if not bAll then
+               SetEineWiedervorlage(m_oKdnDam, nTage, cKommentarRtf),
+            else
+               // Ausnahmemeldungen mit der derselben Artikelnummer
+               oKdnDAMSeek := MyGetTable(m_oDM, waKDNDAM, 'KDNDAMSEEK'),
+               oKdnDAMSeek.IndexName := 'ARTNR',
+               DbScope({m_oKdnDAM:ARTNR},{m_oKdnDAM:ARTNR}, oKDNDAMSeek),
+               startseq
+                  DbgoTop(oKdnDAMSeek),
+                  while not eof(oKdnDAMSeek) do
+                     SetEineWiedervorlage(oKdnDamSeek, nTage, cKommentarRtf),
+                     DbSkip(1, oKdnDAMSeek),
+                  end,
+               always
+                  oKdnDamSeek.CbCancelRange(),                                  // TK 21.01.19 Migration7.1
+               stopseq,
+
+            endif,
+
+            // 2. Hinweis-Sätze in Dispo-Tabellen neu berechnen
+            ReCalcDispoTableForArtnr(m_oDM, cCurArtnr),
+
+            DbCommit(m_oDM.AdsConnection),
+
+            // 3. Nach der erfolgreichen Aktualisierung:
+            //    -> Master-Tabelle aktualisieren, denn der aktuelle Datensatz könnte
+            //       verändert oder gelöscht sein
+            if not empty(m_oMasterTable) and not EditModes(m_oMasterTable) then
+               if not empty(m_oOwnerForm) then
+                  m_oOwnerForm.CbRefreshGUIKeepPosition(True),
+                  // Durch den Refresh wurde der Detail-Filter der KdnDAM ggf. neu ausgeführt
+                  // und somit der Datensatz-Zeiger ggf. verändert
+                  // -> vesuchen, die vorher selektierte Ausnahme wieder zu selektieren
+                  if m_oKdnDAM:ARTNR == cCurArtnr then
+                     DbLocate('ID', {nOldAusnahmeID}, , m_oKdnDAM),
+                  endif,
+               endif,   
+            endif,
+
+         always
+            DbEnableControls(m_oKdnDAM),
+         stopseq,
+
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection),
+            DbCancelAll(m_oDM),
+         endif,
+      stopseq,
+
+   onerror
+      MessageDlg('Fehler beim Setzen der Wiedervorlage (und anschließendem Aktualisieren der Ausnahmen): ' + crlf +
+                  GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetWiedervorlage(bAll, nTage)
+   SetWiedervorlageWithKomment(bAll, nTage),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//   Beim Klick auf Wiedervorlage öffnet sich dropdown der Wiedervorlageänderungsmöglichen
+//   Falls es nur eine Ausnahmemeldung gibt, werden die Actions für alle
+//   Ausnahmemeldungen hier disabled.
+//   Das geschieht aus Performancegründen hier und und nicht in actionsenabled(),
+//   weil dieses Event nicht beim Scroll in der Mastertabelle passiert, sondern
+//   erst bei Klick auf den Button.
+//******************************************************************************
+function barbtn_WV_singleClick( Sender )
+|nCountMeldungen, nKdnDamID |
+   DbDisableControls(m_oKdnDam),
+   startseq
+      nCountMeldungen := 0,
+      nKdnDamID := m_oKdnDam:ID,
+      dbGoTop(m_oKdnDam),
+      while not eof(m_oKdnDam) do
+         nCountMeldungen++,
+         DbSkip(1, m_oKdnDam),
+      end,
+
+      DBLocate('ID', {nKdnDamID}, 0, m_oKDNDAM),
+
+   always
+      DbEnableControls(m_oKdnDam),
+   stopseq,
+   A_SetWV_All_1.Enabled              := nCountMeldungen > 1,
+   A_SetWV_All_14.Enabled             := nCountMeldungen > 1,
+   A_SetWV_All_2.Enabled              := nCountMeldungen > 1,
+   A_SetWV_All_21.Enabled             := nCountMeldungen > 1,
+   A_SetWV_All_7.Enabled              := nCountMeldungen > 1,
+   A_SetWV_All_DateAndComment.Enabled := nCountMeldungen > 1,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_WVbeliebig( Sender )
+
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function ds_KdnDAMScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := DbState(m_oKdnDAM) = dsBrowse,
+end,
+
+//******************************************************************************
+// Event: Beim Wechsel des KdnDAM-Status wird dem Master der NoRecordMove gesetzt
+//******************************************************************************
+function ds_KdnDAMStateChange( Sender )
+   ActionsEnabled(),
+
+   if DbState(m_oKdnDAM) <> m_nLastTableState then
+      if EditModes(m_oKdnDAM) then
+         m_oMasterTable.CbBeginNoRecordMove(),
+      else
+         m_oMasterTable.CbEndNoRecordMove(),
+      endif,
+      m_nLastTableState := DBState(m_oKdnDAM),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )                                  prs('ds_MasterTableScroll_Update', 'START'),
+   if not empty(m_oMasterTable) and not empty(m_oKdnDAM) then
+
+      DbFilter('STANDORT = ' + Str(mStandort) + ' AND ARTNR = "' + PadR(m_oMasterTable:ARTNR, mBeArtNoLen) + '"', m_oKdnDAM),
+
+      // TODO: Standort-Filterung: Nicht notwendig, wenn Standard-Feld & Index vorhanden... ?? Scheinbar schon (getestet)
+
+   endif,                                                                       prs('ds_MasterTableScroll_Update', 'END'),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)                                           prs('FormExClose', 'START'),
+   if EditModes(m_oKdnDAM)  then
+      Action := caNone,
+      MessageDLG("Tabelle befindet sich im Editmodus"),
+   else
+      if m_oMasterTable.CbIsNoRecordMove() then
+         m_oMasterTable.CbEndNoRecordMove(),
+      endif,
+      Action := caFree, // = Form zerstören
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )                                                prs('SupplierDocking => FormExDestroy', 'START'),
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),                             prs('SupplierDocking => FormExDestroy', 'END'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiOnlineHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_DAMU_IndiOnlineHelp_SQLWhere),
+end,
+
+//******************************************************************************
+// Action: WV setzen (für alle Ausnahmen des Artikels)
+//******************************************************************************
+function A_SetWV_All_1Execute( Sender )
+   SetWiedervorlage(true, 1),
+end,
+
+//******************************************************************************
+// Action: WV setzen (für alle Ausnahmen des Artikels)
+//******************************************************************************
+function A_SetWV_All_2Execute( Sender )
+   SetWiedervorlage(true, 2),
+end,
+
+//******************************************************************************
+// Action: WV setzen (für alle Ausnahmen des Artikels)
+//******************************************************************************
+function A_SetWV_All_7Execute( Sender )
+   SetWiedervorlage(true, 7),
+end,
+
+//******************************************************************************
+// Action: WV setzen (für alle Ausnahmen des Artikels)
+//******************************************************************************
+function A_SetWV_All_14Execute( Sender )
+   SetWiedervorlage(true, 14),
+end,
+
+//******************************************************************************
+// Action: WV setzen (für alle Ausnahmen des Artikels)
+//******************************************************************************
+function A_SetWV_All_21Execute( Sender )
+   SetWiedervorlage(true, 21),
+end,
+
+// -----------------------------------------------------------------------------
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme)
+//******************************************************************************
+function A_SetWV_1Execute( Sender )
+   SetWiedervorlage(false, 1),
+end,
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme)
+//******************************************************************************
+function A_SetWV_2Execute( Sender )
+   SetWiedervorlage(false, 2),
+end,
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme)
+//******************************************************************************
+function A_SetWV_7Execute( Sender )
+   SetWiedervorlage(false, 7),
+end,
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme)
+//******************************************************************************
+function A_SetWV_14Execute( Sender )
+   SetWiedervorlage(false, 14),
+end,
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme)
+//******************************************************************************
+function A_SetWV_21Execute( Sender )
+   SetWiedervorlage(false, 21),
+end,
+
+//******************************************************************************
+// Action: WV setzen (aktuelle Ausnahme) mit beliebigem Datum und Kommentar
+//******************************************************************************
+function A_SetWV_DateAndCommentExecute( Sender )
+   | aInfoArr, nDaysInTheFuture, cKommentarRtf |
+   nDaysInTheFuture := 0,
+   aInfoArr         := Dim(2),
+   aInfoArr         := Call('Disposition\Ausnahmemeldungen\Docking\DatumKommentGUI', , , m_oKdnDAM:ID),
+   if not empty(aInfoArr[1]) then
+      cKommentarRtf    := aInfoArr[2],
+      nDaysInTheFuture := Day_Diff(Date(), aInfoArr[1]),
+
+      if nDaysInTheFuture >= 0 then // einen Kommentar zu setzen könnte auch Sinn machen, für WV = heute
+         SetWiedervorlageWithKomment(false, nDaysInTheFuture, cKommentarRtf),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+| cCurArtnr |
+
+   startseq
+      DbStartTrans(m_oDM.AdsConnection),
+      startseq
+         cCurArtnr := m_oKdnDAM:ARTNR,
+
+         // 1. Ausnahme löschen
+         DAMU_DB_LoescheVorhandeneAusnahme(m_oKdnDAM),
+
+         // 2. Hinweis-Sätze in Dispo-Tabellen neu berechnen
+         ReCalcDispoTableForArtnr(m_oDM, cCurArtnr),
+
+         DbCommit(m_oDM.AdsConnection),
+
+         // 3. Nach der erfolgreichen Aktualisierung:
+         //    -> Master-Tabelle aktualisieren, denn der aktuelle Datensatz könnte
+         //       verändert oder gelöscht sein
+         if not empty(m_oMasterTable) and not EditModes(m_oMasterTable) then
+            m_oOwnerForm.CbRefreshGUIKeepPosition(True),
+         endif,
+
+      always
+         if DbInTrans(m_oDM.AdsConnection) then
+            DbRollBack(m_oDM.AdsConnection),
+            DbCancelAll(m_oDM),
+         endif,
+      stopseq,
+
+   onerror
+      MessageDlg('Fehler beim Löschen (und anschließendem Aktualisieren der Ausnahmen): ' + crlf +
+                  GetErrorText() + crlf + ArrToStr(GetErrorStack()), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   DbPost(m_oKdnDAM),    // TODO: spezielle Post-Methode?
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?') then
+      DbCancel(m_oKdnDAM),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                   := FindObject(oForm, "A_Cancel"),
+   A_Delete                   := FindObject(oForm, "A_Delete"),
+   A_Save                     := FindObject(oForm, "A_Save"),
+   A_SetWV_1                  := FindObject(oForm, "A_SetWV_1"),
+   A_SetWV_14                 := FindObject(oForm, "A_SetWV_14"),
+   A_SetWV_2                  := FindObject(oForm, "A_SetWV_2"),
+   A_SetWV_21                 := FindObject(oForm, "A_SetWV_21"),
+   A_SetWV_7                  := FindObject(oForm, "A_SetWV_7"),
+   A_SetWV_All_1              := FindObject(oForm, "A_SetWV_All_1"),
+   A_SetWV_All_14             := FindObject(oForm, "A_SetWV_All_14"),
+   A_SetWV_All_2              := FindObject(oForm, "A_SetWV_All_2"),
+   A_SetWV_All_21             := FindObject(oForm, "A_SetWV_All_21"),
+   A_SetWV_All_7              := FindObject(oForm, "A_SetWV_All_7"),
+   A_SetWV_All_DateAndComment := FindObject(oForm, "A_SetWV_All_DateAndComment"),
+   A_SetWV_DateAndComment     := FindObject(oForm, "A_SetWV_DateAndComment"),
+   A_ShowIndiOnlineHelp       := FindObject(oForm, "A_ShowIndiOnlineHelp"),
+   al_Main                    := FindObject(oForm, "al_Main"),
+   bar_Main                   := FindObject(oForm, "bar_Main"),
+   barbtn_WV_single           := FindObject(oForm, "barbtn_WV_single"),
+   bardock_Main               := FindObject(oForm, "bardock_Main"),
+   barmngr_Main               := FindObject(oForm, "barmngr_Main"),
+   BeBarButton11              := FindObject(oForm, "BeBarButton11"),
+   BeBarButton5               := FindObject(oForm, "BeBarButton5"),
+   BeBarButton6               := FindObject(oForm, "BeBarButton6"),
+   BeBarSeparator1            := FindObject(oForm, "BeBarSeparator1"),
+   BeBarSeparator2            := FindObject(oForm, "BeBarSeparator2"),
+   BeBarSubItem1              := FindObject(oForm, "BeBarSubItem1"),
+   btn_Cancel                 := FindObject(oForm, "btn_Cancel"),
+   btn_Delete                 := FindObject(oForm, "btn_Delete"),
+   btn_Help                   := FindObject(oForm, "btn_Help"),
+   btn_Save                   := FindObject(oForm, "btn_Save"),
+   btn_SetWV_1                := FindObject(oForm, "btn_SetWV_1"),
+   btn_SetWV_2                := FindObject(oForm, "btn_SetWV_2"),
+   btn_SetWV_7                := FindObject(oForm, "btn_SetWV_7"),
+   btn_SetWV_All_1            := FindObject(oForm, "btn_SetWV_All_1"),
+   btn_SetWV_All_14           := FindObject(oForm, "btn_SetWV_All_14"),
+   btn_SetWV_All_2            := FindObject(oForm, "btn_SetWV_All_2"),
+   btn_SetWV_All_21           := FindObject(oForm, "btn_SetWV_All_21"),
+   btn_SetWV_All_7            := FindObject(oForm, "btn_SetWV_All_7"),
+   btn_SetWV_All_X            := FindObject(oForm, "btn_SetWV_All_X"),
+   ds_KdnDAM                  := FindObject(oForm, "ds_KdnDAM"),
+   ds_MasterTable             := FindObject(oForm, "ds_MasterTable"),
+   grid_Ausnahmen             := FindObject(oForm, "grid_Ausnahmen"),
+   pnl_Main                   := FindObject(oForm, "pnl_Main"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+ 
+  // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   oForm.OrigCapt   := 'Ausnahmemeldungen',
+   oForm.ImageIndex := 605,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and empty(m_oMasterTable) then
+      m_oMasterTable           := DBOpen(waDab010),
+      m_oMasterTable.IndexName := 'DAB011',
+      DBSeek({'1.4104 X14CRMOS1 ZS'}, m_oMasterTable),
+   endif,
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText()  + crlf + crlf +
+               'error stack: ' + crlf +
+               DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm

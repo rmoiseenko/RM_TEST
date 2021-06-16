@@ -1,0 +1,237 @@
+//##############################################################################
+//##############################################################################
+//
+//##############################################################################
+//##############################################################################
+|
+   m_cRepoPath:P1, m_cGitUrl:P2, m_cGitUser:P3, m_cGitToken:P4, m_bIsSSHCommunication:P5,
+   m_cSystemMatchcode:P6, m_cInstanceMatchcode:P7, m_cInstanceType:P8,
+
+   m_cGitBashPath,
+
+   m_uResult, m_cErrorText
+|
+
+//#p .admin-tools\customize-export\utils
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cGitBashPath := 'C:\be_git\PortableGit\bin\bash.exe',
+
+//##############################################################################
+//##############################################################################
+// Hilffunktions
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetGitPushUrl()
+   Result := StrTran(m_cGitUrl, 'https://', 'https://' + m_cGitUser + ':' + m_cGitToken + '@') ,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RemoveAll()
+
+//******************************************************************************
+   function myRemoveDir(cDir)
+      | aDirArray, aFiles, i |
+
+      Result := true,
+      if right(alltrim(cDir),1) <> '\' then
+         cDir += '\',
+      endif,
+
+      aFiles := PathSeek({'*.*'}, cDir),  // WriteLn(aFiles),
+      for i := 1 to aLen(aFiles) do
+         DeleteFile(aFiles[i]),
+      next,
+
+      aDirArray := DirArray(cDir),
+   // Rekrusiver aufruf für jeden gefundenen Unterordner
+      for i := 3 to alen(aDirArray) do
+         Result := myRemoveDir(cDir + aDirArray[i, 1]),
+         Result := Result and RemoveDir(cDir + aDirArray[i, 1]),
+
+         if not Result then
+            break,
+         endif,
+      next,
+   end,
+
+   result := true,
+   if DirectoryExists(m_cRepoPath + 'Programmierung') then
+      result := myRemoveDir(m_cRepoPath + 'Programmierung'),
+   endif,
+
+   if DirectoryExists(m_cRepoPath + 'CodeblockPanels') then
+      result := myRemoveDir(m_cRepoPath + 'CodeblockPanels'),
+   endif,
+
+   if DirectoryExists(m_cRepoPath + 'Individualmenues') then
+      result := myRemoveDir(m_cRepoPath + 'Individualmenues'),
+   endif,
+   if DirectoryExists(m_cRepoPath + 'Menues') then
+      result := myRemoveDir(m_cRepoPath + 'Menues'),
+   endif,
+
+   if DirectoryExists(m_cRepoPath + 'F12-Formulare-Ohne-direkte-Programmzuweisung') then
+      result := myRemoveDir(m_cRepoPath + 'F12-Formulare-Ohne-direkte-Programmzuweisung'),
+   endif,
+   if DirectoryExists(m_cRepoPath + 'F12-Formulare-ohne-Zuweisung') then
+      result := myRemoveDir(m_cRepoPath + 'F12-Formulare-ohne-Zuweisung'),
+   endif,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Export()
+   | aExportSettings, cReadMeContent, dBeginDateTime, dEndDateTime |
+   KVU_Set(aExportSettings, 'BASICPATH',               m_cRepoPath),
+   KVU_Set(aExportSettings, 'COMPLETE_EXPORT',         true),
+   KVU_Set(aExportSettings, 'EXPORT_SINCE',            nil),
+   KVU_Set(aExportSettings, 'EXPORT_INDIFORM_AS_JSON', true),
+   KVU_Set(aExportSettings, 'EXPORT_BRO_AS_USR',       0),
+
+   KVU_Set(aExportSettings, 'EXPORT_PROGRAM',    true),
+   KVU_Set(aExportSettings, 'EXPORT_INDIFORMS',  true),
+//KVU_Set(aExportSettings, 'EXPORT_MASKS',      true),
+//KVU_Set(aExportSettings, 'EXPORT_BROWSER',    true),
+//KVU_Set(aExportSettings, 'EXPORT_LAYOUTS',    true),
+   KVU_Set(aExportSettings, 'EXPORT_INDIMENUES', true),
+//KVU_Set(aExportSettings, 'EXPORT_MMT',        true),
+   KVU_Set(aExportSettings, 'EXPORT_CB_PANELS',  true),
+//KVU_Set(aExportSettings, 'EXPORT_TABLEDEF',   true),
+//KVU_Set(aExportSettings, 'EXPORT_ROLLEN',     true),
+
+   dBeginDateTime := now(),
+   Result := ExportWithPackage(aExportSettings),
+   dEndDateTime   := now(),
+
+   cReadMeContent := '',
+   cReadMeContent += '# ' + m_cSystemMatchcode + crlf + crlf,
+   cReadMeContent += '- Zeitpunkt: ' + DateTimeToStr(now()) + crlf + crlf,
+   cReadMeContent += '- Datenbestand: \' + mBeDefault + crlf,
+   cReadMeContent += '- Dauer: ' + FormatDateTime('HH:NN:SS', dEndDateTime - dBeginDateTime) + crlf,
+   cReadMeContent += '- git-User: ' + m_cGitUser + crlf,
+   cReadMeContent += '- Instanz Name: ' + m_cInstanceMatchcode + crlf,
+   cReadMeContent += '- Instanz Typ: ' + m_cInstanceType + crlf,
+
+   SaveFile(cReadMeContent, m_cRepoPath + 'README.md'),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GitCommitAndPush()
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git add *"', m_cRepoPath, sw_SHOW, true) <> 0 then
+      SetError('"git add *" nicht möglich.'),
+   endif,
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git commit -m \"automatischer commit vom ' + DateTimeToStr(GetAdsServerTime()) + '\" "', m_cRepoPath, sw_SHOW, true) <> 0 then
+      SetError('"git commit" nicht möglich.'),
+   endif,
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git push"', m_cRepoPath, sw_SHOW, true) <> 0 then
+      SetError('"git push" nicht möglich.'),
+   endif,
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git reset --hard && git clean -fd"', m_cRepoPath, sw_SHOW, true) <> 0 then
+      SetError('"git reset --hard && git clean -fd" nicht möglich.'),
+   endif,
+
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ChangeBranch(cBranch)
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git reset --hard"', m_cRepoPath, sw_Hide, true) <> 0 then
+      SetError('"git reset" nicht möglich.'),
+   endif,
+
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git checkout ' + cBranch + '"', m_cRepoPath, sw_Hide, true) <> 0 then
+      SetError('"git checkout ' + cBranch + '" nicht möglich.'),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GitClone()
+   if m_bIsSSHCommunication then
+      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.RM_TEST:rmoiseenko/RM_TEST.git . "', m_cRepoPath, sw_Hide, true) <> 0 then
+         SetError('"git clone" nicht möglich.'),
+      endif,
+   else
+      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone ' + GetGitPushUrl() + ' . "', m_cRepoPath, sw_Hide, true) <> 0 then
+         SetError('"git clone" nicht möglich.'),
+      endif,
+   endif,
+end,
+
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   if RAt('\', m_cRepoPath) <> Alen(m_cRepoPath) then
+      m_cRepoPath := m_cRepoPath + '\',
+   endif,
+
+   SetErrorIf(at(lower(m_cInstanceType), 'production|development|training') == 0, 'InstanceType nicht gültig'),
+
+   if empty(m_cInstanceMatchcode) and lower(m_cInstanceType) <> 'production' then
+      SetError('InstanceMatchcode darf nur im InstanceType ''PRODUKTION'' leer sein.'),
+   endif,
+
+   if not DirectoryExists(m_cRepoPath) then
+      ForceDirectories(m_cRepoPath),
+      GitClone(),
+   endif,
+   
+   if empty(m_cInstanceMatchcode) then
+      ChangeBranch(lower(m_cInstanceType)),
+   else
+      ChangeBranch(lower(m_cInstanceType) + '/' + m_cInstanceMatchcode),
+   endif,
+
+   if RemoveAll() then
+      if Export() then
+         if GitCommitAndPush() == 0 then
+            TSKPL_SetTaskResult(m_uResult, gl_TSKPL_TaskResult_Success, "Task erfolgreich beendet."),
+         endif,
+      else
+         TSKPL_SetTaskResult(m_uResult, gl_TSKPL_TaskResult_Failure, 'Export nicht erfolgreich.'),
+      endif,
+   else
+      TSKPL_SetTaskResult(m_uResult, gl_TSKPL_TaskResult_Failure, 'Ordnerstruktur konnte nicht entfernt werden.'),
+   endif,
+onerror
+   m_cErrorText := GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorObj(), true),
+   TSKPL_SetTaskResult(m_uResult, gl_TSKPL_TaskResult_Failure, m_cErrorText),
+stopseq,
+
+m_uResult

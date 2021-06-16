@@ -1,0 +1,191 @@
+//******************************************************************************
+// Funktion zum Kopieren vom Browser des Quellusers zu allen Usern OHNE Dialoge.
+// @Result: null
+//******************************************************************************
+function CopyBrowsersWithMode(cBrowser, cQuellUser, nCopyMode)
+|
+   oDM, oDABBROOrg, oDABBRO, oDABSPROrg, oDABSPR
+|
+
+   oDM                    := CreateObject('TbeDbGet'),                                                      // TODO Frage Modul übergeben? Alias?
+   startseq
+      oDABBROOrg             := DbGetTable(oDM, waDABBRO, 'DABBROSEEK'),
+      oDABBROOrg.CbIndexName := 'BROWSER_ID',
+      oDABBRO                := DbGetTable(oDM, waDABBRO),
+      oDABBRO.CbIndexName    := 'BROWSER_ID',
+      oDABSPROrg             := DbGetTable(oDM, waDABSPR, 'DABSPRSEEK'),
+      oDABSPROrg.CbIndexName := 'DABSPR',
+      oDABSPR                := DbGetTable(oDM, waDABSPR),
+      oDABSPR.CbIndexName    := 'DABSPR',
+
+      //******************************************************************************
+      // Unter-Funktionen
+      //******************************************************************************
+
+      //******************************************************************************
+      // Die Funktion erzeugt und füllt eine Memtable mit allen Usern
+      // Rückgabe: Memtable mit allen Usern
+      //******************************************************************************
+      function CreateUserTable(nMode)
+      | oMem, oDABFIL |
+         oMem := CreateObject('TMemCalcTable'),
+
+         AddMemField(oMem, 'USER_NO',   'C',  3, 0),
+         AddMemField(oMem, 'USER_NAME', 'C', 30, 0),
+         oMem.Active := True,
+
+         oDABFIL := BeOpen(101, 'DABFIL'),
+         startseq
+            if nMode = 2 then
+               DBScope({999, '__USR__001'}, {999, '__USR__999'}, oDABFIL),
+            endif,
+            case nMode
+               of 1 :: DBScope({999, '__USR__000'}, {999, '__USR__999'}, oDABFIL),
+               of 2 :: DBScope({999, '__USR__001'}, {999, '__USR__999'}, oDABFIL),
+               of 3 :: DBScope({999, '__USR__000'}, {999, '__USR__000'}, oDABFIL),
+            endcase,
+            DBGoTop(oDABFIL),
+            while not Eof(oDABFIL) do
+               DBAppend(oMem),
+               oMem:USER_NO   := StrZero( Val(SubStr(oDABFIL:FELD, 8, 3)), 3),
+               oMem:USER_NAME := oDABFIL:NAME,
+               DBPost(oMem),
+               DBSkip(1, oDABFIL),
+            end,
+            oMem.OrderBy := 'USER_NAME',
+         always
+            BeClose(oDABFIL),
+         stopseq,
+         result := oMem,
+      end,
+
+      //******************************************************************************
+      // ChangeDABBRO setzt den neuen Browser für den übergebenen User.
+      // @Result: null
+      //******************************************************************************
+      function ChangeDABBRO(nUsr, cQuellUser, cBrowser)
+         SuspendEx(oDABBRO, True),
+         DBStartTrans(oDM.ADSConnection),
+         startseq
+            if not DBSeek({cBrowser, Val(cQuellUser)}, oDABBROOrg) then
+               SetError('Browserdaten konnten nicht in Quelltabelle ermittelt werden.'),
+            endif,
+            if not DBSeek({cBrowser, StrZero(nUsr, 3)}, oDABBRO) then
+               DBAppend(oDABBRO),
+               oDABBRO.RecAsArray := oDABBROOrg.RecAsArray,
+               oDABBRO:USER       := StrZero(nUsr, 3),
+            else,
+               DBEdit(oDABBRO),
+            endif,
+            oDABBRO:DATA     := oDABBROOrg:DATA,
+            oDABBRO:DATA_OLD := oDABBROOrg:DATA_OLD,
+            DBPost(oDABBRO),
+            DBCommit(oDM.ADSConnection),
+         onerror
+            DbRollback(oDM.ADSConnection),
+            SetError("Fehler beim Ändern des Browsers ' + cBrowser + ' für User: " + nUsr + crlf + GetErrorText()),           // TODO Frage fehlerbehandlung
+         stopseq,
+         SuspendEx(oDABBRO, False),
+      end,
+
+      //******************************************************************************
+      // ChangeDABSPR übernimmt die Sprachdaten für den übergebenen User.
+      // @Result: null
+      //******************************************************************************
+      Function ChangeDABSPR(cUsr, cQuellUser, cBrowser)
+      | cKey, i |
+         SuspendEx(oDABSPR, True),
+         for i := 6 to 6 do
+            cKey := "Grid" + PadR(cBrowser, 10) + cQuellUser + "." + StrZero(i, 3),
+            DBScope({cKey},{cKey},oDABSPROrg),
+            DBGoTop(oDABSPROrg),
+            while !EoF(oDABSPROrg) do
+               cKey := "Grid" + PadR(cBrowser, 10) + cUsr + "." + StrZero(i, 3),
+               DbStartTrans(oDM.ADSConnection),
+               startseq
+                  if !DBSeek({cKey}, oDABSPR) then
+                     DBAppend(oDABSPR),
+                     oDABSPR:KEY  := cKey,
+                  else,
+                     DBEdit(oDABSPR),
+                  endif,
+
+                  oDABSPR:DATA := oDABSPROrg:DATA,
+                  DBPost(oDABSPR),
+                  DBCommit(oDM.ADSConnection),
+               onerror
+                  DbRollback(oDM.ADSConnection),
+                  MessageDlg("Fehler beim Kopieren der Sprachdaten für User: " +                                             // TODO Frage fehlerbehandlung
+                             cUsr + crlf + GetErrorText()),
+               stopseq,
+               DBSkip(1, oDABSPROrg),
+            end,
+         next,
+         SuspendEx(oDABSPR, False),
+      end,
+
+      //******************************************************************************
+      // Kopiert den Browser für alle User wenn "Alle" gewählt wurde.
+      // @Result: null
+      //******************************************************************************
+      function CopyForAll(cQuellUser, cBrowser, nTableMode)
+      | oRec, oUserTable |
+         oUserTable := CreateUserTable(nTableMode),
+         foreach oRec in oUserTable do
+            if not oRec:USER_NO == cQuellUser then // exakter Vergleich notwendig!
+               ChangeDABBRO(oRec:USER_NO, cQuellUser, cBrowser),
+               ChangeDABSPR(oRec:USER_NO, cQuellUser, cBrowser),
+            endif,
+         next,
+      end,
+
+      //##############################################################################
+      // Ende der Unter-Funktionen
+      //##############################################################################
+
+      CopyForAll(cQuellUser, cBrowser, nCopyMode),
+   always
+      destroyObject(oDM),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Geht das Array mit den Browsern durch, die auf alle User (mit User 0) kopiert
+// werden sollen und ruft je Browser die Funktion zum Kopieren der Browser auf.
+// @Result: null
+//******************************************************************************
+function CopyBrowsersToTotalCallLoop(aBrowsersToCopyToTotal, aBrowserCopyLog:R)
+| i |
+   for i := 1 to aLen(aBrowsersToCopyToTotal) do
+      CopyBrowsersWithMode(aBrowsersToCopyToTotal[i], StrZero(val(c_usr), 3), 1),
+      aAdd(aBrowserCopyLog, 'Browser "' + aBrowsersToCopyToTotal[i] + '" auf alle User inkl. User 0 (Default Browser) kopiert.'),
+   next,
+end,
+
+//******************************************************************************
+// Geht das Array mit den Browsern durch, die auf alle User (ausser User 0) kopiert
+// werden sollen und ruft je Browser die Funktion zum Kopieren der Browser auf.
+// @Result: null
+//******************************************************************************
+function CopyBrowsersToAllCallLoop(aBrowsersToCopyToAll, aBrowserCopyLog:R)
+| i |
+   for i := 1 to aLen(aBrowsersToCopyToAll) do
+      CopyBrowsersWithMode(aBrowsersToCopyToAll[i], StrZero(val(c_usr), 3), 2),
+      aAdd(aBrowserCopyLog, 'Browser "' + aBrowsersToCopyToAll[i] + '" auf alle User ausser User 0 kopiert.'),
+   next,
+end,
+
+//******************************************************************************
+// Geht das Array mit den Browsern durch, die ausschließlich auf User 0 kopiert
+// werden sollen und ruft je Browser die Funktion zum Kopieren der Browser auf.
+// @Result: null
+//******************************************************************************
+function CopyBrowsersToZeroCallLoop(aBrowsersToCopyToZero, aBrowserCopyLog:R)
+| i |
+   for i := 1 to aLen(aBrowsersToCopyToZero) do
+      CopyBrowsersWithMode(aBrowsersToCopyToZero[i], StrZero(val(c_usr), 3), 3),
+      aAdd(aBrowserCopyLog, 'Browser "' + aBrowsersToCopyToZero[i] + '" auf User 0 kopiert.'),
+   next,
+end,
+

@@ -1,0 +1,307 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking zum Anzeigen von Lager-Kennzahlen für einen Artikel
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1,
+   m_cFormRefKey:P2,
+   m_oMasterTable:P3,
+
+   m_cFormClassID,
+   m_cWinPosSaveId,
+   m_cBrowserId_MemLAGHIS,
+   m_cBrowserId_MemLAGKennz,
+
+   m_oDM,
+   m_oMemLAGHIS,
+   m_oMemLAGKennzahlen,
+
+   m_oChartLagerBestandSeries,
+   m_oChartLagerBestandDurchschnittSeries,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, Actions, BeBarManager, BeLabel1, BeLabel2, BeLabel3, bipnl_Caption,
+   bipnl_StatDatumWarning, chart_DesignerSeries_Area, chart_DesignerSeries_Line,
+   chart_LagerHistorie, chartTool_AntiAliasing, ds_HISLAG, ds_LagKennzahlen,
+   ds_MasterTable, grid_HISLAG, grid_LagKennzahlen, pnl_ChartBackground,
+   pnl_HISLAG, pnl_Kennzahlen, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID             := '@REPLAGA',
+m_cWinPosSaveId            := '@REPLAGA',
+m_cBrowserId_MemLAGHIS     := '@REPLAGA',
+m_cBrowserId_MemLAGKennz   := '@REPLAGK',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oDM                        := CreateObject('TBeDbGet', 'DM_REPLAGA', oForm),
+
+   // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+   // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+   // Reaktion auf Master-Table-Aktionen bereit steht
+   // eigenes Datenmodul erstellen
+
+   GFU_Docking_LinkMasterTableToLocalDataSource(m_oMasterTable, ds_MasterTable, waDab010, 'TBeRightsTable'),
+
+   // Memtable für Lager-Historie
+   m_oMemLAGHIS        := REPLAGU_LagerHistorieMem_Create(oForm, 'MEM_LAGHIS'),
+   GU_LinkTableToGUI(m_oMemLAGHIS, ds_HISLAG, grid_HISLAG, m_cBrowserId_MemLAGHIS, false),
+
+   // Memtable für Lager-Kennzahlen
+   m_oMemLAGKennzahlen := REPLAGU_LagerKennzahlenMem_Create(oForm),
+   GU_LinkTableToGUI(m_oMemLAGKennzahlen, ds_LagKennzahlen, grid_LagKennzahlen, m_cBrowserId_MemLAGKennz, false),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshArtikel()
+| cArtnr, dDatumBeginn |
+   cArtnr := '?',
+
+   if not empty(m_oMasterTable) then
+      cArtnr := m_oMasterTable:ARTNR,
+
+      bipnl_StatDatumWarning.Caption  := 'Achtung: Monatsende-Statistik wurde für diesen Artikel nicht durchgeführt (ltzt. Statistik am ' + DtoC(m_oMasterTable:STATDATUM) + ')',
+      bipnl_StatDatumWarning.Hint     := 'Führen Sie die Monatsende-Statistik über "Extras -> Monatsende Artikel-Statistik" durch.',
+      bipnl_StatDatumWarning.ShowHint := true,
+      bipnl_StatDatumWarning.Visible  := not REPLAGU_CheckDab010StatDatumAktuell(m_oMasterTable),
+   endif,
+
+   bipnl_Caption.Caption := 'Lagerkennzahlen für Artikel <' + AllTrim(cArtnr) + '>',
+
+   // Lagerhistorie für diesen Artikel laden
+   if not empty(m_oMemLAGHIS) then
+      dDatumBeginn      := EoM(AddMonth(EoM(mBDatum), -18)), // Basis für die Berechnung sind nur 12 Monate, aber 18 anzeigen - informativ
+      REPLAGU_LagerHistorieMem_Fill(m_oDM, m_oMemLAGHIS, cArtnr, true, dDatumBeginn, EoM(Date())),
+   endif,
+
+   // Lagerkennzahlen für diesen Artikel berechnen
+   if not empty(m_oMemLAGKennzahlen) then
+      REPLAGU_LagerKennzahlenMem_Fill(m_oDM, m_oMemLAGKennzahlen, cArtnr, true),
+   endif,
+
+   if not empty(m_oChartLagerBestandSeries) then
+      m_oChartLagerBestandSeries.Title := 'Lagerbestand (' + AllTrim(m_oMasterTable:ME) + ')',
+   endif,
+   chart_LagerHistorie.ExecRefreshChart,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen in der Master-Tabelle => Docking aktualisieren
+//******************************************************************************
+function ds_MasterTableScroll_Update( Sender )
+   RefreshArtikel(),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars  
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := true,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   Actions                   := FindObject(oForm, "Actions"),
+   BeBarManager              := FindObject(oForm, "BeBarManager"),
+   BeLabel1                  := FindObject(oForm, "BeLabel1"),
+   BeLabel2                  := FindObject(oForm, "BeLabel2"),
+   BeLabel3                  := FindObject(oForm, "BeLabel3"),
+   bipnl_Caption             := FindObject(oForm, "bipnl_Caption"),
+   bipnl_StatDatumWarning    := FindObject(oForm, "bipnl_StatDatumWarning"),
+   chart_DesignerSeries_Area := FindObject(oForm, "chart_DesignerSeries_Area"),
+   chart_DesignerSeries_Line := FindObject(oForm, "chart_DesignerSeries_Line"),
+   chart_LagerHistorie       := FindObject(oForm, "chart_LagerHistorie"),
+   chartTool_AntiAliasing    := FindObject(oForm, "chartTool_AntiAliasing"),
+   ds_HISLAG                 := FindObject(oForm, "ds_HISLAG"),
+   ds_LagKennzahlen          := FindObject(oForm, "ds_LagKennzahlen"),
+   ds_MasterTable            := FindObject(oForm, "ds_MasterTable"),
+   grid_HISLAG               := FindObject(oForm, "grid_HISLAG"),
+   grid_LagKennzahlen        := FindObject(oForm, "grid_LagKennzahlen"),
+   pnl_ChartBackground       := FindObject(oForm, "pnl_ChartBackground"),
+   pnl_HISLAG                := FindObject(oForm, "pnl_HISLAG"),
+   pnl_Kennzahlen            := FindObject(oForm, "pnl_Kennzahlen"),
+   pnl_Main                  := FindObject(oForm, "pnl_Main"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function InitChart()
+   // diese Series sind nur im F12-Designer für das Testen des Aussehens, lesen der Eigenschaften etc. vorhanden
+   DestroyObject(chart_DesignerSeries_Line),
+   DestroyObject(chart_DesignerSeries_Area),
+
+   // Chart hübsch machen
+   CHARTU_Vis_InitChart(chart_LagerHistorie),
+   chart_LagerHistorie.SubFoot.Font.Size            := 10,
+   chart_LagerHistorie.SubTitle.Font.Size           := 10,
+   chart_LagerHistorie.Foot.Font.Size               := 10,
+   chart_LagerHistorie.Legend.Font.Size             := 10,
+   chart_LagerHistorie.BottomAxis.LabelsFont.Size   := 10,
+   chart_LagerHistorie.LeftAxis.LabelsFont.Size     := 10,
+
+   // Ø Lagerbestand => Line-Series (gestrichelt)
+   m_oChartLagerBestandDurchschnittSeries                     := CHARTU_Vis_CreateAndInit_LineSeries(oForm, chart_LagerHistorie, '', 'Ø Bestand', GetBeDesignColor(dcbOrange, dcgLevel4), true),
+   m_oChartLagerBestandDurchschnittSeries.Marks.Font.Size     := 10,
+   m_oChartLagerBestandDurchschnittSeries.DataSource          := m_oMemLAGHIS,
+   m_oChartLagerBestandDurchschnittSeries.XValues.DateTime    := true,
+   m_oChartLagerBestandDurchschnittSeries.XValues.ValueSource := 'DATUM',
+   m_oChartLagerBestandDurchschnittSeries.YValues.ValueSource := 'LAGER_VER_DURCHSCHN',
+   m_oChartLagerBestandDurchschnittSeries.TreatNulls          := 0, // DontPaint = 0, Skip = 1, Ignore = 2
+
+   // Lagerbestand je Monat => Line-Series (inkl. Markern, damit einzelne Werte ablesbar sind)
+   m_oChartLagerBestandSeries                                 := CHARTU_Vis_CreateAndInit_LineSeries(oForm, chart_LagerHistorie, '', 'Lagerbestand', GetBeDesignColor(dcbCyan, dcgLevel4), false),
+   m_oChartLagerBestandSeries.Marks.Font.Size                 := 10,
+   m_oChartLagerBestandSeries.DataSource                      := m_oMemLAGHIS,
+   m_oChartLagerBestandSeries.XValues.DateTime                := true,
+   m_oChartLagerBestandSeries.XValues.ValueSource             := 'DATUM',
+   m_oChartLagerBestandSeries.XLabelsSource                   := 'GUI_JAHR_MONAT',
+   m_oChartLagerBestandSeries.YValues.ValueSource             := 'LAGER_VER',
+   m_oChartLagerBestandSeries.TreatNulls                      := 2, // DontPaint = 0, Skip = 1, Ignore = 2
+   m_oChartLagerBestandSeries.Marks.Visible                   := true,
+   m_oChartLagerBestandSeries.Marks.Style                     := 0, // den X-Wert als Marker anzeigen, nicht den XLabelsSource-Wert
+
+
+   chart_LagerHistorie.ExecRefreshChart,
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt             := 'Lagerkennzahlen',
+
+   pnl_ChartBackground.Color := clWhite,
+   pnl_HISLAG.Color          := clWhite,
+   pnl_Kennzahlen.Color      := clWhite,
+   pnl_Main.Color            := clWhite,
+
+   bipnl_Caption.ColorMode          := ipcmInfo,
+   bipnl_StatDatumWarning.ColorMode := ipcmWarning,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   // Für den Tests in der Entwicklungsumgebung ohne übergebener Master-Tabelle
+   if EditorMode() and Empty(m_oMasterTable) then
+      m_oMasterTable           := DbOpen(waDab010),
+      m_oMasterTable.IndexName := 'DAB011',
+      DbSeek({'MUTTER M4'}, m_oMasterTable),
+   endif,
+
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   InitChart(),
+   RefreshArtikel(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+

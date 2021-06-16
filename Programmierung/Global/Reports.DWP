@@ -1,0 +1,46 @@
+function _FaxCom(oReport, cDoc)  //Erzeugt Fax-Kommando für Fax-Druckertrieber
+   result:="Fax:"+charonly('0123456789',oReport[36]),
+   prs("FAXCOM",{result,oReport[36]}),
+end,
+
+function _FaxCom2(oReport, cDoc)  //Erzeugt Fax Betreff
+   result:="::S="+ cDoc + ' ' + str(oReport[35])+" an "+alltrim(oReport[11]),
+end,
+
+function _FaxComMemo(oTable, cDoc, cFaxNr)  //Erzeugt Fax-Kommando für Fax-Druckertreiber für Briefe/Fax
+  result:="Fax:"+charonly('0123456789',cFaxNr),
+end,
+
+function _FaxComMemo2(oTable, cDoc, cFaxNr)  //Erzeugt Fax-Kommando für Fax-Druckertreiber für Briefe/Fax
+  result:="::S="+ cDoc+" an "+alltrim(oTable:matchcode),
+end,
+
+function _FaxComPar(oReport, cDoc, aParams)  //Erzeugt Fax-Kommando für Fax-Druckertrieber, berücksichtigt Parameter
+   //aParams[1]=page
+   //... Erweiterungen möglich
+   if aParams[1]=1 then
+      result:=FaxCom(oReport, cDoc),
+   else
+      result:='',
+   endif,      
+end,
+
+// Funktion für Bilanz zum Holen der Kontobezeichnung
+function _getKontoBez(cKto)
+  cKto := charonly('0123456789',cKto),
+  result := lookup(50, 1, {{val(cKto)}},'TEXT',''),
+end,
+
+// Funktion für Bilanz zum holen des AW-Kennzeichens
+function _getKontoAWKz(cKto,cStruktur)
+  cKto := charonly('0123456789',cKto),
+  result := lookup(50,1,{{val(cKto)}},'GVBKZ'+if(cStruktur=1,'',str(val(cStruktur)-1)),''),
+end,
+
+// Funktion für Bilanz zum holen des Wertes der hinter einem AW-Kennzeichen steht
+function _getValue(cFieldname, oTable)
+|oField|
+  oField := DBField(cFieldname, oTable),
+  result := AsNumber(oField.FieldName, oTable),
+end,
+

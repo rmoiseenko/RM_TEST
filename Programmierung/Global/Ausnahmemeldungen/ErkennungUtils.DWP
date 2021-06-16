@@ -1,0 +1,805 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Disposition Ausnahmemeldungen"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'DAMU' steht für 'D'isposition 'A'usnahme'm'eldungen 'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Technische Hilfs-Funktion für die Erzeugung von MemTable-Ausnahmen auf Basis
+// eines SQL-Select-Texts
+//
+// -> Kann genutzt werden, wenn für einen Ausnahmetypen alle Artikel des
+//    entsprechenden Basis-SQL-Selects (cSQL) direkt als Ausnahme angelegt
+//    werden sollen, da keine weiteren Restriktionen geprüft werden müssen.
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_CreateAusnahmenInMemTableForAllRecords(oDM, oMemAusnahmen, cSQL, nAusnahmeTyp, bShowProgress)
+| oQuery, oDab010, nCurrentCount, nTotalCount, nOldProz, nNewProz |
+
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+
+   // 1. Anzahl Datensätze ermitteln
+   if bShowProgress then
+      ProgressBarUpdate(,'SQL-Auswahl <' + Str(nAusnahmeTyp) + '>', true),
+      nTotalCount := DAMU_GetCountBySelectSQL(oDM, cSQL),
+      nOldProz    := 0,
+      nNewProz    := 0,
+   endif,
+
+   // 2. Datensätze ermitteln
+   oQuery := CreateObject('TBeAdsQuery', , oDM),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+      DbGoTop(oQuery),
+
+      nCurrentCount := 0,
+      while not eof(oQuery) do
+
+         MySeek({oQuery:ARTNR}, oDab010),
+         DAMU_Ausnahmemeldung_Add(oMemAusnahmen, oDab010, nAusnahmeTyp),
+         DAMU_Ausnahmemeldung_Post(oMemAusnahmen),
+
+         DbSkip(1, oQuery),
+
+         if bShowProgress then
+            nCurrentCount += 1,
+            nNewProz := (nCurrentCount / nTotalCount) * 100,
+            if nNewProz > nOldProz then
+               ProgressBarUpdate(nNewProz, 'Berechne Ausnahmemeldungen <' + Str(nAusnahmeTyp) + '>', true),
+               nOldProz := nNewProz,
+            endif,
+         endif,
+
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// 10 - (zeitweise) Mengen-Unterdeckung
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet ein SQL-Statement für die "Menge potentiell betroffener Artikel"
+//    vom Typ "gl_DAMU_MengenUnterdeckung".
+//
+//    Hintergrund: Welche Artikel müssen geprüft werden für die Ermittlung der "zeitweisen Unterdeckung"
+//    --------------------------------------------------------------------------
+//      Da die Prüfung nach dem Durchführen der Dispo-Planung aber noch vor der
+//      Bearbeitung der Dispo-Vorschläge erfolgen soll, müssen alle Artikel betrachtet
+//      werden, die entweder
+//      - konkrete zukünftige Bewegungen haben oder
+//      - Grobplanungs-Bewegungen
+//
+//      Weitere Einschränkung:
+//         Da die Autom. Dispo-Planung für jeden Artikel, der Abgänge hat, entsprechende
+//         Zugänge erzeugt, (mit der o.a. Ausnahme, dass ggf. keine zusätzlichen(!) Zugänge erzeugt werden)
+//         ist die Liste der Artikel mit geplanten konkreten oder Grobplanungs-Zugängen
+//         eine ausreichende Basis-Liste für den Prüfungs-Lauf.
+//    --------------------------------------------------------------------------
+//
+// Parameter
+//    bIncludeProduktionsauftraege : Artikel betrachten, für die es Fertigungsauftrags-Zugänge (Dab035) gibt
+//    bIncludeDispoplanung         : Artikel betrachten, für die es Grobplanungs-Zugänge (Dab280) gibt
+//    cOnlyArtnr                   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt                 : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_SqlBaseSelectFor_10(bIncludeProduktionsauftraege, bIncludeDispoplanung, cOnlyArtnr, cOnlyProdAbt)
+| cGrobplanungsArtikelMitZugaengenSQL, cSQL, cArtikelTypenSQLFilter, cKaufteil, cBaugruppe |
+
+   if not bIncludeProduktionsauftraege and not bIncludeDispoplanung then
+      SetError('Either <bIncludeProduktionsauftraege> or <bIncludeDispoplanung> must be true.'),
+   endif,
+   cOnlyArtnr := PadR(cOnlyArtnr, mBeArtNoLen),
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   cArtikelTypenSQLFilter              := "('B', 'M', 'U', 'T', 'H', 'V', 'E')",  // kein Typ 'A'
+   cGrobplanungsArtikelMitZugaengenSQL := DAMU_GetDistinctGrobplanungsArtikelSQL( true,  // mit Zugängen
+                                                                                  false, // ohne Abgänge
+                                                                                  cOnlyArtnr, cOnlyProdAbt, cArtikelTypenSQLFilter, 0),
+
+   Result := '',
+
+   if bIncludeDispoplanung then
+      // Alle grob geplanten Zugänge (Dab280)
+      Result +=  cGrobplanungsArtikelMitZugaengenSQL                                        + crlf
+   endif,
+
+   if bIncludeDispoplanung and bIncludeProduktionsauftraege then
+      // ohne "ALL" gibt es im Ergebnis des UNION keine Dubletten
+      Result += 'UNION'                                                                     + crlf + crlf,
+   endif,
+
+   if bIncludeProduktionsauftraege then
+      // Alle konkret geplanten Zugänge (Dab035)
+      Result +=  'SELECT DISTINCT DAB035.ARTNR'                                             + crlf +
+      '   FROM  ' + DbSqlTableName(waDab035) + '  DAB035'                                   + crlf +
+      '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                              + crlf +
+      '      ON (DAB010.ARTNR = DAB035.ARTNR AND DAB010.STANDORT = DAB035.STANDORT)'        + crlf +
+      '   WHERE     DAB035.STANDORT = ' + Str(mStandort)                                    + crlf +
+      '         AND DAB010.ARTTYP IN ' + cArtikelTypenSQLFilter                             + crlf,
+      if not empty(cOnlyArtnr) then
+         Result +=
+      '         AND DAB010.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + ''''          + crlf,
+      endif,
+
+      if not empty(cOnlyProdAbt) then
+         Result +=
+      '         AND DAB010.PROD_ABT   = ''' + cOnlyProdAbt + ''''                           + crlf,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion ermittelt eine ggf. vorhandene "(zeitweise) Mengen-Unterdeckung"
+//   im Terminraster für einen einzelnen Artikel.
+//
+//   Optional können Grobplanungs-Vorschläge bei der Berechnung berücksichtigt
+//   werden. Dies ist dann sinnvoll, wenn eine Prüfung der Situation gewünscht
+//   ist, noch bevor(!) die Vorschläge der Dispoplanung / manuelle Vorschläge
+//   in echte Bestellungen umgesetzt wurden.
+//   (z.B. also direkt nach der autom. Dispo-Planung)
+//
+// nZeitraumInTagen : Zeitraum ab Heute in Kalendertagen
+//                    -1 => WBZ des Artikels
+//                    -2 => Max(Allg. Planungshorizont, VPZ)
+// bMitGrobPlanung  : Grobplanung berücksichtigen?
+//
+// @Result: Array
+//            { Minus-Entwicklung im betrachteten Zeitraum vorhanden: ja / nein,
+//              TERM_INDEX-String der ersten Minus-Entwicklung
+//            }
+//******************************************************************************
+function _DAMU_CheckTerminRasterUnterdeckung(oDM, cArtNo, nZeitraumInTagen, bMitGrobPlanung)
+| oDab010, oDab410, nStoreQuant, dMaxDate, cMaxTermIndex, nMeRunden, cLagerKz,
+  bMinusEntwicklungVorhanden,
+  cTermIndexErsteMinusEntwicklung,
+  nAllgemeinerPlanungsHorizont,
+  nBaugruppeVPZ,
+  nLinr |
+
+  bMinusEntwicklungVorhanden      := false,
+  cTermIndexErsteMinusEntwicklung := '',
+
+  cArtNo            := PadR(cArtNo, mBeArtNoLen),
+
+  oDab010           := DbGetTable(oDM, waDab010),
+  oDab010.IndexName := 'DAB011',
+
+  oDab410           := DbGetTable(oDM, waDab410),
+  oDab410.IndexName := 'DAB411', // ARTNR,KW_INDEX
+
+  MySeek({cArtNo}, oDab010),
+  cLagerKz          := oDab010:LAGER_KZ,
+  nMeRunden         := oDab010:ME_RUNDEN,
+
+  // Die Methoden zur Erkennung von "Problemen" über das Terminraster sind so
+  // wie hier implementiert erstmal nur für lagergeführte Artikel sinnvoll
+  if cLagerKz $ 'JX' then                                                       // Diese Restriktion könnte auch schon im BaseSQL-Select drin sein?
+
+     // Mind. ein Terminraster-Eintrag?
+     if DbSeek({cArtNo}, oDab410) then
+
+        //**********************************************************************
+        // 1. Verfügbare Menge zum Start der Berechnung ermitteln
+        //    -> Bestand aller "verfügbaren Lager" ohne Abzug von Reservierungen
+        //**********************************************************************
+        nStoreQuant       := Round(Lager('', oDab010, true) -  iif(oDAB010:RESERVBEST > 0 and not gl_DAMU_IgnoreReservbestForMeldung10, oDAB010:RESERVBEST, 0) , nMeRunden),
+ 
+        //**********************************************************************
+        // 2. Zeithorizont ermitteln
+        //**********************************************************************
+        // -1 => WBZ des Artikels (in Kalendertagen)
+        if nZeitraumInTagen = -1 then
+           if DPU_IsDayPlan(oDab010) then
+              nZeitraumInTagen := oDab010:WBZ * (7/5), // Arbeitstage auf Kalendertage hochrechnen  z.B. 5 => 7
+           else
+              nZeitraumInTagen := oDab010:WBZ,
+           endif,
+           // WriteLn('Zeitraum-Modus -1 => ' + Str(nZeitraumInTagen) + ' Tage'),
+        endif,
+
+        // -2 => Max(Planungshorizont Fertigung, WBZ)
+        if nZeitraumInTagen = -2 then
+           nAllgemeinerPlanungsHorizont := DabPAR:PLAN_HOR * 7, // wird in Kalenderwochen gepflegt => auf Kal.Tage umrechnen
+           nBaugruppeVPZ                := VpZ(cArtNo),         // wird immer in Kalendertagen berechnet
+           nZeitraumInTagen             := Max(nAllgemeinerPlanungsHorizont, nBaugruppeVPZ) -1, // -1, weil die Bedarfsplanung erst einen Tag später plant
+
+           // Für Einkaufs-Teile nehemn wir den Lieferanten-spez.
+           // Planungshorizont Dab100:PLAN_HOR, welcher auch wieder
+           // länger sein könnte.
+           if oDAB010:ARTTYP = 'T' then
+                nLinr := LiefNr(oDAB010),
+                if nLinr > 0 then
+                    nZeitraumInTagen := Lookup(waDAB100, 3, {{nLinr}},'PLAN_HOR', 10) * 7,    // TK 21.01.19 Migration7.1
+                else
+                    nZeitraumInTagen := 10 * 7,
+                endif,
+           endif,
+           // WriteLn('Zeitraum-Modus -2 => ' + Str(nZeitraumInTagen) + ' Tage'),
+        endif,
+
+        dMaxDate      := mBDatum + nZeitraumInTagen,
+        cMaxTermIndex := Left(DateStr(dMaxDate), 8),
+        // WriteLn(dMaxDate, cMaxTermIndex),
+
+        //**********************************************************************
+        // 3. Alle (Terminraster-)Bewegungen im zu betrachtenden Zeitraum prüfen
+        //**********************************************************************
+        while not Eof(oDab410)
+              and (oDab410:ARTNR == cArtNo)
+              and (Left(oDab410:KW_INDEX, 8) <= cMaxTermIndex) do // Am Ende des Betrachtungszeitraum auch 'W'ochentermine berücksichtigen, daher nur Left(..., 8)
+
+           // konkrete Bewegungen
+           nStoreQuant    += Round(oDab410:BESTELLT   - oDab410:RUECKSTAND, nMeRunden),
+
+           // Grobplanung
+           if bMitGrobPlanung then
+              nStoreQuant += Round(oDab410:BES_PVPLAN - oDab410:RUE_PVPLAN, nMeRunden),
+           endif,
+
+           // Menge bis hierhin geht ins Minus ?
+           if nStoreQuant < 0 then
+              bMinusEntwicklungVorhanden := true,
+              if empty(cTermIndexErsteMinusEntwicklung) then
+                 cTermIndexErsteMinusEntwicklung := oDab410:KW_INDEX,
+              endif,
+           endif,
+
+           DbSkip(1, oDab410),
+        end,
+     endif,
+  endif,
+
+  Result := { bMinusEntwicklungVorhanden,
+              cTermIndexErsteMinusEntwicklung },
+end,
+
+//******************************************************************************
+// Funktion berechnet Ausnahmen vom Typ "gl_DAMU_MengenUnterdeckung"
+//    und überträgt diese in die übergebene MemTable @oMemAusnahmen
+//
+// Parameter
+//    bIncludeProduktionsauftraege : Artikel betrachten, für die es Fertigungsauftrags-Zugänge (Dab035) gibt
+//    bIncludeDispoplanung         : Artikel betrachten, für die es Grobplanungs-Zugänge (Dab280) gibt
+//    cOnlyArtnr                   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt                 : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_Erzeuge_10(oDM, oMemAusnahmen, bIncludeProduktionsauftraege, bIncludeDispoplanung, cOnlyArtnr, cOnlyProdAbt, bShowProgress)
+| cSQL, oQuery, oDab010, nCurrentCount, nTotalCount, nOldProz, nNewProz,
+  aTermRastCheckResult, nAusnahmeTyp |
+
+   if not bIncludeProduktionsauftraege and not bIncludeDispoplanung then
+      SetError('Either <bIncludeProduktionsauftraege> or <bIncludeDispoplanung> must be true.'),
+   endif,
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   nAusnahmeTyp      := gl_DAMU_MengenUnterdeckung,
+
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+
+   cSQL              := DAMU_SqlBaseSelectFor_10(bIncludeProduktionsauftraege, bIncludeDispoplanung, cOnlyArtnr, cOnlyProdAbt),
+
+   // 1. Anzahl Datensätze ermitteln
+   if bShowProgress then
+      ProgressBarUpdate(,'SQL-Auswahl <' + Str(nAusnahmeTyp) + '>', true),
+      nTotalCount := DAMU_GetCountBySelectSQL(oDM, cSQL),
+      nOldProz    := 0,
+      nNewProz    := 0,
+   endif,
+
+   // 2. Datensätze ermitteln
+   oQuery := CreateObject('TBeAdsQuery', , oDM),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+      DbGoTop(oQuery),
+
+      nCurrentCount := 0,
+      while not eof(oQuery) do
+
+         // Nicht alle Artikel in der SQL-Selektion sind betroffen
+         // -> checken, ob für den Artikel eine "(zeitweise) Mengen-Unterdeckung" vorliegt
+         aTermRastCheckResult  := DAMU_CheckTerminRasterUnterdeckung( oDM,
+                                                                      oQuery:ARTNR,
+                                                                      -2,     // Prüf-Zeitraum = Planungshorizont
+                                                                      true ), // Grobplanungs-Bewegungen berücksichtigen
+         if aTermRastCheckResult[1] then
+            MySeek({oQuery:ARTNR}, oDab010),
+
+            DAMU_Ausnahmemeldung_Add(oMemAusnahmen, oDab010, nAusnahmeTyp),
+            oMemAusnahmen:TERMIN := TermIndexToStr(aTermRastCheckResult[2]),
+            // TODO: Sofern der TERMIN für die Berechnung von KdnDAM:EIND_SCHL
+            //       gebraucht wird, muss er in KdnDAM:INFOS rein.
+            //       Aktuell ist das nicht erfordelich.
+            DAMU_Ausnahmemeldung_Post(oMemAusnahmen),
+         endif,
+
+         DbSkip(1, oQuery),
+
+         if bShowProgress then
+            nCurrentCount += 1,
+            nNewProz := (nCurrentCount / nTotalCount) * 100,
+            if nNewProz > nOldProz then
+               ProgressBarUpdate(nNewProz, 'Berechne Ausnahmemeldungen <' + Str(nAusnahmeTyp) + '>', true),
+               nOldProz := nNewProz,
+            endif,
+         endif,
+
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// 20 - (zeitweise) Mengen-Überdeckung
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet ein SQL-Statement für die "Menge potentiell betroffener Artikel"
+//    vom Typ "gl_DAMU_MengenUeberdeckung".
+//
+//    Hintergrund: Welche Artikel müssen geprüft werden für die Ermittlung der "zeitweisen Überdeckung"
+//    --------------------------------------------------------------------------
+//
+// Es müssen nur solche Artikel betrachtet werden, bei denen konkrete Zugänge geplant sind - also
+// Dab320, Dab035 - jeweils Einkauf und Produktion
+//
+// Wir betrachten nicht solche Artikel,
+//    die keinerlei Zugänge haben => hier wurde ggf. schon ein Überbestand angehäuft, dieser kann aber
+//        nicht durch Dispoplanungs-Eingriffe verringert werden, dieser muss "abgebaut" werden.
+//        Hier sind andere Maßnahmen notwendig.
+//    die nur grob geplante Zugänge haben => die Dispositionsplanung sorgt bei diesen Artikeln bereits dafür,
+//        dass Bedarfsreduzierungen oder Terminverschiebungen beim nächsten Planungslauf berücksichtigt werden
+//
+// Parameter
+//    cOnlyArtnr                   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt                 : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_SqlBaseSelectFor_20(cOnlyArtnr, cOnlyProdAbt)
+   | cArtikelTypenSQLFilter, cMaxTermIndexStr |
+   cOnlyArtnr := PadR(cOnlyArtnr, mBeArtNoLen),
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+   cArtikelTypenSQLFilter              := "('B', 'M', 'U', 'T', 'H', 'V', 'E')",  // kein Typ 'A'
+   cMaxTermIndexStr                    := DateStr(GetAdsServerTime() + 10 * 365), // Alle Zugänge ignorieren, die mehr als 10 Jahre in der Zukunft liegen (nicht geeignet für die Planung von internationalen Flughäfen)
+
+   Result := '',
+
+   // Alle konkret geplanten Zugänge (Dab035)
+   Result +=  'SELECT DISTINCT DAB035.ARTNR'                                             + crlf +
+   '   FROM  ' + DbSqlTableName(waDab035) + '  DAB035'                                   + crlf +
+   '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                              + crlf +
+   '      ON (DAB010.ARTNR = DAB035.ARTNR AND DAB010.STANDORT = DAB035.STANDORT)'        + crlf +
+   '   WHERE     DAB035.STANDORT = ' + Str(mStandort)                                    + crlf +
+   '         AND DAB035.TERM_INDEX < ''' + cMaxTermIndexStr + ''''                       + crlf +
+   '         AND DAB010.MINDBEST <> -2 '                                                 + crlf +
+   '         AND DAB010.FORE_FHG <> ''J'' '                                              + crlf +
+   '         AND DAB010.ARTTYP IN ' + cArtikelTypenSQLFilter                             + crlf,
+   if not empty(alltrim(gl_DAMU_Mengenueberdeckung_SQL_Where_DAB010)) then
+      Result += ' AND ' + gl_DAMU_Mengenueberdeckung_SQL_Where_DAB010 + ' ',
+   endif,
+   if not empty(cOnlyArtnr) then
+      Result +=
+   '         AND DAB010.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + ''''          + crlf,
+   endif,
+   if not empty(cOnlyProdAbt) then
+      Result +=
+   '         AND DAB010.PROD_ABT   = ''' + cOnlyProdAbt + ''''                           + crlf,
+   endif,
+
+   // Alle Zugänge aus der Bestell-Disposition (Dab320)
+   Result +=  ' UNION '                                                                  + crlf ,
+   Result +=  'SELECT DISTINCT DAB320.ARTNR'                                             + crlf +
+   '   FROM  ' + DbSqlTableName(waDab320) + '  DAB320'                                   + crlf +
+   '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                              + crlf +
+   '      ON (DAB010.ARTNR = DAB320.ARTNR AND DAB010.STANDORT = DAB320.STANDORT)'        + crlf +
+   '   WHERE     DAB320.STANDORT = ' + Str(mStandort)                                    + crlf +
+   '         AND DAB320.TERM_INDEX <> ''' + cMaxTermIndexStr + ''''                      + crlf +
+   '         AND DAB010.FORE_FHG <> ''J'' '                                              + crlf +
+   '         AND DAB010.MINDBEST <> -2 '                                                 + crlf,
+   if not empty(alltrim(gl_DAMU_Mengenueberdeckung_SQL_Where_DAB010)) then
+      Result += ' AND ' + gl_DAMU_Mengenueberdeckung_SQL_Where_DAB010 + ' ',
+   endif,
+   if not empty(cOnlyArtnr) then
+      Result +=
+   '         AND DAB010.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + ''''          + crlf,
+   endif,
+   if not empty(cOnlyProdAbt) then
+      Result +=
+   '         AND DAB010.PROD_ABT   = ''' + cOnlyProdAbt + ''''                           + crlf,
+   endif,
+   writeln(result),
+end,
+
+//******************************************************************************
+// Funktion berechnet Ausnahmen vom Typ "gl_DAMU_MengenUeberdeckung"
+//    und überträgt diese in die übergebene MemTable @oMemAusnahmen
+//
+// Parameter
+//    cOnlyArtnr                   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt                 : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: null
+//******************************************************************************
+
+function _DAMU_Erzeuge_20(oDM, oMemAusnahmen, cOnlyArtnr, cOnlyProdAbt, bShowProgress)
+|
+   cSQL, oQuery, nAusnahmeTyp, oDAB010, nTotalCount, nOldProz, nNewProz, nCurrentCount,
+   aZeilenTypen, oETR_ATP_Mem, oETR_ATP_Mem_Buf, oVPU_OptionsMem, oRec, cMaxTermIndexStr,
+   nSumVerbraeuche, nBestelleinheit
+|
+
+   cMaxTermIndexStr   := DateStr(GetAdsServerTime() + 10 * 365),
+   oETR_ATP_Mem       := ETRU_CreateMem_NewMem(oDM, true),
+
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   nAusnahmeTyp      := gl_DAMU_MengenUeberdeckung,
+
+   oDab010           := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+
+   cSQL              := DAMU_SqlBaseSelectFor_20(cOnlyArtnr, cOnlyProdAbt),
+
+   // 1. Anzahl Datensätze ermitteln
+   if bShowProgress then
+      ProgressBarUpdate(,'SQL-Auswahl <' + Str(nAusnahmeTyp) + '>', true),
+      nTotalCount := DAMU_GetCountBySelectSQL(oDM, cSQL),
+      nOldProz    := 0,
+      nNewProz    := 0,
+   endif,
+
+   // 2. Datensätze ermitteln
+   oQuery := CreateObject('TBeAdsQuery', , oDM),
+   startseq
+      startseq
+         oQuery.SQL    := cSQL,
+         oQuery.Active := true,
+         DbGoTop(oQuery),
+         while not eof(oQuery) do
+
+            // Artikel mit aktiver Verkaufsprognose werden nicht berücksichtigt, da die ATP-Logik die vermuteten Abgänge nicht berücksichtigt
+            // (Absatzplanug wird bereits per SQL-WHERE ausgeschlossen)
+            MySeek({oQuery:ARTNR}, oDAB010),
+            nBestelleinheit := oDAB010:BESTELLEH,
+            nSumVerbraeuche := oDAB010:VKMENGE1 + oDAB010:VKMENGE2 + oDAB010:VKMENGE3 +  oDAB010:VKMENGE4  + oDAB010:VKMENGE5  + oDAB010:VKMENGE6,
+            nSumVerbraeuche += oDAB010:VKMENGE7 + oDAB010:VKMENGE8 + oDAB010:VKMENGE9 +  oDAB010:VKMENGE10 + oDAB010:VKMENGE11 + oDAB010:VKMENGE12,
+            nSumVerbraeuche += oDAB010:PRMENGE1 + oDAB010:PRMENGE2 + oDAB010:PRMENGE3 +  oDAB010:PRMENGE4  + oDAB010:PRMENGE5  + oDAB010:PRMENGE6,
+            nSumVerbraeuche += oDAB010:PRMENGE7 + oDAB010:PRMENGE8 + oDAB010:PRMENGE9 +  oDAB010:PRMENGE10 + oDAB010:PRMENGE11 + oDAB010:PRMENGE12,
+            if oDAB010:MINDBEST < 0 or Mind_Best(,,,,,,oDAB010) <= 0 then
+
+               // Hier kömmt jetzt die ATP-Logik hin.
+               DeleteAllDAta(oETR_ATP_Mem),
+               aZeilenTypen :=  {
+                                          gl_ETRU_Typ_VerfuegBestand,
+                                          gl_ETRU_Typ_EisernerBestand,           // Eiserner Bestand soll abgezogen werden, damit die Überdeckung nur gemeldet wird, wenn sie auch den Eis. Bestand überdeckt
+
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab220,
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab215,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab315,
+                                          gl_ETRU_Typ_GrobPlanProdZugangDab320,
+                                          gl_ETRU_Typ_GrobPlanEinkaufZugangDab320,
+                                          gl_ETRU_Typ_GrobPlanZugangAnonym,
+                                          gl_ETRU_Typ_ProdZugangOffen,
+                                          gl_ETRU_Typ_ProdZugangKommissioniert,
+                                          gl_ETRU_Typ_EinkaufZugangNichtBestaetigt,
+                                          gl_ETRU_Typ_EinkaufZugangBestaetigt,
+
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab220,
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab215,
+                                          gl_ETRU_Typ_GrobPlanAbgangAnonym,
+                                          gl_ETRU_Typ_GrobPlanProdAbgangDab320,
+                                          gl_ETRU_Typ_ProdReservOffen,
+                                          gl_ETRU_Typ_ProdReservKommissioniert,
+                                          gl_ETRU_Typ_VerkaufAbgang
+                                        },
+
+               oETR_ATP_Mem_Buf := VPU_ETR_GetEinzelTermRastMem_NewMem(oDM, oQuery:ARTNR, true, true),
+               oVPU_OptionsMem := VPU_Options_CreateOptionsMem(oDM),
+
+               VPU_ETR_CalcATP(oETR_ATP_Mem_Buf,
+                               aZeilenTypen,
+                               0,
+                               0,
+                               false,
+                               oVPU_OptionsMem:PRUEFHORZ_WBZ,
+                               iif(oVPU_OptionsMem:PRUEFHORZ_WBZ, ETRU_CalcEndeDerWBZ(oDM, oQuery:ARTNR), null)),
+               oETR_ATP_Mem.CbLoadFromDataSet(oETR_ATP_Mem_Buf, true),
+
+               // Eine Ausnahmemeldung gibt es dann, wenn die erste Zeile mit
+               // den u.a. Bedingungen im ETR gefunden wurde
+               // Das ist dann auch die maximal feststellbare Überdeckung
+               DbGoBottom(oETR_ATP_Mem),
+               While not bof(oETR_ATP_Mem) do
+                  if oETR_ATP_Mem:IST_ZUGANG then // wir prüfen alle Zugangszeilen, denn darin hat die ATP-Logik die ATP-Mengen hinterlegt
+                    // writeln(oETR_ATP_Mem:ATP_MENGE_VERFUEG_KUM, oQuery:ARTNR, oETR_ATP_Mem:TERMIN_INDEX , cMaxTermIndexStr ),
+                     if     oETR_ATP_Mem:ATP_MENGE_VERFUEG_KUM > 0
+                        // and oETR_ATP_Mem:ATP_KUERZEST_DIFF_ZU_ABGANG > gl_DAMU_MengenueberdeckungAbTagen  // Überdeckung erst melden, wenn diese x Tage besteht
+                                                                                                             // Diese Restriktion geht zu weit, weil zu große Zugänge, die sich auf Abgänge
+                                                                                                             // in der Vergangenheit beziehen, nicht berücksichtigt würden
+                        and oETR_ATP_Mem:TERMIN_INDEX < cMaxTermIndexStr                                     // Alle Zugänge ignorieren, die sehr weit in der Zukunft sind
+                        and oETR_ATP_Mem:ATP_MENGE_VERFUEG_KUM > nSumVerbraeuche * gl_DAMU_Mengenueberdeckung_Mult_Verbrauch
+                        and oETR_ATP_Mem:ATP_MENGE_VERFUEG_KUM > nBestelleinheit * gl_DAMU_Mengenueberdeckung_Ignore_BestellEh
+                        then
+
+                        MySeek({oQuery:ARTNR}, oDAB010),
+                        DAMU_Ausnahmemeldung_Add(oMemAusnahmen, oDab010, nAusnahmeTyp),
+                        DAMU_Ausnahmemeldung_Post(oMemAusnahmen),
+
+                        break,
+                     endif,
+                  endif,
+                  DbSkip(-1, oETR_ATP_Mem),
+               end,
+            endif,
+
+            if bShowProgress then
+               nCurrentCount += 1,
+               nNewProz := (nCurrentCount / nTotalCount) * 100,
+               if nNewProz > nOldProz then
+                  ProgressBarUpdate(nNewProz, 'Berechne Ausnahmemeldungen <' + Str(nAusnahmeTyp) + '>', true),
+                  nOldProz := nNewProz,
+               endif,
+            endif,
+            DbSkip(1, oQuery),
+
+         end,
+      onerror
+          writeln(geterrortext()),
+      stopseq,
+   always
+      DestroyObject(oQuery),
+      DestroyObject(oETR_ATP_Mem),
+      DestroyObject(oETR_ATP_Mem_Buf),
+   stopseq,
+
+end,
+
+//##############################################################################
+//##############################################################################
+// 50 - Abgang in der Vergangenheit (konkret geplant)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet ein SQL-Statement für die "Menge potentiell betroffener Artikel"
+//    vom Typ "gl_DAM_KonkreterAbgangInDerVergangenheit"
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_SqlBaseSelectFor_50(cOnlyArtnr, cOnlyProdAbt)
+| cTodayTerminIndexStr, cArtikelTypenSQLFilter |
+
+   // Es sind alle Artikel betroffen, die einen konkreten Abgang in der Vergangenheit haben
+   // -> d.h. Verkaufs- und Produktions-Reservierungen
+   //
+   // => Ermittlung kann (am performantesten) über das Terminraster (Dab410) erfolgen,
+   //    denn dort liegen genau diese beiden Typen von Abgängen in Dab410:RUECKSTAND als Summe vor.
+   //
+   //    Hinweis: Für Prod.Reservierungen würde bei nicht aktivem allg. Parameter
+   //             "Rückwärtsterm. Reservierungen im Term.Raster" keine korrekte
+   //             Ermittlung möglich sein (da KW_INDEX-Vergleich nicht korrekt).
+   //             In diesem Fall (sehr unpräzise Infos im Terminraster) würde
+   //             sich wohl aber auch niemand für diesen Typ von Ausnahmemeldung interessieren...
+
+   // Termin-Obergrenze = heute
+   //   -> An Freitagen muss der frühere Termin von 'T'ages- und 'W'ochen-Termin als
+   //      Obergrenze genutzt werden
+   cTodayTerminIndexStr := Left(DateStr(GetAdsServerTime()), 8) + 'T',
+
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   cArtikelTypenSQLFilter := "('B', 'M', 'U', 'T', 'H', 'V', 'E')",  // kein Typ 'A'
+
+   Result :=
+      'SELECT DISTINCT DAB410.ARTNR '                                           + crlf +
+      '   FROM ' + DbSqlTableName(waDab410) + ' DAB410 '                        + crlf +
+      '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010'                   + crlf +
+      '      ON     DAB010.ARTNR    = DAB410.ARTNR'                             + crlf +
+      '         AND DAB010.STANDORT = DAB410.STANDORT'                          + crlf +
+      '         AND DAB010.ARTTYP IN ' + cArtikelTypenSQLFilter                 + crlf +
+      '   WHERE     DAB410.KW_INDEX   <  ''' + cTodayTerminIndexStr + ''''      + crlf,
+
+      if not empty(cOnlyArtnr) then
+         Result +=
+      '         AND DAB410.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + ''''   + crlf,
+      endif,
+
+      if not empty(cOnlyProdAbt) then
+         Result +=
+      '         AND DAB010.PROD_ABT   = ''' + cOnlyProdAbt + ''''              + crlf,
+      endif,
+
+   Result +=
+      '         AND DAB410.RUECKSTAND <> 0  '                                   + crlf +
+      '         AND DAB410.STANDORT   = ' + Str(mStandort)                      + crlf +
+      '   // @@ORDER_BY@@ '                                                     + crlf + // Dieser "Trenner" ist für die Kompatibilität mit Funktion DAMU_GetCountBySelectSQL() vorhanden
+      '   ORDER BY DAB410.ARTNR',
+end,
+
+//******************************************************************************
+// Funktion berechnet Ausnahmen vom Typ "gl_DAM_KonkreterAbgangInDerVergangenheit"
+//    und überträgt diese in die übergebene MemTable
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_Erzeuge_50(oDM, oMemAusnahmen, cOnlyArtnr, cOnlyProdAbt, bShowProgress)
+| cSQL |
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+   cSQL := DAMU_SqlBaseSelectFor_50(cOnlyArtnr, cOnlyProdAbt), // WriteLn(cSQL),
+   DAMU_CreateAusnahmenInMemTableForAllRecords(oDM, oMemAusnahmen, cSQL, gl_DAMU_KonkreterAbgangInDerVergangenheit, bShowProgress),
+end,
+
+//##############################################################################
+//##############################################################################
+// 60 - Zugang in der Vergangenheit (konkret geplant)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet ein SQL-Statement für die "Menge potentiell betroffener Artikel"
+//    vom Typ "gl_DAM_KonkreterZugangInDerVergangenheit"
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_SqlBaseSelectFor_60(cOnlyArtnr, cOnlyProdAbt)
+| cTodayTerminIndexStr, cArtikelTypenSQLFilter |
+
+   // Es sind alle Artikel betroffen, die einen konkreten Zugang in der Vergangenheit haben
+   // -> d.h. Einkaufs- und Fertigungs-Zugänge (jeweils Dab035)
+   //
+   // => Ermittlung kann (am performantesten) über das Terminraster (Dab410) erfolgen,
+   //    denn dort liegen genau diese beiden Typen von Zugängen in Dab410:BESTELLT als Summe vor.
+   // => Denkbar wäre auch direkt die Dab035, denn der TERM_INDEX ist auch dort verfügbar und spiegelt den Zugangszeitpunkt wieder.
+   //    Damit 60 einheitlich mit 50 ermittelt wird, gehen wir dennoch über die Dab410.
+
+   // Termin-Obergrenze = heute
+   //   -> An Freitagen muss der frühere Termin von 'T'ages- und 'W'ochen-Termin als
+   //      Obergrenze genutzt werden
+   cTodayTerminIndexStr := Left(DateStr(GetAdsServerTime()), 8) + 'T',
+
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+
+   cArtikelTypenSQLFilter := "('B', 'M', 'U', 'T', 'H', 'V', 'E')",  // kein Typ 'A'
+
+   Result :=
+      'SELECT DISTINCT DAB410.ARTNR '                                           + crlf +
+      '   FROM ' + DbSqlTableName(waDab410) + ' DAB410 '                        + crlf +
+      '   INNER JOIN ' + DbSqlTableName(waDab010) + ' DAB010 '                  + crlf +
+      '      ON     DAB010.ARTNR    = DAB410.ARTNR'                             + crlf +
+      '         AND DAB010.STANDORT = DAB410.STANDORT'                          + crlf +
+      '         AND DAB010.ARTTYP IN ' + cArtikelTypenSQLFilter                 + crlf +
+      '   WHERE     DAB410.KW_INDEX   <  ''' + cTodayTerminIndexStr + ''''      + crlf,
+
+      if not empty(cOnlyArtnr) then
+         Result +=
+      '         AND DAB410.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + '''' + crlf,
+      endif,
+
+      if not empty(cOnlyProdAbt) then
+         Result +=
+      '         AND DAB010.PROD_ABT   = ''' + cOnlyProdAbt + ''''               + crlf,
+      endif,
+
+   Result +=
+      '         AND DAB410.BESTELLT   <> 0  '                                   + crlf +
+      '         AND DAB410.STANDORT   = ' + Str(mStandort)                      + crlf +
+      '   // @@ORDER_BY@@ '                                                     + crlf + // Dieser "Trenner" ist für die Kompatibilität mit Funktion DAMU_GetCountBySelectSQL() vorhanden
+      '   ORDER BY DAB410.ARTNR',
+end,
+
+//******************************************************************************
+// Funktion berechnet Ausnahmen vom Typ "gl_DAM_KonkreterZugangInDerVergangenheit"
+//    und überträgt diese in die übergebene MemTable
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    cOnlyProdAbt : Nur für Prod.Abteilung, leer = alle Prod.Abteilungen
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_Erzeuge_60(oDM, oMemAusnahmen, cOnlyArtnr, cOnlyProdAbt, bShowProgress)
+| cSQL |
+   DAMU_CheckProdAbtFilterLen(cOnlyProdAbt),
+   cSQL := DAMU_SqlBaseSelectFor_60(cOnlyArtnr, cOnlyProdAbt), // WriteLn(cSQL),
+   DAMU_CreateAusnahmenInMemTableForAllRecords(oDM, oMemAusnahmen, cSQL, gl_DAMU_KonkreterZugangInDerVergangenheit, bShowProgress),
+end,
+
+//##############################################################################
+//##############################################################################
+// 80 - Lieferanten-AB überfällig
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion berechnet ein SQL-Statement für die "Menge betroffener Artikel"
+//    vom Typ "gl_DAMU_AuftragsbestaetigungUeberfaellig"
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//    nTage        : Wie viele Kalendertage müssen seit Bestellung vergangen sein,
+//                   damit der Datensatz als "überfällig" betrachtet wird.
+//
+// @Result: string
+//******************************************************************************
+function _DAMU_SqlBaseSelectFor_80(cOnlyArtnr, nTage)
+| dDate, nYear, nMonth, nDay, cDate |
+
+   // Es sind alle Artikel betroffen,
+   // - bei denen es für einen Lieferanten-Bestellrückstand gibt
+   // - welcher keine Auftragsbestätigung hat
+   // - und bereits @nTage nach Erstellung des Datensatzes in der Dab035 vergangen sind
+
+   // Termin-Untergrenze = heute - nTage
+   dDate  := GetAdsServerTime() - nTage,
+   nYear  := Year(dDate),
+   nMonth := Month(dDate),
+   nDay   := Day(dDate),
+   cDate  := '(' + Str(nYear) + ', ' + Str(nMonth) + ', ' + Str(nDay) + ', 0, 0, 0, 0)',
+
+   Result :=
+      'SELECT DISTINCT DAB035.ARTNR '                                           + crlf +
+      '   FROM ' + DbSqlTableName(waDab035) + ' DAB035 '                        + crlf +
+      '   WHERE'                                                                + crlf +
+      '          DAB035.LIEFNR    > -1'                                         + crlf +
+      '      AND DAB035.LIEF_AB   IS NULL '                                     + crlf +
+      '      AND DAB035.ERSTELLT  <=  CREATETIMESTAMP' + cDate                  + crlf +
+      '      AND DAB035.STANDORT  = ' + Str(mStandort)                          + crlf +
+      '      AND DAB035.ARTNR IS NOT NULL '                                     + crlf ,
+
+      if not empty(cOnlyArtnr) then
+         Result +=
+      '      AND DAB035.ARTNR      = ''' + PadR(cOnlyArtnr, mBeArtNoLen) + '''' + crlf,
+      endif,
+end,
+
+//******************************************************************************
+// Funktion berechnet Ausnahmen vom Typ "gl_DAMU_AuftragsbestaetigungUeberfaellig"
+//    und überträgt diese in die übergebene MemTable
+//
+// Parameter
+//    cOnlyArtnr   : Nur für Artikel-Nr.,    leer = für alle Artikelnummern
+//
+// @Result: null
+//******************************************************************************
+function _DAMU_Erzeuge_80(oDM, oMemAusnahmen, cOnlyArtnr, bShowProgress, nTage)
+| cSQL |
+   cSQL := DAMU_SqlBaseSelectFor_80(cOnlyArtnr, nTage),
+   DAMU_CreateAusnahmenInMemTableForAllRecords(oDM, oMemAusnahmen, cSQL, gl_DAMU_AuftragsbestaetigungUeberfaellig, bShowProgress),
+end,
+
+

@@ -1,0 +1,99 @@
+| m_oDM, m_oCalc010 |
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Main(oDM, cArtnr, nEigBedarfZeilenTyp, nEigBedarfDatensatzID, nPruefModus)
+| oEinzelTermRastMem, oETR_ATPMem,
+  aVerfuegPruefRes, nVerfuegbareMengeZuBedarfsTermin,
+  aZuordungRes, oRec, i,
+  aTimes, nTime, aZeilenTypen,
+  bUsePruefHorizont, dEndePruefHorizont, oVPU_OptionsMem,
+  bEigBedarfEinlastungsPruefung |
+
+   oVPU_OptionsMem := VPU_Options_CreateOptionsMem(nil),
+   startseq
+
+      VPU_Options_LoadOptionsByPruefModus(oVPU_OptionsMem, nPruefModus),
+      // aZeilenTypen := {5, 150, 25, 250},
+      // aZeilenTypen := {5, 25, 210},
+      aZeilenTypen       := VPU_Options_GetZeilenTypenFromMemOptions(oVPU_OptionsMem),
+
+      aTimes     := {},
+      VPU_Debug_Timer_Init(nTime),
+      startseq,
+
+         VPU_Debug_Timer_Lap(nTime, aTimes, 'Init'),
+
+         oETR_ATPMem := VPU_ETR_GetEinzelTermRastMem_NewMem(oDM, cArtnr, true, true),  VPU_Debug_Timer_Lap(nTime, aTimes, 'etr created and filled'),
+         startseq
+
+            bEigBedarfEinlastungsPruefung := true,
+            bUsePruefHorizont    := false,
+            dEndePruefHorizont   := ETRU_CalcEndeDerWBZ(oDM, cArtnr),             VPU_Debug_Timer_Lap(nTime, aTimes, 'ETRU_CalcEndeDerWBZ(): done'),
+
+            // Bewegung verschieben
+            // ETRU_UpdateZeile(),
+
+            VPU_ETR_CalcATP(oETR_ATPMem,
+                            aZeilenTypen,
+                            nEigBedarfZeilenTyp,
+                            nEigBedarfDatensatzID,
+                            bEigBedarfEinlastungsPruefung,
+                            bUsePruefHorizont,
+                            dEndePruefHorizont),                                VPU_Debug_Timer_Lap(nTime, aTimes, 'VPU_ETR_CalcATP(): done'),
+
+            ETRU_FindRecordByTypeAndID(oETR_ATPMem, nEigBedarfZeilenTyp, nEigBedarfDatensatzID, true),
+
+            // TODO: Hier kann man jetzt im Falle einer Einlastungsprüfung die Ergebnisse ablesen
+            // TODO: Sicherheitszeit berücksichtigen...      Funktion DPU_GetSicherheitsZeit(cArtnr) vorsehen als "Dummy"
+            //                                               Funktion DPU_AddSicherheitsZeit(dDatum, cArtnr) vorsehen als "Dummy"
+            //                                               Funktion DPU_SubtractSicherheitsZeit(dDatum, cArtnr) vorsehen als "Dummy"
+            
+            WriteLn(DebugArr(StrToArr(oETR_ATPMem:ATP_ZUGANG_ARR))),
+
+
+
+            Browse(, oETR_ATPMem, '@ETRATP', {10, 100, ScreenWidth - 20, 400}),
+
+         always
+            DestroyObject(oETR_ATPMem),
+         stopseq,
+
+      always
+         WriteLn(Replicate('-', 55)),
+         WriteLn(VPU_Debug_Timer_PrintValues(aTimes)),
+         WriteLn(Replicate('-', 55)),
+      stopseq,
+
+   always
+      DestroyObject(oVPU_OptionsMem),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+//
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_oCalc010 := DbGetTable(m_oDM, waDAb010, 'CALC010'),
+
+   DbGoTop(m_oCalc010),
+
+   MySeek({'MUTTER M4'}, m_oCalc010),
+
+   while not EoF(m_oCalc010) do
+
+      Main(gl_oDM, m_oCalc010:ARTNR, 25, 229, 110),
+
+      break,
+
+      DbSkip(1, m_oCalc010),
+   end,
+always
+   DestroyObject(m_oDM),
+stopseq,

@@ -1,0 +1,623 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die GUI-Forms-Programmierung
+//
+//    Hinweise:
+//    - Einige Funktionen erfordern eine globale Array-Variable 'gl_aMDIChildFormsRefArray'
+//    - Der Funktions-Präfix 'GFU' steht für 'Gui Form Utils'
+//    - Struktur des Form-Reference-Array:
+//      { {<FormReferenceKey:C>, <Form:O>}, ... }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   gl_aMDIChildFormsRefArray:_U,
+   gl_aMaskDockingFormsRefArray:_U,
+   gl_IsChildWindowAvailable:_L,
+   gl_IsChildWindowChecked:_L
+|
+
+//******************************************************************************
+// Initialisierungs-Methode für ein Form-Reference-Array
+//******************************************************************************
+function _GFU_FormRefArr_Init(aFormRefArr:R)
+   // Sicher stellen, dass ein Array mit aktuellen Inhalten nicht einfach geleert
+   // wird und damit die Form-Referenzen flöten gehen
+   if ValType(aFormRefArr) = 'A' and ALen(aFormRefArr) > 0 then
+      SetError('_GFU_FormRefArr_Init(): array contains elements - cannot be '),
+   endif,
+   aFormRefArr := {},
+end
+
+//******************************************************************************
+// Ein instanziiertes Formular in einem Form-Reference-Array finden
+// @Result: nil bzw. Formular
+//******************************************************************************
+function _GFU_FormRefArr_FindForm(aFormRefArr, cFormRefKey)
+| nPos |
+   Result := nil,
+   nPos   := SeekInDimArray(cFormRefKey, aFormRefArr, 1),
+   if nPos > -1 then
+      Result := aFormRefArr[nPos, 2],
+   endif,
+end,
+
+//******************************************************************************
+// Grund-Funktion zur Manipulation eines Form-Referenz-Arrays - nicht direkt verwenden!
+// @Result: (ggf. verändertes) Form-Referenz-Array (muss vom Aufrufer in das Quell-Array
+//          zurückgeschrieben werden!)
+//******************************************************************************
+function _GFU_FormRefArr_SetForm(aFormRefArr, cFormRefKey, oForm)
+| nPos, aFormRefElem, cInfoText |
+   Result := aFormRefArr,
+
+   nPos := SeekInDimArray(cFormRefKey, Result, 1),
+
+   // Aktuellen Eintrag für das Formular immer erstmal löschen
+   if nPos > -1 then
+      ADelete(Result, nPos),
+   endif,
+
+   // Formular nur in Array eintragen, wenn es aktuell existiert
+   if oForm <> nil then
+      aFormRefElem := {cFormRefKey, oForm},
+      AAdd(Result, aFormRefElem),
+   endif,
+
+   cInfoText := 'updated form-ref-array for form-ref-key "' + cFormRefKey + '" - total count now: ' + Str(ALen(Result)),
+   Prs('GFU_FormRefArr_SetForm()', cInfoText),
+end,
+
+//******************************************************************************
+// Ein erzeugtes Formular im übergebenen Form-Referenz-Array ablegen
+// @Result: (ggf. verändertes) Form-Referenz-Array (muss vom Aufrufer in das Quell-Array
+//          zurückgeschrieben werden!)
+//******************************************************************************
+function _GFU_FormRefArr_FormCreated(aFormRefArr, cFormRefKey, oForm)
+   Result := GFU_FormRefArr_SetForm(aFormRefArr, cFormRefKey, oForm),
+end,
+
+//******************************************************************************
+// Formular-Zeiger leeren, da das Formular zerstört wurde
+// @Result: (ggf. verändertes) Form-Referenz-Array (muss vom Aufrufer in das Quell-Array
+//          zurückgeschrieben werden!)
+//******************************************************************************
+function _GFU_FormRefArr_FormDestroyed(aFormRefArr, cFormRefKey)
+   Result := GFU_FormRefArr_SetForm(aFormRefArr, cFormRefKey, nil),
+end,
+
+//******************************************************************************
+//
+//       INTERNE FUNKTION! NICHT DIREKT VERWENDEN!
+//       Eigentlicher Aufruf über:
+//          GFU_ShowForm_CustomInfo - Wenn Parameterübergabe benötigt
+//          GFU_ShowForm            - Wenn keine Parameterübergabe benötigt
+//
+//******************************************************************************
+//
+// Interne Grund-Funktion für die Anzeige eines F12-Forms, welches die Rückgabe
+// eines  CB-Programm ist.
+//
+// Das aufgerufene Programm muss eine den GFU_Funktionen entsprechende
+// Struktur besitzen. Als Beispiel kann die Vorlage
+// 'Vorlagen\MDI Child mit Dockings\MasterForm' verwendet werden.
+//
+// Für Übergabeparameter muss zudem im aufgerufenen Programm der Parameter P4
+// vorhanden sein.
+//
+// @Result: Array mit { Formular-Instanz,
+//                      (ggf. verändertes) Form-Referenz-Array (muss vom Aufrufer
+//                       in das Quell-Array zurückgeschrieben werden!)
+//                    }
+//******************************************************************************
+function _GFU_INTERNAL_ShowForm( aFormRefArr,
+                                   cFormRefKey, oOwnerForm, oMasterTable, cProgName,
+                                   aCustomInfoArr )
+| nOldCursor, bFormExistsAlready |                             // Prs('GFU_ShowForm_CustomInfo', 'START'),
+   iif(empty(oOwnerForm),  SetError('oOwner must not be empty()'),),
+   iif(empty(cFormRefKey), SetError('cFormRefKey must not be empty()'),),
+   Result     := Dim(2),
+   nOldCursor := SetCursor(crHourglass),
+   startseq
+      // Formular schon existent?
+      Result[1]          := GFU_FormRefArr_FindForm(aFormRefArr, cFormRefKey),
+      Result[2]          := aFormRefArr,
+      bFormExistsAlready := not empty(Result[1]),
+      if bFormExistsAlready then
+         // Wenn Formular bereits existiert:
+         // => nur anzeigen, d.h. in den Vordergrund bringen
+         //    Je nach Formular-Typ heißt das z.B. MDI-Child anzeigen, gedockte
+         //    Tabkarte anzeigen etc.
+         Show(Result[1]),
+         BringToFront(Result[1]),
+      else
+         // Wenn Formular noch nicht existiert:
+         // => Programms persistent laden. D.h. das CB-Programm wird nach Erreichen
+         //    der letzten Anweisung nicht automatisch zerstört, sondern erst nach der
+         //    Zerstörung des letzten im Programm erzeugten Objekts (meist das entsprechende Formular)
+         Result[1] := CallPersist( cProgName,
+                                   oOwnerForm,    // P1
+                                   cFormRefKey,   // P2
+                                   oMasterTable,  // P3
+                                   aCustomInfoArr // P4
+                                 ),
+         // Das soeben erzeugte Form im Form-Ref-Array ablegen, damit es später
+         // wieder gefunden werden kann
+         Result[2] := GFU_FormRefArr_FormCreated(aFormRefArr, cFormRefKey, Result[1]),
+      endif,
+   always
+      SetCursor(nOldCursor),
+   stopseq,                                                                     // Prs('GFU_ShowForm_CustomInfo', 'END'),
+end,
+
+//******************************************************************************
+// Grund-Funktion für die Anzeige eines F12-Forms, welches die Rückgabe eines
+// CB-Programm ist.
+//  Ermöglicht die Übergabe von zusätzlichen individuellen Infos als
+//  4. Programm-Parameter
+// @Result: Array mit { Formular-Instanz,
+//                      (ggf. verändertes) Form-Referenz-Array (muss vom Aufrufer
+//                       in das Quell-Array zurückgeschrieben werden!)
+//                    }
+//******************************************************************************
+function _GFU_ShowForm_CustomInfo( aFormRefArr,
+                                   cFormRefKey, oOwnerForm, oMasterTable, cProgName,
+                                   aCustomInfoArr )
+   Result := GFU_INTERNAL_ShowForm(aFormRefArr, cFormRefKey, oOwnerForm, oMasterTable, cProgName, aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Wie "GFU_ShowForm_CustomInfo()" nur ohne Parameter "aCustomInfoArr"
+// @Result: siehe oben
+//******************************************************************************
+function _GFU_ShowForm( aFormRefArr,
+                        cFormRefKey, oOwnerForm, oMasterTable, cProgName )
+  Result := GFU_INTERNAL_ShowForm(aFormRefArr, cFormRefKey, oOwnerForm, oMasterTable, cProgName, {}),
+end,
+
+//******************************************************************************
+// ToDo: Doku
+// @Result: null
+//******************************************************************************
+function _GFU_DockingFromMaskIndiMenuTag()
+   Result := '@INDI_MENU_DOCKING@',
+end,
+
+//******************************************************************************
+//
+//       INTERNE FUNKTION! NICHT DIREKT VERWENDEN!
+//       Eigentlicher Aufruf über:
+//          GFU_ShowDockingFromMaskIndiMenu               - Wenn keine Parameterübergabe benötigt
+//          GFU_ShowDockingFromMaskIndiMenu_CustomInfo    - Wenn       Parameterübergabe benötigt (zusätzliche Infos, die vom Aufrufer an das GUI-Programm übergeben werden, z.B. ein "Modus" o.ä.)
+//          GFU_ShowDockingFromMaskIndiMenu_DS            - Wenn keine Parameterübergabe benötigt und anderer DataSourceName benötigt.
+//          GFU_ShowDockingFromMaskIndiMenu_DS_CustomInfo - Wenn       Parameterübergabe benötigt und anderer DataSourceName benötigt.
+//
+//******************************************************************************
+//
+// Interne zentrale Funktion zum Aufrufen eines F12-Docking-Fensters.
+//
+// Das aufgerufene Programm muss eine den GFU_Funktionen entsprechende
+// Struktur besitzen. Als Beispiel kann die Vorlage
+// 'Vorlagen\MDI Child mit Dockings\SupplierDocking' verwendet werden.
+//
+// Für Übergabeparameter muss zudem im aufgerufenen Programm der Parameter P4
+// vorhanden sein.
+//
+// @Result: TFormEx - Dockingfenster
+//******************************************************************************
+function _GFU_INTERNAL_ShowDocking(cFormRefKey, oMenuItem, cProgName, cDataSourceName, aCustomInfoArr)
+| oOwnerForm, oMasterDataSource, oMasterTable, cUniqueFormRefKey, aResArray |
+   Result := nil,
+
+   // DataSource des Hauptfensters suchen: meist 'DS_MAINTABLE'
+   oOwnerForm        := GetOwnerForm(oMenuItem),
+   oMasterDataSource := FindObject(oOwnerForm, cDataSourceName),
+   if not empty(oMasterDataSource) then
+      oMasterTable   := oMasterDataSource.DataSet, // TODO: Semaphore-Tables...  ?
+   else
+      oMasterTable   := nil,
+   endif,
+
+   cUniqueFormRefKey := GFU_DockingFromMaskIndiMenuTag() + '_OWNER:' + Str(oOwnerForm) + '_KEY:' + cFormRefKey,
+
+   aResArray := GFU_INTERNAL_ShowForm( gl_aMaskDockingFormsRefArray,
+                                       cUniqueFormRefKey,
+                                       oOwnerForm,
+                                       oMasterTable,
+                                       cProgName,
+                                       aCustomInfoArr),
+   gl_aMaskDockingFormsRefArray := aResArray[2],
+   Result := aResArray[1], // Formular zurück geben
+end,
+
+//******************************************************************************
+// Funktion dient zum Aufruf eines F12-Docking-Fensters aus einem Individual-Menü
+// heraus wenn der Name des übergeordneten DataSource gesondert übergeben werden
+// muss.
+// Diese Funktion dient dem Aufruf MIT Parameterübergabe
+//******************************************************************************
+function _GFU_ShowDockingFromMaskIndiMenu_DS_CustomInfo(cFormRefKey, oMenuItem, cProgName, cDataSourceName, aCustomInfoArr)
+   Result := GFU_INTERNAL_ShowDocking(cFormRefKey, oMenuItem, cProgName, cDataSourceName, aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Funktion dient zum Aufruf eines F12-Docking-Fensters aus einem Individual-Menü
+// heraus wenn der Name des übergeordneten DataSource gesondert übergeben werden
+// muss.
+// Diese Funktion dient dem Aufruf OHNE Parameterübergabe
+//******************************************************************************
+function _GFU_ShowDockingFromMaskIndiMenu_DS(cFormRefKey, oMenuItem, cProgName, cDataSourceName)
+   Result := GFU_INTERNAL_ShowDocking(cFormRefKey, oMenuItem, cProgName, cDataSourceName, {}),
+end,
+
+//******************************************************************************
+// Funktion dient zum Aufruf eines F12-Docking-Fensters aus einem Individual-Menü
+// heraus, wenn das default DataSource des übergeordneten Fensters 'DS_MAINTABLE'
+// heißt.
+// Diese Funktion dient dem Aufruf OHNE Parameterübergabe
+//******************************************************************************
+function _GFU_ShowDockingFromMaskIndiMenu(cFormRefKey, oMenuItem, cProgName)
+   Result := GFU_INTERNAL_ShowDocking(cFormRefKey, oMenuItem, cProgName, 'DS_MAINTABLE', {}),
+end,
+
+//******************************************************************************
+// Funktion dient zum Aufruf eines F12-Docking-Fensters aus einem Individual-Menü
+// heraus, wenn das default DataSource des übergeordneten Fensters 'DS_MAINTABLE'
+// heißt.
+// Diese Funktion dient dem Aufruf MIT Parameterübergabe
+//******************************************************************************
+function _GFU_ShowDockingFromMaskIndiMenu_CustomInfo(cFormRefKey, oMenuItem, cProgName, aCustomInfoArr)
+   Result := GFU_INTERNAL_ShowDocking(cFormRefKey, oMenuItem, cProgName, 'DS_MAINTABLE', aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Die Funktion dient zur Entfernung einer Form-Referenz ...
+// @Result: null
+//******************************************************************************
+function _GFU_DockingForm_Destroyed(oForm, cFormRefKey)
+| oFormRef |
+   Result := null(),
+
+   if GFU_DockingFromMaskIndiMenuTag() $ cFormRefKey then
+      // 1) Falls das Form in einem Standard-Fenster angedockt wurde...
+      //    => eigenständig aus dem globalen Array austragen
+      oFormRef := GFU_FormRefArr_FindForm(gl_aMaskDockingFormsRefArray, cFormRefKey),
+      if not empty(oFormRef) and oFormRef = oForm then
+         gl_aMaskDockingFormsRefArray := GFU_FormRefArr_FormDestroyed(gl_aMaskDockingFormsRefArray, cFormRefKey),
+      endif,
+   else
+      // 2) Falls das Form ein Docking eines Individual-F12-Fensters war
+      //    => Event auslösen damit das Master-Fenster mitbekommt, das ein Docking zerstört wurde
+      oForm.CbHelper.CbInvokeUserDefinedEvent(oForm, 'DESTROY', {cFormRefKey}),
+   endif,
+end,
+
+//******************************************************************************
+//
+//       INTERNE FUNKTION! NICHT DIREKT VERWENDEN!
+//       Eigentlicher Aufruf über:
+//          GFU_ShowMDIChild            - Wenn keine zusätzliche Parameterübergabe benötigt
+//          GFU_ShowMDIChild_CustomInfo - Wenn       zusätzliche Parameterübergabe benötigt
+//
+//******************************************************************************
+//
+// Interne zentrale Funktion zum Aufruf eines F12- Fensters als MDI-Child.
+//
+// Das aufgerufene Programm muss eine den GFU_Funktionen entsprechende
+// Struktur besitzen. Als Beispiel kann die Vorlage
+// 'Vorlagen\MDI Child mit Dockings\MasterForm' verwendet werden.
+//
+// Für Übergabeparameter muss zudem im aufgerufenen Programm der Parameter P4
+// vorhanden sein.
+//******************************************************************************
+function _GFU_INTERNAL_ShowMDIChild(cFormRefKey, cProgName, aCustomInfoArr)
+| aResArray |
+  Result := nil,
+
+  // Getestet ist das nur im ERP-Haupt-Form, deshalb einschränken
+  if not (   LoadedModule = belmMain
+          or LoadedModule = belmPrMan
+          or LoadedModule = belmFiBu ) then
+     SetError('GFU_ShowMDIChild(): Diese Funktion kann aktuell nur in den Modulen ERP, Printmanager und FiBu genutzt werden.'),
+  endif,
+
+  // das erstellte bzw. wieder gefundene Formular als Result liefern
+  aResArray := GFU_INTERNAL_ShowForm( gl_aMDIChildFormsRefArray, // immer das globale Array aller MDI-Childs nutzen
+                                      cFormRefKey,
+                                      CbApplication.MainForm,    // immer das MainForm als Owner nutzen
+                                      nil,                       // MDI-Child-Fenster haben keine Master-Tabelle (im Gegensatz zu Dockings)
+                                      cProgName,
+                                      aCustomInfoArr),           // Übergabe der zusätzlichen Parameter
+  gl_aMDIChildFormsRefArray := aResArray[2],
+  Result := aResArray[1], // Formular zurück geben
+end,
+
+//******************************************************************************
+// Zentrale Funktion zum Aufruf eines F12- Fensters als MDI-Child.
+// Für Übergabeparameter muss im augerufenen Programm zusätzlich der Parameter
+// P4 vorhanden sein.
+// @Result: Formular-Referenz (TFormEx)
+//******************************************************************************
+function _GFU_ShowMDIChild_CustomInfo(cFormRefKey, cProgName, aCustomInfoArr)
+   Result := GFU_INTERNAL_ShowMDIChild(cFormRefKey, cProgName, aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Zentrale Funktion zum Aufruf eines F12- Fensters als MDI-Child.
+// @Result: Formular-Referenz (TFormEx)
+//******************************************************************************
+function _GFU_ShowMDIChild(cFormRefKey, cProgName)
+  Result := GFU_INTERNAL_ShowMDIChild(cFormRefKey, cProgName, {}),
+end,
+
+//******************************************************************************
+//
+//       INTERNE FUNKTION! NICHT DIREKT VERWENDEN!
+//       Eigentlicher Aufruf über:
+//          GFU_ShowModal_CustomInfo - Wenn Parameterübergabe benötigt
+//          GFU_ShowModal            - Wenn keine Parameterübergabe benötigt
+//
+//******************************************************************************
+//
+// Interne zentrale Funktion zum Aufrufen eines Programms als Modales-Fenster.
+//
+// Das aufgerufene Programm muss eine den GFU_Funktionen entsprechende
+// Struktur besitzen. Als Beispiel kann die Vorlage
+// 'Vorlagen\MDI Child mit Dockings\MasterForm' verwendet werden.
+//
+// Für Übergabeparameter muss zudem im aufgerufenen Programm der Parameter P4
+// vorhanden sein.
+//
+// Parameter:
+//    - oMasterTable   - Ermöglicht das "horchen" auf ein übergeordnetes Fenster.
+//                       z. B. um Informationen zum aktuell positionierten
+//                       Artikel im modalen Fenster anzeigen zu können.
+//    - cProgName      - Name des Programms, welches modal geöffnet werden soll.
+//    - aCustomInfoArr - Array in dem beliebig viele Übergaben enthalten sein
+//                       können.
+//                       Werden keine übergaben benötigt, so kann auch einfach
+//                       die Funktion GFU_ShowModal verwendet werden.
+//
+// @Result: Ergebnis des modal aufgerufenen Programms
+//******************************************************************************
+function _GFU_INTERNAL_ShowModal(oMasterTable, cProgName, aCustomInfoArr)
+   Result := Call(cProgName, nil, '', oMasterTable, aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Aufrufen eines Programms als Modales-Fenster MIT Parameterübergabe
+// @Result: Ergebnis des modal aufgerufenen Programms
+//******************************************************************************
+function _GFU_ShowModal_CustomInfo(oMasterTable, cProgName, aCustomInfoArr)
+   Result := GFU_INTERNAL_ShowModal(oMasterTable, cProgName, aCustomInfoArr),
+end,
+
+//******************************************************************************
+// Aufrufen eines Programms als Modales-Fenster OHNE Parameterübergabe
+//******************************************************************************
+function _GFU_ShowModal(oMasterTable, cProgName)
+   Result := GFU_INTERNAL_ShowModal(oMasterTable, cProgName, {}),
+end,
+
+//******************************************************************************
+// Prüfen ob die Exe-Version schon die Eigenschaft IsChildWindow besitzt
+//******************************************************************************
+function _GFU_CheckIsChildWindowAvailable(oForm)
+   |i, aProps|
+   Result := False,
+   aProps := PropArray(oForm),
+   for i := 1 to ALen(aProps) do
+      if aProps[i, 1] = 'IsChildWindow' then
+         Result := True,
+         break,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Ist das Fenster ein (MDI)Child Fenster?
+//******************************************************************************
+function _GFU_IsChildWindow(oForm)
+   if not gl_IsChildWindowChecked then
+      gl_IsChildWindowAvailable := GFU_CheckIsChildWindowAvailable(oForm),
+      gl_IsChildWindowChecked := True,
+   endif,
+
+   Result := False,
+   if not empty(oForm) then
+      if gl_IsChildWindowAvailable then
+         Result := oForm.IsChildWindow,
+      else
+         Result := oForm.FormStyle = fsMDIChild,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion dient zur Entfernung einer Form-Referenz aus dem globalen MDI-Child-Array
+// und muss im 'OnDestroy' eines MDI-Child-Forms aufgerufen werden
+// @Result: null
+//******************************************************************************
+function _GFU_MDIChild_Destroyed(oForm, cFormRefKey)
+| oFormRef |
+   Result := null(),
+
+   // Sofern das (soeben zerstörte) Formular ein MDI-Child war, muss es aus der
+   // Liste der aktuell instanziierten MDI-Childs entfernt werden
+   if GFU_IsChildWindow(oForm) then
+      if GetOwnerForm(oForm) = CbApplication.MainForm then
+         oFormRef := GFU_FormRefArr_FindForm(gl_aMDIChildFormsRefArray, cFormRefKey),
+         // Entspricht die gefundene Form-Referenz wirklich dem zerstörten Form?
+         if not empty(oFormRef) and oFormRef = oForm then                               Prs('_GFU_MDIChild_Destroyed()', 'MDIChild "' + cFormRefKey + '" destroyed => update global array'),
+            gl_aMDIChildFormsRefArray := GFU_FormRefArr_FormDestroyed(gl_aMDIChildFormsRefArray, cFormRefKey),
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Hilfs-Funktion für F12-Dockings, die auf die Änderungen einer Master-Tabelle
+// reagieren sollen, also z.B. für eine klassisches Detail-Fenster einer
+// Master-Detail-Beziehung.
+//
+// TODO:
+//   - nutzbar für F12-Dockings von F12-Fenstern
+//   - auch für F12-Dockings von Standard-Fenstern? (Was ist hier mit Semaphor-Master-Tabellen, die zwischenzeitlich eine MemTable halten...?)
+//
+// @Result: null
+//******************************************************************************
+function _GFU_Docking_LinkMasterTableToLocalDataSource( oMasterTable,
+                                                        oLocalMasterDataSource,
+                                                        nExpectedMasterTableWorkarea,
+                                                        cExpectedMasterTableClass )
+
+   // Prüfen, ob die Master-Tabelle korrekt übergeben wurde
+   if empty(oMasterTable) then
+      SetError('This docking cannot be used without mastertable.'),
+   else
+      // Klasse der übergebenen Master-Tabellen-Instanz ist korrekt?
+      if not empty(cExpectedMasterTableClass) and
+         not ClassOf(oMasterTable, cExpectedMasterTableClass) then
+         SetError('This docking cannot be used with mastertable class "' + ClassName(oMasterTable) + '". ' + crlf +
+                  'Expected class "' + cExpectedMasterTableClass + '".'),
+      else
+         // Workarea der übergebenen Master-Tabellen-Instanz korrekt?
+         if (nExpectedMasterTableWorkarea <> -1) and
+            (nExpectedMasterTableWorkarea <> oMasterTable.WorkArea) then
+            SetError('This docking cannot be used with mastertable workarea ' + Str(oMasterTable.WorkArea) + '. ' + crlf +
+                     'Expected workarea ' + Str(nExpectedMasterTableWorkarea) + '.'),
+         else
+            // Lokales DataSource mit der übergebenen Master-Tabelle verbinden,
+            // damit eine (eigene, lokale) Komponente mit den notwendigen Events zur
+            // Reaktion auf Master-Table-Aktionen bereit steht
+            oLocalMasterDataSource.DataSet := oMasterTable,
+         endif,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Gibt einen aus den übergebenen Parametern zusammengesetzen Formularnamen zurück
+// Hintergrund: Formulare brauchen einen in der Owner-Struktur eindeutigen Namen, damit
+//              diese von der Docking-Wiederherstellungs-Logik (TBeCbDockingSaver)
+//              wiederhergestellt werden können.
+// @Result: Formular-Name
+//******************************************************************************
+function _GFU_CalcFormularName(cPrefix, oForm, oOwner)
+   // Handelt es sich um ein Indi-Docking dann muss der Ursprüngliche Key extrahiert werden
+   if At('_KEY:', cPrefix) > 0 then
+      cPrefix := SubStr(cPrefix, At('_KEY:', cPrefix) + Len('_KEY:'), Len(cPrefix)),
+   endif,
+
+   Result := cPrefix + SubStr(oForm.ClassID, 2, Len(oForm.ClassID)),
+   // Wenn der Owner gefüllt ist handelt es sich um ein Docking-Formular
+   if not empty(oOwner) then
+      Result :=  Result + '_DOCK',
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die GUI-Menü-Programmierung
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'GMU' steht für 'Gui Menu Utils'
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erstellt ein Individual-Menü und bindet es in das übergebene Formular
+// ein
+//   @nShowForModule:        Menü nur für dieses Programm-Modul erstellen (-1 für <keine Angabe>)
+//   @oOwnerForm:            Owner-Form (muss übergeben werden)
+//   @nMenuId:               ID des Individual-Menüs
+//   @cReferenceMenuItem:    Name des Menüpunkts, vor/nach dem das neue Menü eingefügt
+//                           werden soll. Kann leer bleiben, dann wird es
+//                           "am Ende" eingefügt
+//   @lInsertInBeBar:        Fügt den Menüpunkt nicht ins Menü ein, sondern in
+//                           die Toolbar
+//   @cInsertInBeBarName:    Name der Toolbar in welches der Menüpunkt eingefügt wird.
+//                           Bei "leer" wird die erste gefunde Toolbar des Formulars
+//                           verwendet
+//   @bCreateAfter:          Entscheidet ob das Individual-Menü vor oder nach dem cReferenceMenuItem hinzugefügt wird.
+//                           Standardmäßig wird es immer vor dem cReferenceMenuItem hinzugefügt.
+//   @Result:                Instanz des erzeugten TBeCustomMenuPanel
+//******************************************************************************
+function _GMU_CreateIndiMenu(nShowForModule, oOwnerForm, nMenuId, cReferenceMenuItem, lInsertInBeBar:L:=False, cInsertInBeBarName:C:='', bCreateAfter:L:= false)
+| oMenuPanel, cComponentName, oInsertAtMenu |
+   Result := nil,
+
+   if (LoadedModule = nShowForModule) or (nShowForModule = -1) then
+      if not empty(oOwnerForm) then
+         cComponentName  := '', // TBeCustomMenuPanel_Nr_' + Str(nMenuId),
+         Result          := CreateObject('TBeCustomMenuPanel', cComponentName, oOwnerForm, oOwnerForm),
+         Result.ID       := nMenuId,
+
+         // Einfüge-Position suchen
+         if not lInsertInBeBar and not empty(cReferenceMenuItem) then
+            oInsertAtMenu   := FindObject(oOwnerForm, cReferenceMenuItem),
+            if not empty(oInsertAtMenu) then
+               Result.InsertAt := oInsertAtMenu,
+            endif,
+         endif,
+
+         if lInsertInBeBar then
+            Result.InsertInToolBar := False,
+            Result.InsertInMenu    := False,
+            Result.InsertInBeBar   := True,
+            if cInsertInBeBarName <> '' then
+               Result.InsertInBeBarName := cInsertInBeBarName,
+            endif,
+            if cReferenceMenuItem <> '' then
+               if bCreateAfter and CompareBeVersion(mBeVersion, '7.1.1.4') then
+                  Result.InsertAfterBeBarItemName := cReferenceMenuItem,
+               else
+                  Result.InsertBeforeBeBarItemName := cReferenceMenuItem,
+               endif,
+            endif,
+         endif,
+
+         Result.ShowMenu,
+      endif,
+   endif,
+end,
+
+
+//******************************************************************************
+// Funktion zeigt den Individual-Menü-Editor an
+// @Result: null
+//******************************************************************************
+function _GMU_ShowIndiMenuEditor()
+| oIndiMenu, oDabFil, cID |
+
+   oDabFil := BeOpen(waDabFil, 'DabFil'), // Cache-Tabelle holen
+   startseq
+      // Zum Öffnen des Menü-Editors wird eine Menu-ID benötigt. Deshalb
+      // ermitteln, ob es eine gibt. Wenn ja, dann diese verwenden, ansonsten
+      // die Dummy-ID 999, die dann beim ersten Aufruf erzeugt wird.
+      DBScope({523}, {523}, oDabFil),
+      cID := iif(not Eof(oDabFil), oDABFIL:FELD, 999),
+   always
+      BeClose(oDabFil),
+   stopseq,
+
+   oIndiMenu := CreateObject('TBeCustomMenuPanel', '', nil),
+   startseq
+      oIndiMenu.ID := cID,
+      oIndiMenu.ShowMenuEditor,
+   always
+      DestroyObject(oIndiMenu),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+
+GFU_FormRefArr_Init(gl_aMDIChildFormsRefArray), // Array für MDI-Childs initialisieren
+GFU_FormRefArr_Init(gl_aMaskDockingFormsRefArray),
+gl_IsChildWindowChecked := False,
+gl_IsChildWindowAvailable := False,

@@ -1,0 +1,48 @@
+//******************************************************************************
+// Entfernen von unerwünschten Zeichen für Pfadangaben
+//******************************************************************************
+function ValidDirPath(cText)
+   Result := cText,
+   iif(empty(Result), exit, ),
+
+   // crlf's entfernen
+   Result := StrTran(Result, crlf, ''),
+
+   // Links alle Backslashes entfernen
+   while Left(Result, 1) = '\' do
+      Result := SubStr(Result, 2, Len(Result) - 1),
+   end,
+
+   // Sicherstellen das Rechts nur ein Backslash steht
+   // Alle existierenden löschen
+   while not Right(Result,  1) <> '\' do
+      Result := SubStr(Result, 1, Len(Result) - 1),
+   end,
+   // Rechts einen Backslash hinzufügen
+   Result += '\',
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Programmpfad anhand des namens
+//******************************************************************************
+function GetProgrammPath(cName)
+| i, nTokens |
+   Result  := '',
+   nTokens := TokenCount(cName, '\'),
+   for i := 1 to nTokens -1 do
+      if not empty(Result) then
+         Result += '\',
+      endif,
+
+      Result += StrToken(cName, '\', i),
+   next,
+   Result := ValidDirPath(Result),
+end,
+
+//******************************************************************************
+// Zieht den Programmnamen aus dem angegebenen Pfad
+//******************************************************************************
+function GetWindowsFileName(cName)
+   Result := StrTran(cName,'\','_'), 
+end,
+

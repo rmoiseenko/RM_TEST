@@ -1,0 +1,173 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Sammlung aller Codeblöcke die in Masken o.ä. hinterlegt sind
+// ----------------------------- NUR ZUR SICHERUNG -----------------------------
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Vertreters
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB062, DAB062:ID, mStandort, 10, 10, Self),
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Kunden
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB000, DAB000:ID, mStandort, 10, 10, Self),
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Lieferanten
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB100, DAB100:ID, mStandort, 10, 10, Self)
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Bestellrückstands
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB035, DAB035:ID, mStandort, 10, 10, Self),
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Offenen Produktionsauftrags
+//******************************************************************************
+| n240ID |
+
+// Hier muss der DAB240 - Kopfsatz verwendet werden da der DAB035-Satz nicht
+// dauerhaft vorhanden ist und die Verknüpfung somit bei der löschung des
+// DAB035-Satzes unbrauchbar wird
+
+n240ID := Lookup(waDAB240, 'DAB241', {{SubStr(DAB035:BESTPOSNR, 1, 8) + '000'}}, 'ID', 0),
+if empty(n240ID) then
+   MessageDlg('Kopfsatz der DAB240 konnte nicht gefunden werden', mtError),
+else
+   startseq
+      ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB240, n240ID, mStandort, 10, 10, Self),
+   onerror
+      MessageDlg('Fehler beim Anlegen der Verknüpfung' + crlf + GetErrorText(), mtError),
+   stopseq
+endif,
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Kontaktes
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB005, DAB005:ID, mStandort, 10, 10, Self)
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Auftrags
+//******************************************************************************
+startseq
+   ProjMgmtGUI_AddRelationShipToProjectByDestID(gl_oDM, waDAB050, DAB050:ID, mStandort, 10, 10, Self)
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//******************************************************************************
+// Programmcode im Button zum Zuordnen eines Memos
+//******************************************************************************
+| oMemoBO |
+startseq
+   oMemoBO := CreateObject('TBeMemoBO'),
+   startseq
+      oMemoBO.CBDataModule := gl_oDM,
+      oMemoBO.CbGoToID(DAB065:MEMO_ID),
+      ProjMgmtGUI_AddRelationShipToProject(gl_oDM, oMemoBO, 10, 10, Self),
+   always
+      DestroyObject(oMemoBO),
+   stopseq
+onerror
+   MessageDlg(GetErrorText(), mtError),
+stopseq
+
+//##############################################################################
+//##############################################################################
+// Aufruf mit Einstellungen für "Projektzeit Erfassung"
+//##############################################################################
+//##############################################################################
+
+| cAllowedPersonnel, cAllowedProjectStates, cWeekView, aParamArray |
+
+  cAllowedPersonnel     := '5/2/11',      // Verfügbare Mitarbeiter (leer = alle Mitarbeiter) !Achtung: BDE Personal-Nr nicht Be-UserNo
+  cAllowedProjectStates := '100/200/550', // Verfügbare Projekt-Stati (leer = alle)
+  cWeekView             := 'KW.02.13',    // Anzeige für Woche (leer = akt. KW)
+
+  aParamArray := {cAllowedPersonnel, cAllowedProjectStates, cWeekView},
+  call('Projektmanagement\Dockings\Projektzeit Erfassung', , , , , aParamArray)
+
+//##############################################################################
+//##############################################################################
+// Aufruf mit Einstellungen für "Übersicht Buchungen"
+//##############################################################################
+//##############################################################################
+
+| cDisplayUser, cDateFromTo, lShowProjectDaysOnly, aParamArray |
+
+  cDisplayUser         := '5',                       // Anzeige "nur User" (leer = alle User) !Achtung: BDE Personal-Nr nicht Be-UserNo
+  cDateFromTo          := {Date() - 7, Date() + 7},  // Anzeige von - bis (leer = default 1 Woche)
+  lShowProjectDaysOnly := True,                      // Nur Tage mit Projekt-Zeit anzeigen
+
+  aParamArray := {cDisplayUser, cDateFromTo, lShowProjectDaysOnly},
+  call('Projektmanagement\Dockings\Übersicht Buchungen', nil, , , , aParamArray)
+
+//##############################################################################
+//##############################################################################
+// Events - beim Start von be32
+//##############################################################################
+//##############################################################################
+
+// Einzubindende globale Programme
+
+//******************************************************************************
+// Projektmanagement
+//******************************************************************************
+Call('Global\Projektmanagement'),
+
+//##############################################################################
+//##############################################################################
+// Events - Formular nach Erstellung
+//##############################################################################
+//##############################################################################
+// Hinzufügen und ID an neues Menü anpassen
+// Neues Projektmanagement
+oMenuProjectmanager          := CreateObject('TBeCustomMenuPanel', 'Menu_Projektmgmt', oForm),
+oMenuProjectmanager.ID       := 1004,
+oMenuProjectmanager.InsertAT := FindObject(oForm, "mnudatev"),
+oMenuProjectmanager.Showmenu,
+
+//##############################################################################
+//##############################################################################
+// Events - Business Objects - Memo - vor dem Speichern
+//##############################################################################
+//##############################################################################
+| nEvtNo:P1, oMemoBO:P2 |
+// Aufruf erfolgt vor dem Speichern eines Memo Business-Objekts (TBeMemoBO)
+// Vorgang kann durch das Auslösen einer Exception abgebrochen werden.
+
+// Zeiterfassung für Projektvorgangs-Aufgaben-Memos und Support-Ticket-Memos
+if (oMemoBO.MemoTypeValue = 20) or (oMemoBO.MemoTypeValue = 120) then
+   if oMemoBO.MemoTypeValue = 120 then
+      ProjMgmt_CreateTaskForSupportMemoIfNotExists(oMemoBO),
+   endif,
+
+   // Es wird eine neue Vorgangsleistung angelegt wenn zu dem aktuellen User keine
+   // gefunden werden konnte. Wenn dies nicht geschehen soll muss der 2. Parameter
+   // im Funktionsaufruf auf False gestellt werden.
+   ProjMgmtGUI_ShowBookingDialogForMemo(oMemoBO, True, oMemoBO.MemoTypeValue = 20),
+endif,

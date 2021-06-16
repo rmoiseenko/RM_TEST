@@ -1,0 +1,300 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Docking zur Anzeige aller Verknüfungen zu Projekten ausgehend
+//               von der Dockingumgebung
+//               (Kundenstamm -> Verknüpfungen Kunde<=>Projekt)
+//
+//  TODO: Handling von TBeSemaphorTable-Mastertables für korrektes Verhalten
+//        im Insert-Mode
+//
+//  Menü-Aufruf:
+//   //#p Projektmanagement\Verknüpfungs-Docking
+//   InitProjectLinksDocking(Self, FindObject(GetOwnerForm(Self), 'DS_MAINTABLE'))
+//
+// +++++++++++++ ACHTUNG ACHTUNG ACHTUNG ACHTUNG ACHTUNG +++++++++++++++++++++++
+// +++++++++++++ ACHTUNG ACHTUNG ACHTUNG ACHTUNG ACHTUNG +++++++++++++++++++++++
+//
+//    Dieses Programm ist veraltet!
+//    Bitte stattdessen das Programm:
+//    Projektmanagement\Dockings\Projektverknüpfungen
+//    verwenden! Und ggf. das Individual-Menü "Projekte" (ID 1005) neu
+//    importieren.
+//
+// +++++++++++++ ACHTUNG ACHTUNG ACHTUNG ACHTUNG ACHTUNG +++++++++++++++++++++++
+// +++++++++++++ ACHTUNG ACHTUNG ACHTUNG ACHTUNG ACHTUNG +++++++++++++++++++++++
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm,
+   m_oMasterDataSource, m_oMasterTable,
+   m_nMasterWorkarea, m_nMasterID,
+   m_cFormObjectName,
+   m_oDM_Gui, m_oLinks_Gui,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_GoToProject, ActionList, btn_GoTo, ds_DABVKN, ds_MainTable, grd_Links, pnl_DevInfos,
+  pnl_GoToPanel, pnl_Main
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormObjectName := 'IndiFormProjectmanagementDocking',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// ActionsEnabled steuert die für den User verfügbaren Interaktionen
+//******************************************************************************
+function ActionsEnabled()
+| bEnabled |
+   bEnabled := not (EOF(m_oLinks_Gui) and BOF(m_oLinks_Gui)),
+
+   A_GoToProject.Enabled := bEnabled,
+end,
+
+//******************************************************************************
+// Datenmodul und Tabellen für das Form öffnen
+// @Result: null
+//******************************************************************************
+function OpenTables()
+   startseq
+      m_oDM_Gui := CreateObject('TBeDbGet', 'IndiFormProjectmanagement_DbGet' + Str(m_nMasterWorkarea)),
+
+      m_oLinks_Gui                  := DbGetTable(m_oDM_Gui, waDABVKN, 'DockingVKN'),
+      m_oLinks_Gui.IndexName        := 'QUELL_WA',
+      m_oLinks_Gui.CheckReadAccess  := raFilter, // => Leserechte berücksichtigen
+      m_oLinks_Gui.CheckUserRights  := True,     // Berechtigungen prüfen
+   onerror
+      SetError('Fehler beim Öffnen der Tabellen' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//******************************************************************************
+// Aktualisiert die Entwicklerinformationen
+//******************************************************************************
+function RefreshDevInfo()
+  if not empty(m_oMasterTable) and not empty(m_oMasterDataSource) then
+     pnl_DevInfos.Caption :=
+        'DevInfos: ' + crlf +
+        'Master-Workarea = ' + Str(m_nMasterWorkarea) + ' / Master-ID = ' + Str(m_nMasterID),
+  endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Zum derzeit markierten Projekt springen
+//******************************************************************************
+function A_GoToProjectExecute( Sender )
+   ProjMgmtGUI_ShowProjectmanagement(Sender, m_oLinks_Gui:QUELL_ID),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Beim doppelklicken auf ein verknüpftes Projekt in das Projektmanagement
+// springensss
+//******************************************************************************
+function grd_LinksDblClick( Sender )
+   if not empty(m_oLinks_Gui:QUELL_ID) then
+      ProjMgmtGUI_ShowProjectmanagement(Sender, m_oLinks_Gui:QUELL_ID),
+   endif,
+end,
+
+//******************************************************************************
+// Bei Datenwechsel
+//******************************************************************************
+function ds_DABVKNDataChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Beim Datenwechsel auf der Übergebenen Tabelle müssen die Informationen
+// aktualisiert werden
+//******************************************************************************
+function ds_MainTableScroll_Update( Sender )
+   startseq
+      if not empty(m_oMasterTable) and not empty(m_oMasterDataSource) then
+         m_nMasterID := m_oMasterTable:ID,
+      else
+         m_nMasterID := -1,
+      endif,
+      // Interne DABVKN neu Filtern
+      DBFilter('QUELL_WA = 260 AND ' +
+               'ZIEL_WA = ' + Str(m_nMasterWorkarea) + ' AND ' +
+               'ZIEL_ID = ' + Str(m_nMasterID), m_oLinks_Gui),
+
+      iif(pnl_DevInfos.Visible, RefreshDevInfo(),),
+   onerror
+      SetError('Fehler beim Neu-Positionieren' + crlf + GetErrorText()),
+   stopseq
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm initialisiert das Formular in Abhängigkeit des übergebenen Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   // Formular je nach übergabe des Owners Modal oder Dockbar machen
+   if empty(m_oOwnerForm) then
+      // Modal
+      oForm             := LoadForm( "@PRJ_DKG", Application),
+      oForm.BorderStyle := bsSizeable,
+   else
+      // Dockbar
+      oForm             := LoadForm( "@PRJ_DKG", m_oOwnerForm),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+
+   oForm.Name       := m_cFormObjectName, // Wichtig für's Wiederfinden per FindObject()
+   oForm.ImageIndex := 558,               // Für den Fenster-Navigator und Tabkarten-Symbole
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_GoToProject := FindObject( oForm, "A_GoToProject" ),
+      ActionList    := FindObject( oForm, "ActionList" ),
+      btn_GoTo      := FindObject( oForm, "btn_GoTo" ),
+      ds_DABVKN     := FindObject( oForm, "ds_DABVKN" ),
+      ds_MainTable  := FindObject( oForm, "ds_MainTable" ),
+      grd_Links     := FindObject( oForm, "grd_Links" ),
+      pnl_DevInfos  := FindObject( oForm, "pnl_DevInfos" ),
+      pnl_GoToPanel := FindObject( oForm, "pnl_GoToPanel" ),
+      pnl_Main      := FindObject( oForm, "pnl_Main" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      grd_Links.ID              := '@PRJ_DKG',
+      grd_Links.RegisterDataSet := m_oLinks_Gui,
+      ds_DABVKN.DataSet         := m_oLinks_Gui,
+      grd_Links.ReadWriteProps  := False,
+      oForm.PositionSaveID      := 'PRJDKGPOS',
+      pnl_DevInfos.Visible      := EditorMode(),
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: oForm-Instanz
+//******************************************************************************
+function ShowGUI()
+   oForm.OrigCapt := 'Projekte',
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+      Result := nil,
+   else
+      Show(oForm),
+      Result := oForm,
+   endif,
+end,
+
+//******************************************************************************
+// HAUPT-FUNKTION zur Erstellung des "Projektverknüpfungs"-Dockings
+// @Result: Formular-Instanz
+//******************************************************************************
+function InitProjectLinksDocking(oParentMenu, oMasterDataSource)
+   startseq
+      Result          := nil,
+
+      if not Empty(oParentMenu) then
+         m_oOwnerForm := GetOwner(oParentMenu),
+         oForm        := FindObject(m_oOwnerForm, m_cFormObjectName),
+      endif,
+
+      // Wenn das Form schon existiert, dann wurde die Funktion wiederholt aufgerufen
+      // => z.B. über den Individual-Menü-Knopf
+      if empty(oForm) then
+
+         if empty(oMasterDataSource) then
+            SetError('oMasterDataSource is empty'),
+         else
+            if empty(oMasterDataSource.DataSet) then
+               SetError('oMasterDataSource.DataSet is empty'),
+            endif,
+         endif,
+
+         m_oMasterDataSource  := oMasterDataSource,
+         m_oMasterTable       := oMasterDataSource.DataSet, // TODO: Handling von TBeSemaphorTable-Master-Tables
+         m_nMasterWorkarea    := m_oMasterTable.Workarea,
+
+         OpenTables(),
+         InitForm(),
+         LoadGUI(),
+         ds_MainTable.DataSet := m_oMasterTable,
+      endif,
+
+      Result := ShowGUI(),
+   onerror
+      MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+                  GetErrorText(), mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Test-Funktion für den EditorMode
+// @Result: oForm-Instanz
+//******************************************************************************
+function TestProjectDocking()
+| oDab000Master, oMasterDataSource, cTestKdnr |
+
+  cTestKdnr := '10000001',
+
+  oMasterDataSource := CreateObject('TDataSourceEx'),
+  startseq
+     oDab000Master             := DbGetTable(gl_oDM, waDab000, 'DAB000_TEST_MASTER'),
+     oMasterDataSource.DataSet := oDab000Master,
+
+     MySeek({cTestKdnr}, oDab000Master),
+     WriteLn('Test-Master-Kunde: ', AllTrim(oDab000Master:KDNR), AllTrim(oDab000Master:NAME1), AllTrim(oDab000Master:NAME2)),
+
+     Result := InitProjectLinksDocking(nil, oMasterDataSource),
+  always
+     DestroyObject(oMasterDataSource),
+  stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+if EditorMode() then
+   startseq,
+      writeln(ClassName(TestProjectDocking())),
+   onerror,
+      MessageDlg('Fehler im Programm ' + ProgName() + crlf + crlf + GetErrorText(), mtError),
+   stopseq,
+endif,

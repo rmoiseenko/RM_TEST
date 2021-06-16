@@ -1,0 +1,270 @@
+//##############################################################################
+//##############################################################################
+// Globale Funktionen des Packages 'uebersetzungen'
+//
+// Präfix: LU_ wie "(L)anguage(U)tils"
+//
+//  Hinweis: Es gibt drei Sprach-Listen
+//           - ISO 639-1-Codes ('de', 'en', ...)   -> nennen wir 'ISOLanguageCode' (siehe https://de.wikipedia.org/wiki/Liste_der_ISO-639-1-Codes)
+//           - be Oberflächen Sprache (4, 6, ...)  -> nennen wir 'BeGuiLanguage'
+//           - be Beleg Sprache (MM-Tabelle -17)   -> nennen wir 'BeLayoutLanguage'
+//
+//##############################################################################
+//##############################################################################
+|
+  gl_LUU_DesignModus:_L:=false,                      // diese Variable wird in der GUI gesetzt, sofern der "Design Modus" aktiviert wird
+  gl_LUU_IndiOnlineHelp_SQLWhere:_C:='MEMO_ID = 6',  // Aufruf-Filter für die Individuelle Online-Hilfe aus der GUI heraus
+
+  gl_LU_LanguageCache:_U:=nil
+|
+
+//******************************************************************************
+// Ersetzt die Platzhalter mit den Werten aus dem übergebenen Array.
+// Das Array muss hier bei ein zwei-dimensionales Array, bestehend aus dem
+// Platzhalter und dem entsprechenden Wert sein.
+// @Result: String
+//******************************************************************************
+function _LU_ReplacePlatzhalter(cText:C, aPlatzhalterArray:A)
+| aPlatzhalter |
+   SetErrorIf(aLen(aPlatzhalterArray)     = 0, 'Das Platzhalterarray darf nicht leer sein!'),
+   SetErrorIf(aLen(aPlatzhalterArray[1]) <> 2, 'Das Platzhalterarray muss zwei-dimensional sein!' + crlf +
+                                               'Hierbei muss der erste Wert dem Platzhalter und der zweite dem Wert entsprechen'),
+   Result := cText,
+   foreach aPlatzhalter in aPlatzhalterArray do
+      Result := StrTran(Result, aPlatzhalter[1], Alltrim(aPlatzhalter[2])),
+   next,
+end,
+
+//******************************************************************************
+// Dient zur Prüfung
+// wenn das Label kein Identifier ist sondern ein durchnummerierter Identifier
+//   (Diese Logik kommt aus der Übersetzung von Beleg-Layout-Labels)
+// @Result: null
+//******************************************************************************
+function _LU_ExtractLabelIdentifier(cLabel)
+| nAnzToken, cLastToken, bLastTokenHasOnlyNumbers, nLen, nLastTokenLen, cLabelCutLastTokenHasOnlyNumbers |
+   Result                   := cLabel,
+   nAnzToken                := TokenCount(cLabel, '_'),
+   cLastToken               := AllTrim(StrToken(cLabel, '_', nAnzToken)),  // Wert hinter dem letzten Token
+   bLastTokenHasOnlyNumbers := cLastToken == CharOnly('0123456789', cLastToken),
+   // letzten Token abschneiden, und auch nur dann, wenn dieser nur aus Nummern besteht
+   if bLastTokenHasOnlyNumbers then
+      nLen                             := Len(cLabel),
+      nLastTokenLen                    := Len(cLastToken) + 1,
+
+      cLabelCutLastTokenHasOnlyNumbers := AllTrim(SubStr(cLabel, 1, nLen - nLastTokenLen)),
+      Result                           := cLabelCutLastTokenHasOnlyNumbers,
+   endif,
+end,
+
+//******************************************************************************
+// INTERNE FUNKTION. NICHT DIREKT VERWENDEN!
+// => Funktion ermittelt die Daten aus den Tabellen
+// @Result: Übersetztes Label / Langtext bzw. im Designmodus der Labelname (String)
+//******************************************************************************
+function _LU_Internal_GetValue(cLabel, cFeld, nSprache)
+| i, cChar, bLastTokenHasOnlyNumbers, nLen, nLastTokenLen |
+   Result := '',
+   cLabel := AllTrim(Upper(cLabel)),
+   cLabel := LU_ExtractLabelIdentifier(cLabel),
+   if gl_LUU_DesignModus then
+      Result := cLabel,
+   else,
+      if nSprache <> 0 then // Daten aus der Übersetzungs-Detail-Tabelle holen
+         Result := RTrim(LookUp(waDABUBP, "LABEL_SPRACHE", {{cLabel, nSprache}}, cFeld, "", lm_lookup)),
+      endif,
+      if Empty(Result) then // Daten für die "eigene Sprache" aus der Kopf-Tabelle holen
+         Result := RTrim(LookUp(waDABUBK, "LABEL", {{cLabel}},           cFeld, "", lm_lookup)),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Wandelt eine BE-Oberflächensprache in den entsprechenden
+// ISO 639-1-Codes Sprach-Code um.
+// @Result: String
+//******************************************************************************
+function _LU_BeGuiLanguageToISOLanguageCode(nBeLanguage:N)
+   case nBeLanguage
+      of   4 :: Result := 'de', // Deutsch
+      of   6 :: Result := 'en', // Englisch
+      of   1 :: Result := 'fr', // Frankreich
+      of   5 :: Result := 'it', // Italien
+      of   3 :: Result := 'nl', // Niederlande
+      of  61 :: Result := 'cs', // Tschechisch
+      of  60 :: Result := 'pl', // Polnisch
+      of  66 :: Result := 'ro', // Rumänien
+      of  67 :: Result := 'sl', // Slowenisch
+      of  52 :: Result := 'tr', // Türkisch
+      of 990 :: Result := '##', // Benutzerdefiniert
+      otherwise
+         Result := 'de', // Default-Sprache ist "Deutsch"
+   endcase,
+end,
+
+//******************************************************************************
+// Wandelt eine BE-Oberflächensprache in den entsprechenden
+// ISO 639-1-Codes Sprach-Code um.
+// @Result: number
+//******************************************************************************
+function _LU_ISOLanguageCodeToBeGuiLanguage(cBeLanguage:C)
+   case cBeLanguage
+      of 'de' :: Result :=   4, // Deutsch
+      of 'en' :: Result :=   6, // Englisch
+      of 'fr' :: Result :=   1, // Frankreich
+      of 'it' :: Result :=   5, // Italien
+      of 'nl' :: Result :=   3, // Niederlande
+      of 'cs' :: Result :=  61, // Tschechisch
+      of 'pl' :: Result :=  60, // Polnisch
+      of 'ro' :: Result :=  66, // Rumänien
+      of 'sl' :: Result :=  67, // Slowenisch
+      of 'tr' :: Result :=  52, // Türkisch
+      of '##' :: Result := 990, // Benutzerdefiniert
+      otherwise
+         Result := 4, // Default-Sprache ist "Deutsch"
+   endcase,
+end,
+
+//******************************************************************************
+// Erstellt eine persistent Memtable mit den Werten der Merkmalstabelle -17.
+// @Result: null
+//******************************************************************************
+function _LU_CreateLanguageCache_internal()
+| oDABMDT, nMMSprache |
+
+   // Merkmalstabelle für die Sprachen
+   nMMSprache := -17,
+
+   gl_LU_LanguageCache := FindObject(Application, 'CONVERTLANGUAGE_CACHE_MEM'),     // Zusätzlich Prüfen ob die MemTable bereits existiert
+   if empty(gl_LU_LanguageCache) then
+      // MemTable erstellen und struktorieren
+      gl_LU_LanguageCache := CreateObject('TBeMemTable', 'CONVERTLANGUAGE_CACHE_MEM', Application, nil, true),
+      gl_LU_LanguageCache.CbAddField('SPRACH_NR'  , gl_PCKGU_ftShort, 0),
+      gl_LU_LanguageCache.CbAddField('SPRACH_CODE', ftString        , 2),
+      gl_LU_LanguageCache.CbAddIndex('SPRACH_CODE', 'SPRACH_CODE', ixPrimary),
+      gl_LU_LanguageCache.CbAddIndex('SPRACH_NR'  , 'SPRACH_NR'  , ixPrimary),
+      gl_LU_LanguageCache.Active := true,
+
+      // MemTable befüllen
+      oDABMDT := BeOpen(waDABMDT, 'WERT', true),
+      startseq
+         oDABMDT.CbSetRangeEx({nMMSprache}),
+         startseq
+            oDABMDT.CbFirst(),
+            while not oDABMDT.CbEof do
+               gl_LU_LanguageCache.CbAppend(),
+               gl_LU_LanguageCache:SPRACH_NR   := oDABMDT:WERT,
+               gl_LU_LanguageCache:SPRACH_CODE := Lower(oDABMDT:BEZ3),
+               gl_LU_LanguageCache.CbPost(),
+               oDABMDT.CbNext(),
+            end,
+         always
+            oDABMDT.CbCancelRange(),
+         stopseq,
+      always
+         BeClose(oDABMDT),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion konvertiert den übergebenen ISO 639-1-Codes Sprach-Code
+// in die Belegsprache aus der Standard MM -17 "Layout Sprache".
+// Dieser Sprach-Code wird in BEZ3 gepflegt.
+// @cSprache: Sprache entsprechend ISO 639-1-Codes Sprach-Code zb: 'en', 'de'
+// @Result: numeric
+//******************************************************************************
+function _LU_ISOLanguageCodeToBeLayoutLanguage(cSprache:C)
+   SetErrorIf(empty(cSprache), 'Parameter cSprache darf nicht leer sein!'),
+
+   // Wenn LanguageCache leer ist, dann erstellen
+   if empty(gl_LU_LanguageCache) then
+      LU_CreateLanguageCache_internal(),
+   endif,
+
+   //Sprachnummer aus der MemTable raus suchen
+   gl_LU_LanguageCache.CbIndexName := 'SPRACH_CODE',
+   if gl_LU_LanguageCache.CbFindKey({lower(cSprache)}) then
+      Result := gl_LU_LanguageCache:SPRACH_NR,
+   else
+      Result := 0,                                                              // Wenn Sprache nicht existiert, dann Rückgabe = Deutsch
+   endif,
+end,
+
+//******************************************************************************
+// Die Funktion Convertiert die übergebenen Belegsprache in den
+// ISO 639-1-Codes Sprach-Code aus der Standard MM -17 "Layout Sprache".
+// Dieser Sprach-Code wird in BEZ3 gepflegt.
+// @nSprache: Belegsprache
+// @Result: String
+//******************************************************************************
+function _LU_BeLayoutLanguageToISOLanguageCode(nSprache:C)
+
+   // Wenn LanguageCache leer ist, dann erstellen
+   if empty(gl_LU_LanguageCache) then
+      LU_CreateLanguageCache_internal(),
+   endif,
+
+   //Sprach-Code aus der MemTable raus suchen
+   gl_LU_LanguageCache.CbIndexName := 'SPRACH_NR',
+   if gl_LU_LanguageCache.CbFindKey({nSprache}) then
+      Result := gl_LU_LanguageCache:SPRACH_CODE,
+   else
+      Result := 'de',                                                           // Wenn Sprache nicht existiert, dann Rückgabe = Deutsch
+   endif,
+end,
+
+//******************************************************************************
+// Gibt die Bezeichnung des Fremdsprachenlabel zurück
+// @Result: String - Übersetzte Labelbezeichnung
+//******************************************************************************
+function _LU_GetLabel(cLabel:C, uSprache:U:='', aPlatzhalterArray:A:=nil)
+   // Wenn keine Sprache übegeben wurde, wird die BE-Oberflächensprache genutzt.
+   if ValType(uSprache) <> 'N' AND empty(uSprache) then
+      uSprache := LU_BeGuiLanguageToISOLanguageCode(mbeSprache),
+   endif,
+
+   if ValType(uSprache) = 'C' then
+      uSprache := LU_ISOLanguageCodeToBeLayoutLanguage(uSprache),
+   endif,
+
+   Result := LU_Internal_GetValue(cLabel, 'BEZ', uSprache),
+   
+   // Hinweis, wenn keine Übersetzung existiert
+   Result := e2v(result,cLabel+' [Text for Label not found]'),
+
+   if alen(aPlatzhalterArray) > 0 then
+      Result := LU_ReplacePlatzhalter(Result, aPlatzhalterArray),
+   endif,
+end,
+
+//******************************************************************************
+// Gibt den Langtext des Fremdsprachenlabels zurück
+// @Result: Übersetzter Langtext
+//******************************************************************************
+function _LU_GetMemo(cLabel:C, uSprache:U:='', aPlatzhalterArray:A:=nil, bForceLabelBez:B:=false)
+   // Wenn keine Sprache übegeben wurde, wird die BE-Oberflächensprache genutzt.
+   if ValType(uSprache) <> 'N' AND empty(uSprache) then
+      uSprache := LU_BeGuiLanguageToISOLanguageCode(mbeSprache),
+   endif,
+
+   if ValType(uSprache) = 'C' then
+      uSprache := LU_ISOLanguageCodeToBeLayoutLanguage(uSprache),
+   endif,
+
+   Result := LU_Internal_GetValue(cLabel, 'MEMO', uSprache),
+
+   // Übersetzung vom Label holen, falls gewünscht
+   if empty(rtftotext(Result)) AND bForceLabelBez then
+      Result := LU_Internal_GetValue(cLabel, 'BEZ', uSprache),
+   endif,
+
+   // Hinweis, wenn keine Übersetzung existiert
+   if empty(rtftotext(result)) then
+      Result := cLabel + ' [Memo for Label not found]',
+   endif,
+
+   if alen(aPlatzhalterArray) > 0 then
+      Result := LU_ReplacePlatzhalter(Result, aPlatzhalterArray),
+   endif,
+end,

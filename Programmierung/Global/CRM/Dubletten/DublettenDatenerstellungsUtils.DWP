@@ -1,0 +1,110 @@
+//******************************************************************************
+// Datensatz in Suchbegriffstabelle DUBLMATCH gefunden?
+//     Wenn Ja, dann editieren bzw.
+//              löschen, wenn der Suchbegriff leer ist (z.B. Telefon-Nummer wurde gelöscht)
+//     Wenn Nicht, dann neuen Datensatz anlegen
+// Funktion wird für den Reorg. der Tabelle genutzt
+// aber auch im Update-Recht der DAB000 (Kundenstamm)
+// @Result: true/false
+//******************************************************************************
+function _Dubl_SeekAndFill(oDM, oDAB000, cMatchcode, nFeldTyp)
+| bFound, oDUBLMATCH |
+
+bFound := False,
+
+   //***************************************************************************
+   function FindDM(oTable)
+   | oOwner |
+      Result := nil,
+
+      oOwner := GetOwner(oTable),
+      if not empty(oOwner) and ClassOf(oOwner, 'TBeDbGet') then
+         Result := oOwner,
+      endif,
+
+      if empty(Result) then
+         Result := gl_oDM,
+      endif,
+   end,
+
+
+   SetErrorIf(empty(oDAB000), 'oDab000 must not be empty'),
+
+   // Wenn der Funktion kein Datenmodul übergeben wurde, dann suchen wir das Datenmodul über die Dab000
+   if empty(oDM) then
+      oDM := FindDM(oDab000),
+   endif,
+
+   oDUBLMATCH           := MyGetTable(oDM, waDUBLMATCH, 'DUBL_REORG'),
+   oDUBLMATCH.IndexName := 'KDNR',
+
+   bFound := oDUBLMATCH.CbFindKey({oDAB000:KDNR, nFeldTyp}),
+   if bFound and empty(cMatchcode) then
+      MyDelete(oDUBLMATCH),
+   else
+      if not empty(cMatchcode) then
+         if not bFound then
+            MyAppend(oDUBLMATCH),
+            oDUBLMATCH:KDNR       := oDAB000:KDNR,
+            oDUBLMATCH:KDNR_REORG := oDAB000:KDNR,
+            oDUBLMATCH:FELDTYP    := nFeldTyp,
+         else
+            MyEdit(oDUBLMATCH),
+         endif,
+         oDUBLMATCH:MATCHCODE := cMatchcode,
+         MyPost(oDUBLMATCH),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Tabelle DUBLMATCH mit Daten füllen
+// @Result: null
+//******************************************************************************
+function _Dubl_FillTable(oDM, oDAB000, bReorg:=false) // Dubl_CalcSoundExInfoArrayForDab000(oDab000)
+   | aPlzArray, cName |
+   cName := '',
+   case gl_DUBL_Count_Name
+      of 1 ::
+         if bReorg or AllTrim(oDab000:NAME1) <> DbOldVal('NAME1', oDAB000) then
+            cName := AllTrim(oDAB000:NAME1),
+         endif,
+      of 2 ::
+         if bReorg or AllTrim(oDab000:NAME1) <> DbOldVal('NAME1', oDAB000) or AllTrim(oDab000:NAME2) <> DbOldVal('NAME2', oDAB000) then
+            cName := AllTrim(oDAB000:NAME1) + ' ' + AllTrim(oDAB000:NAME2),
+         endif,
+      of 3 ::
+         if bReorg or AllTrim(oDab000:NAME1) <> DbOldVal('NAME1', oDAB000)
+            or AllTrim(oDab000:NAME2) <> DbOldVal('NAME2', oDAB000) or AllTrim(oDab000:NAME3) <> DbOldVal('NAME3', oDAB000)
+            then
+               cName :=  AllTrim(oDAB000:NAME1) + ' '+ AllTrim(oDAB000:NAME2) + ' ' + AllTrim(oDAB000:NAME3),
+         endif,
+      otherwise
+         SetError("Für die globale Variable <gl_DUBL_Count_Name> ist nur ein Wert von 1-3 möglich! Bitte passen Sie die Variable entsprechend an"),
+   endcase,
+   if bReorg or not Empty(cName) then
+      Dubl_SeekAndFill(oDM, oDAB000, AllTrim( SoundEx( cName ) ),   gl_DUBL_FeldTyp_Name),
+   endif,
+
+   if bReorg or AllTrim(oDab000:PLZORT) <> DbOldVal('PLZORT', oDAB000) then
+      aPlzArray        := Dubl_ExplodePLZOrtValue(oDab000:PLZORT),
+      Dubl_SeekAndFill(oDM, oDAB000, AllTrim(SoundEx( AllTrim( KVU_Get(aPlzArray, 'Ort', '') ))),     gl_DUBL_FeldTyp_Ort),
+   endif,
+
+   // ToDo: Strasse 'normalisieren', damit Strasse = Str und keine Hausnummern usw.
+   if bReorg or AllTrim(oDab000:STRASSE) <> DbOldVal('STRASSE', oDAB000) then
+      Dubl_SeekAndFill(oDM, oDAB000, AllTrim(SoundEx( AllTrim(oDAB000:STRASSE))),gl_DUBL_FeldTyp_Strasse),
+   endif,
+
+   if bReorg or AllTrim(oDab000:EMAIL) <> DbOldVal('EMAIL', oDAB000) then
+      Dubl_SeekAndFill(oDM, oDAB000, Dubl_NormalizeMailOrWebpageToHost(oDAB000:EMAIL), gl_DUBL_FeldTyp_Mailhost),
+      Dubl_SeekAndFill(oDM, oDAB000, oDAB000:EMAIL,                                    gl_DUBL_FeldTyp_Email),
+   endif,
+
+   if bReorg or AllTrim(oDab000:TELEFON) <> DbOldVal('TELEFON', oDAB000) then
+      Dubl_SeekAndFill(oDM, oDAB000, Dubl_NormalizeDab000Telefon(oDAB000:TELEFON), gl_DUBL_FeldTyp_Telefon),
+   endif,
+   if bReorg or AllTrim(oDab000:UST_IDNR) <> DbOldVal('USTID_NR', oDAB000) then
+      Dubl_SeekAndFill(oDM, oDAB000, oDAB000:UST_IDNR, gl_DUBL_FeldTyp_USTIDNR),
+   endif,
+end,

@@ -1,0 +1,767 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für die GUI-Programmierung
+//
+//  dieses Funktionssammlung enthält Funktionen für das Erstellen einer
+//  Input-Box mit variablen Eingabe-Controls
+//     - Der Funktions-Präfix 'DU' steht für 'Dialog Utils'
+//
+//##############################################################################
+//##############################################################################
+
+|
+   // Eingabe-Control-Typ Konstanten [REQ-527]
+   gl_DU_InputControlType_Numeric:_N,
+   gl_DU_InputControlType_String:_N,
+   gl_DU_InputControlType_Password:_N,
+   gl_DU_InputControlType_Logical:_N,
+   gl_DU_InputControlType_Date:_N,
+   gl_DU_InputControlType_DateKW:_N,     // funktioniert nicht in Version 6.5.
+   gl_DU_InputControlType_Attribute:_N,
+   gl_DU_InputControlType_ClientNo:_N,
+   gl_DU_InputControlType_ArticleNo:_N,
+   gl_DU_InputControlType_SupplierNo:_N,
+   gl_DU_InputControlType_AgentNo:_N,
+   gl_DU_InputControlType_File:_N,
+   gl_DU_InputControlType_Memo:_N,
+   gl_DU_InputControlType_Attribute_MultiCheck:_N,
+   gl_DU_InputControlType_Directory:_N
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+gl_DU_InputControlType_Numeric              := 1,
+gl_DU_InputControlType_String               := 2,
+gl_DU_InputControlType_Password             := 3,
+gl_DU_InputControlType_Logical              := 4,
+gl_DU_InputControlType_Date                 := 5,
+gl_DU_InputControlType_Attribute            := 6,
+gl_DU_InputControlType_ClientNo             := 7,
+gl_DU_InputControlType_ArticleNo            := 8,
+gl_DU_InputControlType_SupplierNo           := 9,
+gl_DU_InputControlType_AgentNo              := 10,
+gl_DU_InputControlType_File                 := 11,
+gl_DU_InputControlType_Memo                 := 12,
+gl_DU_InputControlType_Attribute_MultiCheck := 13,
+gl_DU_InputControlType_DateKW               := 14,
+gl_DU_InputControlType_Directory            := 15,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// REQ-528
+//******************************************************************************
+// Die Funktion erstellt ein Eingabe-Control-Defintions-Array.
+// Als Format wird intern das Key-Value-System
+//  (Global\BasicPackage\KeyValueUtils) genutzt.
+//
+// HINWEIS:
+//  Für Parameter uInputType kann entweder eine der InputControlType-Konstanten
+//  (gl_DU_InputControlType_...) oder einer der folgenden Strings verwendet
+//  werden:
+//   - 'N' => gl_DU_InputControlType_Numeric
+//   - 'C' => gl_DU_InputControlType_String
+//   - 'P' => gl_DU_InputControlType_Password
+//   - 'L' => gl_DU_InputControlType_Logical
+//   - 'D' => gl_DU_InputControlType_Date
+//   - 'W' => gl_DU_InputControlType_DateKW
+//   - 'M' => gl_DU_InputControlType_Attribute
+//   - 'K' => gl_DU_InputControlType_ClientNo
+//   - 'A' => gl_DU_InputControlType_ArticleNo
+//   - 'Z' => gl_DU_InputControlType_SupplierNo
+//   - 'V' => gl_DU_InputControlType_AgentNo
+//   - 'F' => gl_DU_InputControlType_File
+//   - 'T' => gl_DU_InputControlType_Memo
+//   - 'U' => gl_DU_InputControlType_Attribute_MultiCheck
+
+//
+// @Result: array - Eingabe-Control-Defintions-Array
+//******************************************************************************
+function _DU_InputDialog_CreateInputControlDefinition(cInputID:C,
+      cInputCaption:C,
+      uInputType:U,
+      cPictureMask:C,
+      nAttributeID:N,
+      uPresetValue:U,
+      bValidateNotEmpty:L)
+   | cDataType, nInputType |
+   
+   //***************************************************************************
+   function StringToInputControlType(cInputControlTypeString:C)
+      case cInputControlTypeString
+         of 'N'   :: Result := gl_DU_InputControlType_Numeric
+         of 'C'   :: Result := gl_DU_InputControlType_String
+         of 'P'   :: Result := gl_DU_InputControlType_Password
+         of 'L'   :: Result := gl_DU_InputControlType_Logical
+         of 'D'   :: Result := gl_DU_InputControlType_Date
+         of 'W'   :: Result := gl_DU_InputControlType_DateKW
+         of 'M'   :: Result := gl_DU_InputControlType_Attribute
+         of 'K'   :: Result := gl_DU_InputControlType_ClientNo
+         of 'A'   :: Result := gl_DU_InputControlType_ArticleNo
+         of 'Z'   :: Result := gl_DU_InputControlType_SupplierNo
+         of 'V'   :: Result := gl_DU_InputControlType_AgentNo
+         of 'F'   :: Result := gl_DU_InputControlType_File
+         of 'T'   :: Result := gl_DU_InputControlType_Memo
+         of 'U'   :: Result := gl_DU_InputControlType_Attribute_MultiCheck
+         of 'DIR' :: Result := gl_DU_InputControlType_Directory
+         otherwise
+            SetError('Ungültiger Eingabe-Control-Typ-String <' + cInputControlTypeString + '>'),
+      endcase,
+   end,
+   
+   cDataType := ValType(uInputType),
+   case cDataType
+      of 'C' :: nInputType := StringToInputControlType(uInputType),
+      of 'N' :: nInputType := uInputType,
+      otherwise
+         SetError('Datentyp <' + cDataType + '> ist für Parameter <uInputType> ungültig, erwarte <N> oder <C>'),
+   endcase,
+   
+   KVU_Set(Result, 'InputID',          cInputID),
+   KVU_Set(Result, 'InputCaption',     cInputCaption),
+   KVU_Set(Result, 'InputType',        nInputType),
+   KVU_Set(Result, 'PictureMask',      cPictureMask),
+   KVU_Set(Result, 'AttributeID',      nAttributeID),
+   KVU_Set(Result, 'PresetValue',      uPresetValue),
+   KVU_Set(Result, 'ValidateNotEmpty', bValidateNotEmpty),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgenden Funktionen aufgerufen:
+//  * DU_InputDialog_Internal() [REQ-485]
+//
+//******************************************************************************
+// Die Funktion liest alle verfügbaren Werte aus dem Key-Value-Array und gibt
+// diese an die Referenz-Parameter zurück.
+//
+// @Result: null - Parameter dienen als Rückgabe.
+//******************************************************************************
+function _DU_InputDialog_ParseInputControlDefinition_Internal(aInputControlDefinition:A,
+      cInputID:R,
+      cInputCaption:R,
+      nInputType:R,
+      cPictureMask:R,
+      nAttributeID:R,
+      uPresetValue:R)
+   cInputID      := KVU_Get(aInputControlDefinition, 'InputID',      ''),
+   cInputCaption := KVU_Get(aInputControlDefinition, 'InputCaption', ''),
+   nInputType    := KVU_Get(aInputControlDefinition, 'InputType',    gl_DU_InputControlType_String),
+   cPictureMask  := KVU_Get(aInputControlDefinition, 'PictureMask',  ''),
+   nAttributeID  := KVU_Get(aInputControlDefinition, 'AttributeID',  0),
+   uPresetValue  := KVU_Get(aInputControlDefinition, 'PresetValue',  ''),
+end,
+
+//******************************************************************************
+// REQ-529
+//******************************************************************************
+// Die Funktion erstellt ein Button-Defintions-Array.
+// Als Format wird intern das Key-Value-System
+//  (Global\BasicPackage\KeyValueUtils) genutzt.
+//
+// @Result: array - Button-Defintions-Array
+//******************************************************************************
+function _DU_InputDialog_CreateButtonDefinition(cButtonID:C,
+      cCaption:C,
+      nModalResult:N,
+      nImageIndex:N,
+      bIsDefault:L)
+   KVU_Set(Result, 'ButtonID',    cButtonID),
+   KVU_Set(Result, 'Caption',     cCaption),
+   KVU_Set(Result, 'ModalResult', nModalResult),
+   KVU_Set(Result, 'ImageIndex',  nImageIndex),
+   KVU_Set(Result, 'IsDefault',   bIsDefault),
+end,
+
+//******************************************************************************
+// REQ-XXX
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgenden Funktionen aufgerufen:
+//  * DU_InputDialog_Internal() [REQ-485]
+//
+//******************************************************************************
+// Die Funktion liest alle verfügbaren Werte aus dem Key-Value-Array und gibt
+// diese an die Referenz-Parameter zurück.
+//
+// @Result: null - Parameter dienen als Rückgabe.
+//******************************************************************************
+function _DU_InputDialog_ParseButtonDefinition_Internal(aButtonDefinition:A,
+      cButtonID:R,
+      cCaption:R,
+      nModalResult:R,
+      nImageIndex:R,
+      bIsDefault:R)
+   cButtonID    := KVU_Get(aButtonDefinition, 'ButtonID',    ''),
+   cCaption     := KVU_Get(aButtonDefinition, 'Caption',     ''),
+   nModalResult := KVU_Get(aButtonDefinition, 'ModalResult', mrNone),
+   nImageIndex  := KVU_Get(aButtonDefinition, 'ImageIndex',  -1),
+   bIsDefault   := KVU_Get(aButtonDefinition, 'IsDefault',   False),
+end,
+
+//******************************************************************************
+// REQ-530
+//******************************************************************************
+// Die Funktion ermittelt das ModalResult des Input-Dialogs über dessen
+// Result-Array.
+//
+// @Result: numeric - ModalResult
+//******************************************************************************
+function _DU_InputDialogResult_GetModalResult(aDialogResult:A)
+   SetErrorIf(ValType(aDialogResult) <> 'A' or ALen(aDialogResult) < 2,
+      'Ungültiges Format für Parameter <aDialogResult>'),
+   Result := aDialogResult[1],
+end,
+
+//******************************************************************************
+// REQ-531
+//******************************************************************************
+// Die Funktion ermittelt den Wert einer Eingabe anhand der Input-ID der
+// Eingabe.
+//
+// @Result: variant - Wert der Eingabe
+//******************************************************************************
+function _DU_InputDialogResult_GetInputValue(aDialogResult:A, cInputID:C)
+   SetErrorIf(ValType(aDialogResult) <> 'A' or ALen(aDialogResult) < 2 or ValType(aDialogResult[2]) <> 'A',
+      'Ungültiges Format für Parameter <aDialogResult>'),
+   Result := KVU_GetAssert(aDialogResult[2], cInputID),
+end,
+
+//******************************************************************************
+// REQ-485
+//******************************************************************************
+//
+// INTERNE FUNKTION -- NICHT DIREKT VERWENDEN!
+// Diese Funktion wird intern von folgenden Funktionen aufgerufen:
+//  * DU_InputDialog() [REQ-486]
+//
+//******************************************************************************
+// Anzeigen eines Eingabedialogs, der über mehrere Parameter eine individuelle
+// Gestaltung der Eingabe sowie der GUI ermöglicht.
+//
+// Parameter:
+//   * cCaption:     Titel des Dialogs
+//   * cDescription: Detailierte Beschreibung des Dialogs
+//   * aInputs:      Array mit allen Eingabemöglichkeiten im Key-Value-Format.
+//                   Dabei sind die folgenden Eigenschaften möglich:
+//                    - InputID:       Ein eindeutiger alphanumerischer Bezeichner,
+//                                     der die Eingabe identifiziert
+//                    - InputCaption:  Beschriftung der Eingabe
+//                    - InputType:     Typ der Eingabe. Bestimmt auch die Klasse
+//                                     des Eingabe-Controls (siehe auch: DU_InputDialog_CreateInputControlDefinition() [REQ-528])
+//                    - PictureMask:   Delphi PictureMask-String
+//                    - AttributeID:   Merkmalstabellen-ID
+//                    - PresetValue:   Vorgabewert für das Control
+//                    - ValidateNotEmpty: Stellt sicher, dass die Eingabe leer
+//                                     ist: Der Dialog kann solange nicht
+//                                     bestätigt werden, bis der Wert der
+//                                     Eingabe nicht leer ist.
+//   * aButtons:     Array mit allen Buttons die der Dialog anzeigen soll im
+//                   Key-Value-Format. Dabei sind folgende Optionen möglich:
+//                    - ButtonID:    Ein eindeutiger alphanumerischer Betzeichner
+//                    - Caption:     Beschriftung des Buttons
+//                    - ModalResult: Modales Ergebnis, das beim Klicken des
+//                                   Buttons zurückgegeben wird.
+//                                   Beispiele: mrOK, mrCancel, mrYes, mrNo, etc.
+//                    - ImageIndex:  Image das der Button anzeigen soll
+//                    - IsDefault:   Gibt an, ob der Button per Default "ausgewählt"
+//                                   sein soll und bei [ENTER] automatisch bestätigt wird.
+//   * aDialogSettings: Key-Value-Array mit Einstellungen für den Dialog.
+//                      Folgende Parameter sind bislang implementiert:
+//                    - nWindowWidth:   Gesamt-Breite des Fensters (default = 200)
+//                    - bCenterWindow:  Fenster wird immer in Bildschirmmitte positioniert (default = true)
+//                    - nMemoHeight:    Höhe von Memo-Feldern (default = 50)
+//                                      Obacht!! Wenn die Höhe von Memo-Felder größer als 50 definiert wird,       TODO
+//                                      wird bei nachfolgenden Feldern das Label unter das Feld platziert.
+//                    - bMemoOnlyText:  nur text oder Richtext (default = false)
+//                    - nAnzahlZeilenDescription: Anzahl der Zeilen in der Beschreibung (default = 2)
+//   * cPositionSaveID: ID, die zum Speichern der Fenster-Position genutzt wird
+//
+// @Result: array - Enthält das Modal-Result und die eingegebenen Werte.
+//          Format: {<ModalResult>, {{<Input-ID>, <Input-Value>}, ...}}
+//******************************************************************************
+function _DU_InputDialog_Internal(cCaption:C, cDescription:C, aInputs:A, aButtons:A, aDialogSettings:A, cPositionSaveID:C:='')
+   |
+      nDialogWidth, nDialogHeight, nButtonHeight, nMarginSize, nButtonAreaHeight,
+      nAreaSeparatorSpace,
+      bShowDescriptionLabel, bShowInputControlLabel,
+      oDialog, oPanelMain, oPanelBottom, oButton, oInput, oLabel, oDescription,
+      cLabelName, aButtonDefinition,
+      i, cInputID, cInputCaption, nInputType, cInputMask, nMMT, uPresetValue,
+      nModalResult, aInputControls, aUserInput, nButtonGap
+   |
+   
+   //***************************************************************************
+   // Wert eines beliebigen Controls (TBeEdit, TCheckBox, etc.) ermitteln
+   // @Result: variant - Wert des Controls
+   //***************************************************************************
+   function GetControlValue(oControl:O)
+      case ClassName(oControl)
+         of 'TCheckBox'         :: Result := oControl.Checked,
+         of 'TBeDateTimePicker' :: Result := oControl.Date,
+         of 'TbeEditDatePicker' :: Result := oControl.Value,
+         of 'TBeAttribCombo'    :: Result := oControl.Value,
+         otherwise
+            Result := oControl.Text,
+      endcase,
+   end,
+   
+   //***************************************************************************
+   // Eingabe-Controls validieren
+   // @Result: boolean - Alle Eingaben sind valide Ja/Nein
+   //***************************************************************************
+   function ValidateInputControls(aInputControls:A, aInputControlDefinitions:A)
+      | i, oControl, bValidateNotEmpty, cInputCaption |
+      
+      Result := True,
+      for i := 1 to ALen(aInputControls) do
+         oControl          := aInputControls[i],
+         bValidateNotEmpty := KVU_Get(aInputControlDefinitions[i], 'ValidateNotEmpty', False),
+         if bValidateNotEmpty and Empty(GetControlValue(oControl)) then
+            Result        := False,
+            cInputCaption := KVU_Get(aInputControlDefinitions[i], 'InputCaption', 'unbekannt'),
+            MyFocusControl(GetOwnerForm(oControl), oControl),
+            MessageDlg('Eingabe für Feld <' + cInputCaption + '> darf nicht leer sein!', mtError),
+            break,
+         endif,
+      next,
+   end,
+   
+   //***************************************************************************
+   // Event: Beim Klicken auf einen Button
+   // @Result: null
+   //***************************************************************************
+   function DU_InputDialog_DoOnButtonClick_Internal(Sender:O)
+      | oOwnerForm |
+      
+      //************************************************************************
+      function IsEscapeResult(nModalResult:N)
+         Result := nModalResult = mrCancel or
+         nModalResult = mrAbort  or
+         nModalResult = mrNo,
+      end,
+      
+      oOwnerForm := GetOwnerForm(Sender),
+      // Eingaben nur validieren, wenn das ModalResult des geklickten Buttons
+      // kein "Verlassen"-ResultCode ist.
+      if IsEscapeResult(Sender.ModalResult) or ValidateInputControls(aInputControls, aInputs) then
+         ModalResult(oOwnerForm, Sender.ModalResult),
+      else
+         // Durch das klicken eines Buttons wird per Delphi-Standard das
+         // ModalResult des Buttons automatisch an das Formular (bzw. Dialog)
+         // übergeben. Das führt dazu, dass sich der Dialog nach dem Ausführen
+         // des OnClick-Events des Buttons schließen würde.
+         // Um das zu verhindern, wenn nicht alle Eingaben valide sind, muss
+         // dem Dialog manuell mrNone als ModalResult übergeben werden.
+         ModalResult(oOwnerForm, mrNone),
+      endif,
+   end,
+   
+   //******************************************************************************
+   // Öffnen eines Dialogs    
+   //******************************************************************************
+   function DirectoryEditBtnClick( Sender )
+      | oDialog |
+
+      oDialog := OpenDlg('Pfad auswählen', 'Ordner|*.', '','a'),
+      startseq
+         oDialog.Active := true,
+         if oDialog.Selected then
+            Sender.Text := ExtractFilePath(oDialog.FileName),
+         endif,
+      always
+         DestroyObject(oDialog),
+      stopseq,
+   end,
+   
+   //***************************************************************************
+   // Ermitteln des Klassennamens für das Eingabe-Control anhand des Eingabetyps
+   // @Result: string
+   //***************************************************************************
+   function DetermineInputControlClass(nInputType:N)
+      case nInputType
+         of gl_DU_InputControlType_Numeric               :: Result := 'TBeEdit',
+         of gl_DU_InputControlType_String                :: Result := 'TBeEdit',
+         of gl_DU_InputControlType_Password              :: Result := 'TBeEdit',
+         of gl_DU_InputControlType_Logical               :: Result := 'TCheckBox',
+         of gl_DU_InputControlType_Date                  :: Result := 'TBeDateTimePicker',
+         of gl_DU_InputControlType_DateKW                :: Result := 'TbeEditDatePicker',
+         of gl_DU_InputControlType_Attribute             :: Result := 'TBeAttribCombo',
+         of gl_DU_InputControlType_ClientNo              :: Result := 'TDBEditClientNo',
+         of gl_DU_InputControlType_ArticleNo             :: Result := 'TDBEditArtNo',
+         of gl_DU_InputControlType_SupplierNo            :: Result := 'TDBEditClientNo',
+         of gl_DU_InputControlType_AgentNo               :: Result := 'TDBEditClientNo',
+         of gl_DU_InputControlType_File                  :: Result := 'TDBEditFileName',
+         of gl_DU_InputControlType_Memo                  :: Result := 'TBeRichEditEx',
+         of gl_DU_InputControlType_Attribute_MultiCheck  :: Result := 'TBeAttribCheckCombo',
+         of gl_DU_InputControlType_Directory             :: Result := 'TbeEditBtn'
+         otherwise
+            SetError('Ungültiger Eingabe-Control-Typ <' + Str(nInputType) + '>'),
+      endcase,
+   end,
+   
+   //***************************************************************************
+   // Eingabe-Control anhand des Input-Typs erzeugen
+   // @result: object
+   //***************************************************************************
+   function CreateInputControlByInputType(nInputType:N, cInputID:C, oOwner:O, oParent:O)
+      result := CreateObject(DetermineInputControlClass(nInputType), cInputID, oOwner, oParent),
+      case nInputType
+         of gl_DU_InputControlType_SupplierNo :: result.ClientType := 2,
+         of gl_DU_InputControlType_AgentNo    :: result.ClientType := 3,
+         otherwise
+      endcase,
+   end,
+   
+   //***************************************************************************
+   // Einen Button anhand einer Button-Definition erstellen
+   // @Result: object, neues TBeBitBtn-Objekt
+   //***************************************************************************
+   function CreateButton(oOwner:O, oParent:O, aButtonDefinition:A)
+      |
+         cButtonID, cCaption, nModalResult, nImageIndex, bIsDefault
+      |
+      
+      DU_InputDialog_ParseButtonDefinition_Internal(
+         aButtonDefinition,
+         cButtonID,
+         cCaption,
+         nModalResult,
+         nImageIndex,
+         bIsDefault
+         ),
+      
+      // Button-Objekt erzeugen
+      Result                        := CreateObject('TBeBitBtn', iif(Empty(cButtonID), '', 'btn_' + cButtonID), oOwner, oParent),
+      Result.ParentFont             := True,
+      Result.Caption                := cCaption,
+      Result.ModalResult            := nModalResult,
+      Result.ImageIndex.IndexNormal := nImageIndex,
+      Result.Default                := bIsDefault,
+      Result.Width                  := 110 + iif(nImageIndex = -1, 0, 20),
+      
+      AssignEvent(Result, 'OnClick', 'DU_InputDialog_DoOnButtonClick_Internal'),
+   end,
+   
+   Result                := {},
+   bShowDescriptionLabel := not Empty(Trim(cDescription)),
+   nModalResult          := mrNone,
+   aInputControls        := {},
+   nAreaSeparatorSpace   := 12,
+   nButtonHeight         := 25,
+   nMarginSize           := 3,
+   nButtonGap            := 15,
+   nButtonAreaHeight     := nButtonHeight + (nMarginSize * 2) + 4,
+   nDialogWidth          := 0,
+   nDialogHeight         := nButtonAreaHeight,
+   
+   oDialog := CreateObject('TFormEx'),
+   startseq
+      oDialog.FormStyle            := fsNormal,
+      oDialog.OrigCapt             := cCaption,
+      oDialog.Font.Name            := 'Segoe UI',
+      oDialog.Font.Size            := 10,
+      oDialog.Constraints.MinWidth := KVU_Get(aDialogSettings,'nWindowWidth', 200),
+      oDialog.Position             := poMainFormCenter,
+      if not empty(cPositionSaveID) then
+         oDialog.PositionSaveID    := cPositionSaveID,
+      endif,
+      if KVU_Get(aDialogSettings,'bCenterWindow', true) then
+         oDialog.Position             := poMainFormCenter,
+      endif,
+      oDialog.KeyPreview           := true,
+      oDialog.BorderStyle          := bsDialog,
+      // Dialog-Höhe vorberechnen:
+      //  Entspricht nicht zwangsweise der "echten" Höhe. Dient lediglich dazu,
+      //  dass die einzelnen Eingabe-Controls und deren Caption-Labels in der
+      //  richtigen Reihenfolge auf den Dialog positioniert werden.
+      //  Dabei wird die Höhe folgendermaßen berechnet:
+      //   nButtonAreaHeight + nAreaSeparatorSpace +
+      //   (<Höhe eines TBeLabel> + <Höhe eines Input-Controls> + 2 * <Margin>) * <Anzahl aInputs>
+      // TODO: Höhe wird aktuell nur "geschätzt" da bei Checkboxen kein Label
+      //       vorhanden ist und die Höhe von Checkboxen 17 Pixel beträgt.
+      //oDialog.ClientHeight := nButtonAreaHeight + nAreaSeparatorSpace +
+      //                        (13 + 21 + (2 * 3)) * ALen(aInputs),
+         // historischer Code von SP, der Standard macht eigentlich eine gute Höhenberechnung selbst
+      
+      oPanelMain   := CreateObject('TBePanel', 'pnl_Main',   oDialog, oDialog),
+      oPanelBottom := CreateObject('TBePanel', 'pnl_Bottom', oDialog, oDialog),
+      
+      oPanelBottom.Caption     := '',
+      oPanelBottom.Align       := alBottom,
+      oPanelBottom.BevelOuter  := bvNone,
+      oPanelBottom.Height      := nButtonAreaHeight,
+      oPanelBottom.ParentFont  := True,
+      oPanelBottom.ParentColor := True,
+      
+      oPanelMain.Caption       := '',
+      oPanelMain.Align         := alClient,
+      oPanelMain.BevelOuter    := bvNone,
+      oPanelMain.ParentFont    := True,
+      oPanelMain.ParentColor   := True,
+      
+      // Buttons erzeugen und hinzufügen
+      for i := 1 to ALen(aButtons) do
+         if Empty(KVU_Get(aButtons[i], 'ButtonID', '')) then
+            aButtonDefinition := aButtons[i],
+            KVU_Set(aButtonDefinition, 'ButtonID', Str(i)),
+            aButtons[i] := aButtonDefinition,
+         endif,
+         
+         oButton                  := CreateButton(oDialog, oPanelBottom, aButtons[i]),
+         oButton.AlignWithMargins := True,
+         oButton.Margins.Left     := nButtonGap,
+         oButton.Margins.Right    := nButtonGap,
+         oButton.Margins.Bottom   := 5,
+         oButton.Align            := alRight,
+         oButton.Height           := nButtonHeight,
+         nDialogWidth             += oButton.Width + oButton.Margins.Left + oButton.Margins.Right,
+         oButton.Left             := nDialogWidth - oButton.Width,
+      next,
+      nDialogWidth += nMarginSize,
+      
+      // Eingabe-Controls erzeugen und hinzufügen
+      for i := 1 to ALen(aInputs) do
+         DU_InputDialog_ParseInputControlDefinition_Internal(
+            aInputs[i],
+            cInputID,
+            cInputCaption,
+            nInputType,
+            cInputMask,
+            nMMT,
+            uPresetValue
+            ),
+         
+         // Label für Checkboxen nicht anzeigen, die Anzeige der Caption wird
+         // über die Checkbox selbst realisiert.
+         bShowInputControlLabel := nInputType <> gl_DU_InputControlType_Logical,
+         if bShowInputControlLabel then
+            cLabelName := iif(Empty(cInputID), '', 'lbl_' + cInputID),
+            // Label erzeugen
+            oLabel := CreateObject('TBeLabel', cLabelName, oDialog, oPanelMain),
+            oLabel.AutoSize         := False,
+            oLabel.Caption          := cInputCaption,
+            oLabel.AlignWithMargins := True,
+            oLabel.Margins.Bottom   := 0,
+            oLabel.Margins.Left     := nMarginSize,
+            oLabel.Margins.Right    := nMarginSize,
+            oLabel.Align            := alTop,
+            oLabel.Top              := oPanelMain.Height + 1,
+            oLabel.Height           := 17,
+            oLabel.ParentFont       := True,
+         endif,
+         
+         // Input-Control erzeugen
+         oInput := CreateInputControlByInputType(nInputType, cInputID, oDialog, oPanelMain),
+         if not bShowInputControlLabel then
+            oInput.Caption := cInputCaption,
+         endif,
+         oInput.AlignWithMargins := True,
+         oInput.Margins.Top      := nMarginSize,
+         oInput.Margins.Bottom   := 0,
+         oInput.Margins.Left     := nMarginSize,
+         oInput.Margins.Right    := nMarginSize,
+         oInput.Align            := alTop,
+         oInput.Top              := oPanelMain.Height,
+         oInput.Height           := 25,
+         oInput.ParentFont       := True,
+         // Control-Typ spezifische Eigenschaften setzen
+         case nInputType
+               of {gl_DU_InputControlType_String,
+               gl_DU_InputControlType_Password,
+               gl_DU_InputControlType_ClientNo,
+               gl_DU_InputControlType_SupplierNo,
+               gl_DU_InputControlType_AgentNo,
+               gl_DU_InputControlType_ArticleNo,
+               gl_DU_InputControlType_File} ::
+               // Ggf. Anzeige für Passwort-Eingabe aktivieren
+               if nInputType = gl_DU_InputControlType_Password then
+                  oInput.PasswordChar := '*',
+               endif,
+               oInput.Picture.PictureMask := cInputMask,
+               oInput.Text                := ToString(uPresetValue),
+            of gl_DU_InputControlType_Numeric ::
+               // Ggf. Standard Input-Mask für numerische Eingabefelder setzen
+               if empty(cInputMask) then
+                  cInputMask := '*[#][;,#*#]',
+               endif,
+               oInput.Picture.PictureMask := cInputMask,
+               if empty(uPresetValue) then
+                  oInput.Text := '',
+               else
+                  oInput.Text := FloatToStr(ToFloat(uPresetValue)),
+               endif,
+            of gl_DU_InputControlType_Logical ::
+               oInput.Checked := uPresetValue,
+               of {gl_DU_InputControlType_Attribute,
+               gl_DU_InputControlType_Attribute_MultiCheck} ::
+               oInput.BeAttributeID := nMMT,
+               oInput.Value         := ToString(uPresetValue),
+            of gl_DU_InputControlType_Date ::
+               oInput.Date := uPresetValue,
+            of gl_DU_InputControlType_DateKW ::
+               oInput.Date := uPresetValue,
+            of gl_DU_InputControlType_Memo ::
+               oInput.Wantreturns    := true,
+               oInput.Wordwrap       := true,
+               oInput.WantSubmitKey  := true,
+               oInput.Textonly       := true,
+               oInput.Text           := ToString(uPresetValue),
+               oInput.Height         := KVU_Get(aDialogSettings,'nMemoHeight', 50),
+               if KVU_Get(aDialogSettings,'bMemoOnlyText', true) then
+                  oInput.Toolbarvisible := false,
+                  oInput.Textonly       := true,
+               else
+                  oInput.Textonly       := false,
+                  oInput.Font.Style     := fsnormal,
+                  oInput.Font.Size      := 9,
+                  oInput.Font.Name      := 'Arial',
+                  oInput.Toolbarvisible := true,
+               endif,
+            of gl_DU_InputControlType_Directory ::
+               oInput.Text := ToString(uPresetValue),
+               AssignEvent(oInput, 'OnCustomDlg', 'DirectoryEditBtnClick'),
+            otherwise
+               SetError('Ungültiger Eingabe-Control-Typ <' + Str(nInputType) + '>'),
+         endcase,
+         AAdd(aInputControls, oInput),
+         if bShowInputControlLabel then
+            nDialogHeight += oLabel.Height + oLabel.Margins.Top + oLabel.Margins.Bottom,
+         endif,
+         nDialogHeight += oInput.Height + oInput.Margins.Top + oInput.Margins.Bottom,
+      next,
+      nDialogHeight += nAreaSeparatorSpace,
+      
+      // Breite des Dialogs setzen
+      // HINWEIS: Durch das Setzen der PositionSaveID im Dialog, wird auch die
+      //          Höhe bzw. Breite des Dialogs ggf. falsch gesetzt -> deshalb
+      //          müssen unbedingt die Constraints gesetzt werden.
+      oDialog.ClientWidth          := nDialogWidth,
+      oDialog.Constraints.MinWidth := oDialog.Width,
+      oDialog.Constraints.MaxWidth := oDialog.Width,
+      
+      // Dialog-Beschreibung hinzufügen, falls diese übergeben wurde.
+      //  Damit die Höhe des Labels für die Dialog-Beschreibung automatisch vom
+      //  Label berechnet wird, muss das Label zuerst ohne Parent erzeugt
+      //  werden.
+      //  Anschließend werden alle notwendigen Eigenschaften des Labels gesetzt
+      //  damit wird die Höhe des Labels automatisch ermittelt. Diese wird dann
+      //  zur Gesamt-Höhe des Dialogs addiert.
+      if bShowDescriptionLabel then
+         // Dialog-Beschreibung hinzufügen
+         oDescription                  := CreateObject('TBeLabel', 'lbl_Description', oDialog, oPanelMain),
+         oDescription.AutoSize         := False,
+         oDescription.Margins.Top      := nMarginSize,
+         oDescription.Margins.Bottom   := nMarginSize,
+         oDescription.Margins.Left     := nMarginSize,
+         oDescription.Margins.Right    := nMarginSize,
+         oDescription.Font.Name        := 'Segoe UI',
+         oDescription.Font.Style       := fsItalic,
+         oDescription.Font.Color       := GetBeDesignColor(dcbBlack, dcgLevel3),
+         oDescription.Caption          := cDescription,
+         oDescription.AlignWithMargins := True,
+         oDescription.Align            := alTop,
+         oDescription.Height           := 17 * KVU_GET(aDialogSettings,"nAnzahlZeilenDescription", 2),
+         oDescription.Width    := oDialog.ClientWidth - iif(oDescription.AlignWithMargins, oDescription.Margins.Left + oDescription.Margins.Right, 0),
+         oDescription.WordWrap := True,
+         nDialogHeight += oDescription.Height + iif(oDescription.AlignWithMargins, oDescription.Margins.Top + oDescription.Margins.Bottom, 0),
+      endif,
+      
+      // Tatsächliche Höhe des Dialogs setzen
+      // HINWEIS: Durch das Setzen der PositionSaveID im Dialog, wird auch die
+      //          Höhe bzw. Breite des Dialogs ggf. falsch gesetzt -> deshalb
+      //          müssen unbedingt die Constraints gesetzt werden.
+      oDialog.ClientHeight          := nDialogHeight,
+      oDialog.Constraints.MinHeight := oDialog.Height,
+      oDialog.Constraints.MaxHeight := oDialog.Height,
+      
+      nModalResult := ShowModal(oDialog),
+      Result       := {nModalResult},
+      aUserInput   := {},
+      for i := 1 to ALen(aInputControls) do
+         oInput := aInputControls[i],
+         KVU_Set(aUserInput, oInput.Name, GetControlValue(oInput)),
+      next,
+      AAdd(Result, aUserInput)
+   always
+      CloseForm(oDialog),
+   stopseq,
+end,
+
+//******************************************************************************
+// REQ-486
+//******************************************************************************
+// Anzeigen eines Eingabedialogs, der über mehrere Parameter eine individuelle
+// Gestaltung der Eingabe sowie der GUI ermöglicht.
+//
+// Beispiel:
+//  Zeigt einen Dialog mit einem Text-Edit, einer Combobox und zwei Buttons an:
+//   aDialogSettings := {},
+//   KVU_SET(aDialogSettings,"nWindowWidth",300),    // vgl. Zeile 275 ff
+//   DU_InputDialog(
+//      'Nachricht an Benutzer senden',
+//      'Bitte geben Sie eine Nachricht ein, die an den ausgewählten Benutzer gesendet werden soll.',
+//      {
+//         DU_InputDialog_CreateInputControlDefinition('MSG',  'Nachricht',   gl_DU_InputControlType_String,    '', 0,   'Hallo!', True),
+//         DU_InputDialog_CreateInputControlDefinition('USER', 'an Benutzer', gl_DU_InputControlType_Attribute, '', -13, '065',    True)
+//      },
+//      {
+//         DU_InputDialog_CreateButtonDefinition('SEND', 'Nachricht senden', 100, 293, True),
+//         mrCancel
+//      },
+//      aDialogSettings
+//   ),
+//
+// @Result: array - Enthält das Modal-Result und die eingegebenen Werte.
+//          Format: {<ModalResult>, {{<Input-ID>, <Input-Value>}, ...}}
+//******************************************************************************
+function _DU_InputDialog(cCaption:C, cDescription:C, aInputDefinitions:A, aButtonDefinitions:A, aDialogSettings:A)
+   | i, cDataType |
+   
+   // Button-Definitions prüfen und ggf. ModalResult-Konstanten in "echte"
+   // Button-Definitionen umwandeln
+   for i := 1 to ALen(aButtonDefinitions) do
+      cDataType := ValType(aButtonDefinitions[i]),
+      if cDataType <> 'A' then
+         if cDataType == 'N' then
+            // Wenn das Element ein numerischer Wert ist, handelt es sich um
+            // eine ModalResult-Konstante (mr...).
+            // -> Button-Definition anhand der Konstante ermitteln
+            case aButtonDefinitions[i]
+               of mrAbort  :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrAbort',  'Abbrechen',        mrAbort,  8,  False),
+               of mrCancel :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrCancel', 'Abbrechen',        mrCancel, 8,  False),
+               of mrAll    :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrAll',    'Alle',             mrAll,    -1, False),
+               of mrIgnore :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrIgnore', 'Ignorieren',       mrIgnore, -1, False),
+               of mrNo     :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrNo',     'Nein',             mrNo,     8,  False),
+               of mrOK     :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrOK',     'OK',               mrOK,     7,  False),
+               of mrRetry  :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrRetry',  'Erneut versuchen', mrRetry,  12, False),
+               of mrYes    :: aButtonDefinitions[i] := DU_InputDialog_CreateButtonDefinition('mrYes',    'Ja',               mrYes,    7,  False),
+               otherwise
+                  SetError('Unbekannter Button-Typ <' + Str(aButtonDefinitions[i]) + '>'),
+            endcase,
+         else
+            SetError('Datentyp <' + cDataType + '> ist für Element <' + Str(i) +
+               '> in Parameter <' + 'aButtons' + '> ungültig, erwarte <' +
+               'N' + '> oder <' + 'A' + '>'),
+         endif,
+      endif,
+   next,
+   
+   Result := DU_InputDialog_Internal(cCaption, cDescription, aInputDefinitions, aButtonDefinitions, aDialogSettings),
+end,
+
+
+

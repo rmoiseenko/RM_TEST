@@ -1,0 +1,99 @@
+function _TSKPL_CalculateStart(aExecutionPlanOptions, dtNow)
+   //***************************************************************************
+   // Extrahiert die Zeit vom übergebenen Datum
+   // @Param: DateTime, Numeric
+   // @Result: DateTime
+   //***************************************************************************
+   function GetTimeFromDateTime(dtDateTime)
+   | nHours, nMinutes, nSeconds, nMilli |
+      DecodeTime(dtDateTime, nHours, nMinutes, nSeconds, nMilli),
+      result := EncodeTime(nHours, nMinutes, nSeconds, nMilli),
+   end,
+
+   //***************************************************************************
+   // Ruft anhand übergebener Parameter entsprechenden Algorithmus auf
+   // @Param: Array mit Zeitplankonfiguration
+   // @Result: DateTime
+   //***************************************************************************
+   function GetNewStartDate(aExecutionPlanOptions, dtNow)
+   |
+      dtRunFirst, dtRunUntil, bRunUntilIsSet, bExecutionIsOnce,
+      cExecutionType, nExecutionPlanId, cRoot, aLastStart
+   |
+      cRoot := 'Global\Taskplaner\Scheduler\Algorithm\',
+
+      // Check Date-Bounds
+      dtRunFirst     := KVU_Get(aExecutionPlanOptions, 'execution.StartFirst', dtNow),
+      dtRunUntil     := KVU_Get(aExecutionPlanOptions, 'execution.RunUntil', EncodeDateTime(2222, 12, 31)),
+      bRunUntilIsSet := dtRunUntil <> 0,
+      if bRunUntilIsSet then
+         // Ende des Tages berücksichtigen
+         dtRunUntil := dtRunUntil + EncodeTime(23, 59, 59, 0),
+      endif,
+      if bRunUntilIsSet and (dtRunUntil < dtNow) then
+         // Wenn "Endet am" in der Vergangenheit liegt, muss der Zeitpunkt für die
+         // nächste Ausführung 00:00:00 sein
+         result := EncodeTime(0,0,0,0),
+      else
+         cExecutionType := KVU_Get(aExecutionPlanOptions, 'execution.Type', 'unknown'),
+         if (cExecutionType = gl_TSKPL_StartType_Periodic) and (dtRunFirst < dtNow) then
+            dtRunFirst := TSKPL_RoundStartDate(aExecutionPlanOptions, dtNow),
+         endif,
+
+         // Sollte der erste Start in der Zukunft liegen, überschreiben von LastStart
+         if (dtRunFirst > dtNow) then
+            aLastStart := ConvertDateTimeToArray(dtRunFirst),
+            KVU_Set(aExecutionPlanOptions, 'execution.LastStart', aLastStart),
+         endif,
+         
+         bExecutionIsOnce := cExecutionType = gl_TSKPL_StartType_Once,
+         case cExecutionType
+            of gl_TSKPL_StartType_Once ::
+               result := TSKPL_CALCULATESTART_ONCE(aExecutionPlanOptions),
+            of gl_TSKPL_StartType_Daily ::
+               result := TSKPL_CALCULATESTART_DAILY(aExecutionPlanOptions),
+            of gl_TSKPL_StartType_Weekly ::
+               result := TSKPL_CALCULATESTART_WEEKLY(aExecutionPlanOptions),
+            of gl_TSKPL_StartType_Monthly ::
+               result := TSKPL_CALCULATESTART_MONTHLY(aExecutionPlanOptions),
+            of gl_TSKPL_StartType_Yearly ::
+               result := TSKPL_CALCULATESTART_YEARLY(aExecutionPlanOptions),
+            of gl_TSKPL_StartType_Periodic ::
+               result := TSKPL_CALCULATESTART_PERIODICALLY(aExecutionPlanOptions),
+         otherwise
+            SetError('Unbekannter Ausführplan'),
+         endcase,
+         // Wenn "Endet am" überschritten wird, muss der Zeitpunkt für die nächste
+         // Ausführung 00:00:00 sein
+         result := iif(bRunUntilIsSet and not bExecutionIsOnce and (result > dtRunUntil), Int(result) + EncodeTime(0,0,0,0), result),
+      endif,
+   end,
+
+   result := GetNewStartDate(aExecutionPlanOptions, dtNow),
+end,
+
+
+function TestIt()
+|
+   aTest, dtStartDateTime, aExceptDays, nInterval, cIntervalUnit,
+   bBlockInnerTimeBound, aTimeBound
+|
+
+   dtStartDateTime      := EncodeDateTime(2016, 4, 20, 23, 55),
+   aExceptDays          := {},
+   nInterval            := 20,
+   cIntervalUnit        := 'm',
+   bBlockInnerTimeBound := true,
+   aTimeBound           := {{00, 15}, {10, 00}},
+
+   aTest := Dim(0),
+   //Arrange
+   KVU_SET(aTest, 'execution.LastStart',    ConvertDateTimeToArray(dtStartDateTime)),
+   KVU_SET(aTest, 'execution.Interval',     nInterval),
+   KVU_SET(aTest, 'execution.IntervalUnit', cIntervalUnit),
+   KVU_SET(aTest, 'execution.ExceptDays',   aExceptDays),
+   KVU_SET(aTest, 'execution.BlockInner',   bBLockInnerTimeBound),
+   KVU_SET(aTest, 'execution.TimeBound',    aTimeBound),
+   KVU_SET(aTest, 'execution.Type',         gl_TSKPL_StartType_Periodic),
+   result := TSKPL_CalculateStart(aTest, GetAdsServerTime()),
+end,

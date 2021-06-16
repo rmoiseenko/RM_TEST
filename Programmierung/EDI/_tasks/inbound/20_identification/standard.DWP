@@ -1,0 +1,114 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm führt für alle eingehenden Nachrichten im Prozessschritt
+//   "eingelesen", welche mit "automatisch verarbeiten" gekennzeichnet sind,
+//   die Identifikation durch.
+//
+// Rückgabe: array - EDITaskResult
+//   {
+//      {'EDITaskResult.totalProcessed', <integer>},
+//      {'EDITaskResult.succeededCount', <integer>},
+//      {'EDITaskResult.failedCount',    <integer>}
+//   }
+//##############################################################################
+//##############################################################################
+
+|
+   m_oErrorCallback:P1,
+   m_oProgressCallback:P2,
+
+   m_oDM,
+   m_aTaskResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Table_GetRecordCount(oTable:O)
+   result := 0,
+   oTable.CbFirst(),
+   while not oTable.CbEof do
+      result++,
+      oTable.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Diese Funktion führt für für alle eingehenden Nachrichten im Prozessschritt
+// "eingelesen", welche mit "automatisch verarbeiten" gekennzeichnet sind, die
+// Identifikation durch.
+//
+// @result: array - EDITaskResult
+//******************************************************************************
+function IdentifyInboundMessages(oDM:O, oErrorCallback:O, oProgressCallback:O)
+|
+   oEDIMSG, nRecordCount, nCounter,
+   cIdentificationScriptName,
+   aProcessResult, nSuccessfulMessages, nErroneousMessages
+|
+
+   nSuccessfulMessages := 0,
+   nErroneousMessages  := 0,
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, 'EDIMSG_TASK'),
+   oEDIMSG.CbIndexName := 'PROC_STEP',
+   oEDIMSG.CbSetRangeEx({gl_EDI_ProcessStep_EDIMSG_Inbound_Read}),
+   startseq
+      nRecordCount := Table_GetRecordCount(oEDIMSG),
+      nCounter     := 0,
+
+      oEDIMSG.CbFirst(),
+      while not oEDIMSG.CbEof do
+         if oEDIMSG:PROCESS then
+            cIdentificationScriptName := lookup(waEDITRCH, 'ID', {{oEDIMSG:EDITRCH_ID}}, 'SCRIPT_IDT', ''),
+            SetErrorIf(empty(cIdentificationScriptName), 'No identification script provided in transport channel: ' + str(oEDIMSG:EDITRCH_ID)),
+
+            startseq
+               aProcessResult := Call(cIdentificationScriptName, m_oDM, oEDIMSG:ID),
+               
+               if EDI_ProcessResult_IsSuccess(aProcessResult) then
+                  nSuccessfulMessages++,
+               else
+                  nErroneousMessages++,
+               endif,
+            onerror
+               EDI_Process_UpdateError(oErrorCallback, GetErrorObj(), GetErrorCode(), GetErrorStack(true)),
+            stopseq,
+         endif,
+
+         nCounter++,
+         oEDIMSG.CbNext(),
+      end,
+   always
+      oEDIMSG.CbCancelRange(),
+   stopseq,
+
+   result := {},
+   KVU_Set(result, 'EDITaskResult.totalProcessed', nSuccessfulMessages + nErroneousMessages),
+   KVU_Set(result, 'EDITaskResult.succeededCount', nSuccessfulMessages),
+   KVU_Set(result, 'EDITaskResult.failedCount',    nErroneousMessages),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_oDM := CreateObject('TBeDbGet'),
+startseq
+   m_aTaskResult := IdentifyInboundMessages(m_oDM, m_oErrorCallback, m_oProgressCallback),
+always
+   DestroyObject(m_oDM),
+stopseq,
+
+m_aTaskResult
+

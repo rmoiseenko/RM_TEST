@@ -1,0 +1,646 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Diese Benutzeroberfläche dient zum Verwalten von
+//   EDI-Partnerkonfigurationen.
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowDockingFromMaskIndiMenu(
+//        'EDI_MANAGEMENT_PARTNER_CONFIGURATION',
+//        self,
+//        'EDI\Management\PartnerConfiguration\PartnerConfigurationGUI'
+//     )
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDM_GUI, m_oEDIPART,
+   m_cPositionSaveId, m_cFormId, m_cBrowserId,
+
+   m_bExplicitInsert, m_bExplicitPost,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_New, A_Save, A_SelectPartnerRecord, al_Actions, bar_Top,
+   bardock_Top, barmngr_Main, bbtn_CancelProfile, bbtn_NewProfile,
+   bbtn_SaveProfile, bipnl_Title, btn_SelectPartnerRecord,
+   bvl_Details_LocationDepartment, bvl_Details_Row1_Col1, bvl_Details_Row1_Col2,
+   bvl_Details_Row2_Col1, cmb_Department, cmb_Location, cmb_Profile,
+   cmb_Workarea, ds_EDIPART, dtp_DocumentSelectionStartTS,
+   edt_ClientDisplayName, edt_Description, edt_GLNOwn, edt_GLNPartner, edt_Name,
+   edt_PartnerNumber, grd_EDIPART, lbl_Department, lbl_Details_Row1_Col1_Title,
+   lbl_Details_Row1_Col2_Title, lbl_Details_Row2_Col1_Title,
+   lbl_DocumentSelectionStartTS, lbl_GLNOwn, lbl_GLNPartner, lbl_Location,
+   lbl_Name, lbl_PartnerNumber, lbl_Profile, lbl_Workarea,
+   pnl_ControlGroup_PartnerNumber, pnl_Details, pnl_Details_Row1,
+   pnl_Details_Row1_Col1, pnl_Details_Row1_Col2, pnl_Details_Row2,
+   pnl_Details_Row2_Col1, pnl_Grid, pnl_LocationDepartmentInfo, pnl_Main,
+   pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId := '@EDIPARTPO',
+m_cFormId         := '@EDIPARTUI',
+m_cBrowserId      := '@EDIPART',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene Control explizit in den "ReadOnly"-Modus.
+// @result - keine Rückgabe
+//******************************************************************************
+function InputControl_SetReadOnlyState(oControl:O, bIsReadOnly:L)
+   oControl.ReadOnlyStateFromField := not bIsReadOnly,
+   oControl.ReadOnly               := bIsReadOnly,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+| bIsEditModeActive |
+
+   bIsEditModeActive := EditModes(m_oEDIPART),
+
+   // Enabled-Zustand der Actions steuern
+   A_New.Enabled    := not bIsEditModeActive,
+   A_Save.Enabled   := bIsEditModeActive,
+   A_Cancel.Enabled := bIsEditModeActive,
+   A_SelectPartnerRecord.Enabled := InsertMode(m_oEDIPART) and m_oEDIPART:WORKAREA <> 0,
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+   m_oDM     := CreateObject('TBeDbGet', 'DM_EDI_PartnerConfigurationGUI',     oForm),
+   m_oDM_GUI := CreateObject('TBeDbGet', 'DM_EDI_PartnerConfigurationGUI_GUI', oForm),
+
+   // Haupttabelle (EDIPART)
+   m_oEDIPART := DbGetTable(m_oDM_GUI, waEDIPART),
+   m_oEDIPART.CbIndexName := 'ID',
+
+   GU_LinkTableToGUI(m_oEDIPART, ds_EDIPART, grd_EDIPART, m_cBrowserId, true),
+
+   // Flags initialisieren
+   m_bExplicitInsert := false,
+   m_bExplicitPost   := false,
+
+   // Events zuweisen
+   AssignEvent(ds_EDIPART, 'OnScroll_Update', 'ds_EDIPARTScroll_Update'),
+   AssignEvent(m_oEDIPART, 'BeforeInsert',    'EDIPART_BeforeInsert'),
+   AssignEvent(m_oEDIPART, 'BeforePost',      'EDIPART_BeforePost'),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt den Anzeigewert eines Partner-Datensatzes anhand der
+// im Feld "RECORD_ID" hinterlegten Datensatz-ID.
+//
+// @result: string - Partner-Anzeigewert
+//******************************************************************************
+function EDIPART_GetPartnerDisplayName(oEDIPART:o)
+| nWorkarea |
+
+   result    := '',
+   nWorkarea := oEDIPART:WORKAREA,
+   if nWorkarea > 0 then
+      result := lookup(
+         nWorkarea,
+         EDI_Partner_GetIdIndexNameByWorkarea(nWorkarea),
+         {{oEDIPART:RECORD_ID}},
+         "trim(MATCHCODE) + iif(empty(trim(NAME1)), '', ' - ' + trim(NAME1)) + iif(empty(trim(NAME2)), '', ' ' + trim(NAME2))",
+         ''
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt die Partnernummer anhand der im Feld "RECORD_ID"
+// hinterlegten Datensatz-ID.
+//
+// @result: integer - Partner-Nummer
+//******************************************************************************
+function EDIPART_GetPartnerNumber(oEDIPART:O)
+| nWorkarea |
+
+   result    := 0,
+   nWorkarea := oEDIPART:WORKAREA,
+   if nWorkarea > 0 then
+      result := lookup(
+         nWorkarea,
+         EDI_Partner_GetIdIndexNameByWorkarea(nWorkarea),
+         {{oEDIPART:RECORD_ID}},
+         EDI_Partner_GetKeyFieldNameByWorkarea(nWorkarea),
+         0
+      ),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion schreibt die ID der übergebenen Partnernummer in das Feld
+// "RECORD_ID".
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function EDIPART_SetPartnerRecord(oEDIPART:O, nPartnerNumber:N)
+| nWorkarea, nPartnerId |
+
+   nWorkarea := oEDIPART:WORKAREA,
+   if nWorkarea > 0 then
+      nPartnerId := lookup(
+         nWorkarea,
+         EDI_Partner_GetPrimaryIndexNameByWorkarea(nWorkarea),
+         {{nPartnerNumber}},
+         'ID',
+         0
+      ),
+
+      BeginSuspend(oEDIPART),
+      startseq
+         oEDIPART:RECORD_ID := nPartnerId,
+      always
+         EndSuspend(oEDIPART),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Combobox für Standorte befüllen
+// @Result: null
+//******************************************************************************
+function FillComboLocation()
+| aItems, oQuery |
+
+   aItems := {'kein Standort ausgewählt' + Chr(9) + '-1'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT "USER", STANDORT FROM "DABPAR.ADT" WHERE ABTEILUNG = 0',
+      oQuery.Active := True,
+      while not oQuery.CbEof do
+         AAdd(aItems, ConcatTrenner(StrZero(oQuery:STANDORT, 3), Trim(oQuery:USER), ' - ') + Chr(9) + Str(oQuery:STANDORT)),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+   cmb_Location.Items := aItems,
+end,
+
+//******************************************************************************
+// Combobox für Abteilungen befüllen
+// @Result: array - Items
+//******************************************************************************
+function FillComboDepartment(nLocation:N)
+| oQuery, nDepartment, cDepName |
+
+   Result := {'keine Abteilung ausgewählt' + Chr(9) + '-1'},
+   if nLocation >= 0 then
+      oQuery:= CreateObject('TBeAdsQuery'),
+      startseq
+         oQuery.SQL    := 'SELECT "USER", ABTEILUNG FROM "DABPAR.ADT" WHERE STANDORT = ' + Str(nLocation),
+         oQuery.Active := True,
+         while not oQuery.CbEof do
+            nDepartment := oQuery:ABTEILUNG,
+            cDepName    := oQuery:USER,
+
+            if nDepartment = 0 then
+               cDepName := 'Global-Abt.',
+            else
+               cDepName := oQuery:USER
+            endif,
+            if Empty(Trim(cDepName)) then
+               cDepName := 'Abteilung ' + Str(nDepartment),
+            endif,
+            AAdd(Result, ConcatTrenner(Str(nDepartment), Trim(cDepName), ' - ') + Chr(9) + Str(nDepartment)),
+            oQuery.CbNext(),
+         end,
+      always
+         DestroyObject(oQuery),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function SynchronizePartnerRecordField()
+   edt_PartnerNumber.Text     := EDIPART_GetPartnerNumber(m_oEDIPART),
+   edt_ClientDisplayName.Text := EDIPART_GetPartnerDisplayName(m_oEDIPART),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Scrollen der EDIPART
+//******************************************************************************
+function ds_EDIPARTScroll_Update( Sender )
+   SynchronizePartnerRecordField(),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Speichern des Datensatzes
+//******************************************************************************
+function EDIPART_BeforePost( Sender )
+   if not m_bExplicitPost then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Vor der Neuanlage eines Datensatzes
+//******************************************************************************
+function EDIPART_BeforeInsert( Sender )
+   if not m_bExplicitInsert then
+      Abort(true),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Standard-Eventhandler beim Ändern einer TBeCombo
+//******************************************************************************
+function TBeCombo_DefaultOnChangeHandler(sender:O)
+| oTable |
+
+   oTable := sender.DataSource.DataSet,
+   if EditModes(oTable) then
+      oTable.CbReplace(sender.DataField, val(sender.Value)),
+   endif,
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // Docking aus Form-Ref-Array austragen
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := not EditModes(m_oEDIPART),
+   if not bCanClose then
+      MessageDlg('Das Fenster kann nicht geschlossen werden, weil noch nicht gespeicherte Änderungen vorhanden sind.', mtWarning),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Beim Auswahl aus "Standort"
+//******************************************************************************
+function cmb_LocationChange( Sender )
+   if not Empty(cmb_Location.Value) then
+      cmb_Department.Items := FillComboDepartment(Val(cmb_Location.Value)),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Partner-Datensatz auswählen
+//******************************************************************************
+function A_SelectPartnerRecordExecute( Sender )
+| oFindClientForm, nClientType, nModalResult, bExplicitEdit |
+
+   //***************************************************************************
+   function TFormFindCustomer_OnSubmitKey(sender:O)
+      CloseForm(sender),
+      ModalResult(sender, mrOk),
+   end,
+
+   case val(m_oEDIPART:WORKAREA)
+      of waDab000 :: nClientType := 1,
+      of waDab100 :: nClientType := 2,
+      otherwise
+         nClientType := 0,
+   endcase,
+
+   startseq 
+      bExplicitEdit := not EditModes(m_oEDIPART),
+      if bExplicitEdit then
+         m_oEDIPART.CbEdit(),
+      endif,
+
+      oFindClientForm := CreateObject('TFormFindCustomer'),
+      startseq
+         oFindClientForm.SearchFor := nClientType,
+         AssignEvent(oFindClientForm, 'OnSelectCustomer', 'TFormFindCustomer_OnSubmitKey'),
+
+         nModalResult := ShowModal(oFindClientForm),
+         if nModalResult = mrOk then
+            EDIPART_SetPartnerRecord(m_oEDIPART, oFindClientForm.SelectedClient),
+            SynchronizePartnerRecordField(),
+            if bExplicitEdit then
+               m_bExplicitPost := true,
+               m_oEDIPART.CbPost(),
+            endif,
+         else
+            if bExplicitEdit then
+               m_oEDIPART.CbCancel(),
+            endif,
+         endif,
+      always
+         DestroyObject(oFindClientForm),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Auswählen des Partner-Datensatzes', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderungen am Profil verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', false) then
+      m_oEDIPART.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Profil speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| oException |
+
+   startseq
+      m_bExplicitPost := true,
+      startseq
+         m_oEDIPART.CbPost(),
+      always
+         m_bExplicitPost := false,
+      stopseq,
+   onerror
+      oException := GetErrorObj(),
+      // Fehler nur behandeln, sofern keine ECheckRightsAbort-Exception.
+      // Exceptions vom Typ ECheckRightsAbort werden standardmäßig von be
+      // behandelt.
+      if not ClassOf(oException, 'ECheckRightsAbort') then
+         GU_ShowStdErrorMessage('Fehler beim Speichern der Partnerkonfiguration.', GetErrorObj()),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Anlegen eines neuen Profils
+//******************************************************************************
+function A_NewExecute( Sender )
+   startseq
+      m_bExplicitInsert := true,
+      startseq
+         m_oEDIPART.CbAppend(),
+      always
+         m_bExplicitInsert := false,
+      stopseq,
+      MyFocusControl(oForm, edt_Name),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Anlegen einer neuen Partnerkonfiguration', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.BorderStyle := bsSizeToolWin,
+   endif,
+   oForm.FormStyle      := fsNormal,
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'EDI: Partnerkonfiguration',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 328,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                       := FindObject(oForm, "A_Cancel"),
+   A_New                          := FindObject(oForm, "A_New"),
+   A_Save                         := FindObject(oForm, "A_Save"),
+   A_SelectPartnerRecord          := FindObject(oForm, "A_SelectPartnerRecord"),
+   al_Actions                     := FindObject(oForm, "al_Actions"),
+   bar_Top                        := FindObject(oForm, "bar_Top"),
+   bardock_Top                    := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                   := FindObject(oForm, "barmngr_Main"),
+   bbtn_CancelProfile             := FindObject(oForm, "bbtn_CancelProfile"),
+   bbtn_NewProfile                := FindObject(oForm, "bbtn_NewProfile"),
+   bbtn_SaveProfile               := FindObject(oForm, "bbtn_SaveProfile"),
+   bipnl_Title                    := FindObject(oForm, "bipnl_Title"),
+   btn_SelectPartnerRecord        := FindObject(oForm, "btn_SelectPartnerRecord"),
+   bvl_Details_LocationDepartment := FindObject(oForm, "bvl_Details_LocationDepartment"),
+   bvl_Details_Row1_Col1          := FindObject(oForm, "bvl_Details_Row1_Col1"),
+   bvl_Details_Row1_Col2          := FindObject(oForm, "bvl_Details_Row1_Col2"),
+   bvl_Details_Row2_Col1          := FindObject(oForm, "bvl_Details_Row2_Col1"),
+   cmb_Department                 := FindObject(oForm, "cmb_Department"),
+   cmb_Location                   := FindObject(oForm, "cmb_Location"),
+   cmb_Profile                    := FindObject(oForm, "cmb_Profile"),
+   cmb_Workarea                   := FindObject(oForm, "cmb_Workarea"),
+   ds_EDIPART                     := FindObject(oForm, "ds_EDIPART"),
+   dtp_DocumentSelectionStartTS   := FindObject(oForm, "dtp_DocumentSelectionStartTS"),
+   edt_ClientDisplayName          := FindObject(oForm, "edt_ClientDisplayName"),
+   edt_Description                := FindObject(oForm, "edt_Description"),
+   edt_GLNOwn                     := FindObject(oForm, "edt_GLNOwn"),
+   edt_GLNPartner                 := FindObject(oForm, "edt_GLNPartner"),
+   edt_Name                       := FindObject(oForm, "edt_Name"),
+   edt_PartnerNumber              := FindObject(oForm, "edt_PartnerNumber"),
+   grd_EDIPART                    := FindObject(oForm, "grd_EDIPART"),
+   lbl_Department                 := FindObject(oForm, "lbl_Department"),
+   lbl_Details_Row1_Col1_Title    := FindObject(oForm, "lbl_Details_Row1_Col1_Title"),
+   lbl_Details_Row1_Col2_Title    := FindObject(oForm, "lbl_Details_Row1_Col2_Title"),
+   lbl_Details_Row2_Col1_Title    := FindObject(oForm, "lbl_Details_Row2_Col1_Title"),
+   lbl_DocumentSelectionStartTS   := FindObject(oForm, "lbl_DocumentSelectionStartTS"),
+   lbl_GLNOwn                     := FindObject(oForm, "lbl_GLNOwn"),
+   lbl_GLNPartner                 := FindObject(oForm, "lbl_GLNPartner"),
+   lbl_Location                   := FindObject(oForm, "lbl_Location"),
+   lbl_Name                       := FindObject(oForm, "lbl_Name"),
+   lbl_PartnerNumber              := FindObject(oForm, "lbl_PartnerNumber"),
+   lbl_Profile                    := FindObject(oForm, "lbl_Profile"),
+   lbl_Workarea                   := FindObject(oForm, "lbl_Workarea"),
+   pnl_ControlGroup_PartnerNumber := FindObject(oForm, "pnl_ControlGroup_PartnerNumber"),
+   pnl_Details                    := FindObject(oForm, "pnl_Details"),
+   pnl_Details_Row1               := FindObject(oForm, "pnl_Details_Row1"),
+   pnl_Details_Row1_Col1          := FindObject(oForm, "pnl_Details_Row1_Col1"),
+   pnl_Details_Row1_Col2          := FindObject(oForm, "pnl_Details_Row1_Col2"),
+   pnl_Details_Row2               := FindObject(oForm, "pnl_Details_Row2"),
+   pnl_Details_Row2_Col1          := FindObject(oForm, "pnl_Details_Row2_Col1"),
+   pnl_Grid                       := FindObject(oForm, "pnl_Grid"),
+   pnl_LocationDepartmentInfo     := FindObject(oForm, "pnl_LocationDepartmentInfo"),
+   pnl_Main                       := FindObject(oForm, "pnl_Main"),
+   pnl_Top                        := FindObject(oForm, "pnl_Top"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+   btn_SelectPartnerRecord.Caption := '',
+
+   // Edits und Combos mit Tabellenfeldern verbinden
+   edt_Name.DataSource       := ds_EDIPART,
+   edt_Name.DataField        := 'NAME',
+   cmb_Profile.DataSource    := ds_EDIPART,
+   cmb_Profile.DataField     := 'EDIPROF_ID',
+   cmb_Workarea.DataSource   := ds_EDIPART,
+   cmb_Workarea.DataField    := 'WORKAREA',
+   dtp_DocumentSelectionStartTS.DataSource := ds_EDIPART,
+   dtp_DocumentSelectionStartTS.DataField  := 'BELEGE_AB',
+   edt_GLNOwn.DataSource     := ds_EDIPART,
+   edt_GLNOwn.DataField      := 'GLN_OWN',
+   edt_GLNPartner.DataSource := ds_EDIPART,
+   edt_GLNPartner.DataField  := 'GLN_PART',
+   edt_Description.DataSource := ds_EDIPART,
+   edt_Description.DataField  := 'MEMO',
+   cmb_Location.DataSource   :=  ds_EDIPART,
+   cmb_Location.DataField    :=  'PROC_STO',
+   cmb_Department.DataSource :=  ds_EDIPART,
+   cmb_Department.DataField  :=  'PROC_ABTLG',
+   
+   // Labels mit Tabellenfeldern verbinden
+   lbl_Name.DataSource              := ds_EDIPART,
+   lbl_Name.DataField               := 'NAME',
+   lbl_Name.UseDefaultCaption       := true,
+   lbl_Profile.DataSource           := ds_EDIPART,
+   lbl_Profile.DataField            := 'EDIPROF_ID',
+   lbl_Profile.UseDefaultCaption    := true,
+   lbl_Workarea.DataSource          := ds_EDIPART,
+   lbl_Workarea.DataField           := 'WORKAREA',
+   lbl_Workarea.UseDefaultCaption   := true,
+   lbl_DocumentSelectionStartTS.DataSource        := ds_EDIPART,
+   lbl_DocumentSelectionStartTS.DataField         := 'BELEGE_AB',
+   lbl_DocumentSelectionStartTS.UseDefaultCaption := true,
+   lbl_GLNOwn.DataSource            := ds_EDIPART,
+   lbl_GLNOwn.DataField             := 'GLN_OWN',
+   lbl_GLNOwn.UseDefaultCaption     := true,
+   lbl_GLNPartner.DataSource        := ds_EDIPART,
+   lbl_GLNPartner.DataField         := 'GLN_PART',
+   lbl_GLNPartner.UseDefaultCaption := true,
+   lbl_Location.DataSource          := ds_EDIPART,
+   lbl_Location.DataField           := 'PROC_STO',
+   lbl_Location.UseDefaultCaption   := true,
+   lbl_Department.DataSource        := ds_EDIPART,
+   lbl_Department.DataField         := 'PROC_ABTLG',
+   lbl_Department.UseDefaultCaption := true,
+
+   lbl_Details_Row2_Col1_Title.DataSource        := ds_EDIPART,
+   lbl_Details_Row2_Col1_Title.DataField         := 'MEMO',
+   lbl_Details_Row2_Col1_Title.UseDefaultCaption := true,
+
+   lbl_PartnerNumber.Caption := 'Partner-Nummer',
+
+   cmb_Department.DropDownCount := 11,
+
+   FillComboLocation(),
+
+   SetBrowserBeAttribID(grd_EDIPART, 'WORKAREA',   gl_EDI_MMTID_PartnerWorkarea),
+   SetBrowserBeAttribID(grd_EDIPART, 'EDIPROF_ID', gl_EDI_MMTID_Profile),
+
+
+   InputControl_SetReadOnlyState(edt_PartnerNumber, true),
+   InputControl_SetReadOnlyState(edt_ClientDisplayName, true),
+
+   // Control-Events zuweisen
+   AssignEvent(cmb_Workarea, 'OnChange', 'TBeCombo_DefaultOnChangeHandler'),
+
+   // 6.5 Rückwärtskompatibles ReDesign für be 7
+   EDI_GUI_Style65CompatControls({edt_Name, cmb_Profile, cmb_Workarea, dtp_DocumentSelectionStartTS, edt_GLNOwn,
+                                  edt_GLNPartner, cmb_Location, cmb_Department,
+                                  edt_PartnerNumber, edt_ClientDisplayName}),
+   EDI_GUI_Style65CompatHeadlineLabels({lbl_Details_Row1_Col1_Title, lbl_Details_Row1_Col2_Title, lbl_Details_Row2_Col1_Title}),
+
+   // Tabellen-gebundene Controls sowie Anzeige-Status von Actions manuell
+   // aktualisieren.
+   // Dies ist insbesondere wichtig, damit der ReadOnly-Zustand von Controls
+   // initial richtig angezeigt wird.
+   m_oEDIPART.CbRefresh(),
+   ActionsEnabled(),                                                                                                            
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+

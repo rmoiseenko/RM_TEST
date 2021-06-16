@@ -1,0 +1,446 @@
+//******************************************************************************
+// Funktion führt die Verfügbarkeitsberechnung auf der übergebenen
+//    Einzelterminraster-Memtable nach ATP-Logik durch
+//    Die Ergebnisse werden in der Memtable abgelegt.
+//
+//    Parameter
+//      @bEigBedarfEinlastungsPruefung: true  = Der Bedarf, der über @nEigBedarfZeilenTyp und @nEigBedarfDatensatzID definiert ist, soll als neuer Bedarf eingelastet werden.
+//                                      false = keine "neu-Einlastung" sondern alle relvanten Bedarfe werden gleich behandelt
+//
+// @Result: null
+//******************************************************************************
+function _VPU_ETR_CalcATP(oETR_ATPMem, aZeilenTypen, nEigBedarfZeilenTyp, nEigBedarfDatensatzID, bEigBedarfEinlastungsPruefung, bUsePruefHorizont, dEndePruefHorizont)
+| oRec, nATPKumuliert, bEigBedarfRecordFound,  oETR_ATPMemAbgang, aZugangArr, dTerminAbgang, dTerminZugang |
+
+   //***************************************************************************
+   // Die aktuell positionierte Abgangszeile verarbeiten - Zugänge zuordnen
+   //***************************************************************************
+   function Inline_ZugaengeZuordnenForCurrentAbgang()
+     | nCurrentAbgangRecNo, nCurrentAbgangETRZeilenTyp, nCurrentAbgangETRDatensatzID,
+       nOffeneAbgangsBedarfsMenge, nBestaetigteMengeInTime, nBestaetigteMengeNotInTime,
+       nBestaetigteMengePerPruefHorz,
+       nATPMengeNutzbar, aAbgaengeArr, aZuegangeFuerAbgangArr,
+       cTerminSpaetBenoetigterZugangFuerKomplettLieferung,
+       bLagerBestandAlsZugangGenutzt |
+
+      nCurrentAbgangRecNo           := oETR_ATPMem.CbRecNo, // Damit das funktioniert, darf die ETR-Memtable nicht gefiltert sein! (TBeMemTable)
+      nCurrentAbgangETRZeilenTyp    := oETR_ATPMem:ZEILEN_TYP,
+      nCurrentAbgangETRDatensatzID  := oETR_ATPMem:DATENSATZ_ID,
+      aZuegangeFuerAbgangArr        := {},
+
+      //*********************************************************************
+      // 1. Vom Abgang aus vorerst auf zeitlich direkt zuvor liegende Zugänge zugreifen und versuchen, damit die Bedarfsmenge zu decken
+      //*********************************************************************
+      // TODO: Hier müsste noch die Sicherzeitszeit zwischen Materialverfügbarkeit und
+      //       Liefertermin eingehalten werden - es sind also ggf. nicht alle direkt
+      //       vor dem Abgang liegenden Zugänge nutzbar (bei Prüfung im Vertrieb: Kommissionierzeit, Verpackungszeit, Versandzeit, Puffer)
+      nOffeneAbgangsBedarfsMenge                         := oETR_ATPMem:MENGE, // bei Abgängen ist die MENGE negativ!
+      nBestaetigteMengeInTime                            := 0,
+      nBestaetigteMengePerPruefHorz                      := 0,
+      cTerminSpaetBenoetigterZugangFuerKomplettLieferung := '',
+      bLagerBestandAlsZugangGenutzt                      := false,
+
+      if oETR_ATPMem:ATP_IST_IN_PRUEFHORZ then
+         DbSkip(-1, oETR_ATPMem),  // TODO: hier müsste man so weit zurück gehen, dass die Sicherzeitszeit abgedeckt ist.
+         while not BoF(oETR_ATPMem) and nOffeneAbgangsBedarfsMenge < 0 do
+
+            if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ZUGANG then
+               if oETR_ATPMem:ATP_MENGE_VERFUEG > 0 then
+                  nATPMengeNutzbar           := Min(oETR_ATPMem:ATP_MENGE_VERFUEG, Abs(nOffeneAbgangsBedarfsMenge)), // => so viel Menge "nehmen", wie möglich bzw. noch nötig
+                  nOffeneAbgangsBedarfsMenge -= (nATPMengeNutzbar * -1),
+                  nBestaetigteMengeInTime    += (nATPMengeNutzbar * -1),
+
+                  MyEdit(oETR_ATPMem),
+                  oETR_ATPMem:ATP_MENGE_VERFUEG    -= nATPMengeNutzbar,
+                  aAbgaengeArr                     := StrToArr(oETR_ATPMem:ATP_ABGANG_ARR),
+                  AAdd(aAbgaengeArr, {nCurrentAbgangRecNo, nCurrentAbgangETRZeilenTyp, nCurrentAbgangETRDatensatzID, '', '', '', nATPMengeNutzbar}),
+                  oETR_ATPMem:ATP_ABGANG_ARR       := ArrToStr(aAbgaengeArr),
+                  MyPost(oETR_ATPMem),
+                  //                            [1]                  [2]                     [3]                       [4]                          [5]                            [6]                                          [7]
+                  AAdd(aZuegangeFuerAbgangArr, {oETR_ATPMem.CbRecNo, oETR_ATPMem:ZEILEN_TYP, oETR_ATPMem:DATENSATZ_ID, AllTrim(oETR_ATPMem:TERMIN), AllTrim(oETR_ATPMem:PROD_ABT), ETRU_GUI_DisplayInfoTextForTyp(oETR_ATPMem), nATPMengeNutzbar * -1}),
+                  if empty(cTerminSpaetBenoetigterZugangFuerKomplettLieferung) then
+                     cTerminSpaetBenoetigterZugangFuerKomplettLieferung := oETR_ATPMem:TERMIN,
+                  endif,
+
+                  if oETR_ATPMem:ZEILEN_TYP = gl_ETRU_Typ_VerfuegBestand then // wird zur Deckung (u.a.) Lagerbestand genutzt?
+                     bLagerBestandAlsZugangGenutzt := true,
+                  endif,
+
+               endif,
+            endif,
+
+            DbSkip(-1, oETR_ATPMem),
+         end,
+      else // Wenn der Abgang außerhalb des Prüfhorizonts liegt, einfach die komplette Menge bestätigen
+         nBestaetigteMengeInTime                            := oETR_ATPMem:MENGE,
+         nBestaetigteMengePerPruefHorz                      := oETR_ATPMem:MENGE,
+         cTerminSpaetBenoetigterZugangFuerKomplettLieferung := DToC(dEndePruefHorizont),
+         //                            [1]  [2]  [3]  [4]                       [5]   [6]                        [7]
+         AAdd(aZuegangeFuerAbgangArr, {0,   -1,    0, DToC(dEndePruefHorizont), '',   'Ausserhalb Prüfhorizont', oETR_ATPMem:MENGE}),
+      endif,
+
+      //*********************************************************************
+      // 2. ... und wieder "runter" auf den Abgang
+      //*********************************************************************
+      if not oETR_ATPMem.CbGoTo(nCurrentAbgangRecNo) then // Damit das funktioniert, darf die ETR-Memtable nicht gefiltert sein!
+         SetError('oETR_ATPMem.CbGoTo() failed for recno ' + Str(nCurrentAbgangRecNo)),
+      endif,
+      SetErrorIf(oETR_ATPMem:DATENSATZ_ID <> nCurrentAbgangETRDatensatzID, 'something went wrong, CbGoTo() failed?'), // kleiner Sicherheitscheck... so lange CbGoTo() noch nicht sauber funktioniert in der neuen MemTable
+
+      //*********************************************************************
+      // 3. Ergebnisse der bisherigen Zuordnung im Abgangs-Datensatz speichern
+      //    Wenn jetzt noch nicht die gesamte Bedarfsmenge bestätigt wurde, dann
+      //    ist der Bedarf nicht (komplett) für den aktuellem Wunschtermin erfüllbar
+      //*********************************************************************
+      MyEdit(oETR_ATPMem),
+      oETR_ATPMem:ATP_MENGE_BESTAETIGT_IN_TIME       := nBestaetigteMengeInTime,
+      oETR_ATPMem:ATP_MENGE_BESTAETIGT_PER_PRUEFHORZ := nBestaetigteMengePerPruefHorz,
+      oETR_ATPMem:ATP_KOMPL_BESTAETIGT_IN_TIME       := nBestaetigteMengeInTime = oETR_ATPMem:MENGE,
+      oETR_ATPMem:ATP_ZUGANG_ARR                     := ArrToStr(aZuegangeFuerAbgangArr),
+      // Wenn für die gesamte Bedarfsmenge rechtzeitige Zugänge gefunden wurden, dann
+      //   den Termin des letzten notwendigen Zugangs vermerken
+      //   => das wäre der Termin, zu dem Komplett-Lieferung möglich wäre (bzw. die letzte Teillieferung kommt)
+      //      ACHTUNG: Das ist der Verfügbarkeitstermin, hier müsste ggf. noch eine Sicherheitszeit eingehalten werden
+      if oETR_ATPMem:ATP_KOMPL_BESTAETIGT_IN_TIME then
+         oETR_ATPMem:ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN := cTerminSpaetBenoetigterZugangFuerKomplettLieferung,
+      endif,
+
+      // in wiefern wird der Bedarf durch Lagerbestand bedient?
+      oETR_ATPMem:ATP_BEDARF_GEDECKT_DURCH_LAGER := 'N',
+      if bLagerBestandAlsZugangGenutzt then
+         if ALen(aZuegangeFuerAbgangArr) = 1 and nBestaetigteMengeInTime = oETR_ATPMem:MENGE then
+            oETR_ATPMem:ATP_BEDARF_GEDECKT_DURCH_LAGER := 'J',
+         else
+            oETR_ATPMem:ATP_BEDARF_GEDECKT_DURCH_LAGER := 'T',
+         endif,
+      endif,
+      MyPost(oETR_ATPMem),
+
+      //*********************************************************************
+      // 4. Ggf. zeitlich nach dem Abgang aber im Prüfhorizont liegende
+      //    (also verspätete) Zugänge suchen und zuordnen
+      //*********************************************************************
+      if not oETR_ATPMem:ATP_KOMPL_BESTAETIGT_IN_TIME then
+
+         nBestaetigteMengeNotInTime    := 0,
+         cTerminSpaetBenoetigterZugangFuerKomplettLieferung := '',
+         DbSkip(1, oETR_ATPMem), // TODO: Hier müsste man bei Beachtung der Sicherheitszeit noch die Zugänge vor dem Abgang berücksichtigen, die nicht in der Sicherheitszeit liegen. 
+         while not EoF(oETR_ATPMem) and nOffeneAbgangsBedarfsMenge < 0 and oETR_ATPMem:ATP_IST_IN_PRUEFHORZ do
+
+            if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ZUGANG then
+               if oETR_ATPMem:ATP_MENGE_VERFUEG > 0 then
+                  nATPMengeNutzbar           := Min(oETR_ATPMem:ATP_MENGE_VERFUEG, Abs(nOffeneAbgangsBedarfsMenge)), // => so viel Menge "nehmen", wie möglich bzw. noch nötig
+                  nOffeneAbgangsBedarfsMenge -= (nATPMengeNutzbar * -1),
+                  nBestaetigteMengeNotInTime += (nATPMengeNutzbar * -1),
+
+                  MyEdit(oETR_ATPMem),
+                  oETR_ATPMem:ATP_MENGE_VERFUEG    -= nATPMengeNutzbar,
+                  aAbgaengeArr                     := StrToArr(oETR_ATPMem:ATP_ABGANG_ARR),
+                  AAdd(aAbgaengeArr, {nCurrentAbgangRecNo, nCurrentAbgangETRZeilenTyp, nCurrentAbgangETRDatensatzID, '', '', '', nATPMengeNutzbar}),
+                  oETR_ATPMem:ATP_ABGANG_ARR       := ArrToStr(aAbgaengeArr),
+                  MyPost(oETR_ATPMem),
+
+                  AAdd(aZuegangeFuerAbgangArr, {oETR_ATPMem.CbRecNo, oETR_ATPMem:ZEILEN_TYP, oETR_ATPMem:DATENSATZ_ID, AllTrim(oETR_ATPMem:TERMIN), AllTrim(oETR_ATPMem:PROD_ABT), ETRU_GUI_DisplayInfoTextForTyp(oETR_ATPMem), nATPMengeNutzbar * -1}),
+                  cTerminSpaetBenoetigterZugangFuerKomplettLieferung := oETR_ATPMem:TERMIN,
+               endif,
+            endif,
+
+            DbSkip(1, oETR_ATPMem),
+         end,
+
+         //*********************************************************************
+         // 4.1 ... und wieder "rauf" auf den Abgang
+         //*********************************************************************
+         if not oETR_ATPMem.CbGoTo(nCurrentAbgangRecNo) then // Damit das funktioniert, darf die ETR-Memtable nicht gefiltert sein!
+            SetError('oETR_ATPMem.CbGoTo() failed for recno ' + Str(nCurrentAbgangRecNo)),
+         endif,
+         SetErrorIf(oETR_ATPMem:DATENSATZ_ID <> nCurrentAbgangETRDatensatzID, 'something went wrong, CbGoTo() failed?'), // kleiner Sicherheitscheck... so lange CbGoTo() noch nicht sauber funktioniert in der neuen MemTable
+
+         //*********************************************************************
+         // 4.2 Ergebnisse eintragen
+         //*********************************************************************
+         MyEdit(oETR_ATPMem),
+         oETR_ATPMem:ATP_MENGE_BESTAETIGT_NOT_IN_TIME := nBestaetigteMengeNotInTime,
+         // Wenn für die gesamte Bedarfsmenge Zugänge im Prüfhorizont gefunden
+         //   wurden, dann den Termin des letzten notwendigen Zugangs vermerken
+         //   => das wäre der Termin, zu dem Komplett-Lieferung möglich wäre (bzw. die letzte Teillieferung kommt)
+         if (oETR_ATPMem:ATP_MENGE_BESTAETIGT_IN_TIME + oETR_ATPMem:ATP_MENGE_BESTAETIGT_NOT_IN_TIME) = oETR_ATPMem:MENGE then
+            oETR_ATPMem:ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN := cTerminSpaetBenoetigterZugangFuerKomplettLieferung,
+         else
+            // Wenn mit Prüfhorizont gearbeitet wird, dann kann auf jeden Fall
+            // die komplette Bedarfsmenge zum Horizont-Ende bestätigt werden
+            if bUsePruefHorizont then
+               oETR_ATPMem:ATP_MENGE_BESTAETIGT_PER_PRUEFHORZ := oETR_ATPMem:MENGE - oETR_ATPMem:ATP_MENGE_BESTAETIGT_IN_TIME - oETR_ATPMem:ATP_MENGE_BESTAETIGT_NOT_IN_TIME,
+               oETR_ATPMem:ATP_MENGE_BESTAETIGT_NOT_IN_TIME   := oETR_ATPMem:MENGE - oETR_ATPMem:ATP_MENGE_BESTAETIGT_IN_TIME,
+               oETR_ATPMem:ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN := DToC(dEndePruefHorizont),
+               //                            [1]  [2]  [3]  [4]                       [5]   [6]                        [7]
+               AAdd(aZuegangeFuerAbgangArr, {0,   -1,    0, DToC(dEndePruefHorizont), '',   'Ausserhalb Prüfhorizont', oETR_ATPMem:ATP_MENGE_BESTAETIGT_PER_PRUEFHORZ}),
+            endif,
+         endif,
+         oETR_ATPMem:ATP_ZUGANG_ARR                   := ArrToStr(aZuegangeFuerAbgangArr),
+
+         MyPost(oETR_ATPMem),
+
+      endif,
+   end,
+
+
+   oETR_ATPMem.CbIndexName := 'SORT', // Ausgangslage: Die ETR-Bewegungen liegen sortiert vor
+
+   // Die ATP-Logik verfolgt die Idee, alle Abgänge durch zeitlich möglichst nahe
+   // liegende Zugänge zu bedienen. Im Ergebnis ist bekannt, welche Zugänge nicht
+   // vollständige für Abgänge benötigt werden und somit noch offene "ATP-Mengen" haben.
+   // => Diese ATP-Mengen können genutzt werden, um neu eintreffene Aufträge zu bedienen.
+
+
+   //***************************************************************************
+   // 0. Schritt: Info-Felder füllen, Vorabprüfungen
+   //***************************************************************************
+   bEigBedarfRecordFound := false,
+   foreach oRec in oETR_ATPMem do
+      MyEdit(oETR_ATPMem),
+
+      // ist die Zeile der "eigene, zu prüfende Bedarf"?
+      oETR_ATPMem:ATP_IST_PRUEF_BEDARF := nEigBedarfZeilenTyp > 0 and ETRU_CheckCurrentRecordIsGivenBedarf(oETR_ATPMem, nEigBedarfZeilenTyp, nEigBedarfDatensatzID),
+      if oETR_ATPMem:ATP_IST_PRUEF_BEDARF then
+         if bEigBedarfRecordFound then
+            SetError('"eig., zu prüfende Bedarf" ist nicht eindeutig definiert - mind. zwei Ergebnisse'),
+         else
+            SetErrorIf(not oETR_ATPMem:IST_ABGANG, '"eig., zu prüfende Bedarf" muss ein Abgang sein'),
+            bEigBedarfRecordFound := true,
+         endif,
+      endif,
+
+      // Ist die Bewegung relevant für die aktuelle Betrachtung? ("eig. Bedarf" ist immer relevant, auch wenn per Prüfmodus ausgeschlossen)
+      oETR_ATPMem:ATP_ISTRELEVANT      := (oETR_ATPMem:IST_ZUGANG or oETR_ATPMem:IST_ABGANG)
+                                          and ( ETRU_CheckTypeInArrayOrAllTypes(aZeilenTypen, oETR_ATPMem:ZEILEN_TYP)
+                                                or oETR_ATPMem:ATP_IST_PRUEF_BEDARF),
+
+      // Ist die Bewegung im Prüfhorizont?
+      if bUsePruefHorizont then
+         oETR_ATPMem:ATP_IST_IN_PRUEFHORZ := SToD(Left(oETR_ATPMem:TERMIN_INDEX, 8)) < dEndePruefHorizont,
+      else
+         oETR_ATPMem:ATP_IST_IN_PRUEFHORZ := true,
+      endif,
+
+      MyPost(oETR_ATPMem),
+   next,
+
+   // Wenn eine Einlastungsprüfung statt finden soll und der "Eig. Bedarf" nicht
+   // identifiziert werden konnte, dann wurde die Funktion falsch aufgerufen.
+   if bEigBedarfEinlastungsPruefung and not bEigBedarfRecordFound then
+      SetError('bEigBedarfEinlastungsPruefung - aber "eig., zu prüfende Bedarf" wurde nicht gefunden'),
+   endif,
+
+   //***************************************************************************
+   // 1. Schritt: Alle Zugänge im Prüfhorizont bekommen die volle
+   //             Zugangsmenge als ATP-Menge
+   //             => Nach dem Prüfhorizont werden alle Bedarfe ohnehin komplett
+   //                bestätigt, da macht eine ATP-Menge keinen Sinn mehr
+   //***************************************************************************
+   foreach oRec in oETR_ATPMem do
+      if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ZUGANG and oETR_ATPMem:ATP_IST_IN_PRUEFHORZ then
+         MyEdit(oETR_ATPMem),
+         oETR_ATPMem:ATP_MENGE_VERFUEG := oETR_ATPMem:MENGE,
+         MyPost(oETR_ATPMem),
+      endif,
+   next,
+
+   //***************************************************************************
+   // 2. Schritt: Alle (relevanten) Abgänge, in ETR-Reihenfolge durchgehen und
+   //             die dazu passenden Zugangselemente identifizieren
+   //***************************************************************************
+   foreach oRec in oETR_ATPMem do
+      if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ABGANG then
+         // Wenn eine Neu-Einlastung geprüft werden soll, dann wird der neu
+         // einzulastende "eig. Bedarf" erst eingelastet, nachdem alle
+         // anderen Bedarfe verarbeitet wurden.
+         if not (bEigBedarfEinlastungsPruefung and oETR_ATPMem:ATP_IST_PRUEF_BEDARF) then
+            Inline_ZugaengeZuordnenForCurrentAbgang(),
+         endif,
+      endif,
+   next,
+
+   //***************************************************************************
+   // 3. Schritt: Einlastung des "neuen" Bedarfs (sofern dieser Modus aktiv ist)
+   //             => Alle anderen Bedarfe sind schon eingelastet worden, d.h. jetzt
+   //                wird geprüft, ob der neue Bedarf zum Wunschtermin unter
+   //                kommen kann.
+   //***************************************************************************
+   if bEigBedarfEinlastungsPruefung then
+      ETRU_FindRecordByTypeAndID(oETR_ATPMem, nEigBedarfZeilenTyp, nEigBedarfDatensatzID, true),
+      Inline_ZugaengeZuordnenForCurrentAbgang(),
+   endif,
+
+   //***************************************************************************
+   // 4. Schritt: Kumulierte ATP-Menge berechnen (nur im Prüfhorizont)
+   //***************************************************************************
+   nATPKumuliert := 0,
+   foreach oRec in oETR_ATPMem do
+      if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ZUGANG and oETR_ATPMem:ATP_IST_IN_PRUEFHORZ then
+         nATPKumuliert += oETR_ATPMem:ATP_MENGE_VERFUEG,
+         MyEdit(oETR_ATPMem),
+         oETR_ATPMem:ATP_MENGE_VERFUEG_KUM := nATPKumuliert,
+         MyPost(oETR_ATPMem),
+      endif,
+   next,
+
+   //***************************************************************************
+   // 5. Schritt: Kürzesten Abstand zwischen Abgang und zugeordnetem Zugang berechnen
+   //***************************************************************************
+   // Kopie der ATP-Memtable, weil Daten aus den Abgänge benötigt werden, um
+   // in Zugangsdaten zu schreiben
+   oETR_ATPMemAbgang :=  Createobject('TBeMemTable'),
+   oETR_ATPMemAbgang.CbBorrowFromDataSet(oETR_ATPMem), // Felddefinitionen übernehmen
+   oETR_ATPMemAbgang.Active := True,
+   oETR_ATPMemAbgang.CbLoadFromDataSet(oETR_ATPMem, true),   // Daten in MemTable übernehmen
+   oETR_ATPMemAbgang.CbAddIndex('DS', 'DATENSATZ_ID', ixPrimary),
+   oETR_ATPMemAbgang.Active      := true,
+   oETR_ATPMemAbgang.CbIndexName := 'DS',
+   foreach oRec in oETR_ATPMem do
+      // Alle Zugänge außer Bestand
+      if oETR_ATPMem:ATP_ISTRELEVANT and oETR_ATPMem:IST_ZUGANG and oETR_ATPMem:ATP_IST_IN_PRUEFHORZ and oETR_ATPMem:ZEILEN_TYP <> gl_ETRU_Typ_VerfuegBestand  then
+         // Es kann sein, daß ein Zugang gar nicht benötigt wird und es deshalb kein Array gibt. Aber dann ist die kumulierte ATP > 0
+         if not empty(oETR_ATPMem:ATP_ABGANG_ARR) then
+            aZugangArr := StrToArr(oETR_ATPMem:ATP_ABGANG_ARR),
+            // Suche den zugehörigen Abgang
+            if DbSeek({aZugangArr[1,3]},oETR_ATPMemAbgang) then
+               dTerminZugang := iif(oETR_ATPMem:TERMIN = 'KW', FrKw(Right(oETR_ATPMem:TERMIN, 5)), CToD(oETR_ATPMem:TERMIN)),
+               dTerminAbgang := iif(oETR_ATPMemAbgang:TERMIN = 'KW', FrKw(Right(oETR_ATPMemAbgang:TERMIN, 5)), CToD(oETR_ATPMemAbgang:TERMIN)),
+               MyEdit(oETR_ATPMem),
+               oETR_ATPMem:ATP_KUERZEST_DIFF_ZU_ABGANG := dTerminAbgang - dTerminZugang,
+               MyPost(oETR_ATPMem),
+            endif,
+         endif,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Funktion erzeugt eine leere Memtable-Struktur für die Darstellung von
+// Detail-Liefertermine eines Einzelterminraster-ATP-Abgangs
+//
+// @Result: TBeMemtable-Instanz
+//******************************************************************************
+function _VPU_CreateLiefertermineATPMem(oOwner)
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'LIEFERTERMINE_ATP',
+
+   Result.CbAddField('ARTNR',                  ftString,   mBeArtNoLen),   // eigentlich nicht notwendig aber hilfreich für das Browser-Design etc.
+   Result.CbAddField('ZEILEN_ART',             ftString,   1),             // Zeilenart  'T' = Teillieferung
+                                                                           //            'K' = Komplettlieferung
+                                                                           //            'X' = nicht zugeordnete Menge
+   Result.CbAddField('MAT_VERF_TERMIN',        ftString,   8),             // Termin der notwendigen Materialverfügbarkeit
+   Result.CbAddField('MAT_VERF_TERMIN_INDEX',  ftString,   9),             // - "" - als Termin-Index
+   Result.CbAddField('LIEFER_TERMIN',          ftString,   8),             // Liefertermin (Ankunft beim Kunden)
+   Result.CbAddField('LIEFER_TERMIN_INDEX',    ftString,   9),             // - "" - als Termin-Index
+   Result.CbAddField('GESAMTBEDARFSMENGE',     ftFloat,    0),             // angefragte Gesamtbedarfsmenge (Feld liegt nur für Vergleiche im Browser vor, ist in allen Datensätzen identisch)
+   Result.CbAddField('MENGE',                  ftFloat,    0),             // (Teil)Liefermenge für diesen Liefertermin
+   Result.CbAddField('PUFFER',                 ftInteger,  0),             // Puffer bzw. Verzögerung zum Wunschtermin
+   Result.CbAddField('SORT',                   ftString,   20),            // Sortierfeld
+
+   Result.CbAddIndex('SORT', 'SORT', ixPrimary),
+   Result.Active      := true,
+   Result.CbIndexName := 'SORT',
+end,
+
+//******************************************************************************
+// Funktion erzeugt bzw. erhöht einen Datensatz in der Lieftermin-Memtable
+// @Result: null
+//******************************************************************************
+function _VPU_LieferterminMemtable_AddOrMergeRecord(oLiefertermineATPMem, cArtnr, nGesamtBedarfsmenge, cZeilenArt, cMatVerfuegTermin, cLieferTermin, nMenge, nPuffer)
+
+   if not oLiefertermineATPMem.CbLocate('ARTNR;ZEILEN_ART;LIEFER_TERMIN', {cArtnr, cZeilenArt, cLieferTermin}, 0) then
+      MyAppend(oLiefertermineATPMem),
+      oLiefertermineATPMem:ARTNR                 := cArtnr,
+      oLiefertermineATPMem:GESAMTBEDARFSMENGE    := nGesamtBedarfsmenge,
+      oLiefertermineATPMem:ZEILEN_ART            := cZeilenArt,
+      oLiefertermineATPMem:MAT_VERF_TERMIN       := cMatVerfuegTermin,
+      oLiefertermineATPMem:MAT_VERF_TERMIN_INDEX := ETRU_DateStr(cMatVerfuegTermin),
+      oLiefertermineATPMem:LIEFER_TERMIN         := cLieferTermin,
+      oLiefertermineATPMem:LIEFER_TERMIN_INDEX   := ETRU_DateStr(cLieferTermin),
+      oLiefertermineATPMem:MENGE                 := nMenge,
+      oLiefertermineATPMem:PUFFER                := nPuffer,
+   else
+      MyEdit(oLiefertermineATPMem),
+      oLiefertermineATPMem:MENGE                 += nMenge,
+   endif,
+
+   // Die Sortierung erfolgt nach Liefertermin, wobei die Info-Zeilen-Art 'X' unten stehen soll
+   oLiefertermineATPMem:SORT                  := iif(oLiefertermineATPMem:ZEILEN_ART $ 'TK', 'A', 'B')
+                                                 + '|'
+                                                 + oLiefertermineATPMem:LIEFER_TERMIN_INDEX,
+   MyPost(oLiefertermineATPMem),
+end,
+
+//******************************************************************************
+// Funktion füllt die übergebene Liefertermin-Memtable auf Basis des Abgangs,
+//    der in der übergebenen Einzelterminraster-Memtable positioniert ist.
+//
+//
+// Testfälle
+//
+//    Allgemeine Testfälle
+//       Komplett-Lieferung rechtzeitig
+//       Komplett-Lieferung verspätet
+//       Gesamte Menge nicht verfügbar, auch nicht verspätet
+//       Teil-Menge rechtzeitig + Teilmenge verspätet
+//       Teil-Menge rechtzeitig (Quelle: mehrere Zugänge) und Teilmenge verspätet
+//       ...
+//
+//    Tests i.V.m. Option "nur in WBZ prüfen"
+//       Komplett-Lieferung rechtzeitig
+//       Komplett-Lieferung verspätet (zur WBZ)
+//       Teillieferung rechtzeitig, Rest verspätet (zur WBZ)
+//
+// @Result: null
+//******************************************************************************
+function _VPU_LieferterminMemtable_FillForETRAbgang(oLiefertermineATP_Mem, oETR_ATP_Mem)
+| aZugaengeArray, nNichtZugeordneteMenge, aCurZugang, bHasTeilLieferungen,
+  nLieferMenge, cMatVerfuegTermin, cLieferTermin, dLieferTermin,
+  nZeilenTypZugang, cWunschLieferTermin, dWunschLieferTermin, nPufferZuWunschTermin |
+
+   SetErrorIf(not oETR_ATP_Mem:IST_ABGANG, 'not oETR_ATP_Mem:IST_ABGANG'),
+
+   nNichtZugeordneteMenge := oETR_ATP_Mem:MENGE - oETR_ATP_Mem:ATP_MENGE_BESTAETIGT_IN_TIME - oETR_ATP_Mem:ATP_MENGE_BESTAETIGT_NOT_IN_TIME,
+   aZugaengeArray         := StrToArr(oETR_ATP_Mem:ATP_ZUGANG_ARR),
+
+   bHasTeilLieferungen    := nNichtZugeordneteMenge < 0 or ALen(aZugaengeArray) > 1,
+   cWunschLieferTermin    := oETR_ATP_Mem:TERMIN,
+   dWunschLieferTermin    := SToD(Left(oETR_ATP_Mem:TERMIN_INDEX, 8)),
+
+   foreach aCurZugang in aZugaengeArray do
+      cMatVerfuegTermin     := aCurZugang[4],
+      cLieferTermin         := cMatVerfuegTermin,   // TODO: Aktuell wird noch nicht unterschieden zwischen Materialverfügbarkeit und Liefertermin (Sicherheitszeit)
+      nLieferMenge          := aCurZugang[7],
+      nZeilenTypZugang      := aCurZugang[2],
+
+
+      if nZeilenTypZugang = gl_ETRU_Typ_VerfuegBestand then
+         cLieferTermin      := cWunschLieferTermin, // Wenn der Abgang vom Lager gedeckt wird, dann ist der Liefertermin haltbar, also der Wunschtermin
+      endif,
+
+      dLieferTermin         := SToD(Left(ETRU_DateStr(cLieferTermin), 8)),
+      if nZeilenTypZugang = gl_ETRU_Typ_VerfuegBestand then
+         nPufferZuWunschTermin := 0,
+      else
+         nPufferZuWunschTermin := dWunschLieferTermin - dLieferTermin, // Puffer in Kalendertagen
+                                                                       // - Positiver Puffer => rechtzeitig
+                                                                       // - Negativer Puffer => verspätet
+
+         // Wenn die Lieferung rechtzeitig erfolgen kann, dann wird als Liefertermin der Wunschtermin übernommen
+         // => das ist notwendig, damit in der Liefertermin-Anzeige gleiche Liefertermine zusammengeführt werden.
+         if nPufferZuWunschTermin >= 0 then
+            cLieferTermin         := cWunschLieferTermin, // Wenn der Abgang vom Lager gedeckt wird, dann ist der Liefertermin haltbar, also der Wunschtermin
+            nPufferZuWunschTermin := 0, // Positive Puffer können in der Liefertermin-memtable nicht sinnvoll gespeichert werden, da dort Zeilen gruppiert werden und somit zwei Zeilen mit unterschiedlichem Puffer zwei verschiedene Puffer bräuchten
+         endif,
+      endif,
+
+      VPU_LieferterminMemtable_AddOrMergeRecord(oLiefertermineATP_Mem, oETR_ATP_Mem:ARTNR, oETR_ATP_Mem:MENGE, iif(oETR_ATP_Mem:MENGE <> nLieferMenge, 'T', 'K'), cMatVerfuegTermin, cLieferTermin, nLieferMenge, nPufferZuWunschTermin),
+   next,
+
+   // Rest-Menge vorhanden, die nicht einem Termin zugeordnet wurde?
+   if nNichtZugeordneteMenge < 0 then
+      VPU_LieferterminMemtable_AddOrMergeRecord(oLiefertermineATP_Mem, oETR_ATP_Mem:ARTNR, oETR_ATP_Mem:MENGE, 'X', '', '', nNichtZugeordneteMenge, 0),
+   endif,
+end,

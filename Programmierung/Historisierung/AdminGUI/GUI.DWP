@@ -1,0 +1,366 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: GUI zum Anzeigen/Visualisieren und Verwalten von
+//               Historisierungsdatensätzen
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormID, m_cPositionSaveID, m_cBrowserID,
+   m_oDM,
+
+   m_oMainTable, // HISKOPF
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_Filter, A_First, A_Last, A_MarkAsDeleted,
+   A_MarkAsDeletedAndDeleteDetails, A_Next, A_Previous, A_Save, Actions,
+   bar_Top, bardock_Top, barmgr_Main, bbtn_Cancel, bbtn_Delete, bbtn_First,
+   bbtn_Last, bbtn_MarkAsDeleted, bbtn_MarkAsDeletedSubItem, bbtn_New,
+   bbtn_Next, bbtn_Previous, bbtn_Save, cmb_HistorizationType, ds_MainTable,
+   edt_Comment, edt_ErrorMessages, grd_MainBrowser, ipnl_Title, lbl_Comment,
+   lbl_ErrorMessages, lbl_FilterTitle, pnl_Details, pnl_Filter,
+   pnl_FilterControls, pnl_Historizations
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID         := '@HISGUI',
+m_cPositionSaveID := '@HISGUIPOS',
+m_cBrowserID      := '@HISBRO',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Enabled-Zustand aller Actions aktualisieren
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bIsEmpty |
+   bIsEmpty := m_oMainTable.CbBof and m_oMainTable.CbEof,
+
+   A_Save.Enabled          := EditModes(m_oMainTable) and not bIsEmpty,
+   A_Cancel.Enabled        := EditModes(m_oMainTable) and not bIsEmpty,
+
+   A_MarkAsDeleted.Enabled                 := m_oMainTable:STATUS <> gl_HIS_HistorizationState_Deleted and not bIsEmpty,
+   A_MarkAsDeletedAndDeleteDetails.Enabled := m_oMainTable:STATUS <> gl_HIS_HistorizationState_Deleted and not bIsEmpty,
+   bbtn_MarkAsDeletedSubItem.Enabled       := A_MarkAsDeleted.Enabled or A_MarkAsDeletedAndDeleteDetails.Enabled,
+
+
+   A_First.Enabled         := not (m_oMainTable.CbBof or bIsEmpty),
+   A_Last.Enabled          := not (m_oMainTable.CbEof or bIsEmpty),
+   A_Previous.Enabled      := not (m_oMainTable.CbBof or bIsEmpty),
+   A_Next.Enabled          := not (m_oMainTable.CbEof or bIsEmpty),
+end,
+
+//******************************************************************************
+// Nach Historisierungstyp filtern
+// @Result: null
+//******************************************************************************
+function SetFilter()
+| cFilter, i, nTokens, cValue |
+
+   cFilter := '',
+   nTokens := TokenCount(cmb_HistorizationType.Value, cmb_HistorizationType.Delimiter),
+   for i := 1 to nTokens do
+      cValue := Token(cmb_HistorizationType.Value, cmb_HistorizationType.Delimiter, i),
+      if not Empty(AllTrim(cValue)) then
+         cFilter := ConcatTrenner(cFilter, 'TYP = ' + cValue, ' OR '),
+      endif,
+   next,
+
+   WriteLn('SetFilter() => ' + cFilter),
+   m_oMainTable.CbSetFilter(cFilter),
+end,
+
+//******************************************************************************
+// Historisierung löschen
+// @Result: null
+//******************************************************************************
+function DeleteHistorization(oDM:O, nHeaderID:N, bDeleteDetailRecords:L)
+   DbStartTrans(oDM.AdsConnection),
+   startseq
+      HIS_HeaderMarkAsDeleted(oDM, nHeaderID, bDeleteDetailRecords),
+      DbCommit(oDM.AdsConnection),
+   always
+      if DbInTrans(oDM.AdsConnection) then
+         DbRollback(oDM.AdsConnection),
+         DbResetDM(oDM),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_HistorizationTypeChange( Sender )
+   ActionExecute(A_Filter),
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+   //<GLOBALE_FORMULARVARIABLE EINTRAGEN> := nil,
+end,
+
+//******************************************************************************
+// Event: Beim Datensatzwechsel
+//******************************************************************************
+function ds_MainTableScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?', False) then
+      m_oMainTable.CbCancel(),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_SaveExecute( Sender )
+   m_oMainTable.CbPost(),
+end,
+
+//******************************************************************************
+// Action: Nach Historisierungstyp filtern
+//******************************************************************************
+function A_FilterExecute( Sender )
+   SetFilter(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_NextExecute( Sender )
+   m_oMainTable.CbNext(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_PreviousExecute( Sender )
+   m_oMainTable.CbPrior(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_LastExecute( Sender )
+   m_oMainTable.CbLast(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_FirstExecute( Sender )
+   m_oMainTable.CbFirst(),
+end,
+
+//******************************************************************************
+// Action: Historisierung löschen
+//******************************************************************************
+function A_MarkAsDeletedAndDeleteDetailsExecute( Sender )
+| oDM |
+   startseq
+      if Jn('Historisierung als gelöscht markieren und Detaildaten löschen?', False) then
+         oDM := CreateObject('TBeDbGet'),
+         startseq
+            DeleteHistorization(oDM, m_oMainTable:ID, True),
+            MyRefresh(m_oMainTable, false),
+         always
+            DestroyObject(oDM),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Löschen der Historisierung', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Historisierung als gelöscht markieren
+//******************************************************************************
+function A_MarkAsDeletedExecute( Sender )
+| oDM |
+   startseq
+      if Jn('Historisierung als gelöscht markieren?', False) then
+         oDM := CreateObject('TBeDbGet'),
+         startseq
+            DeleteHistorization(oDM, m_oMainTable:ID, False),
+            MyRefresh(m_oMainTable, false),
+         always
+            DestroyObject(oDM),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Löschen der Historisierung', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.OrigCapt       := 'Historisierungs-Übersicht',
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                        := FindObject(oForm, "A_Cancel"),
+   A_Filter                        := FindObject(oForm, "A_Filter"),
+   A_First                         := FindObject(oForm, "A_First"),
+   A_Last                          := FindObject(oForm, "A_Last"),
+   A_MarkAsDeleted                 := FindObject(oForm, "A_MarkAsDeleted"),
+   A_MarkAsDeletedAndDeleteDetails := FindObject(oForm, "A_MarkAsDeletedAndDeleteDetails"),
+   A_Next                          := FindObject(oForm, "A_Next"),
+   A_Previous                      := FindObject(oForm, "A_Previous"),
+   A_Save                          := FindObject(oForm, "A_Save"),
+   Actions                         := FindObject(oForm, "Actions"),
+   bar_Top                         := FindObject(oForm, "bar_Top"),
+   bardock_Top                     := FindObject(oForm, "bardock_Top"),
+   barmgr_Main                     := FindObject(oForm, "barmgr_Main"),
+   bbtn_Cancel                     := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_Delete                     := FindObject(oForm, "bbtn_Delete"),
+   bbtn_First                      := FindObject(oForm, "bbtn_First"),
+   bbtn_Last                       := FindObject(oForm, "bbtn_Last"),
+   bbtn_MarkAsDeleted              := FindObject(oForm, "bbtn_MarkAsDeleted"),
+   bbtn_MarkAsDeletedSubItem       := FindObject(oForm, "bbtn_MarkAsDeletedSubItem"),
+   bbtn_New                        := FindObject(oForm, "bbtn_New"),
+   bbtn_Next                       := FindObject(oForm, "bbtn_Next"),
+   bbtn_Previous                   := FindObject(oForm, "bbtn_Previous"),
+   bbtn_Save                       := FindObject(oForm, "bbtn_Save"),
+   cmb_HistorizationType           := FindObject(oForm, "cmb_HistorizationType"),
+   ds_MainTable                    := FindObject(oForm, "ds_MainTable"),
+   edt_Comment                     := FindObject(oForm, "edt_Comment"),
+   edt_ErrorMessages               := FindObject(oForm, "edt_ErrorMessages"),
+   grd_MainBrowser                 := FindObject(oForm, "grd_MainBrowser"),
+   ipnl_Title                      := FindObject(oForm, "ipnl_Title"),
+   lbl_Comment                     := FindObject(oForm, "lbl_Comment"),
+   lbl_ErrorMessages               := FindObject(oForm, "lbl_ErrorMessages"),
+   lbl_FilterTitle                 := FindObject(oForm, "lbl_FilterTitle"),
+   pnl_Details                     := FindObject(oForm, "pnl_Details"),
+   pnl_Filter                      := FindObject(oForm, "pnl_Filter"),
+   pnl_FilterControls              := FindObject(oForm, "pnl_FilterControls"),
+   pnl_Historizations              := FindObject(oForm, "pnl_Historizations"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   //m_bMainTableExpicitPost := False,
+   // Datenmodul auf Formular erzeugen, um es nicht explizit zerstören zu müssen
+   m_oDM := CreateObject('TBeDbGet', 'DM_HIS_HistorizationManagement', oForm),
+
+   // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
+   m_oMainTable           := DbGetTable(m_oDM, waHISKOPF, 'HISKOPF'),
+   m_oMainTable.IndexName := 'DATUM_TYP_ID',
+   GU_LinkTableToGUI(m_oMainTable, ds_MainTable, grd_MainBrowser, m_cBrowserID, False),
+
+   // DataSource-Events zuweisen
+   AssignEvent(ds_MainTable, 'OnScroll_Update', 'ds_MainTableScroll_Update'),
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   edt_Comment.DataSource                   := ds_MainTable,
+   edt_Comment.DataField                    := 'KOMMENTAR',
+   edt_ErrorMessages.DataSource             := ds_MainTable,
+   edt_ErrorMessages.DataField              := 'FEHLER',
+   edt_ErrorMessages.ReadOnlyStateFromField := False,
+   edt_ErrorMessages.ReadOnly               := True,
+
+   cmb_HistorizationType.BeAttributeID := gl_HIS_HistorizationType_MMTabellenID,
+   cmb_HistorizationType.ParentFont    := true,
+
+   ActionsEnabled(),
+
+   ipnl_Title.ColorMode := ipcmInfo,
+
+   DbGoBottom(m_oMainTable),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

@@ -1,0 +1,32 @@
+| nEvtNo:P1, oProductionDispositionBC:P2, oInfo:P3,
+   m_oQuellBO, m_oZielBo, m_oDab035, m_oDab215 |
+
+// Aufruf erfolgt bei der Übertragung von Daten von einem BO zu einem anderen BO.
+// Über das oInfo-Objekt kann auf das Quell-BO (oInfo.SourceBO) und auf das
+// Ziel-BO (oInfo.DestBO) sowie auf zustätzliche Informationen (oInfo.InfoObject)
+// zugegriffen werden.
+// Die Transaktion ist aktiv und das Ziel-BO befindet sich noch im Edit-Modus.
+
+m_oQuellBO := oInfo.SourceBO,
+m_oZielBo  := oInfo.DestBO,
+if not empty(m_oQuellBO) and not empty(m_oZielBo) then
+   case m_oQuellBO.CbTable.Workarea
+      of waDab215 ::
+         case m_oZielBo.CbTable.Workarea
+            of waDab035 ::
+
+                 //*************************************************************
+                 // Informationen übertragen, die für die Durchlaufterminierung relevant sind
+                 //*************************************************************
+                 m_oDab035            := m_oZielBo.CbTable,
+                 m_oDab215            := m_oQuellBO.CbTable,
+                 m_oDab035:KAP_PRIORI := m_oDab215:KAP_PRIORI,
+                 m_oDab035:KAP_SPERRE := m_oDab215:KAP_SPERRE,
+                 m_oDab035:KAP_TRMMOD := m_oDab215:KAP_TRMMOD,
+                 m_oDab035:X_UEFAKTOR := m_oDab215:X_UEFAKTOR,
+
+         endcase,
+   endcase,
+else
+   SetError('not empty(m_oQuellBO) and not empty(m_oZielBo)'),
+endif,

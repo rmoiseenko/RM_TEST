@@ -1,0 +1,588 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Produktions Grobplanung Kapatitäts-Auswertung / Betrachtung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PGKU' steht für 'P'roduktions 'G'robplanung 'K'apatitäts 'U'tils
+// Basisfunktionen
+//##############################################################################
+//##############################################################################
+
+
+|
+   gl_PGKU_PCData_CacheObject:_U:=nil,             // global gecachte Instanz von 'TBeCbPCData'
+   gl_PGKU_PCData_CacheObject_InitMinDate:_U:=nil, // Start-Datum des Planungszeitraums der global gecachten Instanz von 'TBeCbPCData'
+   gl_PGKU_PCData_CacheObject_InitMaxDate:_U:=nil, // Start-Datum des Planungszeitraums der global gecachten Instanz von 'TBeCbPCData'
+
+   gl_PGKU_LoggingActive:_L:=false,    // Logging in Text-Files aktiv?
+
+   gl_PGKU_IndiOnlineHelp_SQLWhere:_C:= 'MEMO_ID = 123',  // Aufruf-Filter für die Individuelle Online-Hilfe
+
+   gl_PGKU_ExternRessource:_N:= -1,               // für die Terminierung von Externleistungen
+   gl_PGKU_ExternRessourceTyp:_C:= '',            //   Typ der Ressource für Externleistungen
+   gl_PGKU_SicherheitszeitRessource:_N:= -1,      // für die Terminierung von Sicherheitszeiten (vor / nach einem Auftrag)
+   gl_PGKU_SicherheitszeitRessourcenTyp:_C:= '',  //   Typ der Ressource für Sicherheitszeiten
+
+   gl_PGKU_Kap_Priori_MMTabellenID:_N := -1,      // MM-Tabelle für DAB035:KAP_PRIORI, DAB215:KAP_PRIORI, PGKBDK:KAP_PRIORI und PGKBDP:KAP_PRIORI
+
+   // Einstellungen
+   gl_PGKU_TransferRecordsWithoutResAnfToDataBase:_U := false, // Sollen Positions-Datensätze, die keine Ressourcen-Anforderung darstellen, dennoch in die PGKBDP gespeichert werden? (also Material-Positionen und Arbeitsgänge ohne Dab270)
+   gl_PGKU_BerechnungsHorizontAlsDatumFuerKapaNachfrage:_D,    // Datum deklarieren -> Wird jedoch direkt drunter neu berechnet und gesetzt
+
+   // Status eines Auftrags (PGKBDK:AUF_STATUS und PGKBDP:AUF_STATUS)
+   gl_PGKU_AuftragsStatus_Liste:_U         := nil,  // Liste aller Auftragsstatus (für Iterationen)
+   gl_PGKU_AuftragsStatus_Angebot:_N       := 10,   // für Angebote Dab055
+   gl_PGKU_AuftragsStatus_Geplant:_N       := 20,   // für Primär- und Sekundär-Vorschläge Dab220 und Dab215
+   gl_PGKU_AuftragsStatus_Disponiert:_N    := 30,   // für Dab320 Planaufträge
+   gl_PGKU_AuftragsStatus_Eroeffnet:_N     := 40,   // Dab035 Offene Aufträge
+   gl_PGKU_AuftragsStatus_Freigegeben:_N   := 50,   // Dab035 Gedruckte (kommissionierte) Aufträge
+   gl_PGKU_AuftragsStatus_aktiv:_N         := 60,   // Dab035 Aktive Aufträge (wurden bereits bebucht seitens Arbeitsgänge)
+   gl_PGKU_AuftragsStatus_abgeschlossen:_N := 70,   // Dab240 komplett abgeschlossener Auftrag, für den es keinen Dab035-Auftragskopf mehr gibt
+
+   // Status eines Arbeitsgangs (PGKBDP:ARB_STATUS)
+   gl_PGKU_ArbeitsgangStatus_Liste:_U       := nil,  // Liste aller Arbeitsgangs-Status (für Iterationen)
+   gl_PGKU_ArbeitsgangStatus_Offen:_N       := 10,   // offen
+   gl_PGKU_ArbeitsgangStatus_Begonnen:_N    := 20,   // begonnen (Zeit-Rückmeldung Rüst und oder Stück, aber noch keine Gutmenge)
+   gl_PGKU_ArbeitsgangStatus_Teilfertig:_N  := 30,   // teilfertig (Gutmenge vorhanden)
+   gl_PGKU_ArbeitsgangStatus_Fertig:_N      := 40,   // fertig (Gutmenge >=  Soll)
+
+   // Bereitschaft eines Arbeitsgangs (PGKBDP:ARB_BEREIT)
+   gl_PGKU_ArbeitsgangBereitschaft_Liste:_U          := nil,    // Liste aller Arbeitsgangs-Bereitschaften (für Iterationen)
+   gl_PGKU_ArbeitsgangBereitschaft_NichtBereit:_N    := 10,     // Arbeitsgang ist nicht bereit, Vorgänger wurde nicht angefangen
+   gl_PGKU_ArbeitsgangBereitschaft_Teilbereit:_N     := 20,     // teilbereit, Vorgänger ist teilfertig
+   gl_PGKU_ArbeitsgangBereitschaft_KomplettBereit:_N := 30,     // komplett bereit, Vorgänger ist fertig
+   gl_PGKU_ArbeitsgangBereitschaft_Abgeschlossen:_N  := 40      // Bereitschaft nicht mehr relevant, da Arbeitsgang abgeschlossen
+
+|
+
+//##############################################################################
+// Initialisierungen
+//##############################################################################
+
+// Liste aller Auftragsstatus
+gl_PGKU_AuftragsStatus_Liste := {},
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_Angebot),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_Geplant),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_Disponiert),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_Eroeffnet),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_Freigegeben),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_aktiv),
+AAdd(gl_PGKU_AuftragsStatus_Liste, gl_PGKU_AuftragsStatus_abgeschlossen),
+
+// Liste aller Arbeitsgangs-Status
+gl_PGKU_ArbeitsgangStatus_Liste := {},
+AAdd(gl_PGKU_ArbeitsgangStatus_Liste, gl_PGKU_ArbeitsgangStatus_Offen),
+AAdd(gl_PGKU_ArbeitsgangStatus_Liste, gl_PGKU_ArbeitsgangStatus_Begonnen),
+AAdd(gl_PGKU_ArbeitsgangStatus_Liste, gl_PGKU_ArbeitsgangStatus_Teilfertig),
+AAdd(gl_PGKU_ArbeitsgangStatus_Liste, gl_PGKU_ArbeitsgangStatus_Fertig),
+
+// Liste aller Arbeitsgangs-Bereitschaften
+gl_PGKU_ArbeitsgangBereitschaft_Liste := {},
+AAdd(gl_PGKU_ArbeitsgangBereitschaft_Liste, gl_PGKU_ArbeitsgangBereitschaft_NichtBereit),
+AAdd(gl_PGKU_ArbeitsgangBereitschaft_Liste, gl_PGKU_ArbeitsgangBereitschaft_Teilbereit),
+AAdd(gl_PGKU_ArbeitsgangBereitschaft_Liste, gl_PGKU_ArbeitsgangBereitschaft_KomplettBereit),
+AAdd(gl_PGKU_ArbeitsgangBereitschaft_Liste, gl_PGKU_ArbeitsgangBereitschaft_Abgeschlossen),
+
+// Datum für Berechnungshorizont setzen
+gl_PGKU_BerechnungsHorizontAlsDatumFuerKapaNachfrage := AddMonth(Date(), 5 * 12),   // Zeithorizont als Heute + 5 Jahre initialisieren
+
+//##############################################################################
+// Logging-Hilfs-Funktionen
+//##############################################################################
+
+function _PGKU_Logging_GetPath()
+  Result := mBeDefault + 'Logging\Grobplanung Kapazität Einlastung\',
+end,
+
+function _PGKU_Logging_GetNewLogFileName(cPfad, cAction, nStandort)
+| nTime |
+  nTime  := Frac(GetExTimer()) * 100000,
+  Result := "Einlastung (Standort " + Str(nStandort) + ")"
+            + ' ' + FormatDateTime('YYYY-MM-DD HH-MM-SS-ZZZ', GetAdsServerTime())
+            + ' ' + Right(FormatStd(nTime, 0), 3) // Diese Komponente stellt mit 99.999% Sicherheit Eindeutigkeit her,
+            + ' ' + cAction,
+  while File(cPfad + Result + '.txt') do
+     Result += '-dupl',
+  end,
+
+  Result += ".txt"
+end,
+
+function _PGKU_Logging_CreateNewLogFile(cPfad, cFileName)
+   Result := FOpen(cPfad + cFileName, fo_Create),
+end,
+
+function _PGKU_Logging_Write(oLogFile, cText)
+   FWrite(oLogFile, cText),
+end,
+
+function _PGKU_Logging_WriteLn(oLogFile, cText)
+   FWriteLn(oLogFile, cText),
+end,
+
+function _PGKU_Logging_LogToNewFileAndClose(cAction, cText)
+| oLogFile, cPfad |
+   cPfad    := PGKU_Logging_GetPath(),
+   oLogFile := PGKU_Logging_CreateNewLogFile(cPfad, PGKU_Logging_GetNewLogFileName(cPfad, cAction, mStandort)),
+   startseq
+      PGKU_Logging_Write(oLogFile, cText),
+   always
+      FClose(oLogFile),
+   stopseq,
+end,
+
+//##############################################################################
+// Debug-Hilfs-Funktionen
+//##############################################################################
+
+//***************************************************************************
+// Funktion misst die Zeit seit dem letzten Aufruf der Funktion und schreibt
+//   diese gemeinsam mit einem Bezeichner in ein Array weg für die spätere
+//   Debug-Ausgabe.
+// @Result: null
+//***************************************************************************
+function _PGKU_Debug_Timer_Init(nTime:R)
+   nTime := GetExTimer(),
+end,
+
+//***************************************************************************
+// Funktion misst die Zeit seit dem letzten Aufruf der Funktion und schreibt
+//   diese gemeinsam mit einem Bezeichner in ein Array weg für die spätere
+//   Debug-Ausgabe.
+// @Result: null
+//***************************************************************************
+function _PGKU_Debug_Timer_Lap(nTime:R, aTimeArray:R, cText)
+| aTimeElem, nLap |
+   nTime           := GetExTimer() - nTime,
+   aTimeElem       := {nTime * 1000, cText},
+   nLap            := ALen(aTimeArray) + 1,
+   ReDim(aTimeArray, nLap),
+
+   aTimeArray[nLap]:= aTimeElem,
+   nTime           := GetExTimer(),
+end,
+
+//***************************************************************************
+// Funktion formatiert das übergebene aTimeArray für die Ausgabe in einem Log
+// @Result: Text
+//***************************************************************************
+function _PGKU_Debug_Timer_PrintValues(aTimeArray)
+| i, cLine |
+   Result := '',
+   for i := 1 to ALen(aTimeArray) do
+      cLine  := PadR(aTimeArray[i, 2], 30) + ' ' + PadL(FormatStd(aTimeArray[i, 1], 2) + ' mSec', 20),
+      Result := ConcatTrenner(Result, cLine, crlf),
+   end,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate den Beginn der Kalenderwoche (Montag) zurück
+// @Result: Date
+//******************************************************************************
+function _PGKU_FirstDayOfWeek(dDate)
+| nDayOfWeek |
+   nDayOfWeek := DoW(dDate) - 1,
+   if nDayOfWeek = 0 then
+      nDayOfWeek := 7,
+   endif,
+   Result     := dDate - nDayOfWeek + 1,
+end,
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate das Ende der Kalenderwoche (Sonntag) zurück
+// @Result: Date
+//******************************************************************************
+function _PGKU_LastDayOfWeek(dDate)
+| dFirstDayOfWeek |
+   dFirstDayOfWeek := PGKU_FirstDayOfWeek(dDate),
+   Result          := dFirstDayOfWeek + 6,
+end,
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate die Planungs-Woche zurück
+// @Result: Integer
+//******************************************************************************
+function _PGKU_GetPlanungsperiodenKW(dDate)
+| cKW |
+  cKW    := KW(dDate),
+  Result := Val(Left(cKW, 2)),
+end,
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate das Planungs-Jahr zurück
+// @Result: Integer
+//******************************************************************************
+function _PGKU_GetPlanungsperiodenJahr(dDate)
+| cKW |
+   cKW    := KW(dDate),
+   Result := 2000 + Val(Right(cKW, 2)), // Wichtig: Kalender-Wochen-Jahr, nicht Datums-Jahr. Das ist bei Jahresgrenzen ggf. unterschiedlich!
+end,
+
+//******************************************************************************
+// Lädt ein in der DabPRG gespeichertes SQL-Script / SQL-Statement
+// @Result: SQL-Script
+//******************************************************************************
+function _PGKU_LoadSQLScriptByName(cScriptName)
+   // Das SQL wird im Programm als "Plaintext" abgelegt => dort ist es einfacher
+   // zu pflegen als im Programmtext als String-Literal
+   Result := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   if empty(Result) then
+      SetError('SQL-Text für Script "' + cScriptName + '" nicht gefunden'),
+   endif,
+end,
+
+//******************************************************************************
+// Funktion liefert (bzw. erstellt) ein 'TBeCbPCData'-Objekt
+// @Result: PCData-Objekt
+//******************************************************************************
+function _PGKU_CreatePCData(dPlanningStartDate, dPlanningEndDate, cName, oOwner)
+| dtPlanningStart:DT, nPlanningDays |
+
+   dtPlanningStart.Precision    := precDays,
+   dtPlanningStart.DateTime     := PGKU_FirstDayOfWeek(dPlanningStartDate),  // Planungsstart auf den Montag der Woche legen
+
+   dPlanningEndDate             := PGKU_LastDayOfWeek(dPlanningEndDate),     // Planungsende auf den letzten Tag der Woche legen
+
+   nPlanningDays                := Day_Diff(StoD(DToS(dtPlanningStart.DateTime)), dPlanningEndDate),
+                                                                                // WriteLn('dPlanningStartDate', dPlanningStartDate, 'dPlanningEndDate', dPlanningEndDate, 'nPlanningDays', nPlanningDays),
+   Result := CreateObject('TBeCbPCData', cName, oOwner),
+   Result.ReInit(),
+   Result.Params.PlanningStart := dtPlanningStart,
+   Result.Params.PlanningDays  := nPlanningDays,
+   Result.LoadDataBaseData(),
+end,
+
+//******************************************************************************
+// Funktion liefert (bzw. erstellt einmalig) das global gecachte 'TBeCbPCData'-Objekt
+// @Result: PCData-Objekt
+//******************************************************************************
+function _PGKU_GetCachedPCData()
+| dPlanningStart, dPlanningEnd |
+   if empty(gl_PGKU_PCData_CacheObject) then
+
+      SetErrorIf(empty(gl_PGKU_PCData_CacheObject_InitMinDate), 'kein Planungsstart-Datum für die globale PCData-Instanz definiert => InitVars nutzen!'),
+      SetErrorIf(empty(gl_PGKU_PCData_CacheObject_InitMaxDate), 'kein Planungsende-Datum für die globale PCData-Instanz definiert => InitVars nutzen!'),
+
+      dPlanningStart := PGKU_FirstDayOfWeek( gl_PGKU_PCData_CacheObject_InitMinDate),  // Planungsstart auf den Montag der Woche legen
+      dPlanningEnd   := PGKU_LastDayOfWeek(  gl_PGKU_PCData_CacheObject_InitMaxDate),  // Planungsende auf den letzten Tag der Woche legen
+
+      gl_PGKU_PCData_CacheObject := PGKU_CreatePCData(dPlanningStart, dPlanningEnd, 'PGKU_GLOBAL_CACHED_PCDATA', Application),
+   endif,
+
+   Result := gl_PGKU_PCData_CacheObject,
+end,
+
+//******************************************************************************
+// Funktion löscht das global gecachte 'TBeCbPCData'-Objekt
+// @Result: nil
+//******************************************************************************
+function _PGKU_ResetCachedPCData()
+  if not empty(gl_PGKU_PCData_CacheObject) then
+     DestroyObject(gl_PGKU_PCData_CacheObject),
+     gl_PGKU_PCData_CacheObject := nil,
+  endif,
+end,
+
+//******************************************************************************
+// Funktion, die feststellt, ob eine Qualifikation die detaillierteste ist,
+//    d.h., die Qualifikation hat keine "Kinder" im Quali-Baum.
+// @Result: boolean
+//******************************************************************************
+function _PGKU_IsMostDetailedQuali(nQualificationId)
+   Result := LookUp(waDabVTM, 'MASTER_TYP', {{nQualificationId}}, 'VORG_TYP', 0) = 0,
+end,
+
+//******************************************************************************
+// Die Funktion ermittelt aus einem Qualifikationen bzw. Funktionen- String der
+//    Form "100001/456/589000/" (z.B. aus Dab262:GRUPPE oder DAb330:GRUPPE)
+//    die Anzahl der detailliertesten Qualifikationen.
+//    Für den Fall, daß es genau eine detaillierteste Qualifikation gibt,
+//    werden dazu die ID und die Bezeichnung zurück gegeben.
+// @Result: Array aus {Anzahl, ID, Bezeichnung}
+//******************************************************************************
+function _PGKU_GetMostDetailedQualiFromQualiFuncList(oDM, cQualiAndFuncStr)
+| cToken, i, nMostDetailedQualiCount, nCurQualiID, nMostDetailedQualiID, nMostDetailedQualiBez, oDabVTM |
+
+   Result                  := {0, 0, ''},
+   nMostDetailedQualiCount := 0,
+
+   cQualiAndFuncStr := AllTrim(cQualiAndFuncStr),
+   if not empty(cQualiAndFuncStr) then
+
+      oDabVTM           := DbGetTable(oDM, waDabVTM),
+      oDabVTM.IndexName := 'VORG_TYP', // 'VORG_TYP,MASTER_TYP'
+
+      for i := 1 to TokenCount(cQualiAndFuncStr, '/') do
+         cToken      := StrToken(cQualiAndFuncStr, '/', i),
+         nCurQualiID := Val(cToken),
+         if nCurQualiID > 0 then
+            MySeek({nCurQualiID}, oDabVTM),
+            // handelt es sich um eine Quali? (im 'cQualiAndFuncStr' sind Qualis und Funktionen enthalten)
+            if oDabVTM:FLAG = 1 then
+               // handelt es sich um eine Quali, die selbst keine "Kinder" hat?
+               if PGKU_IsMostDetailedQuali(nCurQualiID) then
+                  nMostDetailedQualiID  := nCurQualiID,
+                  nMostDetailedQualiBez := oDabVTM:BEZ,
+                  nMostDetailedQualiCount ++,
+               endif,
+            endif,
+         endif,
+      next,
+   endif,
+
+   Result[1] := nMostDetailedQualiCount,
+   if nMostDetailedQualiCount = 1 then
+      Result[2] := nMostDetailedQualiID,
+      Result[3] := nMostDetailedQualiBez,
+   endif,
+end,
+
+//******************************************************************************
+// Funktion ermitteln für eine Ressource (Person oder Ressource) die
+//    zugehörige Qualifikations-ID
+//
+// @Result: Array {Quali-ID, Bezeichnung}
+//          Hinweis: Quali-ID kann 0 sein
+//******************************************************************************
+function _PGKU_GetQualificationInfosForResource(oDM, cResTyp, nResID)
+| cGruppe,  aMostDetailedQuali  |
+   case cResTyp
+      of 'R'    :: cGruppe := LookUp(waDab330, 'ID',     {{nResID}}, 'GRUPPE', ''),
+      of 'M'    :: cGruppe := LookUp(waDab262, 'DAB263', {{nResID}}, 'GRUPPE', ''),
+      otherwise    SetError('invalid cResTyp: "' + cResTyp + '"'),
+   endcase,
+
+   Result                 := {0, ''},
+   if not empty(cGruppe) then
+      aMostDetailedQuali  := PGKU_GetMostDetailedQualiFromQualiFuncList(oDM, cGruppe),
+      Result[1]           := aMostDetailedQuali[2],
+      Result[2]           := aMostDetailedQuali[3],
+   endif,
+end,
+
+//******************************************************************************
+// Funktion ermitteln die Bezeichnung einer Ressource (Person oder Ressource)
+//
+// @Result: String, Bezeichnung
+//******************************************************************************
+function _PGKU_GetResourceDescription(cResTyp, nResID)
+   case cResTyp
+      of 'R'    :: Result := LookUp(waDab330, 'ID',     {{nResID}}, 'RTrim(BEZ)',  '?'),
+      of 'M'    :: Result := LookUp(waDab262, 'DAB263', {{nResID}}, 'RTrim(NAME)', '?'),
+      otherwise SetError('invalid cResTyp: "' + cResTyp + '"'),
+   endcase,
+end,
+
+//##############################################################################    // => verlagern in Global\Produktion Grobplanung Kapazität\Utils_SynchronisationsAufgaben
+//##############################################################################
+// Funktionen für die Synchronisations-Aufgaben-Verwaltung (PGKSYA.ADT)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion legt für die übergebenen Daten eine Synchronisations-Aufgabe in der
+//   Tabelle PGKSYA.ADT an, wenn diese noch nicht existiert.
+//
+//    ACHTUNG: Die Funktion nutzt zur Durchführung der Aktionen nicht die       TODO: Transaktions-Handling
+//             Transaktion / das Datenmodul der auslösenden Umgebung
+//
+// @Result: die Funktion hat keine Rückgabe
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDelete(nStandort, nWorkarea, nID, cAenderungsArt, cArtnrBaugruppe, cBestPosNr)
+| oPGKSYA, bAppend, bPGKSYAgefunden |
+   Result          := nil,
+   bAppend         := false,
+   bPGKSYAgefunden := false,
+   SetErrorIf(empty(cAenderungsArt),                             'empty(cAenderungsArt)'),
+   SetErrorIf(not cAenderungsArt $ '/N/C/D/',                    'cAenderungsArt must be "N", "C" or "D"'),
+   SetErrorIf(empty(cArtnrBaugruppe),                            'empty(cArtnrBaugruppe)'), // vorerst muss die ARTNR der Baugruppe immer gesetzt sein
+   SetErrorIf(empty(nID) and empty(cBestPosNR),                  'empty(nID) and empty(cBestPosNR)'),
+   if nWorkarea = waDab035 then
+      SetErrorIf(empty(cBestPosNR), 'empty(cBestPosNR) and nWorkarea = waDab035 '), // bei DAB035 muss BESTPOSNR gefüllt sein
+   else
+      SetErrorIf(nID = 0, 'nID=0 and nWorkarea <> waDab035'), // nur bei DAB035 darf ID=0
+   endif,
+
+   oPGKSYA           := DbGetTable(gl_oDM, waPGKSYA, 'PGKSYA_GLOBAL_UPDATE'),   // TODO: globales Datenmodul nutzen oder lieber ein dediziertes?
+
+   // Wiederfinden eines Datensatzes in der PGKSYA
+   if nWorkarea = waDab035 then
+      oPGKSYA.IndexName := 'STANDORT_DS_WA_BESTPOSNR',       // STANDORT;DS_WA;BESTPOSNR
+      if DbSeek({nStandort, nWorkarea, cBestPosNr}, oPGKSYA) then
+         bPGKSYAgefunden := true,
+      endif,
+   else
+      oPGKSYA.IndexName := 'STANDORT_DS_WA_DS_ID',       // STANDORT;DS_WA;DS_ID
+      if DbSeek({nStandort, nWorkarea, nID}, oPGKSYA) then
+         bPGKSYAgefunden := true,
+      endif,
+   endif,
+
+   startseq
+      if not bPGKSYAgefunden then // kein Datensatz vorhanden -> dann muss einer hinzugefügt werden
+         bAppend := true,
+      else
+         // Es ist bereits ein DS vorhanden
+         // Wenn man ihn sperren kann, muss man ihn entsperren - nach noch ein paar Prüfungen,
+         // wenn er gesperrt ist (durch das Batch-Programm), dann muss ein DS hinzugefügt werden
+         if DBLock(oPGKSYA) then
+            DBEdit(oPGKSYA),
+            if cAenderungsArt = 'D' and oPGKSYA:AEND_ART <> 'D' then
+               oPGKSYA:AEND_ART    := 'D',
+            endif,
+            // Fall: DAB035:ID war bei Erstellung noch unbekannt, weil
+            // der Datensatz durch einen Trigger auf die DAB240 entstanden ist.
+            if nWorkarea = waDab035 and nID <> 0 then
+               oPGKSYA:DS_ID    := nID,
+            endif,
+            oPGKSYA:BEARBEITEN  := true, // Nach einer Änderung kann es sein, daß ein bislang fehlerhafter Batchlauf jetzt fehlerfrei durchläuft.
+                                         // Daher geben wir hier den Datensatz zur Bearbeitung frei.
+            DBPost(oPGKSYA),
+            DBUnLock(oPGKSYA),
+         else
+            bAppend := true,
+         endif,
+      endif,
+
+      if bAppend then
+         MyAppend(oPGKSYA),
+         oPGKSYA:STANDORT    := nStandort,
+         oPGKSYA:AEND_ART    := cAenderungsArt,
+         oPGKSYA:DS_WA       := nWorkarea,
+         oPGKSYA:DS_ID       := nID,
+         oPGKSYA:ARTNR_BG    := cArtnrBaugruppe,
+         oPGKSYA:BESTPOSNR   := cBestPosNr,
+         oPGKSYA:BEARBEITEN  := true,
+         oPGKSYA:FEHLER      := false,
+         oPGKSYA:FEHLER_ANZ  := 0,
+         MyPost(oPGKSYA),
+      endif,
+   always
+      if editModes(oPGKSYA) then
+          DbCancel(oPGKSYA),
+          DBUnLock(oPGKSYA),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab035-FA-Auftragsköpfen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im DAB035-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab035(oDab035, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab035), 'empty(oDab035)'),
+   SetErrorIf(oDab035:LIEFNR <> -1, 'oDab035:LIEFNR <> -1. Only use this function for production orders.'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab035) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if bDelete = False  then
+      cAendArt := iif(DbState(oDab035) = dsInsert, 'N', 'C'),
+   else
+      cAendArt := 'D',
+   endif,
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab035:STANDORT, waDab035, oDab035:ID, cAendArt, oDab035:ARTNR, oDAB035:BESTPOSNR),
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab240-FA-Auftragspositionen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im DAB240-Kopf-Update-Trigger gedacht
+// Funktion schreibt aber für Auftragskopfsatz aus der DAB035
+// Die Änderungsart für die DAB035 ist immer Update, auch wenn ien DS der DAB240 gelöscht wurde
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeorDeleteTrigger_Dab240(oDab240)
+   Result := nil,
+   SetErrorIf(empty(oDab240), 'empty(oDab240)'),
+   // Wenn ein FA in einer Transaktion neu angelegt wird, dann ist der Dab035-DS
+   // ggf. noch nicht außerhalb der Transaktion sichtbar. Dennoch muss hier der
+   // Dab240-Insert verarbeitet werden.
+   // Die DAB035:ID kann an dieser Stelle nicht zuverlässig ermittelt werden.
+   // In diesem Fall: SubStr(oDab240:B_POS_LFD, 1, 8) in PGKSYA:BESTPOSNR speichern
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab240:STANDORT, waDab035, 0, 'C', oDab240:ARTNR1, SubStr(oDab240:B_POS_LFD, 1, 8)),
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab215-FA-Dispovorschlägen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im Dab215-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab215(oDab215, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab215), 'empty(oDab215)'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab215) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if oDab215:DISPO <> 0 and not empty(oDab215:TERMIN) then // Hinweis-Datensätze (Ausnahmemeldungen) ignorieren
+      if bDelete = False  then
+         cAendArt := iif(DbState(oDab215) = dsInsert, 'N', 'C'),
+      else
+         cAendArt := 'D',
+      endif,
+      PGKU_SYA_HandleInsertOrChangeOrDelete(oDab215:STANDORT, waDab215, oDab215:ID, cAendArt, oDab215:ARTNR, ''),
+   endif,
+end,
+
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab320-FA-Dispovorschlägen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im Dab320-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab320(oDab320, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab320), 'empty(oDab320)'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab320) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if bDelete = False  then
+      cAendArt := iif(DbState(oDab320) = dsInsert, 'N', 'C'),
+   else
+      cAendArt := 'D',
+   endif,
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab320:STANDORT, waDab320, oDab320:ID, cAendArt, oDab320:ARTNR, ''),
+
+end,
+
+//******************************************************************************
+// Diese Funktion errechnet die Anzahl von Minuten aus DELTA und DFAKT
+// @Result: float (Minuten)
+//******************************************************************************
+function _PGKU_CalcWartezeitMinuten(nDelta, nDfakt)
+   if nDelta = 0 then
+      Result := 0,
+   else
+      case nDfakt
+         of 0 :: // Betriebssekunden
+            Result := nDelta / 60,
+         of 1 :: // Betriebsminuten
+            Result := nDelta,
+         of 2 :: // Betriebsstunden
+            Result := nDelta * 60,
+         of 3 :: // Betriebstage
+            Result := nDelta * 60 * 24, // Diese 24h-Interpretation ist fraglich...
+         of 5 :: // Kalenderstunden
+            Result := nDelta * 60,
+         of 6 :: // Kalendertage
+            Result := nDelta * 60 * 24,
+      endcase,
+   endif,
+end,
+
+

@@ -1,0 +1,71 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Programm dient dazu, die Suchbegriffstabelle für
+// die Dubletten-Erkennung zu reorganisieren und mit u. a. SoundEx()-Informationen
+// zu füllen
+//##############################################################################
+//##############################################################################
+
+| m_bReorgForKDNRZusammenFuehrung:P1:=false |
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function Dubl_ReorgDUBLMATCH()
+   | oDAB000, oDM, cSQL, oDUBLMATCH |
+   cSQL := '',
+   oDM  := CreateObject('TBeDBGet', 'Reorg_Matching'),
+   startseq,
+      oDAB000                 := CreateObject('TBeAdsQuery', 'DabFilQuery', oDM),
+
+      // Wenn nur die Kunden reorganisiert werden sollen, die via "Reorg. Änderungen / Zusammenführung Kunden-Nr." geändert worden sind
+      if m_bReorgForKDNRZusammenFuehrung then
+         oDUBLMATCH           := MyGetTable(oDM, waDUBLMATCH, 'DUBLMATCH_DUBL_REOG'),
+         // SQL-String: alle Kunden im Kundenstamm, welche reorganisiert wurden (Ziel und Quell KDNR)
+         cSQL                 := SQLStr(SELECT * FROM &.DBSQLTableName(waDAB000, true)
+                                        where DAB000.KDNR IN(SELECT KDNR FROM    &.DBSQLTableName(waDUBLMATCH, true)               where KDNR <> KDNR_REORG)
+                                        or DAB000.KDNR IN(SELECT KDNR_REORG FROM &.DBSQLTableName(waDUBLMATCH, false) DBLM_2       where KDNR <> KDNR_REORG)
+                                        order by KDNR),
+         // Vorab alle DUBLMATCH-Datensätze löschen, da sie im Nachgang neu berechnet werden
+         DBFilter("KDNR <> KDNR_REORG", oDUBLMATCH),
+         oDUBLMATCH.CbFirst(),
+         while not oDUBLMATCH.CbEoF do
+            MyDelete(oDUBLMATCH),
+            oDUBLMATCH.CbNext(),
+         end,
+      else,
+         // Falls ALLE Kunden (neu) reorganisiert werden sollen
+         cSQL                 := SQLStr(SELECT * FROM &.DBSQLTableName(waDAB000, true) order by KDNR ),
+      endif,
+      oDAB000.SQL    := cSQL,
+      oDAB000.Active := True,
+      ProgressBarShow("Reorganisation Dubletten", "Berechnung...", false),
+      startseq
+         oDAB000.CbFirst(),
+         while not oDAB000.CbEoF do
+            ProgressBarUpdate(0, "Kunden-Nr. " + Str(oDAB000:KDNR), true),
+            Dubl_FillTable(oDM, oDAB000, true),
+            oDAB000.CbNext(),
+         end,
+         ProgressBarHide(),
+      onerror
+         ProgressBarHide(),
+      stopseq,
+   always,
+      DestroyObject(oDM),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Hauptprogramm
+// @Result: null
+//******************************************************************************
+
+startseq
+   Dubl_ReorgDUBLMATCH(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

@@ -1,0 +1,878 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Benutzeroberfläche für die Verwaltung von Merkmale
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_cPositionSaveID, m_cSettingsSaveKey, m_cFormID,
+   m_oDM,
+
+   m_oMainTable,
+   m_nMainTableWorkarea,
+   m_cMainTableAlias,
+   m_cBrowserID,
+   m_bMainTableExpicitPost,
+
+   m_oUsageTableSML,
+   m_nUsageTableSMLWorkarea,
+   m_cUsageTableSMLAlias,
+   m_cUsageTableSMLIndex,
+   m_cUsageSMLBrowserID,
+
+   m_oUsageTableAssignments,
+   m_nUsageTableAssignmentsWorkarea,
+   m_cUsageTableAssignmentsAlias,
+   m_cUsageTableAssignmentsIndex,
+   m_cUsageAssignmentsBrowserID,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_ChooseMMT, A_Copy, A_Delete, A_DifferenceAnalysis,
+   A_First, A_Last, A_New, A_Next, A_Previous, A_RefreshUsageInAssignments,
+   A_RefreshUsageInSML, A_Save, Actions, bar_Top, bar_UsageAssignments,
+   bar_UsageSML, bardock_Top, bardock_UsageAssignments, bardock_UsageSML,
+   barmngr_Main, bbtn_Cancel, bbtn_Copy, bbtn_Delete, bbtn_DifferenceAnalysis,
+   bbtn_First, bbtn_Last, bbtn_New, bbtn_Next, bbtn_Previous,
+   bbtn_RefreshUsageInAssignments, bbtn_RefreshUsageInSML, bbtn_Save,
+   btn_ChooseMMT, chk_Active, chk_Print, chk_Visible, cmb_AttribType,
+   cmb_DataType, cmb_MMT, ds_MainTable, ds_UsageTableAssignment,
+   ds_UsageTableSML, edt_Codeblock, edt_Description, edt_Format, edt_Key,
+   edt_Label, edt_Preset, edt_Search, edt_Size, edt_VIndex, grd_MainBrowser,
+   grd_UsageAssignmentsBrowser, grd_UsageSMLBrowser, ipnl_Title, ipnl_Usage,
+   ipnl_UsageInAssignments, ipnl_UsageState, lbl_AttribType, lbl_Codeblock,
+   lbl_DataType, lbl_Description, lbl_Format, lbl_Key, lbl_Label, lbl_MMT,
+   lbl_Preset, lbl_Size, lbl_VIndex, pc_Detail, pnl_Detail, pnl_Grid, pnl_Main,
+   pnl_MMTControlContainer, pnl_UsageInAssignments, pnl_UsageInSML, ts_Data,
+   ts_UsageInAssignments, ts_UsageInSML
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                    := '@SMLMKMVER',
+m_cPositionSaveID            := '@SMLMKMPOS',
+m_cBrowserID                 := '@SMLATTRIB',
+m_cUsageAssignmentsBrowserID := '@SMLUSAGE',
+m_cUsageSMLBrowserID         := '@SMLBRO',
+m_cSettingsSaveKey           := 'SMLMKMVER',
+
+m_nMainTableWorkarea             := waSmlMKM,
+m_cMainTableAlias                := 'SMLMKM',
+m_nUsageTableSMLWorkarea         := waSmlSTM,
+m_cUsageTableSMLAlias            := 'SMLSTM',
+m_cUsageTableSMLIndex            := 'ID',
+m_nUsageTableAssignmentsWorkarea := waSmlZUO,
+m_cUsageTableAssignmentsAlias    := 'SMLZUO_USAGE',
+m_cUsageTableAssignmentsIndex    := 'V_INDEX',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Name des aktuellen Merkmals ermitteln
+// @Result: string
+//******************************************************************************
+function SML_GetLabel()
+   Result := m_oMainTable:BEZ,
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode, bIsEmpty, m_bAttributeIsUsedInSML, bIsAttribTableID |
+
+   bInEditMode             := EditModes(m_oMainTable),
+   bIsEmpty                := Bof(m_oMainTable) and Eof(m_oMainTable),
+   m_bAttributeIsUsedInSML := not (Bof(m_oUsageTableSML) and Eof(m_oUsageTableSML)),
+   bIsAttribTableID        := Val(cmb_DataType.Value) = gl_SML_DataTypeAttribTable,
+
+   A_ChooseMMT.Enabled := not bIsEmpty,
+   A_Copy.Enabled      := not bInEditMode and not bIsEmpty,
+   A_Save.Enabled      := bInEditMode,
+   A_Cancel.Enabled    := bInEditMode,
+   A_New.Enabled       := not bInEditMode,
+   A_Delete.Enabled    := not bInEditMode and not bIsEmpty and not m_bAttributeIsUsedInSML,
+   A_Previous.Enabled  := not bInEditMode and not Bof(m_oMainTable),
+   A_Next.Enabled      := not bInEditMode and not Eof(m_oMainTable),
+   A_First.Enabled     := not bInEditMode and not Bof(m_oMainTable),
+   A_Last.Enabled      := not bInEditMode and not Eof(m_oMainTable),
+
+   A_DifferenceAnalysis.Enabled := not (Eof(m_oUsageTableSML) and Bof(m_oUsageTableSML)),
+
+   // GUI-Controls: Enabled-Zustand setzen
+   edt_Label.Enabled       := not bIsEmpty,
+   edt_Key.Enabled         := not bIsEmpty,
+   edt_Description.Enabled := not bIsEmpty,
+   chk_Active.Enabled      := not bIsEmpty,
+   chk_Visible.Enabled     := not bIsEmpty,
+   edt_VIndex.Enabled      := not bIsEmpty,
+   chk_Print.Enabled       := not bIsEmpty and not m_bAttributeIsUsedInSML,
+   cmb_AttribType.Enabled  := not bIsEmpty,
+   cmb_DataType.Enabled    := not bIsEmpty,
+   cmb_MMT.Enabled         := not bIsEmpty                and bIsAttribTableID,
+   btn_ChooseMMT.Enabled   := not m_bAttributeIsUsedInSML and bIsAttribTableID,
+   edt_Preset.Enabled      := not bIsEmpty,
+   edt_Format.Enabled      := not bIsEmpty,
+   edt_Codeblock.Enabled   := not bIsEmpty,
+   edt_Size.Enabled        := not bIsEmpty,
+   edt_Key.Enabled         := not bIsEmpty,
+
+   // ReadOnly-Zuszand (unabhängig vom ReadOnly-Zuszand des Felds) setzen
+   edt_Key.ReadOnlyStateFromField        := not m_bAttributeIsUsedInSML,
+   chk_Print.ReadOnlyStateFromField      := not m_bAttributeIsUsedInSML,
+   cmb_AttribType.ReadOnlyStateFromField := not m_bAttributeIsUsedInSML,
+   cmb_DataType.ReadOnlyStateFromField   := not m_bAttributeIsUsedInSML,
+   cmb_MMT.ReadOnlyStateFromField        := not m_bAttributeIsUsedInSML,
+   edt_Preset.ReadOnlyStateFromField     := not m_bAttributeIsUsedInSML,
+   edt_Format.ReadOnlyStateFromField     := not m_bAttributeIsUsedInSML,
+   edt_Codeblock.ReadOnlyStateFromField  := not m_bAttributeIsUsedInSML,
+   edt_Size.ReadOnlyStateFromField       := not m_bAttributeIsUsedInSML,
+   edt_Key.ReadOnly                      := m_bAttributeIsUsedInSML,
+   chk_Print.ReadOnly                    := m_bAttributeIsUsedInSML,
+   cmb_AttribType.ReadOnly               := m_bAttributeIsUsedInSML,
+   cmb_DataType.ReadOnly                 := m_bAttributeIsUsedInSML,
+   cmb_MMT.ReadOnly                      := m_bAttributeIsUsedInSML,
+   edt_Preset.ReadOnly                   := m_bAttributeIsUsedInSML,
+   edt_Format.ReadOnly                   := m_bAttributeIsUsedInSML,
+   edt_Codeblock.ReadOnly                := m_bAttributeIsUsedInSML,
+   edt_Size.ReadOnly                     := m_bAttributeIsUsedInSML,
+
+   // Anzeige für die Verwendung des Merkmals aktualisieren
+   if m_bAttributeIsUsedInSML then
+      ipnl_UsageState.Caption   := 'Merkmal ist in Verwendung',
+      ipnl_UsageState.ColorMode := ipcmInfo,
+   else
+      ipnl_UsageState.Caption   := 'Merkmal ist nicht in Verwendung',
+      ipnl_UsageState.ColorMode := ipcmMark,
+   endif,
+end,
+
+//******************************************************************************
+// Einstellungen laden
+// @Result: null
+//******************************************************************************
+function LoadSettings()
+| cSettings |
+   startseq
+      cSettings := GetBeParam(m_cSettingsSaveKey),
+      GU_TBePanel_SetSplitterData(pnl_Grid, StrToArr(cSettings)),
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//******************************************************************************
+// Einstellungen speichern
+// @Result: null
+//******************************************************************************
+function SaveSettings()
+   startseq
+      SetBeParam(m_cSettingsSaveKey, ArrToStr(GU_TBePanel_GetSplitterData(pnl_Grid))),
+   onerror
+      // Kein fataler Fehler -> Exceptions ignorieren
+   stopseq,
+end,
+
+//******************************************************************************
+// Combobox für Merkmalstypen befüllen
+// @Result: null
+//******************************************************************************
+function InitAttribTypeCombobox(oCombobox)
+| aAttribTypes, aItems, i |
+   aItems       := {},
+   aAttribTypes := {
+      'Trennzeile',
+      'Berechnung',
+      'Eingabe'
+   },
+   for i := 1 to ALen(aAttribTypes) do
+      AAdd(aItems, aAttribTypes[i] + Chr(9) + Str(i - 1)),
+   next,           
+   oCombobox.Items := aItems,
+end,
+
+//******************************************************************************
+// Combobox für Datentypen befüllen
+// @Result: null
+//******************************************************************************
+function InitDataTypeCombobox(oCombobox)
+| aDataTypes, aItems, i |
+   aItems     := {},
+   aDataTypes := {
+      'Text',
+      'Zahl',
+      'Langtext',
+      'Artikel',
+      'Logisch',
+      'Datum',
+      'Merkmal'
+   },
+   for i := 1 to ALen(aDataTypes) do
+      AAdd(aItems, aDataTypes[i] + Chr(9) + Str(i - 1)),
+   next,
+   oCombobox.Items := aItems,
+end,
+
+//******************************************************************************
+// Combobox für Merkmalstabellen befüllen
+// @Result: null
+//******************************************************************************
+function InitAttribTableCombobox(oCombobox)
+| aItems, oQuery, cMMTID |
+   aItems := {'<keine gewählt>' + Chr(9) + '0'},
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT TAB_ID, BEZ FROM "DABMTA.ADT"',
+      oQuery.Active := True,
+      while not Eof(oQuery) do
+         cMMTID := Str(oQuery:TAB_ID),
+         AAdd(aItems, cMMTID + ' - ' + AllTrim(oQuery:BEZ) + Chr(9) + cMMTID),
+         DbSkip(1, oQuery),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   oCombobox.Items := aItems,
+end,
+
+//******************************************************************************
+// Browser für Verwendungsnachweis in Sachmerkmalleisten aktualisieren.
+// @Result: null
+//******************************************************************************
+function RefreshUsageSMLBrowser(nVIndex:N)
+| oSmlZEL, cFilter |
+
+   cFilter := 'False',
+   if DbState(m_oMainTable) <> dsInsert then
+      oSmlZEL           := DbGetTable(m_oDM, waSmlZEL, 'SMLZEL'),
+      oSmlZEL.IndexName := 'V_INDEX',
+      DbScope({nVIndex}, {nVIndex}, oSmlZEL),
+      DbGoTop(oSmlZEL),
+      startseq
+         while not Eof(oSmlZEL) do
+            if Bof(oSmlZEL) then
+               cFilter := '',
+            else
+               cFilter := cFilter + ' OR ',
+            endif,
+            cFilter := cFilter + 'ID = ' + Str(oSmlZEL:SML_ID),
+
+            DbSkip(1, oSmlZEL),
+         end,
+      always
+         DbScope(nil, oSmlZEL),
+      stopseq,
+   endif,
+
+   DbDisableControls(m_oUsageTableSML),
+   startseq
+      DbFilter(cFilter, m_oUsageTableSML),
+   always
+      DbEnableControls(m_oUsageTableSML),
+   stopseq,
+end,
+
+//******************************************************************************
+// Browser für Verwendungsnachweis in Sachmerkmalleistenzuordnungen
+// aktualisieren.
+// @Result: null
+//******************************************************************************
+function RefreshUsageAssignmentsBrowser(nVIndex:N)
+   m_oUsageTableAssignments.Active := False,
+   m_oUsageTableAssignments.SQL    :=
+      'SELECT * FROM ' + DbSQLTableName(waSMLZUO) + ' WHERE ID IN (' + CRLF +
+      '   SELECT ZUORD_ID FROM ' + DbSQLTableName(waSMLWRT) + ' WHERE V_INDEX = ' + Str(nVindex) + CRLF +
+      ')',
+   m_oUsageTableAssignments.Active := True,
+   grd_UsageAssignmentsBrowser.ReadWriteProps := 0, // Browser-Definitionen laden
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Beim Ändern des Datentyps
+//******************************************************************************
+function cmb_DataTypeChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Kann das Fenster geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+   bCanClose := not EditModes(m_oMainTable),
+end,
+
+//******************************************************************************
+// Event: Beim Ausführen der Volltextsuche
+//******************************************************************************
+function edt_SearchSearchExecute( Sender )
+| cSearchText |
+   cSearchText := AllTrim(Sender.Text),
+   if Empty(cSearchText) then
+      m_oMainTable.Filtered := False,
+      m_oMainTable.Filter   := '',
+      DbRefresh(m_oMainTable),
+   else
+      m_oMainTable.Filtered := False,
+      m_oMainTable.Filter   := PrepareTextForFTSSearch(m_oMainTable.Workarea, 'SUCHE', cSearchText, 'SUCHE', False, True, 'AND', True),
+      m_oMainTable.Filtered := True,
+   endif
+end,
+
+//******************************************************************************
+// Event: Beim Scrollen der Haupttabelle
+//******************************************************************************
+function ds_MainTableScroll_Update( Sender )
+| nVIndex |
+   nVIndex := m_oMainTable:V_INDEX,
+   RefreshUsageAssignmentsBrowser(nVIndex),
+   RefreshUsageSMLBrowser(nVIndex),
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+
+   startseq
+      SaveSettings(),
+   onerror
+      // Fehler beim Speichern der Einstellungen ignorieren, damit das Fenster
+      // geschlossen werden kann!
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array austragen
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Vor dem Posten
+//******************************************************************************
+function MainTable_BeforePost( Sender )
+   if m_bMainTableExpicitPost then
+      m_bMainTableExpicitPost := False,
+   else
+      Abort(True),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_RefreshUsageInAssignmentsExecute( Sender )
+   RefreshUsageAssignmentsBrowser(m_oMainTable:V_INDEX),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_RefreshUsageInSMLExecute( Sender )
+   RefreshUsageSMLBrowser(m_oMainTable:V_INDEX),
+end,
+
+//******************************************************************************
+// Action: Abweichungsanalyse anzeigen
+//******************************************************************************
+function A_DifferenceAnalysisExecute( Sender )
+   GFU_ShowModal_CustomInfo(
+      nil,
+      'Sachmerkmalleisten\Abweichungsanalyse\MerkmalAbweichungsanalyseDialog',
+      {'MERKMAL', m_oMainTable:ID}
+   ),
+end,
+
+//******************************************************************************
+// Action: Merkmalstabelle wählen
+//******************************************************************************
+function A_ChooseMMTExecute( Sender )
+| nMmtId, bExplicitEdit |
+   bExplicitEdit := False,
+   startseq
+      // Wenn Tabelle noch nicht im Edit-Modus ...
+      if not EditModes(m_oMainTable) then
+         // ... Datensatz editieren (damit der Datensatz von niemand anderen
+         //                          editiert werden kann)
+         MyEdit(m_oMainTable),
+         bExplicitEdit := True,
+         ActionsEnabled(),
+      endif,
+      // Auswahldialog anzeigen
+      nMmtId := Call(
+         'Sachmerkmalleisten\MerkmalstabellenAuswahlDialog',
+         m_oDM, m_oMainTable:MMT
+      ),
+      // MMT-ID nur setzen, wenn überhaupt eine MMT gewählt wurde
+      // (0 bedeutet: Keine MMT gewählt)
+      if nMmtId = 0 then
+         // Wenn keine MMT gewählt wurde und die Tabelle nur durch Anzeige des
+         // MMT-Auswahldialog editiert wurde -> Edit-Modus wieder verlassen
+         if bExplicitEdit then
+            DbCancel(m_oMainTable),
+         endif,
+      else
+         m_oMainTable:MMT := nMmtId,
+      endif,
+   onerror
+      MessageDlg('Auswählen der Merkmalstabelle für das Merkmal <' + SML_GetLabel() + '> nicht möglich!', mtError),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Letzter Datensatz
+//******************************************************************************
+function A_LastExecute( Sender )
+   DbGoBottom(m_oMainTable),
+end,
+
+//******************************************************************************
+// Action: Erster Datensatz
+//******************************************************************************
+function A_FirstExecute( Sender )
+   DbGoTop(m_oMainTable),
+end,
+
+//******************************************************************************
+// Action: Nächster Datensatz
+//******************************************************************************
+function A_NextExecute( Sender )
+   DbSkip(1, m_oMainTable),
+end,
+
+//******************************************************************************
+// Action: Vorheriger Datensatz
+//******************************************************************************
+function A_PreviousExecute( Sender )
+   DbSkip(-1, m_oMainTable),
+end,
+
+//******************************************************************************
+// Action: Merkmal kopieren
+//******************************************************************************
+function A_CopyExecute( Sender )
+|
+   cLabel, cKey, cDescription, bActive, bVisible, nVIndex, bPrint, nAttribType,
+   nDataType, nMmtID, cPreset, cFormat, cCodeblock, nSize
+|
+   cLabel       := m_oMainTable:BEZ,
+   cKey         := '',
+   cDescription := m_oMainTable:MEMO,
+   bActive      := False,
+   bVisible     := m_oMainTable:SICHT_SUCH,
+   nVIndex      := 0,
+   bPrint       := m_oMainTable:DRUCKEN,
+   nAttribType  := m_oMainTable:MERKM_TYP,
+   nDataType    := m_oMainTable:DATEN_TYP,
+   nMmtID       := m_oMainTable:MMT,
+   cPreset      := m_oMainTable:VORGABE,
+   cFormat      := m_oMainTable:FORMAT,
+   cCodeblock   := m_oMainTable:CODEBLOCK,
+   nSize        := m_oMainTable:GROESSE,
+
+   if DbAppend(m_oMainTable) then
+      m_oMainTable:BEZ        := 'Kopie von ' + cLabel,
+      m_oMainTable:SCHLUESSEL := cKey,
+      m_oMainTable:MEMO       := cDescription,
+      m_oMainTable:AKTIV      := bActive,
+      m_oMainTable:SICHT_SUCH := bVisible,
+      m_oMainTable:V_INDEX    := nVIndex,
+      m_oMainTable:DRUCKEN    := bPrint,
+      m_oMainTable:MERKM_TYP  := nAttribType,
+      m_oMainTable:DATEN_TYP  := nDataType,
+      m_oMainTable:MMT        := nMmtID,
+      m_oMainTable:VORGABE    := cPreset,
+      m_oMainTable:FORMAT     := cFormat,
+      m_oMainTable:CODEBLOCK  := cCodeblock,
+      m_oMainTable:GROESSE    := nSize,
+
+      MyFocusControl(oForm, edt_VIndex),
+   else
+      MessageDlg('Kopieren des Merkmals <' + cLabel + '> nicht möglich!', mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderungen verwerfen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen für Merkmal <' + SML_GetLabel() + '> verwerfen?', False) then
+      DbCancel(m_oMainTable),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Merkmal/Änderungen speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+| bCanPost, nVIndex, cKey, bUseExceptionsOld |
+
+   m_bMainTableExpicitPost := True,
+   bCanPost                := True,
+
+   // Unique-Validierungen nur bei Neuanlage durchführen
+   if DbState(m_oMainTable) = dsInsert then
+      // V-Index validieren:
+      //  Der durch den Benutzer gewählten V-Index muss anhand edt_VIndex.Text
+      //   ermittelt werden, weil der Benutzer möglicherweise den V-Index
+      //   zuletzt eingegeben hat und das Feld edt_VIndex noch nicht verlassen hat.
+      //  Das bedeutet, dass der V-Index noch nicht in das Tabellenfeld
+      //   geschrieben wurde und der V-Index fäschlicherweise als eindeutig
+      //   angesehen werden würde.
+      nVIndex := iif(Empty(edt_VIndex.Text), -1, Val(edt_VIndex.Text)),
+      if Lookup(waSMLMKM, 'V_INDEX', {{nVIndex}}, 'ID', -1) <> -1 then
+         MessageDlg('Es existiert bereits ein Merkmal mit dem V-Index <' + edt_VIndex.Text + '>.' + CRLF +
+                    '-> Speichern des Merkmals nicht möglich!', mtError),
+         MyFocusControl(oForm, edt_VIndex),
+         bCanPost := False,
+      else
+         cKey := AllTrim(edt_Key.Text),
+         // Merkmalsschlüssel validieren:
+         //  Der Merkmalsschlüssel muss eindeutig sein.
+         if Lookup(waSMLMKM, 'SCHLUESSEL', {{cKey}}, 'ID', -1) <> -1 then
+            MessageDlg('Es existiert bereits ein Merkmal mit dem Schlüssel <' + cKey + '>.' + CRLF +
+                       '-> Speichern des Merkmals nicht möglich!', mtError),
+            MyFocusControl(oForm, edt_Key),
+            bCanPost := False,
+         endif,
+      endif,
+   endif,
+
+   if bCanPost then
+      bUseExceptionsOld := DbUseExceptions(True),
+      startseq
+         startseq
+            DbPost(m_oMainTable),
+         onerror
+            MessageDlg('Merkmal <' + SML_GetLabel() + '> konnte nicht gespeichert werden!', mtError),
+         stopseq,
+      always
+         DbUseExceptions(bUseExceptionsOld),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Merkmal löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+| cLabel |
+   cLabel := SML_GetLabel(),
+   if Jn('Merkmal <' + SML_GetLabel() + '> löschen?', False) then
+      if not DbDelete(m_oMainTable) then
+         MessageDlg('Merkmal <' + cLabel + '> konnte nicht gelöscht werden!', mtError),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Action: Neues Merkmal anlegen
+//******************************************************************************
+function A_NewExecute( Sender )
+   if DbAppend(m_oMainTable) then
+      m_oMainTable:AKTIV      := False,
+      m_oMainTable:SICHT_SUCH := True,
+      m_oMainTable:DRUCKEN    := True,
+      m_oMainTable:MERKM_TYP  := gl_SML_RowTypeInput,
+      // Control könnte ggf. disabled sein -> ActionsEnabled() explizit aufrufen,
+      // damit Enabled Status aktualisiert wird.
+      ActionsEnabled(),
+      MyFocusControl(oForm, edt_Label),
+   else
+      MessageDlg('Anlegen eines neuen Merkmals nicht möglich!', mtError),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if Empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('SML', oForm, m_oOwner),
+   oForm.OrigCapt       := ProgName(),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                       := FindObject(oForm, "A_Cancel"),
+   A_ChooseMMT                    := FindObject(oForm, "A_ChooseMMT"),
+   A_Copy                         := FindObject(oForm, "A_Copy"),
+   A_Delete                       := FindObject(oForm, "A_Delete"),
+   A_DifferenceAnalysis           := FindObject(oForm, "A_DifferenceAnalysis"),
+   A_First                        := FindObject(oForm, "A_First"),
+   A_Last                         := FindObject(oForm, "A_Last"),
+   A_New                          := FindObject(oForm, "A_New"),
+   A_Next                         := FindObject(oForm, "A_Next"),
+   A_Previous                     := FindObject(oForm, "A_Previous"),
+   A_RefreshUsageInAssignments    := FindObject(oForm, "A_RefreshUsageInAssignments"),
+   A_RefreshUsageInSML            := FindObject(oForm, "A_RefreshUsageInSML"),
+   A_Save                         := FindObject(oForm, "A_Save"),
+   Actions                        := FindObject(oForm, "Actions"),
+   bar_Top                        := FindObject(oForm, "bar_Top"),
+   bar_UsageAssignments           := FindObject(oForm, "bar_UsageAssignments"),
+   bar_UsageSML                   := FindObject(oForm, "bar_UsageSML"),
+   bardock_Top                    := FindObject(oForm, "bardock_Top"),
+   bardock_UsageAssignments       := FindObject(oForm, "bardock_UsageAssignments"),
+   bardock_UsageSML               := FindObject(oForm, "bardock_UsageSML"),
+   barmngr_Main                   := FindObject(oForm, "barmngr_Main"),
+   bbtn_Cancel                    := FindObject(oForm, "bbtn_Cancel"),
+   bbtn_Copy                      := FindObject(oForm, "bbtn_Copy"),
+   bbtn_Delete                    := FindObject(oForm, "bbtn_Delete"),
+   bbtn_DifferenceAnalysis        := FindObject(oForm, "bbtn_DifferenceAnalysis"),
+   bbtn_First                     := FindObject(oForm, "bbtn_First"),
+   bbtn_Last                      := FindObject(oForm, "bbtn_Last"),
+   bbtn_New                       := FindObject(oForm, "bbtn_New"),
+   bbtn_Next                      := FindObject(oForm, "bbtn_Next"),
+   bbtn_Previous                  := FindObject(oForm, "bbtn_Previous"),
+   bbtn_RefreshUsageInAssignments := FindObject(oForm, "bbtn_RefreshUsageInAssignments"),
+   bbtn_RefreshUsageInSML         := FindObject(oForm, "bbtn_RefreshUsageInSML"),
+   bbtn_Save                      := FindObject(oForm, "bbtn_Save"),
+   btn_ChooseMMT                  := FindObject(oForm, "btn_ChooseMMT"),
+   chk_Active                     := FindObject(oForm, "chk_Active"),
+   chk_Print                      := FindObject(oForm, "chk_Print"),
+   chk_Visible                    := FindObject(oForm, "chk_Visible"),
+   cmb_AttribType                 := FindObject(oForm, "cmb_AttribType"),
+   cmb_DataType                   := FindObject(oForm, "cmb_DataType"),
+   cmb_MMT                        := FindObject(oForm, "cmb_MMT"),
+   ds_MainTable                   := FindObject(oForm, "ds_MainTable"),
+   ds_UsageTableAssignment        := FindObject(oForm, "ds_UsageTableAssignment"),
+   ds_UsageTableSML               := FindObject(oForm, "ds_UsageTableSML"),
+   edt_Codeblock                  := FindObject(oForm, "edt_Codeblock"),
+   edt_Description                := FindObject(oForm, "edt_Description"),
+   edt_Format                     := FindObject(oForm, "edt_Format"),
+   edt_Key                        := FindObject(oForm, "edt_Key"),
+   edt_Label                      := FindObject(oForm, "edt_Label"),
+   edt_Preset                     := FindObject(oForm, "edt_Preset"),
+   edt_Search                     := FindObject(oForm, "edt_Search"),
+   edt_Size                       := FindObject(oForm, "edt_Size"),
+   edt_VIndex                     := FindObject(oForm, "edt_VIndex"),
+   grd_MainBrowser                := FindObject(oForm, "grd_MainBrowser"),
+   grd_UsageAssignmentsBrowser    := FindObject(oForm, "grd_UsageAssignmentsBrowser"),
+   grd_UsageSMLBrowser            := FindObject(oForm, "grd_UsageSMLBrowser"),
+   ipnl_Title                     := FindObject(oForm, "ipnl_Title"),
+   ipnl_Usage                     := FindObject(oForm, "ipnl_Usage"),
+   ipnl_UsageInAssignments        := FindObject(oForm, "ipnl_UsageInAssignments"),
+   ipnl_UsageState                := FindObject(oForm, "ipnl_UsageState"),
+   lbl_AttribType                 := FindObject(oForm, "lbl_AttribType"),
+   lbl_Codeblock                  := FindObject(oForm, "lbl_Codeblock"),
+   lbl_DataType                   := FindObject(oForm, "lbl_DataType"),
+   lbl_Description                := FindObject(oForm, "lbl_Description"),
+   lbl_Format                     := FindObject(oForm, "lbl_Format"),
+   lbl_Key                        := FindObject(oForm, "lbl_Key"),
+   lbl_Label                      := FindObject(oForm, "lbl_Label"),
+   lbl_MMT                        := FindObject(oForm, "lbl_MMT"),
+   lbl_Preset                     := FindObject(oForm, "lbl_Preset"),
+   lbl_Size                       := FindObject(oForm, "lbl_Size"),
+   lbl_VIndex                     := FindObject(oForm, "lbl_VIndex"),
+   pc_Detail                      := FindObject(oForm, "pc_Detail"),
+   pnl_Detail                     := FindObject(oForm, "pnl_Detail"),
+   pnl_Grid                       := FindObject(oForm, "pnl_Grid"),
+   pnl_Main                       := FindObject(oForm, "pnl_Main"),
+   pnl_MMTControlContainer        := FindObject(oForm, "pnl_MMTControlContainer"),
+   pnl_UsageInAssignments         := FindObject(oForm, "pnl_UsageInAssignments"),
+   pnl_UsageInSML                 := FindObject(oForm, "pnl_UsageInSML"),
+   ts_Data                        := FindObject(oForm, "ts_Data"),
+   ts_UsageInAssignments          := FindObject(oForm, "ts_UsageInAssignments"),
+   ts_UsageInSML                  := FindObject(oForm, "ts_UsageInSML"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+// @Result: null
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_bMainTableExpicitPost := False,
+   // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
+   // muss
+   m_oDM := CreateObject('TBeDbGet', 'DM_SML_Merkmalsverwaltung', oForm),
+
+   // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
+   m_oMainTable           := DbGetTable(m_oDM, m_nMainTableWorkarea, m_cMainTableAlias),
+   m_oMainTable.IndexName := 'V_INDEX',
+   GU_LinkTableToGUI(m_oMainTable, ds_MainTable, grd_MainBrowser, m_cBrowserID, True),
+
+   // Tabelle: Verwendung in Sachmerkmalleistenzuordnungen
+   // Tabelle wird nur gelesen -> Keine Stammdatenprotokollierung notwendig
+   m_oUsageTableSML := DbGetTable(m_oDM, m_nUsageTableSMLWorkarea, m_cUsageTableSMLAlias),
+   GU_LinkTableToGUI(m_oUsageTableSML, ds_UsageTableSML, grd_UsageSMLBrowser, m_cUsageSMLBrowserID, False),
+
+   // Tabelle: Verwendung in Sachmerkmalleistenzuordnungen
+   // Tabelle wird nur gelesen -> Keine Stammdatenprotokollierung notwendig
+   m_oUsageTableAssignments := CreateObject('TBeAdsQuery', 'SMLZUO_QUERY', oForm),
+   GU_LinkTableToGUI(m_oUsageTableAssignments, ds_UsageTableAssignment, grd_UsageAssignmentsBrowser, m_cUsageAssignmentsBrowserID, False),
+
+   // DataSource-Events zuweisen
+   AssignEvent(ds_MainTable, 'OnScroll_Update', 'ds_MainTableScroll_Update'),
+   // Tabellen-Events zuweisen
+   AssignEvent(m_oMainTable, 'BeforePost', 'MainTable_BeforePost'),
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+| cMonospaceFont |
+
+   cMonospaceFont := 'Courier New',
+
+   // Captions setzen
+   oForm.OrigCapt        := 'Merkmale verwalten',
+   btn_ChooseMMT.Caption := '',
+
+   // Font-Style setzen
+   edt_Label.Font.Style       := fsBold,
+   edt_Key.Font.Style         := fsBold,
+   edt_Description.Font.Style := fsBold,
+   chk_Active.Font.Style      := fsBold,
+   chk_Visible.Font.Style     := fsBold,
+   edt_VIndex.Font.Style      := fsBold,
+   chk_Print.Font.Style       := fsBold,
+   cmb_AttribType.Font.Style  := fsBold,
+   cmb_DataType.Font.Style    := fsBold,
+   cmb_MMT.Font.Style         := fsBold,
+   edt_Preset.Font.Style      := fsBold,
+   edt_Format.Font.Style      := fsBold,
+   edt_Codeblock.Font.Style   := fsBold,
+   edt_Size.Font.Style        := fsBold,
+
+   edt_Preset.Font.Name      := cMonospaceFont,
+   edt_Format.Font.Name      := cMonospaceFont,
+   edt_Codeblock.Font.Name   := cMonospaceFont,
+
+   // Combobox-Style jeweils auf csDropDownList stellen
+   cmb_AttribType.Style   := 2,
+   cmb_DataType.Style     := 2,
+   cmb_MMT.Style          := 2,
+   cmb_AttribType.MapList := True,
+   cmb_DataType.MapList   := True,
+   cmb_MMT.MapList        := True,
+
+   // Merkmalstabellen-Control auf ReadOnly stellen
+   cmb_MMT.ReadOnlyStateFromField := False,
+   cmb_MMT.ReadOnly               := True,
+
+   // Comboboxen befüllen
+   InitAttribTypeCombobox(cmb_AttribType),
+   InitDataTypeCombobox(cmb_DataType),
+   InitAttribTableCombobox(cmb_MMT),
+
+   // 200ms Scroll-Delay für Datenbrowser, damit das TVarCalcPanel nicht bei
+   // jedem Datensatz wechsel aktualisiert werden muss.
+   ds_MainTable.ScrollDelay := 200,
+
+   // DataSource mit GUI-Controls verbinden
+   edt_Label.DataSource       := ds_MainTable,
+   edt_Key.DataSource         := ds_MainTable,
+   edt_Description.DataSource := ds_MainTable,
+   chk_Active.DataSource      := ds_MainTable,
+   chk_Visible.DataSource     := ds_MainTable,
+   edt_VIndex.DataSource      := ds_MainTable,
+   chk_Print.DataSource       := ds_MainTable,
+   cmb_AttribType.DataSource  := ds_MainTable,
+   cmb_DataType.DataSource    := ds_MainTable,
+   cmb_MMT.DataSource         := ds_MainTable,
+   edt_Preset.DataSource      := ds_MainTable,
+   edt_Format.DataSource      := ds_MainTable,
+   edt_Codeblock.DataSource   := ds_MainTable,
+   edt_Size.DataSource        := ds_MainTable,
+   edt_Label.DataField        := 'BEZ',
+   edt_Key.DataField          := 'SCHLUESSEL',
+   edt_Description.DataField  := 'MEMO',
+   chk_Active.DataField       := 'AKTIV',
+   chk_Visible.DataField      := 'SICHT_SUCH',
+   edt_VIndex.DataField       := 'V_INDEX',
+   chk_Print.DataField        := 'DRUCKEN',
+   cmb_AttribType.DataField   := 'MERKM_TYP',
+   cmb_DataType.DataField     := 'DATEN_TYP',
+   cmb_MMT.DataField          := 'MMT',
+   edt_Preset.DataField       := 'VORGABE',
+   edt_Format.DataField       := 'FORMAT',
+   edt_Codeblock.DataField    := 'CODEBLOCK',
+   edt_Size.DataField         := 'GROESSE',
+
+   LoadSettings(),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + CRLF +
+              GetErrorText()                     + CRLF + CRLF +
+              DebugArr(GetErrorStack(True)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

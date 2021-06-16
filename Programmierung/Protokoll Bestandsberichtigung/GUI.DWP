@@ -1,0 +1,605 @@
+//##############################################################################
+//##############################################################################
+//
+// Beschreibung:
+//   Oberfläche zur Betrachtung des "Protokoll Bestandsberichtigung" (KdnBBP)
+//
+//
+//   Hinweis:
+//       Fenster ist ausgelegt als MDI Child, Aufruf per
+//         GFU_ShowMDIChild('PROTOKOLL_BESTANDSBERICHTIGUNG', 'Protokoll Bestandsberichtigung\GUI')
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   
+   m_cPositionSaveID, m_cFormID, m_oDM, m_oKdnBBP, m_cBrowserID,
+   m_oMemFertigmeldungDetails, m_cBrowserId_FertigmeldungDetails,
+   m_oDab020, m_cBrowserId_Dab020,
+   m_oMemRechnungsKontrollChanges, m_cBrowserId_RechnungsKontrollChanges,
+   m_nModuMerkmalsTabellenID,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_RechnungsKontrollChangesRefresh, A_ShowIndiHelp, al_main,
+   bipnl_TopInfo, btn_ShowIndiHelp, cmb_FilterModus, ds_Dab020,
+   ds_FertigmeldungDetails, ds_KdnBBP, ds_RechnungsKontrollChanges,
+   edt_FilterArtNr, edt_FilterBESTPOSNR, edt_FilterLFNummer, grid_Dab020,
+   grid_FertigmeldungDetails, grid_KdnBBP, grid_RechnungsKontrollChanges,
+   Label1, Label2, Label3, lbl_FilterArtNr, lbl_FilterBESTPOSNR,
+   lbl_FilterLFNummer, lbl_FilterModus, lbl_RechnungKontrollChanges, pc_Details,
+   pnl_Dab020, pnl_Details, pnl_FertigmeldungWertDetails, pnl_Filter,
+   pnl_RechnungskontrollChanges, pnl_TopInfo, ts_Fertigmeldung,
+   ts_Rechnungskontrolle
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID                             := '@KDNBBP',
+m_cPositionSaveID                     := '@KDNBBP',
+
+m_cBrowserID                          := '@KDNBBP',
+m_cBrowserId_FertigmeldungDetails     := '@KDNBBPF',
+m_cBrowserId_Dab020                   := '@KDNBBP2',
+m_cBrowserId_RechnungsKontrollChanges := '@KDNBBPR',
+
+m_nModuMerkmalsTabellenID             := gl_BBPU_ModusMMTabelle,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion filtert die Haupttabelle KdnPPB
+// @Result: null
+//******************************************************************************
+function RefreshKdnBBPFilter()
+| cFilter, cModi, cToken, i, cModiFilter |
+   Result := nil,
+
+   if not empty(m_oKdnBBP) then
+      cFilter := '',
+
+      // Artikel-Nr. Filter
+      if not empty(edt_FilterArtNr.Text) then
+         cFilter := ConcatTrenner(cFilter, 'ARTNR = ''' + PadR(edt_FilterArtNr.Text, mBeArtNoLen) + '''', ' AND '),
+      endif,
+
+      // Modus Filter
+      cModi := cmb_FilterModus.Value,
+      if not empty(cModi) then
+         cModiFilter := '',
+         for i := 1 to TokenCount(cModi, '/') do
+            cToken := Token(cModi, '/', i),
+            if not empty(cToken) then
+               cModiFilter := ConcatTrenner(cModiFilter, 'MODUS = ' + cToken, ' OR '),
+            endif,
+         next,
+
+         if not empty(cModiFilter) then
+            cFilter := ConcatTrenner(cFilter, '(' + cModiFilter + ')', ' AND '),
+         endif,
+      endif,
+
+      // LF_NUMMER Filter
+      if not empty(edt_FilterLFNummer.Text) then
+         cFilter := ConcatTrenner(cFilter, 'LF_NUMMER = ''' + AllTrim(edt_FilterLFNummer.Text) + '''', ' AND '),
+      endif,
+
+      // BESTPOSNR Filter
+      if not empty(edt_FilterBESTPOSNR.Text) then
+         cFilter := ConcatTrenner(cFilter, 'BESTPOSNR = ''' + AllTrim(edt_FilterBESTPOSNR.Text) + '''', ' AND '),
+      endif,
+
+      WriteLn('cFilter', cFilter),
+
+      if m_oKdnBBP.Filter <> cFilter then
+         m_oKdnBBP.Filter   := cFilter,
+         m_oKdnBBP.Filtered := true,
+      endif,
+   endif,
+end,
+
+
+//******************************************************************************
+// Funktion füllt die Fertigmeldungs-Details-Mem-Tabelleaus den aktuellen
+//    Informationen der KdnBBP
+// @Result: null
+//******************************************************************************
+function RefreshFertigmeldungDetailsMemTable()
+|
+   aWertArray, i, nSumWert, nSumZuschlaege,
+   aOldDab240Records, aNewDab240Records, i240, cARTNR_E,
+   aOld240Record, aNew240Record, cB_POS_LFD, nPosInArray, bFound, i240Field
+|
+
+   Result := nil,
+   if not empty(m_oMemFertigmeldungDetails) then
+
+      DbDisableControls(m_oMemFertigmeldungDetails),
+      startseq
+         // 1) Tabelle leeren
+         m_oMemFertigmeldungDetails.CbEmptyTable(),
+
+         if m_oKdnBBP:MODUS = 6 or m_oKdnBBP:MODUS = 7 then
+
+            // 2) Fertigmeldungs-Werte übertragen
+            aWertArray     := StrToArr(m_oKdnBBP:WERT_A),
+            nSumWert       := 0,
+            nSumZuschlaege := 0,
+            for i := 1 to ALen(aWertArray) do
+               // gelöschte Positionen werden als "leere Elemente (NIL)" im Array gespeichert
+               if ALen(aWertArray[i]) > 0 then
+                  m_oMemFertigmeldungDetails.CbAppend(),
+                  m_oMemFertigmeldungDetails:B_POS_LFD  := aWertArray[i, 1],
+                  m_oMemFertigmeldungDetails:ARTNR_E    := aWertArray[i, 2],
+                  m_oMemFertigmeldungDetails:ARTTYP     := LooKup(waDab010, 'DAB011', {{m_oMemFertigmeldungDetails:ARTNR_E}}, 'ARTTYP', ''),
+                  m_oMemFertigmeldungDetails:ME         := LooKup(waDab010, 'DAB011', {{m_oMemFertigmeldungDetails:ARTNR_E}}, 'ME',     ''),
+                  m_oMemFertigmeldungDetails:EK_WERT_OZ := aWertArray[i, 3],
+                  nSumWert                              += aWertArray[i, 3],
+                  m_oMemFertigmeldungDetails:EK_WERT_Z  := aWertArray[i, 4],
+                  nSumZuschlaege                        += aWertArray[i, 4],
+                  m_oMemFertigmeldungDetails:EK_WERT    := aWertArray[i, 3] + aWertArray[i, 4],
+                  m_oMemFertigmeldungDetails.CbPost(),
+               endif,
+            next,
+
+            // Kopf-Satz mit Summenwerten anlegen
+            m_oMemFertigmeldungDetails.CbAppend(),
+            m_oMemFertigmeldungDetails:B_POS_LFD  := m_oKdnBBP:BESTPOSNR + '000', WriteLn(m_oMemFertigmeldungDetails:B_POS_LFD), // Kopf-Satz in MemTable eintragen
+            m_oMemFertigmeldungDetails:ARTNR_E    := m_oKdnBBP:ARTNR,
+            m_oMemFertigmeldungDetails:ARTTYP     := LooKup(waDab010, 'DAB011', {{m_oMemFertigmeldungDetails:ARTNR_E}}, 'ARTTYP', ''),
+            m_oMemFertigmeldungDetails:ME         := LooKup(waDab010, 'DAB011', {{m_oMemFertigmeldungDetails:ARTNR_E}}, 'ME',     ''),
+            m_oMemFertigmeldungDetails:EK_WERT_OZ := nSumWert,
+            m_oMemFertigmeldungDetails:EK_WERT_Z  := nSumZuschlaege,
+            m_oMemFertigmeldungDetails:EK_WERT    := nSumWert + nSumZuschlaege,
+            m_oMemFertigmeldungDetails:KOSTENST   := m_oKdnBBP:KOSTENST,
+            m_oMemFertigmeldungDetails.CbPost(),
+
+            m_oMemFertigmeldungDetails.CbIndexName := 'B_POS_LFD',
+
+            // 3) zusätzliche Detail-Informationen aus den gesicherten Dab240-Records ermitteln
+            aOldDab240Records := StrToArr(m_oKdnBBP:D240_REC_V),
+            aNewDab240Records := StrToArr(m_oKdnBBP:D240_REC_N),
+
+            if ALen(aOldDab240Records) <> ALen(aNewDab240Records) then
+               SetError('ALen(aOldDab240Records) <> ALen(aNewDab240Records)'),
+            endif,
+
+            for i240 := 1 to ALen(aOldDab240Records) do
+               aOld240Record := aOldDab240Records[i240],
+               aNew240Record := aNewDab240Records[i240],
+
+               nPosInArray   := SeekInDimArray('B_POS_LFD', aOld240Record, 1),
+               cB_POS_LFD    := aOld240Record[nPosInArray, 2],
+               nPosInArray   := SeekInDimArray('ARTNR_E',   aOld240Record, 1),
+               cARTNR_E      := aOld240Record[nPosInArray, 2],
+               WriteLn('locate ', cB_POS_LFD, cARTNR_E),
+
+               bFound := m_oMemFertigmeldungDetails.CbFindKey({cB_POS_LFD}),
+               if not bFound then
+                  // gelöschte Positionen sind noch nicht in der MemTable drin, da diese nicht im Werte-Array vorkommen (siehe oben) => jetzt anlegen
+                  if empty(cARTNR_E) then
+                     m_oMemFertigmeldungDetails.CbAppend(),
+                     m_oMemFertigmeldungDetails:B_POS_LFD := cB_POS_LFD,
+                     m_oMemFertigmeldungDetails:ARTNR_E   := '',
+                     m_oMemFertigmeldungDetails.CbPost(),
+                  else
+                     SetError("not m_oMemFertigmeldungDetails.CbLocate('B_POS_LFD', {cB_POS_LFD}, 0) with cB_POS_LFD = '" + cB_POS_LFD + "'"),
+                  endif,
+               endif,
+
+               m_oMemFertigmeldungDetails.CbEdit(),
+
+               // Werte aus dem Dab240-Record "alt" ****************************
+               for i240Field := 1 to ALen(aOld240Record) do
+                  case aOld240Record[i240Field, 1]
+                     of 'IST'           :: m_oMemFertigmeldungDetails:IST_VOR         := aOld240Record[i240Field, 2], // gebuchte Ist-Menge   (nachher, ändert sich nur beim Kopfsatz)
+                     of 'IST_AUSSCH'    :: m_oMemFertigmeldungDetails:IST_AUSSCH_VOR  := aOld240Record[i240Field, 2], // gebuchte Fertigteil Ausschuss-Menge (vorher, nur relevant für Kopfsatz)
+                     of 'MENGE'         :: m_oMemFertigmeldungDetails:MENGE           := aOld240Record[i240Field, 2], // Gutmenge (vorher = nachher)
+                     of 'MENGE_AUSS'    :: m_oMemFertigmeldungDetails:MENGE_AUSS      := aOld240Record[i240Field, 2], // Ausschuss (vorher = nachher)
+                     of 'IST_AUSGEB'    :: m_oMemFertigmeldungDetails:IST_AUSGEB_VOR  := aOld240Record[i240Field, 2], // Ist-Menge ausgebucht (vorher)
+                     of 'CALC_KOSTENST' :: m_oMemFertigmeldungDetails:KOSTENST        := aOld240Record[i240Field, 2], // Kostenstelle (vorher)
+
+                     of 'EKP_E'         :: m_oMemFertigmeldungDetails:EKP_E           := aOld240Record[i240Field, 2], // Ist-Ø EKP (vorher = nachher)
+                     of 'PE_E'          :: m_oMemFertigmeldungDetails:PE_E            := aOld240Record[i240Field, 2], // Ist-PE    (vorher = nachher)
+                  endcase,
+               next,
+
+               // Werte aus dem Dab240-Record "neu" ****************************
+               for i240Field := 1 to ALen(aNew240Record) do
+                  case aNew240Record[i240Field, 1]
+                     of 'IST'           :: m_oMemFertigmeldungDetails:IST_NACH        := aNew240Record[i240Field, 2], // gebuchte Ist-Menge   (nachher, ändert sich nur beim Kopfsatz)
+                     of 'IST_AUSSCH'    :: m_oMemFertigmeldungDetails:IST_AUSSCH_NACH := aNew240Record[i240Field, 2], // gebuchte Fertigteil Ausschuss-Menge (nachher, nur relevant für Kopfsatz)
+                     of 'IST_AUSGEB'    :: m_oMemFertigmeldungDetails:IST_AUSGEB_NACH := aNew240Record[i240Field, 2], // Ist-Menge ausgebucht (nachher)
+                  endcase,
+               next,
+
+               m_oMemFertigmeldungDetails.CbPost(),
+            next,
+
+         endif,
+
+      always
+         DbEnableControls(m_oMemFertigmeldungDetails),
+      stopseq,
+
+      m_oMemFertigmeldungDetails.CbFirst(),
+
+   endif,
+end,
+
+//******************************************************************************
+// Funktion positioniert die zur Protokoll-Zeile zugehörige Dab020-Buchung
+// @Result: null
+//******************************************************************************
+function RefreshDab020Posting()
+   Result := nil,
+
+   if not empty(m_oKdnBBP) and not empty(m_oDab020) then
+      m_oDab020.CbSetRangeEx({m_oKdnBBP:DAB020_ID}),
+   endif,
+end,
+
+//******************************************************************************
+// Feld-Änderungen der DAb235 in MemTable übertragen zu Anzeige an der GUI
+// @Result: null
+//******************************************************************************
+function RefreshRechnungsKontrollChangesMemTable()
+| aRecAsArrayOld, aRecAsArrayNew, i,
+  cFieldNameOld, cFieldNameNew, nValueOld, nValueNew,
+  cRelevantFields |
+   Result := nil,
+
+   if not empty(m_oMemRechnungsKontrollChanges) then
+      m_oMemRechnungsKontrollChanges.CbEmptyTable(),
+
+      if not empty(m_oKdnBBP)  then
+         aRecAsArrayOld := StrToArr(m_oKdnBBP:D235_REC_V),
+         aRecAsArrayNew := StrToArr(m_oKdnBBP:D235_REC_N),
+
+         if ALen(aRecAsArrayOld) <> ALen(aRecAsArrayNew) then
+            SetError('ALen(aRecAsArrayOld) <> ALen(aRecAsArrayNew)'),
+         endif,
+
+         cRelevantFields := '/WAEKZ/FW_KURSBAS/SOEK/RABATT1/RABATT2/RABATT3/PE/MENGE/MENGE_EK' +
+                            '/Z_TEXT1/Z_TEXT2/Z_TEXT3/Z_MODE1/Z_MODE2/Z_MODE3/Z_KOST1/Z_KOST2/Z_KOST3' +
+                            '/ZOLLPROZ/ZOLLBETR/SACHKONTO/KOSTENST' +
+                            '/ANUMMER/ANUMMER_X' +
+                            '/EKP/',
+
+         for i := 1 to ALen(aRecAsArrayOld) do
+
+            cFieldNameOld := AllTrim(aRecAsArrayOld[i, 1]),
+            cFieldNameNew := AllTrim(aRecAsArrayNew[i, 1]),
+
+            if cFieldNameOld <> cFieldNameNew then
+               SetError('cFieldNameOld <> cFieldNameNew'),
+            endif,
+
+            // Sofern das Feld relevant ist für die Wert-Berechnung, wird es ausgegeben
+            if ('/' + cFieldNameOld + '/') $ cRelevantFields then
+               nValueOld  := aRecAsArrayOld[i, 2],
+               nValueNew  := aRecAsArrayNew[i, 2],
+
+               if nValueOld <> nValueNew then
+                  m_oMemRechnungsKontrollChanges.CbAppend(),
+                  m_oMemRechnungsKontrollChanges:FELDNAME := cFieldNameOld,
+                  m_oMemRechnungsKontrollChanges:WERT_ALT := nValueOld,
+                  m_oMemRechnungsKontrollChanges:WERT_NEU := nValueNew,
+                  m_oMemRechnungsKontrollChanges.CbPost(),
+               endif,
+            endif,
+         next,
+
+         m_oMemRechnungsKontrollChanges.CbFirst(),
+
+      endif,
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: OnDestroy
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function edt_FilterBESTPOSNRChange( Sender )
+   RefreshKdnBBPFilter(),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function edt_FilterLFNummerChange( Sender )
+   RefreshKdnBBPFilter(),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function cmb_FilterModusChange( Sender )
+   RefreshKdnBBPFilter(),
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function edt_FilterArtNrChange( Sender )
+   RefreshKdnBBPFilter(),
+end,
+
+//******************************************************************************
+// Event: Scroll der MainTable
+//******************************************************************************
+function ds_KdnBBPScroll_Update( Sender )
+| nOldCursor |
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq
+      RefreshFertigmeldungDetailsMemTable(),
+      RefreshDab020Posting(),
+      RefreshRechnungsKontrollChangesMemTable(),
+   always
+      SetCursor(nOldCursor),
+   stopseq,
+
+   // ggf. die relevante Tabkarte mit Prozess-Details aktiveren
+   if not empty(m_oKdnBBP) and not empty(pc_Details) then
+      case m_oKdnBBP:MODUS
+         of {1, 2} :: pc_Details.ActivePage := ts_Rechnungskontrolle,
+         of {6, 7} :: pc_Details.ActivePage := ts_Fertigmeldung,
+      endcase,
+   endif,
+end,
+
+//******************************************************************************
+// Beim Schließen des Formulars die globale Variable zurücksetzen
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individuelle Online-Hilfe aufrufen
+//******************************************************************************
+function A_ShowIndiHelpExecute( Sender )
+   // Tipp: Der Filter für die Memo-Tabelle ist über die globale Variable
+   //       veränderbar, falls im Datenbestand z.B. eine andere
+   //       Memo-ID vorliegt oder mehrere Hilfe-Themen angezeigt werden sollen.
+   IOHU_ShowOnlineHelpGui(gl_BBPU_IndiOnlineHelp_SQLWhere),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.Name := GFU_CalcFormularName('', oForm, m_oOwner),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_RechnungsKontrollChangesRefresh := FindObject(oForm, "A_RechnungsKontrollChangesRefresh"),
+   A_ShowIndiHelp                    := FindObject(oForm, "A_ShowIndiHelp"),
+   al_main                           := FindObject(oForm, "al_main"),
+   bipnl_TopInfo                     := FindObject(oForm, "bipnl_TopInfo"),
+   btn_ShowIndiHelp                  := FindObject(oForm, "btn_ShowIndiHelp"),
+   cmb_FilterModus                   := FindObject(oForm, "cmb_FilterModus"),
+   ds_Dab020                         := FindObject(oForm, "ds_Dab020"),
+   ds_FertigmeldungDetails           := FindObject(oForm, "ds_FertigmeldungDetails"),
+   ds_KdnBBP                         := FindObject(oForm, "ds_KdnBBP"),
+   ds_RechnungsKontrollChanges       := FindObject(oForm, "ds_RechnungsKontrollChanges"),
+   edt_FilterArtNr                   := FindObject(oForm, "edt_FilterArtNr"),
+   edt_FilterBESTPOSNR               := FindObject(oForm, "edt_FilterBESTPOSNR"),
+   edt_FilterLFNummer                := FindObject(oForm, "edt_FilterLFNummer"),
+   grid_Dab020                       := FindObject(oForm, "grid_Dab020"),
+   grid_FertigmeldungDetails         := FindObject(oForm, "grid_FertigmeldungDetails"),
+   grid_KdnBBP                       := FindObject(oForm, "grid_KdnBBP"),
+   grid_RechnungsKontrollChanges     := FindObject(oForm, "grid_RechnungsKontrollChanges"),
+   Label1                            := FindObject(oForm, "Label1"),
+   Label2                            := FindObject(oForm, "Label2"),
+   Label3                            := FindObject(oForm, "Label3"),
+   lbl_FilterArtNr                   := FindObject(oForm, "lbl_FilterArtNr"),
+   lbl_FilterBESTPOSNR               := FindObject(oForm, "lbl_FilterBESTPOSNR"),
+   lbl_FilterLFNummer                := FindObject(oForm, "lbl_FilterLFNummer"),
+   lbl_FilterModus                   := FindObject(oForm, "lbl_FilterModus"),
+   lbl_RechnungKontrollChanges       := FindObject(oForm, "lbl_RechnungKontrollChanges"),
+   pc_Details                        := FindObject(oForm, "pc_Details"),
+   pnl_Dab020                        := FindObject(oForm, "pnl_Dab020"),
+   pnl_Details                       := FindObject(oForm, "pnl_Details"),
+   pnl_FertigmeldungWertDetails      := FindObject(oForm, "pnl_FertigmeldungWertDetails"),
+   pnl_Filter                        := FindObject(oForm, "pnl_Filter"),
+   pnl_RechnungskontrollChanges      := FindObject(oForm, "pnl_RechnungskontrollChanges"),
+   pnl_TopInfo                       := FindObject(oForm, "pnl_TopInfo"),
+   ts_Fertigmeldung                  := FindObject(oForm, "ts_Fertigmeldung"),
+   ts_Rechnungskontrolle             := FindObject(oForm, "ts_Rechnungskontrolle"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   cmb_FilterModus.BeAttributeId := m_nModuMerkmalsTabellenID,
+   edt_FilterArtNr.Text          := '',
+   edt_FilterLFNummer.Text       := '',
+   edt_FilterBESTPOSNR.Text      := '',
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   // eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', '', oForm),
+
+   // KdnBBP - Protokoll Bestandsberichtigung für GUI
+   m_oKdnBBP                   := DbGetTable(m_oDM, waKdnBBP),
+   m_oKdnBBP.CbLast(),
+   ds_KdnBBP.DataSet           := m_oKdnBBP,
+
+   grid_KdnBBP.DataSource      := ds_KdnBBP,
+   grid_KdnBBP.RegisterDataSet := m_oKdnBBP,
+   grid_KdnBBP.ID              := m_cBrowserId,
+   grid_KdnBBP.ReadWriteProps  := False,
+
+   // Dab020 Buchung für GUI
+   m_oDab020                   := DbGetTable(m_oDM, waDab020),
+   m_oDab020.IndexName         := 'DAB029', // ID
+   m_oDab020.CbSetRangeEx({-1}),
+   ds_Dab020.DataSet           := m_oDab020,
+
+   grid_Dab020.DataSource      := ds_Dab020,
+   grid_Dab020.RegisterDataSet := m_oDab020,
+   grid_Dab020.ID              := m_cBrowserId_Dab020,
+   grid_Dab020.ReadWriteProps  := False,
+
+   // MemTable für die Rechnungs-Kontroll-Änderungen
+   m_oMemRechnungsKontrollChanges           := CreateObject('TBeMemTable', 'MEM_RECHKONTROLL_CHANGES', oForm, oForm),
+   m_oMemRechnungsKontrollChanges.AliasName := 'MEM_RECHKONT_CHANGES',
+   m_oMemRechnungsKontrollChanges.CbAddField('FELDNAME', ftString, 10),
+   m_oMemRechnungsKontrollChanges.CbAddField('WERT_ALT', ftMemo,   0),
+   m_oMemRechnungsKontrollChanges.CbAddField('WERT_NEU', ftMemo,   0),
+   m_oMemRechnungsKontrollChanges.Active := true,
+
+   ds_RechnungsKontrollChanges.DataSet           := m_oMemRechnungsKontrollChanges,
+   grid_RechnungsKontrollChanges.DataSource      := ds_RechnungsKontrollChanges,
+   grid_RechnungsKontrollChanges.RegisterDataSet := m_oMemRechnungsKontrollChanges,
+   grid_RechnungsKontrollChanges.ID              := m_cBrowserId_RechnungsKontrollChanges,
+   grid_RechnungsKontrollChanges.ReadWriteProps  := False,
+
+   // MemTable für die Fertigmeldungs-Details
+   m_oMemFertigmeldungDetails           := CreateObject('TBeMemTable', 'MEM_FERTIGMELDUNG', oForm, oForm),
+   m_oMemFertigmeldungDetails.AliasName := 'MEM_FERTIGMELDUNG',
+   m_oMemFertigmeldungDetails.CbAddField('B_POS_LFD',       ftString, 11),
+   m_oMemFertigmeldungDetails.CbAddField('ARTNR_E',         ftString, mBeArtNoLen),
+   m_oMemFertigmeldungDetails.CbAddField('ARTTYP',          ftString, 1),
+   m_oMemFertigmeldungDetails.CbAddField('ME',              ftString, 3),
+   m_oMemFertigmeldungDetails.CbAddField('EK_WERT_OZ',      ftFloat,  0),
+   m_oMemFertigmeldungDetails.CbAddField('EK_WERT_Z',       ftFloat,  0),
+   m_oMemFertigmeldungDetails.CbAddField('EK_WERT',         ftFloat,  0),
+
+   m_oMemFertigmeldungDetails.CbAddField('EKP_E',           ftFloat,  0), // Ist-Ø EKP (vorher = nachher)
+   m_oMemFertigmeldungDetails.CbAddField('PE_E',            ftFloat,  0), // Ist-PE    (vorher = nachher)
+
+   m_oMemFertigmeldungDetails.CbAddField('IST_VOR',         ftFloat,  0), // gebuchte Ist-Menge (vorher)
+   m_oMemFertigmeldungDetails.CbAddField('IST_NACH',        ftFloat,  0), // gebuchte Ist-Menge (nachher, ändert sich nur beim Kopfsatz)
+   m_oMemFertigmeldungDetails.CbAddField('IST_AUSSCH_VOR',  ftFloat,  0), // gebuchte Fertigteil Ausschuss-Menge (vorher, nur relevant für Kopfsatz)
+   m_oMemFertigmeldungDetails.CbAddField('IST_AUSSCH_NACH', ftFloat,  0), // gebuchte Fertigteil Ausschuss-Menge (nachher, nur relevant für Kopfsatz)
+
+   m_oMemFertigmeldungDetails.CbAddField('MENGE',           ftFloat,  0), // Gefertige Gutmenge       des Arbeitsgangs (vorher = nachher)
+   m_oMemFertigmeldungDetails.CbAddField('MENGE_AUSS',      ftFloat,  0), // Gefertige Ausschussmenge des Arbeitsgangs (vorher = nachher)
+   m_oMemFertigmeldungDetails.CbAddField('IST_AUSGEB_VOR',  ftFloat,  0), // Ist-Menge ausgebucht (vorher)
+   m_oMemFertigmeldungDetails.CbAddField('IST_AUSGEB_NACH', ftFloat,  0), // Ist-Menge ausgebucht (nachher)
+
+   m_oMemFertigmeldungDetails.CbAddField('KOSTENST',        ftInteger, 0),
+
+   m_oMemFertigmeldungDetails.CbAddIndex('B_POS_LFD', 'B_POS_LFD', ixUnique),
+
+   m_oMemFertigmeldungDetails.Active := true,
+
+   ds_FertigmeldungDetails.DataSet           := m_oMemFertigmeldungDetails,
+   grid_FertigmeldungDetails.DataSource      := ds_FertigmeldungDetails,
+   grid_FertigmeldungDetails.RegisterDataSet := m_oMemFertigmeldungDetails,
+   grid_FertigmeldungDetails.ID              := m_cBrowserId_FertigmeldungDetails,
+   grid_FertigmeldungDetails.ReadWriteProps  := False,
+end,
+
+//******************************************************************************
+// Standardeinstellungen setzen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID  := m_cPositionSaveID,
+   oForm.OrigCapt        := 'Protokoll Bestandsberichtigung',
+   oForm.ImageIndex      := 425,
+
+   bipnl_TopInfo.Caption   := oForm.OrigCapt,
+
+   bipnl_TopInfo.ColorMode    := ipcmInfo, // wg. Rückwärtskompatiblem ReDesign be 7
+   edt_FilterArtNr.ParentFont := true,     // wg. Rückwärtskompatiblem ReDesign be 7
+   cmb_FilterModus.ParentFont := true,     // wg. Rückwärtskompatiblem ReDesign be 7
+
+   // Besonders beim Scrollen über Datensätze mit Modus = 6 oder Mouds = 7 kann
+   // es etwas länger dauern, bis die Detaildaten geladen sind.
+   // -> Delay verhindert, dass die Detaildaten geladen, wenn nur über den
+   //    Datensatz gescrollt wird.
+   ds_KdnBBP.ScrollDelay := 200,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+
+   ds_KdnBBPScroll_Update(nil),
+
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+              GetErrorText() + crlf + crlf +
+              DebugArr(GetErrorStack(true)), mtError),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

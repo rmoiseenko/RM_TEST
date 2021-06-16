@@ -1,0 +1,34 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Stücklisten
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'SLU' steht für 'S'tück'L'isten'U'tils
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion prüft, ob der übergebene Dab210-Datensatz gültig ist per
+//    Datum @dGueltigDate
+// @Result: boolean, ja/nein, Gültig oder nicht
+//******************************************************************************
+function _SLU_Dab210_IsGueltig(oDab210, dGueltigDate)
+   SetErrorIf(empty(dGueltigDate), 'empty(dGueltigDate) not allowed'),
+
+   Result :=     ( empty(oDab210:GUELTIGVON) or oDab210:GUELTIGVON <= dGueltigDate )
+             and ( empty(oDab210:GUELTIGBIS) or oDab210:GUELTIGBIS >= dGueltigDate ),
+end,
+
+//******************************************************************************
+// Funktion liefert einen ADS-Filter-Ausdruck für die Gültigkeits-Filterung
+// der Dab210 per Datum @dGueltigDate
+// @Result: String
+//******************************************************************************
+function _SLU_Dab210_GueltigFilter(dGueltigDate)
+   SetErrorIf(empty(dGueltigDate), 'empty(dGueltigDate) not allowed'),
+
+   Result := '( (Empty(GUELTIGVON) or GUELTIGVON <= STOD(''' + FormatDateTime('YYYYMMDD', dGueltigDate) + ''')) AND ' +
+             '  (Empty(GUELTIGBIS) or GUELTIGBIS >= STOD(''' + FormatDateTime('YYYYMMDD', dGueltigDate) + ''')) )',
+end,

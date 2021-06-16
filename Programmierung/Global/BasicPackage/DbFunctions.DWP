@@ -1,0 +1,503 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Funktionen mit DB-Bezug
+//
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// VERALTET (Performance) => BeOpen() & BeClose() nutzen
+//******************************************************************************
+// Öffnet eine be-Standard-Tabelle für Lookup-Funktionen
+// @Result: object
+//******************************************************************************
+function _OLT(nWorkArea)
+   Result          := CreateObject('TBeStandardTable'),
+   Result.WorkArea := nWorkArea,
+   Result.Active   := true,
+end,
+
+//******************************************************************************
+// Kopiert die Felder eines Datensatzes von oTableSource nach oTableDest.
+// HINWEIS: ADT-Standardfelder (wie z.B. ID, ERSTELLT, etc.) werden ignoriert.
+// => Setzt voraus, dass alle Felder der Quell-Tabelle auch in der Ziel-Tabelle
+//    identisch vorhanden sind
+// @Result: null
+//******************************************************************************
+function _CopyDS(oTableSource:O, oTableDest:O)
+| aRecord |
+
+   //***************************************************************************
+   // Prüft ob die Tabelle vom Typ TMemCalcTable ist
+   // @Result: boolean
+   //***************************************************************************
+   function IsTMemCalcTable(oTable:O)
+      Result := ClassName(oTable) == 'TMemCalcTable',
+   end,
+
+   // Zustand der Ziel-Tabelle validieren
+   SetErrorIf(not EditModes(oTableDest),
+              'Ziel-Tabelle muss sich im Edit- oder im Insert-Modus befinden!'),
+
+   // Datensatz aus der Quell-Tabelle holen
+   if IsTMemCalcTable(oTableSource) then
+      aRecord := oTableSource.RecAsArray,
+   else
+      aRecord := oTableSource.CbGetRecAsArray(),
+   endif,
+
+   // Datensatz in die Ziel-Tabelle schreiben
+   if IsTMemCalcTable(oTableDest) then
+      oTableDest.RecAsArray := aRecord,
+   else
+      oTableDest.CbSetRecAsArray(aRecord),
+   endif,
+end,
+
+//******************************************************************************
+// Kopiert den aktuellen Datensatz der übergebenen Tabelle in eine neue MemTable
+// @Result: neue MemTable
+//******************************************************************************
+function _CopyDSToMemTable(oDataSet)
+| oMemTable |
+   oMemTable                   := CreateObject('TMemCalcTable'),
+   oMemTable.BorrowFromDataset := oDataSet,            // Struktur übernehmen
+   oMemTable.Active            := true,
+   MyAppend(oMemTable),
+   oMemTable.RecAsArray        := oDataSet.RecAsArray, // Datensatz übernehmen
+   MyPost(oMemTable),
+   Result := oMemTable,
+end,
+
+//******************************************************************************
+// Kopiert alle (aktuell sichtbaren) Datensätze einer Tabelle in eine neue MemTable
+// @Result: neue MemTable
+//******************************************************************************
+function _CopyToMemTable(oDataSet, bRecno)
+| oMemTable |
+   oMemTable                   := CreateObject('TMemCalcTable'),
+   oMemTable.BorrowFromDataset := oDataSet,
+   if bRecno then
+      AddMemField(oMemTable, "_RECNO_", 'N', 10,0),
+   endif,
+   oMemTable.Active            := true,
+   oMemTable.LoadFromDataSet   := oDataSet,
+   DbGoTop(oMemTable),
+   Result := oMemTable,
+end,
+
+//******************************************************************************
+// Ein SQL-Query-Objekt erstellen, SQL-Text zuweisen und sofort öffnen
+// @Result: neues Query-Objekt
+//******************************************************************************
+function _SQLQuery(cSQL, cName, oOwner, oParent)
+| oQuery |
+   oQuery        := CreateObject('TBeAdsQuery', cName, oOwner, oParent),
+   oQuery.SQL    := cSQL,
+   oQuery.Active := true,
+   Result        := oQuery,
+end,
+
+//******************************************************************************
+// Erweiterte DbRefresh()-Methode
+// => Eine oder mehrere Tabellen derartig refreshen, dass im Falle von
+//    (bNewRecords = true) nach dem Refresh neue Records sichtbar und gelöschte
+//    Records unsichtbar werden (wird durch DbGoTop() erreicht, siehe unten).
+// => Zusätzlich stellt die Funktion sicher, dass nach dem Refresh
+//    der ursprüngliche Record immer noch positioniert ist (sofern überhaupt möglich)
+//
+// => Gut geeignet auch für den Refresh mehrerer Tabellen, welche in einer GUI
+//    über Scopes etc. verbunden sind
+//    => Reihenfolge der Übergabe dann beachten, erst Master-Tabelle
+//       dann Detail-Tabelle
+// TODO: der Parameter bNewRecords ist für den Array-Modus nicht implementiert
+// @Result: null
+//******************************************************************************
+function _MyRefresh(uTableOrTablesArray, bNewRecords)
+| aRecNoArr, i, nRecNo, oTable, aTableArr |
+
+   // **************************************************************************
+   // Modus 1: eine Tabelle übergeben
+   // **************************************************************************
+   if ValType(uTableOrTablesArray) = 'O' then
+      oTable := uTableOrTablesArray,
+      nRecNo := -1,
+      startseq,
+         nRecNo := DbRecNo(oTable),
+      stopseq,
+      DbRefresh(oTable),
+      if bNewRecords then
+         DbGoTop(oTable), // neue und gelöschte Records refreshen
+         if nRecNo > 0 then
+            DbGoTo(nRecNo, oTable),
+         endif,
+      endif,
+   else
+      // ***********************************************************************
+      // Modus 2: Array von Tabellen übergeben
+      // ***********************************************************************
+      if ValType(uTableOrTablesArray) = 'A' then
+         // => nicht einfach MyRefresh() auf alle Tabellen anwenden, da sich
+         //    diese ggf. gegenseitig beeinflussen könnten. Es muss vor dem ersten
+         //    Refresh der jeweilige aktuelle Record gemerkt werden
+         aTableArr := uTableOrTablesArray,
+         aRecNoArr := {},
+         for i := 1 to ALen(aTableArr) do
+            startseq,
+               nRecno := 0,
+               nRecno := DbRecNo(aTableArr[i]),
+            stopseq,
+            AAdd(aRecNoArr, nRecno),
+         next,
+         for i := 1 to ALen(aTableArr) do
+            DbRefresh(aTableArr[i]),
+         next,
+         for i := 1 to ALen(aTableArr) do
+            DbGoTo(aRecNoArr[i], aTableArr[i]),
+         next,
+      else
+         SetError('Global.DbFunctions.MyRefresh(): unsupported ValType() for param uTableOrTablesArray'),
+      endif,
+   endif,
+
+end,
+
+//******************************************************************************
+// Funktion erstellt einen Teil eines Filterstrings für Datums-Vergleiche
+// => für den Einsatz in regulären ADS-Filterausdrücken
+//    z.B. "BUCH_DATUM = SToD('20120401')"
+// @Result: string
+//******************************************************************************
+function _DbFilterDatumString(dDatum)
+   Result := " SToD('" + DToS(dDatum) + "') ",
+end,
+
+//******************************************************************************
+// Funktion formatiert einen Datum(Zeit)-Wert in einen String, der als
+// Vergleichswert in einem SQL dienen kann.
+// @Result: string
+//******************************************************************************
+function _DateTimeToSqlEx(dDateTime, bWithTime, bQuoted)
+| nYear, nMonth, nDay, nHours, nMinutes, nSeconds, nMilSecs |
+
+  DecodeDate(dDateTime, nYear, nMonth, nDay),
+  DecodeTime(dDateTime, nHours, nMinutes, nSeconds, nMilSecs),
+
+  Result :=    Str(nYear, 4)      + '-' + StrZero(nMonth, 2)   + '-' + StrZero(nDay, 2),
+  if bWithTime then
+     Result += ' ' +
+               StrZero(nHours, 2) + ':' + StrZero(nMinutes, 2) + ':' + StrZero(nSeconds, 2),
+  endif,
+  if bQuoted then
+     Result := "'" + Result + "'",
+  endif,
+end,
+
+//******************************************************************************
+// Funktion formatiert einen Datum(Zeit)-Wert in einen String, der als
+// Vergleichswert in einem SQL dienen kann.
+// wie _DateTimeToSqlEx, aber mit Millisekunden
+// @Result: string
+//******************************************************************************
+function _DateTimeToSqlMillisecsEx(dDateTime, bWithTime, bQuoted, bWithMilliSec:L:=nil)
+| nYear, nMonth, nDay, nHours, nMinutes, nSeconds, nMilSecs |
+
+  DecodeDate(dDateTime, nYear, nMonth, nDay),
+  DecodeTime(dDateTime, nHours, nMinutes, nSeconds, nMilSecs),
+
+  Result :=    Str(nYear, 4)      + '-' + StrZero(nMonth, 2)   + '-' + StrZero(nDay, 2),
+  if bWithTime then
+     Result += ' ' + StrZero(nHours, 2) + ':' + StrZero(nMinutes, 2) + ':' + StrZero(nSeconds, 2),
+     Result += iif(bWithMilliSec, '.' + StrZero(nMilSecs, 3),''),
+  endif,
+  if bQuoted then
+     Result := "'" + Result + "'",
+  endif,
+end,
+
+//******************************************************************************
+// Kurzform von DateTimeToSqlEx() für Datum/Zeit-Werte
+// @Result: string
+//******************************************************************************
+function _DateTimeToSql(dDate, bQuoted)
+  Result    := DateTimeToSqlEx(dDate, true, bQuoted),
+end,
+
+//******************************************************************************
+// Kurzform von DateTimeToSqlMillisecsEx() für Datum/Zeit-Werte
+// @Result: string
+//******************************************************************************
+function _DateTimeToSqlMillisecs(dDate, bQuoted)
+  Result    := DateTimeToSqlMillisecsEx(dDate, true, bQuoted),
+end,
+
+//******************************************************************************
+// Kurzform von DateTimeToSqlEx() für Datums-Werte
+// @Result: string
+//******************************************************************************
+function _DateToSql(dDate, bQuoted)
+  Result    := DateTimeToSqlEx(dDate, false, bQuoted),
+end,
+
+//******************************************************************************
+// Die Funktion gibt True zurück wenn das DataDictionary(DD) vorhanden ist, 
+// andernfalls gibt die Funktion False zurück
+// @Result: logisch
+//******************************************************************************
+function _DataDictionaryAvailable()
+   // Überprüft ob die DD Pfade vorhanden sind
+   Result := File(mbedefault + 'BE_STD.ADD') and
+             File(mbedefault + 'BE_STD.ai') and
+             File(mbedefault + 'BE_STD.am'),      
+end,
+
+//******************************************************************************
+// Erstellt ein Datenmodul für eine GUI und gibt dieses zurück.
+//   Ein so erstelltes Datenmodul ist für das Öffnen von Tabellen gedacht, die 
+//      in der GUI angezeigt werden sollen.
+//   Warum die Unterscheidung? 
+//      Auf GUI Tabellen müssen z.B. die User-Rechte 
+//      aktiviert sein, für Hintergrund-Verarbeitung (-> 'BeCreateTransactionDM()') aber nicht.
+// @Result: Object - TbeDBGet
+//******************************************************************************
+function _BeCreateGuiDM(oOwner, cObjectName:C:='GUI_DM')
+   SetErrorIf(LoadedModule = belmBeas, 'GUI-Datenmodule dürfen nicht in der beas Umgebung erstellt werden'),
+   Result := CreateObject('TbeDBGet', cObjectName, oOwner),
+   startseq
+      ObjectSetProp(Result, 'TYPE', 'GUI'),
+   onerror
+      DestroyObject(Result),
+      raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Erstellt ein Datenmodul für Transaktionen und gibt dieses zurück.
+// @Result: Object - TbeDBGet
+//******************************************************************************
+function _BeCreateTransactionDM(oOwner:O, cObjectName:C:='TRANSACTION_DM')
+   Result := CreateObject('TBeDBGet', cObjectName, oOwner),
+   startseq
+      ObjectSetProp(Result, 'TYPE', 'TRANSACTION'),
+   onerror
+      DestroyObject(Result),
+      raise(),
+   stopseq,
+end,
+
+//******************************************************************************
+// Holt ein Datenmodul aus dem Pool für Transaktionen und gibt dieses zurück.
+// @Result: object
+//******************************************************************************
+function _BeGetTransactionDMFromPool(cAliasName:C:='TRANSACTION_DM')
+   Result := DBGetDataModuleFromPool(cAliasName),
+   ObjectEmptyPropTable(Result),
+   ObjectSetProp(Result, 'TYPE', 'TRANSACTION'),
+end,
+
+//******************************************************************************
+// Gibt ein Transaktions-Datenmodul an den Pool zurück.
+// @Result: null
+//******************************************************************************
+function _BeReturnTransactionDMToPool(oDM:O)
+   ObjectEmptyPropTable(oDM),
+   DBReturnDataModuleToPool(oDM),
+end,
+
+//******************************************************************************
+// Prüft ob das Übergebene Objekt für Transaktionen erstellt wurde.
+// Das Objekt muss hierfür über die Funktion BeCreateTransactionDM() erstellt
+// werden.
+//
+// Sonderlogik für den BEAS:
+//    Im Beas wird lediglich ein Object aus einem Pool geholt. Hierdurch
+//    kann nicht sichergestellt werden, dass das Datenmodul über die
+//    entsprechende Funktion erstellt wurde.
+//    -> Für den BEAS wird generell TRUE zurückgegeben
+// @Result: boolean
+//******************************************************************************
+function _BeIsObjectTransactionDM(oDM:O)
+   if LoadedModule = belmBeas then
+      Result := true,
+   else
+      Result := ObjectGetProp(oDM, 'TYPE') = 'TRANSACTION',
+   endif,
+   SetErrorIf(not Result, 'Übergebenes Datenmodul ist nicht vom richtigen Typ (="TRANSACTION"). Das DM muss über BeCreateTransactionDM() erstellt werden.'),
+end,
+
+//******************************************************************************
+// Setzt ein TransactionsDM zurück
+// @Result: null
+//******************************************************************************
+function _BeResetTransactionDM(oDM:O)
+   BeIsObjectTransactionDM(oDM),              // Prüfen ob das Objekt vom richtigen Typen ist
+   ObjectEmptyPropTable(oDM),                 // Alle Properties löschen
+   ObjectSetProp(oDM, 'TYPE', 'TRANSACTION'), // Typ wieder setzen (wurde durch ObjectEmptyPropTable() entfernt)
+   DBResetDM(oDM),                            // DM zurücksetzen
+end,
+
+//******************************************************************************
+// Startet eine Transaktion für ein Datenmodul.
+// Dieses Objekt muss über die Funktion BeCreateTransactionDM() erstellt worden
+// sein.
+// @Result: boolean - Start der Transaktion erfolgreich
+//******************************************************************************
+function _BeStartTransaction(oDM)
+   // Prüfen ob das Objekt vom richtigen Typen ist
+   BeIsObjectTransactionDM(oDM),
+   // Start Transaktion
+   Result := oDM.CbTransaction_Begin(),
+end,
+
+//******************************************************************************
+// Bestätigt eine Transaktion für ein Datemodul.
+//
+// Prüft zuvor folgende Umstände:
+//  - Befindet sich eine auf dem DM geöffnete Tabelle noch im Editiermodus? -> Programmierfehler!
+//  - Ist eine Tabelle mit Standard Alias gefiltert oder gescoped?          -> Programmierfehler!
+//  Falls keine dieser Umstände zutrifft führt die Funktion einen Commit durch.
+//
+// @Result: boolean - Commit der Transaktion erfolgreich
+//******************************************************************************
+function _BeCommitTransaction(oDM)
+| oComponent, i , oTableInfo, cDefaultAlias |
+   
+   // Prüfen ob das Objekt vom richtigen Typen ist
+   BeIsObjectTransactionDM(oDM),
+
+   // Auf die o.a. Restriktionen prüfen
+   for i := 0 to ComponentCount(oDM) -1 do
+      oComponent := Components(oDM, i),
+      
+      if ClassOf(oComponent, 'TBeRightsTable') then
+
+         // Fehler werfen, falls sich eine Tabelle noch im Editmodus befindet
+         // Warum: Die Änderung würde nicht commitet (weil noch nicht gepostet) und dann aus
+         //        Versehen ausserhalb der Transaktion bestehen bleiben.
+         //        Ein nachfolgender Skip auf der Tabelle kann kann zu einem 'impliziten' Post außerhalb
+         //        der Transkation führen -> Daten auf dem Server gelandet!
+         if EditModes(oComponent) then
+            SetError('Mindestens eine der auf dem Datenmodul geöffneten Tabellen befindet sich noch im Editmodus!' + crlf +
+                     'Tabelle: ' + oComponent.AliasName),
+         endif,
+
+         // Default-Alias Name ermitteln         
+         oTableInfo    := GetTableInfo(oComponent.Workarea),
+         cDefaultAlias := oTableInfo.TableDef.AliasName,
+
+         // Fehler werfen, wenn die Tabelle eine Default-Alias-Tabelle ist und noch gefilter oder gescoped ist.
+         // Warum: Es ist Best Practice, dass Default-Alias-Tabellen niemals so "zurück gelassen" werden sollen, da sonst 
+         //        jede Code-Stelle die die Tabelle aus dem Datenmodul holt und damit z.B. eine 'for..next' schleife über "alle Datensätze" machen möchte 
+         //        zuvor prüfen müsste, ob ggf. ein ungewünschter Filter oder Scope von einer anderen Code-Stelle gesetzt wurde.
+         if oComponent.AliasName == cDefaultAlias then
+            if oComponent.AdsIsScopeSet OR oComponent.Scoped OR oComponent.Filtered then
+               SetError('Auf mindestens einer der auf dem Datenmodul geöffneten Tabellen mit Standard Alias ist ein Filter aktiv!' + crlf +
+                        'Tabellen die editiert werden, sollten nicht gefiltert oder gescoped zurück gelassen werden.' + crlf +
+                        'Tabelle: ' + oComponent.AliasName),
+            endif,
+         endif,
+      endif,
+   next,
+
+   // Commit der Transaktion
+   Result := oDM.CbTransaction_Commit(),
+
+   // Alle Tabellen des DMs auf den Standard-Zustand setzen, so dass das DM so "frisch" ist wie "gerade erst erstellt".
+   BeResetTransactionDM(oDM),
+end,
+
+//******************************************************************************
+// Führt einen Rollback der Transaktion aus, sofern eine Transaktion aktiv ist.
+// @Result: boolean - Rollback erfolgreich
+//******************************************************************************
+function _BeRollbackTransaction(oDM)
+
+   // Prüfen ob das Objekt vom richtigen Typen ist
+   BeIsObjectTransactionDM(oDM),
+
+   // Rollback der Transaktion
+   startseq
+      // Alle Eigenschaften des Datenmoduls die über ObjectSetProp gesetzt wurden, werden zurückgesetzt
+      // - Für alle Tabellen im Datenmodul DbCancel() aufrufen, falls noch
+      //   im EditMode. Das muss unbedingt passieren. Wenn man das nicht macht, kann man
+      //   später z.B. durch einen "impliziten Post" (durch Skip) einfach Daten ohne Transaktion schreiben.
+      // Für alle Tabellen wird außerdem
+      // - alle Datensatz-Sperren werden aufgehoben
+      // - ein evtl. vorhandener Filter wird entfernt
+      // - ein evtl. gesetzter Scope wird entfernt
+      // - der erste verfügbare Index wird aktiviert
+      // Warum machen wir das?
+      //   -> Dieses "Zurücksetzen" führt dazu, dass das Datenmodul nach der Aktion
+      //      wieder "wie neu erzeugt ist". Vergessene Scope-Resets etc. können dann nicht zu Folge-Fehlern führen.
+      BeResetTransactionDM(oDM),    
+   always
+      Result := oDM.CbTransaction_TryRollback(), // Transaktion rollbacken, wenn sie aktiv ist. Wenn sie aktiv ist, dann wurde Sie vom Programm-Logik-Code
+                                                 // nicht committet, d.h. da ist etwas schief gelaufen
+   stopseq,
+end,
+
+//******************************************************************************
+// Setzt den Wert für '.UseLocation' und merkt ihn sich, damit er später wieder auf
+//     den alten Wert zurück gesetzt werden kann
+//
+// Kann genutzt werden für ein Datenmodul oder eine Tabelle
+//
+// @Result: keine Rückgabe
+//******************************************************************************
+function _DbSaveAndSetUseLocation(oDMOrTable:O, nNewUseLocation:N)
+| cOldValue, nOldLocation |
+
+   // Aktuell ist "verschachteltes Setzten" noch nicht implementiert
+   cOldValue := ObjectGetProp(oDMOrTable, 'OLD_USE_LOCATION'),
+   if not empty(cOldValue) then
+      SetError('OLD_USE_LOCATION contains value for object, seems like you called this multiple times without Reset()? Old value is "' + cOldValue + '"'),
+   endif,
+
+   case true
+
+      of ClassOf(oDMOrTable, 'TBeRightsTable') ::
+         nOldLocation            := oDMOrTable.UseLocation,
+         oDMOrTable.UseLocation  := nNewUseLocation,
+
+      of ClassOf(oDMOrTable, 'TbeDbGet') ::
+         nOldLocation                           := oDMOrTable.BeAdsConnection.UseLocation,
+         oDMOrTable.BeAdsConnection.UseLocation := nNewUseLocation,
+
+      otherwise
+         SetError('class "' + ClassName(oDMOrTable) + '" not allowed for DbSaveAndSetUseLocation()'),
+   endcase,
+
+   ObjectSetProp(oDMOrTable, 'OLD_USE_LOCATION', Str(nOldLocation)),
+
+end,
+
+//******************************************************************************
+// Setzt '.UseLocation' wieder auf den alten Wert vor Aufruf von
+//    DbSaveAndSetUseLocation() zurück
+// @Result: keine Rückgabe
+//******************************************************************************
+function _DbResetUseLocation(oDMOrTable)
+| cOldUseLocation, nOldUseLocation |
+
+  cOldUseLocation := ObjectGetProp(oDMOrTable, 'OLD_USE_LOCATION'),
+  SetErrorIf(empty(cOldUseLocation), 'old value not saved in object properties - did you forget to call DbSaveAndSetUseLocation() ?'),
+  nOldUseLocation := Val( cOldUseLocation ),
+
+  case true
+
+     of ClassOf(oDMOrTable, 'TBeRightsTable') ::
+
+        oDMOrTable.UseLocation  := nOldUseLocation,
+
+     of ClassOf(oDMOrTable, 'TbeDbGet') ::
+
+        oDMOrTable.BeAdsConnection.UseLocation := nOldUseLocation,
+
+     otherwise
+        SetError('class "' + ClassName(oDMOrTable) + '" not allowed for DbSaveAndSetUseLocation()'),
+  endcase,
+
+  ObjectSetProp(oDMOrTable, 'OLD_USE_LOCATION', ''),
+
+end,

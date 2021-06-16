@@ -1,0 +1,13 @@
+| nEvtNo:P1, oMemoBO:P2, nProjLeistungsErfassungForProject |
+
+// Aufruf erfolgt vor dem Speichern eines Memo Business-Objekts (TBeMemoBO)
+// Vorgang kann durch das Auslösen einer Exception abgebrochen werden.
+
+// Projektleistungserfassung starten
+if oMemoBO.ProjectIDValue > 0 then
+   nProjLeistungsErfassungForProject := LookUp(waDabPRJ, 'ID', {{oMemoBO.ProjectIDValue}}, 'X_ZEIT_MEM', false),
+   if nProjLeistungsErfassungForProject then
+      ProjMgmtGUI_ShowBookingDialogForMemo(oMemoBO, true, true)
+   endif,
+endif,
+

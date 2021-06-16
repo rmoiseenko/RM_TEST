@@ -1,0 +1,13 @@
+//******************************************************************************
+// Statistik über die Daten erstellen (Summen)
+//******************************************************************************
+
+SELECT
+   Count(1)                           AS ANZAHL_DATENSAETZE,
+   SUM(iif(QUALI > 0, KAPA_MIN, 0))   AS SUMME_BEDARF_MIN  // nur die Belastungsinfos der Qualifikationen speichern, damit ist die Gesamtsumme erfasst!
+FROM
+(
+   SELECT * FROM #kapa_bedarf_per_quali_res_BY_QUALI
+      UNION ALL
+   SELECT * FROM #kapa_bedarf_per_quali_res_BY_RESID
+) INNER_RESULT

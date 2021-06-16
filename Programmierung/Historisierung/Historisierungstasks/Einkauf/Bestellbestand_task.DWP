@@ -1,0 +1,289 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Historisierung des Einkauf - Bestellbestand
+//##############################################################################
+//##############################################################################
+
+| m_aParams:P1,
+
+  m_bParamTestMode,
+  m_nParamHistType,
+  m_nParamStandort,
+  m_dParamHistorisierungsDatum,
+  m_cParamInlandLandNr,
+
+  m_aResult |
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion gibt für das Datum @dDate den Beginn der Kalenderwoche (Montag) zurück
+// @Result: Date
+//******************************************************************************
+function FirstDayOfWeek(dDate)
+| nDayOfWeek |
+   nDayOfWeek := DoW(dDate) - 1,
+   if nDayOfWeek = 0 then
+      nDayOfWeek := 7,
+   endif,
+   Result     := dDate - nDayOfWeek + 1,
+end,
+
+//******************************************************************************
+// Berechnet das SQL-Script zur Ermittlung der Quelldaten
+// @Result: String
+//******************************************************************************
+function GetHISEK_SelectQuery(nStandort, dHistorisierungsdatum, cInlandLandNr)
+| cScriptName |
+   cScriptName := 'Historisierung\Historisierungstasks\Einkauf\Bestellbestand_sql',
+   Result := LookUp(waDabPRG, 'BEZ', {{Upper(cScriptName)}}, 'PROGRAMM', ''),
+   SetErrorIf(empty(Result), 'script not found!'),
+
+   Result := StrTran(Result, '@PARAM_HISTORISIERUNGS_DATUM@',      DateToSql(dHistorisierungsdatum,                 true)),
+   Result := StrTran(Result, '@PARAM_DATUM_START_WOCHEN_ABSTAND@', DateToSql(FirstDayOfWeek(dHistorisierungsdatum), true)),
+   Result := StrTran(Result, '@PARAM_STANDORT@',                   Str(nStandort)),
+   Result := StrTran(Result, '@PARAM_INLAND_LANDNR@',              "'" + cInlandLandNr + "'"),
+
+
+   Result := StrTran(Result, '@DAB010_TABLENAME@', AllTrim(DbSqlTableName(waDab010))),
+   Result := StrTran(Result, '@DAB100_TABLENAME@', AllTrim(DbSqlTableName(waDab100))),
+   Result := StrTran(Result, '@DIA020_TABLENAME@', AllTrim(DbSqlTableName(waDia020))),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetHISEKDetailFields(oDM, oHISEK, oQuery)
+| i, oField,
+  nPositionsEinkaufsWertInEigenwaehrung,
+  nPositionsEinkaufsWertInFremdwaehrung,
+  nAnteilProzImWareneingang |
+
+   oHISEK:ABTEILUNG  := oQuery:ABTEILUNG,
+
+   oHISEK:STO_IS_IC  := oQuery:STO_IS_IC,
+   oHISEK:IC_ABSSTO  := oQuery:IC_ABSSTO,
+   oHISEK:IC_ABSFFN  := oQuery:IC_ABSFFN,
+
+   oHISEK:ARTNR      := oQuery:ARTNR,
+   oHISEK:ARTTYP     := oQuery:ARTTYP,
+   oHISEK:ARTGRUPPE  := oQuery:ARTGRUPPE,
+   oHISEK:SACHKONTO  := oQuery:SACHKONTO,
+   oHISEK:KOSTENST   := oQuery:KOSTENST,
+   oHISEK:LIEFNR     := oQuery:LIEFNR,
+   oHISEK:LANDNR     := oQuery:LANDNR,
+   oHISEK:LAND_REG   := oQuery:LAND_REG,
+   oHISEK:BESTAETIGT := oQuery:BESTAETIGT,
+   oHISEK:PRJ_ID     := oQuery:PRJ_ID,
+   oHISEK:WAEKZ      := oQuery:WAEKZ,
+   oHISEK:DATUMB     := oQuery:DATUMB,
+   oHISEK:TERMINS    := oQuery:TERMINS,
+   oHISEK:TERMINSD   := SToD(Left(DateStr(oQuery:TERMINS), 8)), // Solltermin als Date, berechnet aus Solltermin Char(8)
+   oHISEK:TERMIN     := oQuery:TERMIN,
+   oHISEK:TERMIND    := oQuery:TERMIND,
+   oHISEK:TERMINAW   := oQuery:TERMINAW,
+   oHISEK:ABRUF_AUF  := oQuery:ABRUF_AUF,
+   oHISEK:ABRUF_POS  := oQuery:ABRUF_POS,
+   oHISEK:BESTPOSNR  := oQuery:BESTPOSNR,
+   oHISEK:DAB035_ID  := oQuery:DAB035_ID,
+   oHISEK:ME_UMR     := oQuery:ME_UMR,
+   oHISEK:ME_RUNDEN  := oQuery:ME_RUNDEN,
+
+   // Bestellrückstands-Menge
+   oHISEK:BR_MENGE   := oQuery:BR_MENGE,
+   oHISEK:BR_MENG_EK := oQuery:BR_MENG_EK,
+
+   // Menge im Wareneingang
+   oHISEK:WE_MENGE   := oQuery:WE_MENGE,
+   oHISEK:WE_MENG_EK := oQuery:WE_MENG_EK,
+
+   // TODO:
+   //  Aktuell kann hier immer nur eine Historisierung für den "aktuellen" Standort gemacht werden, da die
+   //  Funktion keinen Standort übergeben bekommt und intern immer mit den NK-Stellen der Standort-Eigenwährung rundet
+   SetErrorIf(mStandort <> oQuery:STANDORT, 'mStandort <> oHISEK:STANDORT'),
+
+   // Werte
+   nPositionsEinkaufsWertInEigenwaehrung := EkpEWert( oQuery:BR_MENG_EK, // Berechnung auf Basis der Gesamt-Rückstandsmenge in Einkaufseinheit (!)
+                                                      oQuery:SOEK,
+                                                      oQuery:PE,
+                                                      oQuery:RABATT1, oQuery:RABATT2, oQuery:RABATT3,
+                                                      {oQuery:Z_KOST1, oQuery:Z_KOST2, oQuery:Z_KOST3},
+                                                      {oQuery:Z_MODE1, oQuery:Z_MODE2, oQuery:Z_MODE3},
+                                                      oQuery:FW_KURS,
+                                                      oQuery:WAEKZ,
+                                                      ,
+                                                      ,
+                                                      oQuery:ME_UMR_PE, oQuery:ME_UMR),
+
+   // Wert in Fremdwährung
+   nPositionsEinkaufsWertInFremdwaehrung := EkpEWert( oQuery:BR_MENG_EK, // Berechnung auf Basis der Gesamt-Rückstandsmenge in Einkaufseinheit (!)
+                                                      oQuery:SOEK,
+                                                      oQuery:PE,
+                                                      oQuery:RABATT1, oQuery:RABATT2, oQuery:RABATT3,
+                                                      {oQuery:Z_KOST1, oQuery:Z_KOST2, oQuery:Z_KOST3},
+                                                      {oQuery:Z_MODE1, oQuery:Z_MODE2, oQuery:Z_MODE3},
+                                                      1, // <= Übergabe eines Umrechnungskurses von 1 => keine "echte" Umrechnung
+                                                         //    TODO: Achtung - nicht 100% korrekt, da die Funktion immer mit den NKStellen der Eigenwährung rundet
+                                                      oQuery:WAEKZ,
+                                                      ,
+                                                      ,
+                                                      oQuery:ME_UMR_PE, oQuery:ME_UMR),
+
+   // Wert Bestellrückstand
+   oHISEK:BR_RE_WTFW := nPositionsEinkaufsWertInFremdwaehrung,
+   oHISEK:BR_RE_WT   := nPositionsEinkaufsWertInEigenwaehrung,
+
+   // Wert im Wareneingang
+   // => Berechnung über %-Anteil
+   if oQuery:WE_MENG_EK <> 0 then
+      nAnteilProzImWareneingang := oQuery:WE_MENG_EK / oQuery:BR_MENG_EK,
+
+      // Achtung: Rundungs-Nk-Stellen aktuell immer vom eigenen Standort
+      oHISEK:WE_RE_WTFW         := Round(nAnteilProzImWareneingang * nPositionsEinkaufsWertInFremdwaehrung, CurrDecimals()),
+      oHISEK:WE_RE_WT           := Round(nAnteilProzImWareneingang * nPositionsEinkaufsWertInEigenwaehrung, CurrDecimals()),
+   else
+      oHISEK:WE_RE_WTFW         := 0,
+      oHISEK:WE_RE_WT           := 0,
+   endif,
+end,
+
+//******************************************************************************
+// Historisieren
+// @Result: keine Rückgabe
+//******************************************************************************
+function RunHistorization(bTestMode, nStandort, dHistorisierungsDatum, cInlandLandNr)
+|
+   oDM, oHISEKQuery, oHISEKAKTDelete_Query, cDeleteSQL, cSQL, oDab010, oHISEK,
+   nHISKOPF_ID, nErrorCount, cErrorMessages, nRecordCount, aErrorStack, cErrorStack, i,
+   cComment
+|
+
+   // Achtung: Aktuell kann nicht für einen anderen Standort als den aktuellen historisiert werden.
+   SetErrorIf(nStandort <> mStandort, 'nStandort <> mStandort => nicht erlaubt'),
+
+   // Achtung: Hier gibt es keine(!) Transaktion, da die der Kopfsatz immer, auch
+   //          im Fehlerfall bestehen bleiben soll. Das schreiben der Detail-Sätze
+   //          ist je Datensatz "atomar", also auch unproblematisch.
+   oDM := CreateObject('TBeDbGet', 'DM_HISEK'),
+   startseq
+      cComment       := 'Historisierung für ' + crlf +
+                        'Standort: '        + Str(nStandort) + crlf +
+                        'Eigene Land-Nr. <' + cInlandLandNr + '>',
+
+      nHISKOPF_ID    := HIS_HeaderAdd(oDM, m_nParamHistType, dHistorisierungsDatum, null, null, cComment),
+
+      KVU_Set(m_aResult, 'HISKOPF_ID', nHISKOPF_ID),
+
+      nRecordCount   := 0,
+      nErrorCount    := 0,
+      cErrorMessages := '',
+
+      startseq
+         oHISEKQuery := CreateObject('TBeAdsQuery', 'HISEK_QUERY', oDM),
+         startseq
+            cSQL              := GetHISEK_SelectQuery(nStandort, dHistorisierungsDatum, cInlandLandNr),     // Prs('RunHistorization', cSQL),
+            oHISEKQuery.SQL    := cSQL,
+            oHISEKQuery.Active := true,
+
+            //******************************************************************
+            // Im Modus "aktueller Bestellbestand" (HISEKAKT.ADT) werden die bisher
+            // geschriebenen Daten des Standorts vor der Neu-Berechnung gelöscht
+            // => es wird immer nur ein(!) aktuelles Abbild der Dab0035 gespeichert
+            //******************************************************************
+            if m_nParamHistType = gl_HIS_HistorizationType_PurchaseOrderBacklog_Current then
+               cDeleteSQL := 'DELETE FROM ' + DbSqlTableName(waHISEKAKT) + ' WHERE STANDORT = ' + Str(nStandort),
+               oHISEKAKTDelete_Query := CreateObject('TBeAdsQuery', 'HISEKAKT_DELETE_QUERY', oDM),
+               startseq
+                  oHISEKAKTDelete_Query.SQL := cDeleteSQL,
+                  DbExecSql(oHISEKAKTDelete_Query),
+               always
+                  DestroyObject(oHISEKAKTDelete_Query),
+               stopseq,
+            endif,
+
+            while not oHISEKQuery.CbEof do
+               startseq
+                  nRecordCount++,
+
+                  oHISEK := HIS_DetailAdd(oDM, nHISKOPF_ID, gl_HIS_DetailDataType_Single),
+                  SetHISEKDetailFields(oDM, oHISEK, oHISEKQuery),
+                  HIS_DetailPost(oDM, oHISEK),
+
+                  if bTestMode and nRecordCount > 10 then
+                     SetError('Test-Modus ist aktiv: Fehler/Abbruch bei Datensatz ' + Str(nRecordCount)),
+                  endif,
+
+                  if Mod(nRecordCount, 500) = 0 then
+                     WriteLn(Str(nRecordCount, 8) + ' Datensätze historisiert'),
+                     ProcessMsg(),
+                  endif,
+               onerror
+                  nErrorCount++,
+
+                  aErrorStack := GetErrorStack(True),
+                  cErrorStack := '',
+                  startseq
+                     for i := 1 to ALen(aErrorStack) do
+                        cErrorStack += '- '     + aErrorStack[i, 1]      + '(): ',
+                        cErrorStack += 'Zeile ' + Str(aErrorStack[i, 2]) + ': ',
+                        cErrorStack += StrTran(aErrorStack[i, 4], crlf, ' '),
+                        cErrorStack += ' (' + aErrorStack[i, 3] + ')' + crlf,
+                     next,
+                  onerror
+                     cErrorStack := DebugArr(aErrorStack),
+                  stopseq,
+                  cErrorMessages := ConcatTrenner(cErrorMessages, cErrorStack, CRLF + CRLF),
+
+                  SetErrorIf(nErrorCount >= 10, 'Historisierung: Zu viele Fehler sind aufgetreten -> Abbruch'),
+               stopseq,
+
+               oHISEKQuery.CbNext(),
+            end,
+
+         always
+            DestroyObject(oHISEKQuery),
+         stopseq,
+      always
+         if nErrorCount = 0 then
+            HIS_HeaderFinalize(oDM, nHISKOPF_ID),
+         else
+            HIS_HeaderMarkAsErroneous(oDM, nHISKOPF_ID, nErrorCount, cErrorMessages),
+         endif,
+      stopseq,
+
+   always
+      DestroyObject(oDM),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_aResult := {},
+
+   // übergebene Parameter auslesen
+   m_bParamTestMode              := KVU_Get(m_aParams, 'TESTMODE',  false), 
+   m_nParamHistType              := KVU_Get(m_aParams, 'HIST_TYPE', gl_HIS_HistorizationType_PurchaseOrderBacklog),
+   SetErrorIf(not (m_nParamHistType = gl_HIS_HistorizationType_PurchaseOrderBacklog or m_nParamHistType = gl_HIS_HistorizationType_PurchaseOrderBacklog_Current),
+                                     'Parameter "HIST_TYPE" must be gl_HIS_HistorizationType_PurchaseOrderBacklog or gl_HIS_HistorizationType_PurchaseOrderBacklog_Current'),
+   m_nParamStandort              := KVU_Get(m_aParams, 'STANDORT',  mStandort),
+   m_dParamHistorisierungsDatum  := KVU_Get(m_aParams, 'DATUM',     mBDatum),
+
+   // die folgenden Parameter werden aus den globals übernommen, sofern nicht definiert
+   m_cParamInlandLandNr          := KVU_Get(m_aParams, 'INLAND_NR',         HIS_GetLandNrForStandort(m_nParamStandort)),
+
+   RunHistorization(m_bParamTestMode, m_nParamStandort, m_dParamHistorisierungsDatum, m_cParamInlandLandNr),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+m_aResult

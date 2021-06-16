@@ -1,0 +1,523 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Programm zum Importieren von Sachmerkmalleistenzuordnungen aus
+//               einem Excel-Sheet.
+//
+// HINWEIS:      Aktuell werden nur Sachmerkmalleistenzuordnungen für Artikel
+//               (Dab010) unterstützt!
+//##############################################################################
+//##############################################################################
+
+|
+   m_nDestinationSMLID:P1,
+   m_cImportExcelFileName:P2,
+   m_oDM:P3,
+   m_oErrors:P4,
+   m_oLog:P5,
+   m_bDryRun:P6:=False,
+   m_aResult,
+
+   // Konstanten
+   m_cDeleteFieldName,
+   m_cCommentFieldName,
+   m_cRecNoFieldName
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cDeleteFieldName  := 'LOESCHEN',
+m_cCommentFieldName := 'KOMMENTAR',
+m_cRecNoFieldName   := 'REC_NO',
+
+//##############################################################################
+//##############################################################################
+// Hilfsfunktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Einen aus Excel importierten Wert in einen echten Codeblock-Datentypen
+//  konvertieren.
+// Durch den Excel-Import werden alle Werte als Strings importiert. Diese
+//  müssen aber für das Schreiben in die SL_MEMO-Datenstruktur als echter
+//  Codeblock-Datentyp vorliegen.
+//
+// @Result: undefined/variant, konvertierter Wert
+//******************************************************************************
+function SML_ConvertImportValueToCbDataType(cValue:C, cExpectedDataType:C, cAttributeLabel:C)
+   Result := cValue,
+   case cExpectedDataType
+      of 'C' :: Result := cValue,
+      of 'D' :: Result := CToD(cValue),
+      of 'L' ::
+         case Upper(cValue)
+            of {    '1', 'WAHR',   'TRUE'}  :: Result := True,
+            of {'', '0', 'FALSCH', 'FALSE'} :: Result := False,
+            otherwise
+               SetError('Ungültiger Wert <' + cValue + '> für das logische Merkmal <' + cAttributeLabel + '>'),
+         endcase,
+      of 'N' ::
+         SetErrorIf(CharOnly('0123456789,.', cValue) <> cValue, 'Ungültiger Wert <' + cValue + '> für das numerische Merkmal <' + cAttributeLabel + '>'),
+         Result := ToFloat(cValue),
+      otherwise
+         SetError('Unsupported data type <' + cExpectedDataType + '> for attribute <' + cAttributeLabel + '>'),
+   endcase,
+end,
+
+//******************************************************************************
+// Neuen Datensatz eines fehlerhaften Import-Datensätze erstellen
+// @Result: null
+//******************************************************************************
+function ErrornousRecords_Add(oErrors:O, aRecAsArray:A)
+   oErrors.CbInsert(),
+   oErrors.CbSetRecAsArray(aRecAsArray),
+   oErrors.CbPost(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Validierungs-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Validieren einer TBeMemTable, die Daten aus einem Import-Excel-Sheet enthält.
+// HINWEIS:
+// Die Validierungen passieren auf Basis einer TBeMemTable. In den
+// Fehlermeldungen wird jedoch immer von einem Excel-Sheet die Rede sein, weil
+// diese Fehlermeldungen an die Oberfläche gelangen und vom Benutzer verstanden
+// werden sollen.
+//
+// @Result: boolean
+//******************************************************************************
+function SML_ValidateImportExcelMemTable(nSMLID:N, oMemTable:O, oLog:O)
+| cSLMemo, aExpectedFields, i, cFieldName, oField |
+
+   Result  := True,
+   cSLMemo := Lookup(waSMLSTM, 'ID', {{nSMLID}}, 'SL_MEMO', nil),
+   // Validieren der Sachmerkmalleisten-ID
+   if cSLMemo = nil then
+      SML_ImportLog_ValidationError(oLog, 'Sachmerkmallesite mit der ID <' + Str(nSMLID) + '> existiert nicht'),
+      Result := False,
+   else
+      if cSLMemo == '' then
+         SML_ImportLog_ValidationError(oLog, 'Sachmerkmallesite mit der ID <' + Str(nSMLID) + '> besitzt kein SL_MEMO'),
+         Result := False,
+      endif,
+   endif,
+
+   aExpectedFields := SML_CollectAttributeFieldInformation(nSMLID, cSLMemo),
+   AAdd(aExpectedFields, {'ARTNR', 0, 0}),
+
+   // Validierung: Es müssen alle Eingabe-Merkmale der Sachmerkmalleiste als
+   // Felder im Excel-Sheet existieren
+   for i := 1 to ALen(aExpectedFields) do
+      cFieldName := aExpectedFields[i, 1],
+      oField     := oMemTable.CbFieldByName(cFieldName),
+      if Empty(oField) then
+         SML_ImportLog_ValidationError(oLog, 'Erwartetes Feld <' + cFieldName + '> in Import-Quelle nicht vorhanden'),
+         Result := False,
+      endif,
+   next,
+
+   // Validierung: Es dürfen nicht mehr Felder im Excel-Sheet sein, als
+   // Eingabe-Merkmale in der Sachmerkmalleiste vorhanden sind.
+   // Kommentarfeld ignorieren
+   for i := 0 to oMemTable.CbFieldCount - 1 do
+      oField := oMemTable.CbField(i),
+      if (SeekInDimArray(oField.FieldName, aExpectedFields, 1) = -1) and
+         oField.FieldName <> m_cDeleteFieldName                      and
+         oField.FieldName <> m_cCommentFieldName                     and
+         oField.FieldName <> m_cRecNoFieldName then
+         SML_ImportLog_ValidationError(oLog, 'Unerwartetes Feld <' + oField.FieldName + '> in Import-Quelle gefunden'),
+         Result := False,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Validieren eines Import-Datensatzes
+// @Result: boolean, Datensatz ist valide Ja/Nein
+//******************************************************************************
+function SML_ValidateImportRecord(nSMLID:N, oMemTable:O, oErrors:O, oLog:O)
+|
+   bValid, cIndexName, aKeys,
+   cArtNo, nUsageWA, nUsageID,
+   cSLMemo, aSLMemo, i,
+   cFieldName, cValue, cCbDataType, cAttributeLabel, bDelete
+|
+
+   Result   := True,
+   cArtNo   := oMemTable:ARTNR,
+   nUsageWA := waDab010,
+   nUsageID := Lookup(nUsageWA, 'DAB011', {{cArtNo}}, 'ID', -1),
+
+   if nUsageWA = waDab010 then
+      cIndexName := 'ARTNR_SML_ID',
+      aKeys      := {cArtNo, nSMLID},
+   else
+      cIndexName := 'VERWEND_WA_VERWEND_ID_SML_ID',
+      aKeys      := {nUsageWA, nUsageID, nSMLID},
+   endif,
+
+   // Artikelnummer validieren
+   if Empty(cArtNo) or (nUsageID = -1) then
+      Result := False,
+      SML_ImportLog_ValidationError(oLog, cArtNo + ': Artikelnummer existiert nicht'),
+      ErrornousRecords_Add(oErrors, oMemTable.CbGetRecAsArray()),
+   else
+      bValid  := True,
+      bDelete := False,
+
+      // Lösch-Flag Feld validieren, falls vorhanden
+      if not Empty(oMemtable.CbFieldByName(m_cDeleteFieldName)) then
+         cValue := AsString(m_cDeleteFieldName, oMemtable),
+         startseq
+            bDelete := SML_ConvertImportValueToCbDataType(cValue, 'L', ''),
+         onerror
+            bValid := False,
+            SML_ImportLog_ValidationError(oLog, cArtNo + ': Der Wert <' + cValue +
+                                                '> für das Feld <' + m_cDeleteFieldName +
+                                                '> ist nicht mit dem Boolean-Datentyp kompatibel!'),
+         stopseq,
+      endif,
+
+
+      // Wenn die Zuordnung gelöscht werden soll ist eine Validierung der
+      //  Merkmals-Felder nicht mehr notwendig, da diese für die Löschung nicht
+      //  relevant sind.
+      if bDelete and
+         // Zusätzlich prüfen, ob die zu löschende Zuordnung überhaupt existiert
+         not Lookup(waSMLZUO, cIndexName, {aKeys}, 'True', False) then
+         bValid := False,
+         SML_ImportLog_ValidationError(oLog, cArtNo + ': Die zu Löschende Zuordnung existiert nicht!'),
+      else
+         cSLMemo := Lookup(waSMLZUO, cIndexName, {aKeys}, 'SL_MEMO', nil),
+         if Empty(cSLMemo) then
+            cSLMemo := Lookup(waSMLSTM, 'ID', {{nSMLID}}, 'SL_MEMO', '{}'),
+         endif,
+         aSLMemo := StrToArr(cSLMemo),
+
+         // Jedes zu importierende Feld validieren
+         for i := 1 to ALen(aSLMemo) do
+            cFieldName      := SML_DetermineAttributeFieldName(aSLMemo[i, gl_SML_SLMemoVIndex]),
+            cValue          := AsString(cFieldName, oMemTable),
+            cCbDataType     := SML_DataTypeToCbDataType(aSLMemo[i, gl_SML_SLMemoDataType]),
+            cAttributeLabel := aSLMemo[i, gl_SML_SLMemoLabel],
+            startseq
+               // Versuchen, den zu importierenden Wert zu konvertieren
+               SML_ConvertImportValueToCbDataType(cValue, cCbDataType, cAttributeLabel),
+            onerror
+               // Im Falle eines Fehlers schlägt die Valdierung fehl, da der Wert
+               //  offensichtlich nicht korrekt konvertiert werden konnte.
+               bValid := False,
+               SML_ImportLog_ValidationError(oLog, cArtNo + ': Der zu importierende Wert <' + cValue + '> ist nicht mit dem Datentyp <' +
+                                                   cCbDataType + '> des Merkmals <' + cAttributeLabel + '> kompatibel! [' + CRLF +
+                                                   GetErrorText() + CRLF + ']'),
+            stopseq,
+         next,
+      endif,
+
+      // Ggf. Tabelle für fehlerhafte Datensätze schreiben
+      if not bValid then
+         Result := False,
+         ErrornousRecords_Add(oErrors, oMemTable.CbGetRecAsArray()),
+      endif,
+   endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Merkmalswerte einer Sachmerkmalleistenzuordnung aktualisieren.
+// Wenn die Sachmerkmalleistenzuordnung noch nicht existiert, wird diese neu
+// angelegt.
+//
+// @Result: null
+//******************************************************************************
+function SML_UpdateOrInsertAssignment(oDM:O, nSMLID:N, nUsageWA:N, nUsageID:N, cSLMemo:C, nChanges:N, oMemTable:O, oLog:O)
+| oSMLZUO, cArticleNo, cIndexName, aKeys |
+
+   cArticleNo := oMemTable:ARTNR,
+   if nUsageWA = waDab010 then
+      cIndexName := 'ARTNR_SML_ID',
+      aKeys      := {cArticleNo, nSMLID},
+   else
+      cIndexName := 'VERWEND_WA_VERWEND_ID_SML_ID',
+      aKeys      := {nUsageWA, nUsageID, nSMLID},
+   endif,
+
+   Result            := -1,
+   oSMLZUO           := DbGetTable(oDM, waSMLZUO, 'SMLZUO'),
+   oSMLZUO.IndexName := cIndexName,
+   // Tabelleninstanz der SMLZUO zur Verwendung vorbereiten
+   // Setzen der notwendigen Eigenschaften (z.B. Stammdatenprotokollierung) wie
+   //  in globaler Funktion "GU_LinkTableToGUI".
+   oSMLZUO.CheckReadAccess := raFilter, // Datensatz-Leserechte auswerten
+   oSMLZUO.CheckUserRights := True,     // Tabellen- und Feld-Rechte auswerten
+   oSMLZUO.ShowRightErrors := True,     // Meldungen wie "Keine Berechtigung zur Neuanlage" an der GUI anzeigen
+   oSMLZUO.ShowLockErr     := True,     // Wenn ein Datensatz 4 Sekunden nicht gesperrt werden konnte, dann das
+                                        //  "Warte auf Freigage"-Fenster anzeigen - bricht nach 60 Sekunden von selbst ab.
+   oSMLZUO.WriteProtocol   := True,     // Stammdatenprotokollierung aktivieren
+
+   if oSMLZUO.CbFindKey(aKeys) then
+      oSMLZUO.CbEdit(),
+      SML_ImportLog_Update(oLog, cArticleNo, nChanges),
+   else
+      oSMLZUO.CbAppend(),
+      SML_ImportLog_New(oLog, cArticleNo),
+      oSMLZUO:VERWEND_WA := nUsageWA,
+      oSMLZUO:VERWEND_ID := nUsageID,
+      oSMLZUO:ARTNR      := cArticleNo,
+      oSMLZUO:SML_ID     := nSMLID,
+   endif,
+
+   oSMLZUO:SL_MEMO := cSLMemo,
+   oSMLZUO.CbPost(),
+
+   SML_StoreAttributesTable(oDM, oSMLZUO:ID, cSLMemo, nUsageWA, nUsageID, cArticleNo, nSMLID),
+   SML_Event_AfterSaveAssignment_Trigger(oDM, oSMLZUO),
+end,
+
+//******************************************************************************
+// Sachmerkmalleistenzuordnung löschen
+//
+// @Result: null
+//******************************************************************************
+function SML_DeleteAssignment(oDM:O, nSMLID:N, nUsageWA:N, nUsageID:N, oMemTable:O, oLog:O)
+| oSMLZUO, cIndexName, aKeys, cArticleNo, nID |
+
+   cArticleNo := oMemTable:ARTNR,
+   if nUsageWA = waDab010 then
+      cIndexName := 'ARTNR_SML_ID',
+      aKeys      := {cArticleNo, nSMLID},
+   else
+      cIndexName := 'VERWEND_WA_VERWEND_ID_SML_ID',
+      aKeys      := {nUsageWA, nUsageID, nSMLID},
+   endif,
+
+
+   oSMLZUO           := DbGetTable(oDM, waSMLZUO, 'SMLZUO'),
+   oSMLZUO.IndexName := cIndexName,
+   // Tabelleninstanz der SMLZUO zur Verwendung vorbereiten
+   // Setzen der notwendigen Eigenschaften (z.B. Stammdatenprotokollierung) wie
+   //  in globaler Funktion "GU_LinkTableToGUI".
+   oSMLZUO.CheckReadAccess := raFilter, // Datensatz-Leserechte auswerten
+   oSMLZUO.CheckUserRights := True,     // Tabellen- und Feld-Rechte auswerten
+   oSMLZUO.ShowRightErrors := True,     // Meldungen wie "Keine Berechtigung zur Neuanlage" an der GUI anzeigen
+   oSMLZUO.ShowLockErr     := True,     // Wenn ein Datensatz 4 Sekunden nicht gesperrt werden konnte, dann das
+                                        //  "Warte auf Freigage"-Fenster anzeigen - bricht nach 60 Sekunden von selbst ab.
+   oSMLZUO.WriteProtocol   := True,     // Stammdatenprotokollierung aktivieren
+   if oSMLZUO.CbFindKey(aKeys) then
+      nID := oSMLZUO:ID,
+      oSMLZUO.CbDelete(),
+      SML_ImportLog_Delete(oLog, cArticleNo),
+      SML_DeleteAttributesTable(oDM, nID),
+   endif,
+end,
+
+//******************************************************************************
+// Einen einzelnen Import-Datensatz verarbeiten
+// @Result: null
+//******************************************************************************
+function SML_ImportRecord(oDM:O, nSMLID:N, oMemTable:O, oLog:O)
+|
+   nUsageWA, nUsageID, cArticleNo,
+   cIndexName, aKeys,
+   aSLMemo, cSLMemo, i, nChanges, bCreateNew, bDelete,
+   cFieldName, oField, uValue
+|
+                     
+   cArticleNo := oMemTable:ARTNR,
+   // Aktuell werden nur im Artikelstamm klassifizierte Sachmerkmalleisten
+   // unterstützt
+   nUsageWA := waDab010,
+   nUsageID := Lookup(waDab010, 'DAB011', {{cArticleNo}}, 'ID', -1),
+   if nUsageWA = waDab010 then
+      cIndexName := 'ARTNR_SML_ID',
+      aKeys      := {cArticleNo, nSMLID},
+   else
+      cIndexName := 'VERWEND_WA_VERWEND_ID_SML_ID',
+      aKeys      := {nUsageWA, nUsageID, nSMLID},
+   endif,
+
+
+   // TODO: SetError eignetlich nicht mehr notwendig, weil jeder Datensatz vor
+   //       dem Import validiert wird.
+   SetErrorIf(nUsageID = -1,
+              'Artikel mit Artikelnummer <' + cArticleNo + '> existiert nicht'),
+
+   bDelete := False,
+   // Lösch-Flag Feld ermitteln, falls vorhanden
+   if not Empty(oMemtable.CbFieldByName(m_cDeleteFieldName)) then
+      bDelete := SML_ConvertImportValueToCbDataType(AsString(m_cDeleteFieldName, oMemtable), 'L', ''),
+   endif,
+
+   if bDelete then
+      SML_DeleteAssignment(oDM, nSMLID, nUsageWA, nUsageID, oMemTable, oLog),
+   else
+      nChanges   := 0,
+      bCreateNew := False,
+      cSLMemo    := Lookup(waSMLZUO, cIndexName, {aKeys}, 'SL_MEMO', nil),
+      if Empty(cSLMemo) then
+         cSLMemo    := Lookup(waSMLSTM, 'ID', {{nSMLID}}, 'SL_MEMO', '{}'),
+         bCreateNew := True,
+      endif,
+      aSLMemo  := StrToArr(cSLMemo),
+
+      for i := 1 to ALen(aSLMemo) do
+         if aSLMemo[i, gl_SML_SLMemoRowType] = gl_SML_RowTypeInput then
+            cFieldName := SML_DetermineAttributeFieldName(aSLMemo[i, gl_SML_SLMemoVIndex]),
+            oField     := oMemTable.CbFieldByName(cFieldName),
+            // TODO: SetError eignetlich nicht mehr notwendig, weil das Format der
+            //       MemTable vor dem Import validiert wird.
+            SetErrorIf(
+               Empty(oField), 'Merkmal <' + aSLMemo[i, gl_SML_SLMemoLabel] +
+               '> aus Sachmerkmalleiste in Import-Quelle nicht gefunden'
+            ),
+            uValue := SML_ConvertImportValueToCbDataType(
+               AsString(cFieldName, oMemTable),
+               SML_DataTypeToCbDataType(aSLmemo[i, gl_SML_SLMemoDataType]),
+               aSLMemo[i, gl_SML_SLMemoLabel]
+            ),
+            if SML_SLMEMO_SetAVAt(aSLMemo, i, uValue) then
+               nChanges++,
+            endif,
+         endif,
+      next,
+
+      if bCreateNew or nChanges > 0 then
+         cSLMemo := ArrToStr(aSLMemo),
+         SML_UpdateOrInsertAssignment(oDM, nSMLID, nUsageWA, nUsageID, cSLMemo, nChanges, oMemTable, oLog),
+      else
+         SML_ImportLog_RecordSkipped(oLog, cArticleNo + ': Datensatz unverändert, nicht importiert'),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Importieren einer Sachmerkmalleiste (bzw. Zuordnungen) aus einer TBeMemTable
+// @Result: null
+//******************************************************************************
+function SML_ImportFromMemTable(oDM:O, nSMLID:N, oMemTable:O, oErrors:O, oLog:O, bDryRun:L)
+   oMemTable.CbFirst(),
+   while not oMemTable.CbEOF do
+      startseq
+         if SML_ValidateImportRecord(nSMLID, oMemTable, oErrors, oLog) and not bDryRun then
+            SML_ImportRecord(oDM, nSMLID, oMemTable, oLog),
+         endif,
+      onerror
+         SML_ImportLog_Error(oLog, oMemTable:ARTNR + ': ' + GetErrorText()),
+         ErrornousRecords_Add(oErrors, oMemTable.CbGetRecAsArray()),
+      stopseq,
+      oMemTable.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+// Importieren einer Sachmerkmalleiste als TBeMemTable aus einem Excel-Sheet.
+//
+// HINWEIS:
+// Die Funktion ImportExcelFile() legt nur bei der Verwendung einer
+// TMemCalcTable die Felder des Excel-Sheets automatisch in der Tabelle an.
+// Bei einer TBeMemTable ist das jedoch nicht der Fall, deshalb wird in dieser
+// Funktion ein initialier Import des Excel-Sheets in eine TMemCalcTable
+// durchgeführt, um dann anschließend die automatisch angelegten Felder in der
+// TMemCalcTable in die TBeMemTable zu übertragen. Schließlich wird ein erneuter
+// Import des Excel-Sheets in die TBeMemTable durchgeführt.
+//
+// @Result: object, TBeMemTable
+//******************************************************************************
+function SML_ImportFromExcelFile(cImportFileName:C)
+| oHelpMemTable |
+
+   Result        := nil,
+   oHelpMemTable := CreateObject('TMemCalcTable'),
+   startseq
+      // Initialer Import für das Ermitteln der Felder im Excel-Sheet
+      ImportExcelFile(oHelpMemTable, cImportFileName, 1, 2),
+
+      Result := CreateObject('TBeMemTable'),
+      // Übertragen der Felder aus der TMemCalcTable in die TBeMemTable
+      Result.CbBorrowFromDataSet(oHelpMemTable),
+   always
+      DestroyObject(oHelpMemTable),
+   stopseq,
+
+   // Finaler Import des Excel-Sheets in die TBeMemTable
+   ImportExcelFile(Result, cImportFileName, 1, 2),
+end,
+
+//******************************************************************************
+// Importiert ein Excel-Sheet als Sachmerkmalleiste
+// @Result: array - Anzahl der in der Import-Quelle vorhanden Datensätze und
+//                  Gültigkeit der Import-Quelle, im Format:
+//                   {<Anzahl Datensätze>, <Import-Quelle valide>}
+//******************************************************************************
+function SML_Import(oDM:O, nSMLID:N, cImportFileName:C, oErrors:O, oLog:O, bDryRun:L)
+| oImportMem |
+
+   Result := {0, False},
+
+   // Für den Import ist die Fehler Logging-Tabelle ein wichtiger Logik-
+   // Bestandteil, weil darüber festgestellt wird, ob Fehler aufgetreten sind.
+   // -> Ordnungsgemäß erzeugte Logging-Tabelle erzwingen
+   SetErrorIf(
+      Empty(oLog),
+      'Ordnungsgemäß erzeugte Logging-Tabelle ist für den Import zwingend erforderlich!' + CRLF +
+      '-> Funktion SML_ImportLog_Create() zum Erzeugen verwenden.'
+   ),
+
+   // Import des Excel-Sheets in eine TBeMemTable
+   oImportMem := SML_ImportFromExcelFile(cImportFileName),
+   startseq
+      Result[1] := oImportMem.CbRecordCount,
+      oErrors.CbBorrowFromDataSet(oImportMem),
+      oErrors.Active := True,
+      // Validieren der Importierten MemTable
+      Result[2] := SML_ValidateImportExcelMemTable(nSMLID, oImportMem, oLog),
+      if Result[2] then
+         // Mit Import nur fortfahren, wenn die Validierung erfolgreich war
+         SML_ImportFromMemTable(oDM, nSMLID, oImportMem, oErrors, oLog, bDryRun),
+      endif,
+   always
+      DestroyObject(oImportMem),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+m_aResult := {0, False},
+startseq
+   SetErrorIf(Empty(m_oDM),                  'Datenmodul muss gesetzt sein'),
+   SetErrorIf(Empty(m_nDestinationSMLID),    'Ziel SML-ID muss gesetzt sein'),
+   SetErrorIf(Empty(m_cImportExcelFileName), 'Import-Excel-Dateiname muss gesetzt sein'),
+   SetErrorIf(Empty(m_oErrors),              'Tabelle für fehlerhafte Datensätze muss gesetzt sein'),
+   SetErrorIf(Empty(m_oLog),                 'Logging-Objekt muss gesetzt sein'),
+   SetErrorIf(not m_bDryRun and not DbInTrans(m_oDM.AdsConnection),
+              'Datenmodul muss sich in Transaktion befinden'),
+
+   m_aResult := SML_Import(m_oDM, m_nDestinationSMLID, m_cImportExcelFileName, m_oErrors, m_oLog, m_bDryRun),
+onerror
+   Raise(),
+stopseq,
+
+// Rückgabe der Anzahl der in der Import-Quelle vorhanden Datensätze und ob die
+// Import-Quelle gültig ist
+m_aResult
+

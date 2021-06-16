@@ -1,0 +1,153 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Inbound Import-Daten vom Inhouseformat aus BE löschen
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm entfernt alle durch den Import erstellten Dateien aus BE
+//
+// Rückgabe:
+//   array - EDIProcessStatus
+//     {
+//        {'EDIProcessStatus.status',       <integer>},
+//        {'EDIProcessStatus.errorMessage', <string>},
+//        {'EDIProcessStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+   m_aCustomInfo:P4,
+   m_oDM_Orders,
+   m_bRollbackausloesen,
+   m_aProcessResult,
+   m_oEDIMSG, m_oEDIHEAD, m_oEDIPOS, m_oDAB050, m_oDAB055
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// @result:
+//******************************************************************************
+function DeleteItems(oDM_Orders:O, oDM:O, oEDIPOS:O, nOrderNo:N)
+   // TODO
+end,
+
+//******************************************************************************
+// @result:
+//******************************************************************************
+function DeleteOrder(oDM_Orders:O, oDM:O, oEDIHEAD:O, aCustomInfo)
+//      if m_oDAB050.CbFindKey({}) then
+//         DeleteItems(oDM_Orders, oDM, oEDIPOS, nOrderNo),
+//      endif,
+end,
+
+//******************************************************************************
+// @result:
+//******************************************************************************
+function DeleteImportData_Internal(oDM_Orders:O, oDM:O, nEDIMSGId:N, aCustomInfo)
+   SetErrorIf(not m_oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+
+   // alle Header-Datensätze zur Message ID durchgehen und Aufträge anlegen
+   m_oEDIHEAD.CbSetRangeEx({nEDIMSGId}),
+   while not m_oEDIHEAD.Cbeof do
+      DeleteOrder(oDM_Orders, oDM, m_oEDIHEAD, aCustomInfo),
+      m_oEDIHEAD.Cbnext(),
+   end,
+   m_oEDIHEAD.CbCancelRange(),
+end,
+
+//******************************************************************************
+// Diese Funktion löscht alle Dateien/Daten einer bereits importierten Nachricht
+// @result: array - EDIProcessStatus
+//******************************************************************************
+function DeleteImportData(oDM:O, nEDIMSGId:N, aCustomInfo, oProgressCallback:O)
+| oEDIMessage |
+
+   Result := {},
+
+   m_oDM_Orders := createobject("TBeDbGet", "CREATE_ORDER"),
+   oEDIMessage  := EDI_Message_Open(oDM, nEDIMSGId),
+   startseq
+      startseq
+         m_oDM_Orders.CbTransaction_Begin(),
+         gl_KDU_EDI_CreateItembyEDITool := true,
+         startseq
+            DeleteImportData_Internal(m_oDM_Orders, m_oDM, nEDIMSGId, aCustomInfo),
+            if not m_bRollbackausloesen then
+               m_oDM_Orders.CbTransaction_Commit(),
+            endif,
+         always
+            if m_oDM_Orders.CbTransaction_TryRollback() then
+               DbResetDM(m_oDM_Orders),
+               SetError('Fehler beim Löschen auf Positions-Ebene. Rollback erfolgt.'),
+            endif,
+            gl_KDU_EDI_CreateItembyEDITool := false,
+         stopseq,
+
+         EDI_Message_Save(oEDIMessage, gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed),
+         EDI_ProcessResult_SetSuccess(Result),
+      onerror
+         EDI_ProcessResult_SetError(Result, GetErrorText(GetErrorObj())),
+         EDI_Message_LogErrorAndSave(oEDIMessage, GetErrorObj()),
+      stopseq,
+   always
+      EDI_Message_Destroy(oEDIMessage),
+      if not empty(m_oDM_Orders) then
+         destroyobject(m_oDM_Orders),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Öffnet alle relevanten Tabellen
+// @Result: null
+//******************************************************************************
+function OpenDataBases()
+   m_oEDIMSG  := MyGetTable(m_oDM, waEDIMSG,  'EDIMSG_SEEK'),
+   m_oEDIHEAD := MyGetTable(m_oDM, waEDIHEAD, ''),
+   m_oEDIPOS  := MyGetTable(m_oDM, waEDIPOS,  ''),
+   m_oDAB050  := MyGetTable(m_oDM, waDAB050,  ''),
+   m_oDAB055  := MyGetTable(m_oDM, waDAB055,  ''),
+
+   m_oEDIMSG.CbIndexName  := 'ID',
+   m_oEDIHEAD.CbIndexname := 'EDIMSG_ID',
+   m_oEDIPOS.cbindexname  := 'EDIHEAD_ID',
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_aProcessResult := {},
+
+if editormode() then
+   m_oDM       := CreateObject('TBeDbGet'),
+   m_nEDIMSGId := 7,
+endif,
+
+OpenDataBases(),
+
+m_oDM.CbTransaction_Begin(),
+startseq
+   m_aProcessResult := DeleteImportData(m_oDM, m_nEDIMSGId, m_aCustomInfo, m_oProgressCallback),
+   m_oDM.CbTransaction_Commit(),
+always
+   if m_oDM.CbTransaction_TryRollback() then
+      DbResetDM(m_oDM),
+   endif,
+stopseq,
+
+m_aProcessResult

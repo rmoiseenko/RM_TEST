@@ -1,0 +1,351 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+// Vorlage für ein MDI-Child mit
+//  - variablen Dockings
+//    - das ETR via Knopfdruck im Menü
+//    - Die Zulieferer innerhalb des Indi-Menüs "Info"
+// bitte beachten: Damit das Docking funktioniert, muß die Datsource, an die
+//                 gedockt wird, "ds_maintable" heißen.
+//
+//##############################################################################
+//##############################################################################
+
+|
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_oDM, m_oDab010, m_oIndiMenu, m_nIndiMenuID,
+   m_cFormID, m_cWinPosSaveId,
+   m_oDockingSaver:U:=nil, m_cDockingSaveId,
+
+   m_aDockingForms, m_ts_new,
+
+  // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_NextRecord, A_PriorRecord, A_Save, A_ShowPostingsDocking,
+   A_ShowSupplierDocking, actions, cmb_ARTTYP, cmb_PLATZ_VER, ds_MainTable,
+   edt_ARTNR, lbl_ARTNR, lbl_ARTTYP, lbl_PLATZ_VER, mainMenu, mnu_Edit,
+   mnu_Info, mnu_Postings, mnu_Suppliers, pc_Details, pnl_TopFixed,
+   tb_NextRecord, tb_PriorRecord, toolbar_main, ToolButton1, ToolButton2,
+   ToolButton3, ts_common
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID        := "@MDIDEMO_M",
+m_cWinPosSaveId  := "@MDIDEMO_M",
+m_nIndiMenuID    := 1009,           // ID für Individual-Menu
+m_cDockingSaveId := "@VORLDOCK",    // ID unter der die Dockings gespeichert werden
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// permanentes Docking einer Individualmaske im MDI-Child
+//******************************************************************************
+function OpenAndDock(oPageControl:O, oMasterTable:O, cNameSuffix:C, bShowForm:L:=false)
+| aResultForm, oDockingForm, aDockingForms |
+
+   result        := nil,
+   aDockingForms := {},
+   aResultForm   := GFU_ShowForm(
+      aDockingForms,
+      'DMS_' + cNameSuffix,
+      oForm,
+      oMasterTable,
+      'Dokumentenmanagement\Docking\GUI'
+   ),
+
+   oDockingForm  := aResultForm[1],
+   aDockingForms := aResultForm[2],
+   AssignEvent(oDockingForm.CbHelper, 'OnCbUserDefinedEvent', 'Docking_CbUserDefinedEvent'),
+   m_oDockingSaver.CbAddDocking( A_ShowSupplierDocking, oDockingForm),
+   oDockingForm.CbHelper.CbManualDock(oPageControl),
+   result := oDockingForm,
+   if bShowForm then
+      show(oDockingForm),
+   endif,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   | oDock |
+   // eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', '', oForm),
+
+   // notwendige Tabelle(n) öffnen
+   m_oDab010         := DbGetTable(m_oDM, waDab010, 'DS_MAINTABLE'),
+   AssignEvent(m_oDab010, 'AfterScroll', 'm_oDab010AfterScroll'),
+   ds_MainTable.DataSet := m_oDab010,
+
+   oDock  := OpenAndDock(pc_Details, m_oDAB010,  'DMS'),
+   m_ts_New  := getparent(oDock),
+
+   MyFocusControl(oForm, cmb_ARTTYP),
+   // Alle Dockings wiederherstellen
+   m_oDockingSaver.CbReadDockings(),
+
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bCanChangeRecord |
+   bCanChangeRecord := not EditModes(m_oDab010),
+
+   A_PriorRecord.Enabled := bCanChangeRecord and not BoF(m_oDab010),
+   A_NextRecord.Enabled  := bCanChangeRecord and not EoF(m_oDab010),
+
+   A_Save.Enabled        := EditModes(m_oDab010),
+   A_Cancel.Enabled      := EditModes(m_oDab010),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function pnl_TopFixedClick( Sender )
+
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MainTableStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Nach dem Scroll der Tabelle (Datensatz-Wechsel)
+//******************************************************************************
+function m_oDab010AfterScroll()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action)
+   m_oDockingSaver.CbWriteDockings(), // Alle Dockings speichern (inkl. Dockings aus Indi-Menü)
+   Action := caFree // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//******************************************************************************
+// Event:
+//******************************************************************************
+function Docking_CbUserDefinedEvent( Sender, cKey, uParams )
+| oDockingForm, cDockingID |
+
+   // TODO: zentrale Funktion ?
+
+   WriteLn('Docking_CbUserDefinedEvent()', ClassName(Sender), cKey, uParams),
+
+   case cKey
+      of 'DESTROY' ::
+         if not empty(Sender) and ClassOf(Sender, 'TFormEx') then
+            oDockingForm := Sender,
+            cDockingID   := uParams[1],
+            m_aDockingForms := GFU_FormRefArr_FormDestroyed(m_aDockingForms, cDockingID),
+         endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Wenn ein Docking wiederhergestellt wurde
+//******************************************************************************
+function DoOnDockingRestored( Sender )
+   ProjMgmtGUI_FixDocking(Sender),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Auf den nächsten Datensatz springen
+//******************************************************************************
+function A_NextRecordExecute( Sender )
+   DbSkip(1, m_oDab010),
+end,
+
+//******************************************************************************
+// Action: Auf den vorherigen Datensatz springen
+//******************************************************************************
+function A_PriorRecordExecute( Sender )
+   DbSkip(-1, m_oDab010),
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if Jn('Änderungen verwerfen?') then
+      DbCancel(m_oDab010),
+   endif,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   DbPost(m_oDab010),
+end,
+
+//******************************************************************************
+// Action: Docking "Zulieferer" anzeigen
+//******************************************************************************
+function A_ShowSupplierDockingExecute( Sender )
+| oDockingForm, aResultForm |
+   aResultForm := GFU_ShowForm( m_aDockingForms, 'SUPPLIER', oForm,
+                                m_oDab010, 'Vorlagen\MDI Child mit Dockings\SupplierDocking' ),
+   oDockingForm    := aResultForm[1],
+   m_aDockingForms := aResultForm[2],
+   AssignEvent(oDockingForm.CbHelper, 'OnCbUserDefinedEvent', 'Docking_CbUserDefinedEvent'),
+   m_oDockingSaver.CbAddDocking( A_ShowSupplierDocking, oDockingForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   GFU_FormRefArr_Init(m_aDockingForms),
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cWinPosSaveId,
+end,
+
+//******************************************************************************
+// Erstellt das Individualmenü
+// @Result: null
+//******************************************************************************
+function CreateIndiMenu()
+   // Indi-Menu initialisieren und anzeigen
+   if m_nIndiMenuID > 0 then
+      m_oIndiMenu          := CreateObject("TBeCustomMenuPanel", "CustomMenuPanel", oForm),
+      m_oIndiMenu.ID       := m_nIndiMenuID,
+      m_oIndiMenu.Showmenu,
+   endif,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()                                                              Prs('LoadGUI', 'START'),
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      A_Cancel              := FindObject(oForm, "A_Cancel"),
+      A_NextRecord          := FindObject(oForm, "A_NextRecord"),
+      A_PriorRecord         := FindObject(oForm, "A_PriorRecord"),
+      A_Save                := FindObject(oForm, "A_Save"),
+      A_ShowPostingsDocking := FindObject(oForm, "A_ShowPostingsDocking"),
+      A_ShowSupplierDocking := FindObject(oForm, "A_ShowSupplierDocking"),
+      actions               := FindObject(oForm, "actions"),
+      cmb_ARTTYP            := FindObject(oForm, "cmb_ARTTYP"),
+      cmb_PLATZ_VER         := FindObject(oForm, "cmb_PLATZ_VER"),
+      ds_MainTable          := FindObject(oForm, "ds_MainTable"),
+      edt_ARTNR             := FindObject(oForm, "edt_ARTNR"),
+      lbl_ARTNR             := FindObject(oForm, "lbl_ARTNR"),
+      lbl_ARTTYP            := FindObject(oForm, "lbl_ARTTYP"),
+      lbl_PLATZ_VER         := FindObject(oForm, "lbl_PLATZ_VER"),
+      mainMenu              := FindObject(oForm, "mainMenu"),
+      mnu_Edit              := FindObject(oForm, "mnu_Edit"),
+      mnu_Info              := FindObject(oForm, "mnu_Info"),
+      mnu_Postings          := FindObject(oForm, "mnu_Postings"),
+      mnu_Suppliers         := FindObject(oForm, "mnu_Suppliers"),
+      pc_Details            := FindObject(oForm, "pc_Details"),
+      pnl_TopFixed          := FindObject(oForm, "pnl_TopFixed"),
+      tb_NextRecord         := FindObject(oForm, "tb_NextRecord"),
+      tb_PriorRecord        := FindObject(oForm, "tb_PriorRecord"),
+      toolbar_main          := FindObject(oForm, "toolbar_main"),
+      ToolButton1           := FindObject(oForm, "ToolButton1"),
+      ToolButton2           := FindObject(oForm, "ToolButton2"),
+      ToolButton3           := FindObject(oForm, "ToolButton3"),
+      ts_common             := FindObject(oForm, "ts_common"),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.OrigCapt        := 'MDI Child mit variablen Dockings GUI',
+      oForm.ImageIndex      := 247,  // Image-Index für den Window-Navigator setzen
+      pc_Details.DockSite   := True, // andocken von Fenstern im PageControl zulassen
+
+      CreateIndiMenu(),
+
+      m_oDockingSaver                             := CreateObject('TBeCbDockingSaver', 'DockingSaver', oForm, oForm),
+      m_oDockingSaver.CbMainForm                  := oForm,
+      m_oDockingSaver.CbSaveDockingsFromIndiMenus := True,
+      m_oDockingSaver.CbWinPositionID             := m_cDockingSaveId,
+      AssignEvent(m_oDockingSaver, 'OnDockingRestored', 'DoOnDockingRestored'),
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,                                                                     Prs('LoadGUI', 'END'),
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler in ' + ProgName(), GetErrorObj()),
+stopseq,
+
+oForm
+

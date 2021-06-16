@@ -1,0 +1,1172 @@
+|
+
+   oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cFormID,
+   m_cPositionSaveID,
+   m_cBrowserKopfID,
+   m_cBrowserStklID,
+   m_cBrowserVPUGuiMemID,
+
+   m_oOptionsMem,
+   m_oPruefKopfdatenMem,
+   m_oPruefStklMem,
+
+   m_oVPUGuiMemTable,
+
+   m_oGUI_DM,
+   m_oDab010_EinzelterminrasterMaster,
+
+   m_aDockingForms,
+   m_oEinzelTermRastForm,
+   m_oEinzelTermRastForm_Memtable,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Calc, actions, BeBitBtn1, cmb_OrderWorkarea, cmb_PruefModus,
+   ds_Kopf, ds_Stkl, ds_VPUGUIMem, edt_ArtnrBaugruppe,
+   edt_FertigstellungsterminAktuell, edt_FertigstellungsterminNeu, edt_Menge,
+   edt_OrderNo, grid_Kopf, grid_Stkl, grid_VPUGUIMem, lbl_ArtnrBaugruppe,
+   lbl_FertigstellungsterminAktuell, lbl_FertigstellungsterminNeu, lbl_Menge,
+   lbl_OrderNo, lbl_OrderWorkarea, lbl_PruefModus, pc_Dockings, pnl_Dockings,
+   pnl_Input, pnl_Kopf, pnl_Stkl, ts_GUIMemTable
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID             := "@VPU_TGUI",
+m_cPositionSaveID     := '@VPU_TGUI',
+
+m_cBrowserKopfID      := '@VPU_TESTK',
+m_cBrowserStklID      := '@VPU_TEST',
+m_cBrowserVPUGuiMemID := '@VPU_GMEM', // GUI-Memtable-Browser - ACHTUNG - identisch mit dem in der Enduser-GUI!
+
+//##############################################################################
+//##############################################################################
+// Globale Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion erstellt eine Auftrags-Kopf-Memtable für die Speicherung / den
+//    Transport von Auftags-Kopfdaten innerhalb der Verfügbarkeitslogik
+// @Result: Memtable
+//******************************************************************************
+function VPU_CreatePruefKopfdatenMem(oOwner)
+
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'PRUEFKOPFMEM',
+
+   Result.CbAddField('STANDORT',            ftInteger,  0),           // Standort                                         // TODO
+   Result.CbAddField('ID',                  ftInteger,  0),           // künstlich vergebene ID in der Memtable           // TODO
+
+   Result.CbAddField('AUF_WA',              ftInteger,  0),           // Workarea des Auftrags (z.B. waDab035)
+   Result.CbAddField('AUF_ID',              ftInteger,  0),           // ID des Auftrags (z.B. Dab035:ID)
+   Result.CbAddField('ARTNR_BG',            ftString,  mBeArtNoLen),  // Artikel-Nr. der Baugruppe                        // TODO
+   Result.CbAddField('WBZ',                 ftInteger,  0),           // Baugruppen-WBZ                                   // TODO
+
+   // TODO: Für neu simulierte Aufträge fehlt hier noch die Kopf-Menge
+
+   // Aktuelle Termine des Auftrags
+   Result.CbAddField('START_TERMIN',        ftString,  8),            // Vorgabe: Starttermin laut WBZ                    // TODO
+   Result.CbAddField('START_TERMIN_INDEX',  ftString,  9),            // - "" -                        als Termin-Index   // TODO
+   Result.CbAddField('FERTIG_TERMIN',       ftString,  8),            // Vorgabe: Fertigstellungtermin                    // TODO
+   Result.CbAddField('FERTIG_TERMIN_INDEX', ftString,  9),            // - "" -                        als Termin-Index   // TODO
+
+   // (neuer) Wunschtermin
+   Result.CbAddField('START_TERMIN_WUNSCH',        ftString,  8),     // Vorgabe: Wunsch-Starttermin laut WBZ             // TODO
+   Result.CbAddField('START_TERMIN_WUNSCH_INDEX',  ftString,  9),     // - "" -                        als Termin-Index   // TODO
+   Result.CbAddField('FERTIG_TERMIN_WUNSCH',       ftString,  8),     // Vorgabe: Wunsch-Fertigstellungtermin             // TODO
+   Result.CbAddField('FERTIG_TERMIN_WUNSCH_INDEX', ftString,  9),     // - "" -                        als Termin-Index   // TODO
+
+   Result.CbAddField('HAT_WUNSCH_TERMIN',          ftBoolean, 0),     // Abweichender Wunsch-Termin definiert?
+
+   // ab hier: Berechnete Felder der Verfügbarkeitsprüfung *********************
+
+   Result.CbAddField('VP_BEDARF_GEDECKT_DURCH_LAGER',               ftString,   1), // Ist der Bedarf aller Positionen des Auftrags durch Lagerbestand gedeckt?
+                                                                                    //   'N' - nein      (es sind Zugänge erforderlich, um den Bedarf zu decken)
+                                                                                    //   'T' - teilweise
+                                                                                    //   'J' - ja        (der Bedarf ist komplett gedeckt durch heute verfügbaren Lagerbestand)
+   Result.CbAddField('VP_ALLE_BEDARFE_VOLL_GEDECKT_DURCH_ZUGAENGE', ftBoolean,  0), // Wird die Bedarfsmenge aller Positionen komplett durch Zugänge gedeckt?
+   Result.CbAddField('VP_SPAET_MATVERFUEG_DATE',                    ftDate,     0), // Datum des letzten notwendigen Materialzugangs, damit alle Position voll gedeckt sind.
+
+   // berechnete, laut Materialverfügbarkeit mögliche Termine
+   Result.CbAddField('VP_START_TERMIN',             ftString,  8),         // Vorgabe: Möglicher Starttermin laut WBZ          // TODO
+   Result.CbAddField('VP_START_TERMIN_INDEX',       ftString,  9),         // - "" -                        als Termin-Index   // TODO
+   Result.CbAddField('VP_FERTIG_TERMIN',            ftString,  8),         // Vorgabe: Möglicher Fertigstellungtermin          // TODO
+   Result.CbAddField('VP_FERTIG_TERMIN_INDEX',      ftString,  9),         // - "" -                        als Termin-Index   // TODO
+
+   Result.CbAddField('VP_WUNSCHTERM_OK',            ftBoolean, 0),         // Wunschtermin ist haltbar ja/nein
+   Result.CbAddField('VP_WUNSCHTERM_PUFFER',        ftInteger, 0),         // Puffer / Verzögerung des berechneten Termins ggü. dem Wunschtermin
+
+   Result.CbAddField('VP_UNTERDECKUNGEN_VORHANDEN', ftBoolean,   0),       // Gibt es im Einzel-Terminraster mind. einer Position Unterdeckungen auf Basis der Prüfmodus-Optionen?
+
+   Result.Active := True,
+end,
+
+
+//******************************************************************************
+// Funktion erstellt eine Stuecklisten-Memtable als Basis für die
+//    Verfügbarkeitsprüfung einer Baugruppe. Die Memtable wird später aus der
+//    Dab240 / Dab210 / Dab160 gefüllt.
+//
+// @Result: Memtable
+//******************************************************************************
+function VPU_CreatePruefStklMem(oOwner)
+
+   Result           := Createobject('TBeMemTable', '', oOwner),
+   Result.AliasName := 'PRUEFSTKLMEM',
+
+   Result.CbAddField('STANDORT',         ftInteger,  0),           // Standort                               // TODO
+   Result.CbAddField('ID',               ftInteger,  0),           // künstlich vergebene ID in der Memtable // TODO
+   // Result.CbAddField('MASTER_ID',     ftInteger,  0),           // Übergeordnete "ID" für Hierarchie      // TODO
+
+   Result.CbAddField('AUF_WA',           ftInteger,  0),           // Workarea des Auftrags (z.B. waDab035)
+   Result.CbAddField('AUF_ID',           ftInteger,  0),           // ID des Auftrags (z.B. Dab035:ID)
+   Result.CbAddField('ARTNR_BG',         ftString,  mBeArtNoLen),  // Artikel-Nr. der Baugruppe              // TODO
+
+   Result.CbAddField('POS_WA',           ftInteger,  0),           // Quell-Workarea des Datensatzes (Dab240, Dab210, Dab160) // TODO  (ggf. leer, wenn es sich um eine Einlastungsprüfung handelt?
+   // Result.CbAddField('EBENE',         ftInteger,  0),           // Ebene der Stücklistenauflösung         // TODO
+   Result.CbAddField('ARTNR',            ftString,  mBeArtNoLen),  // Artikel-Nr. des Bauteils               // TODO
+
+   Result.CbAddField('BEZ1',             ftString,  40),           // Dab010:BEZ1                            // TODO
+   Result.CbAddField('BEZ2',             ftString,  40),           // Dab010:BEZ2                            // TODO
+   Result.CbAddField('POSNR',            ftString,   6),           // Dab210:POSNR                           // TODO
+   Result.CbAddField('ARTTYP',           ftString,   1),           // DAB010:ARTTYP Artikel-Typ              // TODO
+   Result.CbAddField('ME',               ftString,   3),           // DAB010:ME                              // TODO
+   Result.CbAddField('WERKZEUG',         ftBoolean,  0),           // DAB010:WERKZEUG                        // TODO
+   Result.CbAddField('PROD_ABT',         ftString,   3),           // Dab240/Dab035/Dab210/Dab010:PROD_ABT   // TODO
+   Result.CbAddField('WBZ',              ftInteger,  0),           // DAB010:WBZ                             // TODO
+
+   Result.CbAddField('NKSTELLEN',        ftInteger,  0),           // Nachkommastellen des Artikels (DAB010:NKSTELLEN)     // TODO
+
+   Result.CbAddField('BEDARF_MENGE',    ftFloat,    0),            // Bedarfsmenge der Position inkl. Ausschuss (D240_BedarfsMenge() bzw. Dab210-Pendant)        // TODO
+   Result.CbAddField('BEDARF_MENGE_LE', ftFloat,    0),            // Bedarfsmenge der Position - in Lagereinheit                                                // TODO
+
+   Result.CbAddField('BEDARF_TERMIN',       ftString,   8),        // Bedarfstermin des Bauteils                // TODO
+   Result.CbAddField('BEDARF_TERMIN_INDEX', ftString,   9),        // Bedarfstermin des Bauteils - Termin-Index // TODO
+
+   Result.CbAddField('ETR_ZEILENTYP',    ftInteger,    0),         // Bedarfs-Zeilentyp nach Einzelterminraster-Logik // TODO
+   Result.CbAddField('ETR_DATENSATZ_ID', ftInteger,    0),         // Datensatz-ID      nach Einzelterminraster-Logik // TODO
+
+   // ab hier: Berechnete Felder der Verfügbarkeitsprüfung
+
+   Result.CbAddField('VP_BESTAND_AKTUELL',                    ftFloat,    0), // Verfügbare Menge per Prüfungsdatum ("jetzt")
+   Result.CbAddField('VP_BESTAND_BEI_BEDARFSTERMIN',          ftFloat,    0), // Verfügbare Menge zum Bedarfszeitpunkt - vor Berücksichtigung des eigenen Bedarfs
+   Result.CbAddField('VP_BEDARF_GEDECKT_DURCH_ZUGAENGE',      ftFloat,    0), // Welche (Teil-)Menge wird durch Zugänge gedeckt?
+   Result.CbAddField('VP_BEDARF_VOLL_GEDECKT_DURCH_ZUGAENGE', ftBoolean,  0), // Wird die Bedarfsmenge komplett durch Zugänge gedeckt?
+   Result.CbAddField('VP_BEDARF_GEDECKT_DURCH_LAGER',         ftString,   1), // Ist der Bedarf durch Lagerbestand gedeckt?
+                                                                              //   'N' - nein      (es sind Zugänge erforderlich, um den Bedarf zu decken)
+                                                                              //   'T' - teilweise
+                                                                              //   'J' - ja        (der Bedarf ist komplett gedeckt durch heute verfügbaren Lagerbestand)
+
+   Result.CbAddField('VP_ZUGANGS_ETR_INFOS',                   ftMemo,     0),  // Array mit Detail-Infos der zugeordneten Zugänge
+   Result.CbAddField('VP_ZUGANGS_TERMIN_LTZT_BEDDECKER',       ftString,   8),  // Zugangstermin des letzten Bedarfsdeckers
+   Result.CbAddField('VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX', ftString,   9),  // - "" -  als Termin-Index
+
+   Result.CbAddField('VP_PUFFER_KALTAGE',                      ftInteger,   0), // Puffer in Kalendertagen (wird nur berechnet, wenn Bedarf vollständig durch Zugänge gedeckt ist)
+                                                                                // - Positiver Puffer => rechtzeitig
+                                                                                // - Negativer Puffer => verspätet
+
+   Result.CbAddField('VP_UNTERDECKUNGEN_VORHANDEN',            ftBoolean,   0), // Gibt es im Einzel-Terminraster für diese Position Unterdeckungen auf Basis der Prüfmodus-Optionen
+                                                                                // => Position selbst ist z.B. rechtzeitig verfügbar, aber anschließend gibt es Unterdeckungen.
+                                                                                //    TODO: Nur in WBZ prüfen?
+
+   Result.Active := True,
+end,
+
+//******************************************************************************
+// Erzeugt eine Memtable für die Darstellung des
+//    VerfügbarkeitspPrüfungs-Ergebnisses an der GUI
+//
+//    => wird befüllt mit den Daten aus den intern verwendeten Memtables
+//
+// @Result: MemTable-Instanz
+//******************************************************************************
+function VPU_GUI_CreateStklStrukturMem(oOwner)
+
+   Result           := Createobject('TBeMemTable', 'ITEMTABLE', oOwner),
+   Result.AliasName := 'ITEMTABLE',
+
+   Result.CbAddField('ID',                      ftInteger,  0),           // künstlich vergebene ID in der Memtable // TODO   
+   Result.CbAddField('EBENE',                   ftInteger,    0),
+   Result.CbAddField('TYP',                     ftInteger,    0),               // Zeilentyp in der Gui-Memtable
+                                                                                // 10 = Stücklisten-Position (gl_VPU_GUI_ZeilenTyp_Bedarf)
+                                                                                // 20 = Zugangs-Kopf-Satz (gl_VPU_GUI_ZeilenTyp_Zugangskopf)
+   Result.CbAddField('ARTNR_BG',                ftString,   mBeArtNoLen),
+   Result.CbAddField('ARTNR',                   ftString,   mBeArtNoLen),
+   Result.CbAddField('BEZ1',                    ftString,   40),
+   Result.CbAddField('BEZ2',                    ftString,   40),
+   Result.CbAddField('ARTTYP',                  ftString,   1),
+   Result.CbAddField('ME',                      ftString,   3),
+   Result.CbAddField('WBZ',                     ftInteger,  0),
+   Result.CbAddField('NKSTELLEN',               ftInteger,  0),           // Nachkommastellen des Artikels (DAB010:NKSTELLEN)     // TODO
+
+   Result.CbAddField('POSNR',                   ftString,   6),
+
+   Result.CbAddField('PROD_ABT',                ftString,   3),  // Aus Dab240/Dab035 bzw. Dab210
+
+   Result.CbAddField('BEDARF_MENGE_LE',         ftFloat,    0),
+   Result.CbAddField('BEDARF_TERMIN',           ftString,   8),  // Berechnet mit Rückterminierung!
+   Result.CbAddField('BEDARF_TERMIN_INDEX',     ftString,   9),  //  ''
+
+   Result.CbAddField('VP_BESTAND_AKTUELL',            ftFloat,     0),
+   Result.CbAddField('VP_BESTAND_BEI_BEDARF',         ftFloat,     0),
+   Result.CbAddField('VP_BEDARF_GEDECKT_DURCH_LAGER', ftString,    1), // Ist der Bedarf durch Lagerbestand gedeckt?
+                                                                       //   'N' - nein      (es sind Zugänge erforderlich, um den Bedarf zu decken)
+                                                                       //   'T' - teilweise
+                                                                       //   'J' - ja        (der Bedarf ist komplett gedeckt durch heute verfügbaren Lagerbestand)
+
+   Result.CbAddField('VP_PUFFER_KALTAGE',                      ftInteger,   0), // Puffer in Kalendertagen (wird nur berechnet, wenn Bedarf vollständig durch Zugänge gedeckt ist)
+                                                                                // - Positiver Puffer => rechtzeitig
+                                                                                // - Negativer Puffer => verspätet
+
+   Result.CbAddField('ETR_ZEILENTYP',           ftInteger,   0), // "ZEILEN_TYP" aus Einzel-Terminraster-Logik
+   Result.CbAddField('ETR_DATENSATZ_ID',        ftInteger,   0), // "DATENSATZ_ID" aus Einzel-Terminraster-Logik
+   Result.CbAddField('ZUGANGS_TERMIN',          ftString,    8),
+   Result.CbAddField('ZUGANGS_TERMIN_INDEX',    ftString,    9),
+   Result.CbAddField('ZUGANGS_INFO',            ftString,   50), // Info-Text zum Zugangs-Element
+   Result.CbAddField('ZUGANGS_LAUFNUMMER',      ftInteger,   0), // Bei einem Zugangs-Kopf (TYP=20) ist das die (virtuelle) laufende Nummer des Zugangs (1, 2, 3, ...)
+                                                                      //  -> dient der Sortierung der Zugänge, wenn es mehrere zugeord. Zugänge für einen Bedarf gibt.
+
+   Result.CbAddField('ZUGANG_FUER_ID',          ftInteger,   0), // ID der Bedarfszeile, für die der Zugang eingetragen ist
+
+   Result.CbAddField('ANZ_MAT_POSITIONEN',      ftInteger,   0), // Nur für Zugangs-Köpfe (TYP=20): Wieviele relevante Stücklisten-Pos. hat der FA?    -> Wird erst bei Auflösung des Zugangs berechnet.
+   Result.CbAddField('HAT_MAT_RUECKSTAND',      ftString,    1), // Nur für Zugangs-Köpfe (TYP=20): Hat der Fertigungsauftrag noch Material-Rückstand? -> Wird erst bei Auflösung des Zugangs berechnet.
+
+   Result.CbAddField('IS_EXPANDED',             ftBoolean,   0), // Ist die aktuelle Zeile "aufgeklappt", also: sind untergeordnete Datensätze erzeugt worden?
+
+   Result.Active := true,
+
+end,
+
+//******************************************************************************
+// Funktion befüllt die übergebene Pruef-Stücklisten-Memtables (Kopf und Positionen)
+//    auf Basis eines Dab035-Fertigungsauftrags
+// @Result: null
+//******************************************************************************
+function VPU_FillPruefStklMemWithOrder_Dab035(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, nOrderId, cWunschTermin, nKopfdatenUniqueIDCounter:R, nStklUniqueIDCounter:R)
+| cBestPosNr, oCalc035, oCalc240_Head, oCalc240_Pos, oCalc010,
+  cArtnrBaugruppe, cFertigstellungsTermin,
+  cBedarfsUndStartTerminAktuell, cBedarfsUndStartTerminWunsch |
+   oCalc035                        := DbGetTable(oDM, waDab035),
+   oCalc035.IndexName              := 'DAB03D', // ID
+   MySeek({nOrderId}, oCalc035),
+   cArtnrBaugruppe                 := oCalc035:ARTNR,
+   cBestPosNr                      := oCalc035:BESTPOSNR,
+   cFertigstellungsTermin          := oCalc035:TERMIN,
+
+   // Dab240 Kopfsatz
+   oCalc240_Head                   := DBGetTable(oDM, waDab240, 'CALC240_HEAD'),
+   oCalc240_Head.IndexName         := 'DAB241',
+   D240_FindHead(oCalc240_Head, cBestPosNr),
+
+   // Dab240 Positionen
+   oCalc240_Pos                    := DBGetTable(oDM, waDab240, 'CALC240_POS'),
+   oCalc240_Pos.IndexName          := 'DAB241',
+
+   oCalc010                        := DbGetTable(oDM, waDab010),
+   oCalc010.IndexName              := 'DAB011',
+
+
+   // Kopfsatz anlegen
+   MySeek({cArtnrBaugruppe}, oCalc010),
+
+   MyAppend(oPruefKopfdatenMem),
+   oPruefKopfdatenMem:STANDORT            := oCalc240_Head:STANDORT,
+   nKopfdatenUniqueIDCounter ++,
+   oPruefKopfdatenMem:ID                  := nKopfdatenUniqueIDCounter,
+
+   oPruefKopfdatenMem:AUF_WA              := waDab035,
+   oPruefKopfdatenMem:AUF_ID              := nOrderId,
+   oPruefKopfdatenMem:ARTNR_BG            := cArtnrBaugruppe,
+   oPruefKopfdatenMem:WBZ                 := oCalc010:WBZ,
+
+   // Aktuelle Termine ***********
+   //    Bedarfs-Termin (mit Rückwärtsterminierung, für alle StüLi-Positionen identisch)
+   //    => Ist (aktuell) identisch mit dem FA-Starttermin
+   cBedarfsUndStartTerminAktuell           := DPU_CalcPlanungsStartTermin(cArtnrBaugruppe, cFertigstellungsTermin),
+   oPruefKopfdatenMem:START_TERMIN         := cBedarfsUndStartTerminAktuell,
+   oPruefKopfdatenMem:START_TERMIN_INDEX   := VPU_DateStr(oPruefKopfdatenMem:START_TERMIN),
+   oPruefKopfdatenMem:FERTIG_TERMIN        := cFertigstellungsTermin,
+   oPruefKopfdatenMem:FERTIG_TERMIN_INDEX  := VPU_DateStr(oPruefKopfdatenMem:FERTIG_TERMIN),
+
+   // Wunsch-Termine ***********
+   cBedarfsUndStartTerminWunsch                  := DPU_CalcPlanungsStartTermin(cArtnrBaugruppe, cWunschTermin),
+   oPruefKopfdatenMem:START_TERMIN_WUNSCH        := cBedarfsUndStartTerminWunsch,
+   oPruefKopfdatenMem:START_TERMIN_WUNSCH_INDEX  := VPU_DateStr(oPruefKopfdatenMem:START_TERMIN_WUNSCH),
+   oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH       := cWunschTermin,
+   oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH_INDEX := VPU_DateStr(oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH),
+
+   oPruefKopfdatenMem:HAT_WUNSCH_TERMIN := oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH_INDEX <> oPruefKopfdatenMem:FERTIG_TERMIN_INDEX,
+
+   MyPost(oPruefKopfdatenMem),
+
+   // Positionen anlegen
+   D240_SetScopeOnOrder(oCalc240_Pos, cBestPosNr, false),
+   while not EoF(oCalc240_Pos) do
+
+      if not empty(oCalc240_Pos:ARTNR_E) then // gelöschte Positionen ignorieren
+         MySeek({oCalc240_Pos:ARTNR_E}, oCalc010),
+
+         // nur lagergeführte Teile sind relevant (somit auch niemals 'A'rbeitwerte, 'E'xternleistungen etc.)
+         if oCalc010:LAGER_KZ $ 'JX' then
+
+            MyAppend(oPruefStklMem),
+            oPruefStklMem:STANDORT           := oCalc240_Pos:STANDORT,
+            nStklUniqueIDCounter ++,
+            oPruefStklMem:ID                 := nStklUniqueIDCounter,
+
+            oPruefStklMem:AUF_WA             := oPruefKopfdatenMem:AUF_WA,
+            oPruefStklMem:AUF_ID             := oPruefKopfdatenMem:AUF_ID,
+            oPruefStklMem:ARTNR_BG           := oPruefKopfdatenMem:ARTNR_BG,
+
+            oPruefStklMem:POS_WA             := waDab240,
+            oPruefStklMem:ARTNR              := oCalc240_Pos:ARTNR_E,
+            oPruefStklMem:BEZ1               := oCalc010:BEZ1,        // TODO: Spezifische Bezeichnung bei -2 Positionen?
+            oPruefStklMem:BEZ2               := oCalc010:BEZ2,
+
+            oPruefStklMem:POSNR              := oCalc240_Pos:POSNR,
+            oPruefStklMem:ARTTYP             := oCalc010:ARTTYP,
+            oPruefStklMem:ME                 := oCalc010:ME,
+            oPruefStklMem:WERKZEUG           := oCalc010:WERKZEUG,
+            oPruefStklMem:PROD_ABT           := D240_ProdDepart(oCalc240_Pos, oCalc035),
+            oPruefStklMem:WBZ                := oCalc010:WBZ,
+
+            oPruefStklMem:NKSTELLEN          := oCalc010:NKSTELLEN,
+
+            oPruefStklMem:BEDARF_MENGE       := D240_BedarfsMenge(oCalc240_Pos, oCalc240_Head), // Soll-Bedarfs-Menge der aktuellen Dab240-Position
+            oPruefStklMem:BEDARF_MENGE_LE    := oPruefStklMem:BEDARF_MENGE,                     // Bei Dab240 ist keine Umrechnung erforderlich, SOLL-Menge ist schon in Lagereinheit
+
+            // Bedarfstermin immer aus dem Wunschtermin ableiten, auch wenn dieser nicht vom aktuellen Termin abweicht.
+            oPruefStklMem:BEDARF_TERMIN         := oPruefKopfdatenMem:START_TERMIN_WUNSCH,
+            oPruefStklMem:BEDARF_TERMIN_INDEX   := VPU_DateStr(oPruefStklMem:BEDARF_TERMIN),
+
+            oPruefStklMem:ETR_ZEILENTYP      := ETRU_Get_ProduktionsAbgangsZeilenTyp(oCalc240_Pos),
+            oPruefStklMem:ETR_DATENSATZ_ID   := oCalc240_Pos:ID, // Eindeutige Identifikation nach Einzelterminraster-Logik (Feld "DATENSATZ_ID")
+
+            oPruefStklMem:VP_BESTAND_AKTUELL := Lager('', oCalc010), // Reservierungen miteinberechnen !?
+
+            MyPost(oPruefStklMem),
+
+         endif,
+
+      endif,
+      DbSkip(1, oCalc240_Pos),
+   end,
+
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function VPU_FillPruefStklMemWithOrder(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, nOrderWorkarea, nOrderId, cWunschTermin, nKopfdatenUniqueIDCounter:R, nStklUniqueIDCounter:R)
+   SetErrorIf(empty(oPruefStklMem),     'empty(oPruefStklMem)'),
+   SetErrorIf(not oPruefStklMem.Active, 'not oPruefStklMem.Active'),
+   SetErrorIf(not NoDs(oPruefStklMem),  'not NoDs(oPruefStklMem)'),
+
+   case nOrderWorkarea
+      of waDab035 :: VPU_FillPruefStklMemWithOrder_Dab035(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, nOrderId, cWunschTermin, nKopfdatenUniqueIDCounter, nStklUniqueIDCounter),
+      otherwise SetError('workarea ' + Str(nOrderWorkarea) + ' not implemented'),
+   endcase,
+end,
+
+//******************************************************************************
+// Funktion verschiebt (aktualisiert) oder erzeugt eine Bewegung in der
+// übergebenen Einzelterminraster-Memtable
+// @Result: null
+//******************************************************************************
+function VPU_ETR_CreateOrUpdateMovement(oEinzelTermRastMem, cArtnr, nZeilenTyp, nDatensatzID, dBedarfsTermin)
+   WriteLn(oEinzelTermRastMem.OrderBy),
+
+   if DbLocate('ZEILEN_TYP;DATENSATZ_ID', {nZeilenTyp, nDatensatzID}, 0, oEinzelTermRastMem) then
+      MyEdit(oEinzelTermRastMem),
+   else
+      SetError('append not implemented'),
+   endif,
+
+   oEinzelTermRastMem:TERMIN        := VPU_DToC(dBedarfsTermin),
+   oEinzelTermRastMem:TERMIN_INDEX  := VPU_DateStr(oEinzelTermRastMem:TERMIN),
+   oEinzelTermRastMem:SORT          := ETRU_GetSortSchluesselForZeile(oEinzelTermRastMem),
+
+   MyPost(oEinzelTermRastMem),
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine Bedarfs-Zeile in der Pruef-Stückliste den
+//    Puffer zwischen Materialzugangstermin und Bedarfstermin
+//    -> der Zugangstermin ist der Zugangstermin des letzten
+//       benötigen Bedarfsdeckers
+// @Result: Integer, Puffer in Kalendertagen
+//******************************************************************************
+function VPU_CalcPufferForStklPos(oPruefStklMem)
+| dBedarfsTermin, dZugangsTermin |
+   Result := 0,
+
+   // Ein Puffer wird nur berechnet, wenn
+   // - der Bedarf nicht vollständig durch Lagerbestand gedeckt ist
+   // - der Bedarf vollständig durch Zugänge gedeckt ist
+   if     oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_LAGER <> 'J'
+      and oPruefStklMem:VP_BEDARF_VOLL_GEDECKT_DURCH_ZUGAENGE
+   then
+      // Termine für Puffer-Berechnung ermitteln
+      // => Hier wird nicht unterschieden zwischen Wochen- und Tagesterminen. Ein Wochentermin liegt
+      //    in der Sortierfolge nach dem entsprechenden Freitags-Tagestermin, es wird
+      //    aber in einer solchen Situation kein Puffer angenommen (wäre ohnehin 0 Tage).
+
+      dBedarfsTermin := SToD(Left(oPruefStklMem:BEDARF_TERMIN_INDEX,                    8)),
+      dZugangsTermin := SToD(Left(oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX, 8)), // Hinweis: Das kann ein KW.99.99-Termin (Abruf) sein!
+
+      SetErrorIf(empty(dBedarfsTermin), 'empty(dBedarfsTermin)'),
+      SetErrorIf(empty(dZugangsTermin), 'empty(dZugangsTermin)'),
+
+      Result         := dBedarfsTermin - dZugangsTermin, // => Positiv, wenn Zugang vor Bedarf
+   endif,
+end,
+
+//******************************************************************************
+// Funktion durchläuft die bereits gefüllte Stücklisten-Memtable und berechnet
+//    für jede Position (Material, Baugruppe, etc.) die Verfügbarkeitsinfos.
+//
+// @Result: null (Ergebnisse werden in der Stkl-Memtable gespeichert)
+//******************************************************************************
+function VPU_FillVerfuegbarkeitsInfosInStklMem(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem)
+| oEinzelTermRastMem, aVerfuegPruefRes, aZuordungRes,
+  nVerfuegbareMengeZuBedarfsTermin, bUnterdeckungVorhanden,
+  cSpaetesterZugangsTerminBedarfsdecker,
+  cBedarfDurchLagerGedecktStatus, nDurchZugaengeGedeckteMenge,
+  aZeilenTypen, aDemAbgangZugeordnZugaenge, aDemAbgangZugeordnZugaengeDetails,
+
+  dWunschBedarfsTermin |
+
+   aZeilenTypen   := VPU_Options_GetZeilenTypenFromMemOptions(oOptionsMem),
+
+   DbGoTop(oPruefStklMem),
+   while not EoF(oPruefStklMem) do
+
+      // Einzel-Terminraster aufbauen
+      oEinzelTermRastMem := VPU_ETR_GetEinzelTermRastMem(oDM, oPruefStklMem:ARTNR),
+      startseq
+
+         // Abweichender Wunsch-Termin angegeben? Dann müssen alle Positionen
+         // des Auftrags entsprechend den Material-Bedarfstermin bekommen, der
+         // sich aus dem Wunsch-Termin ergibt.
+         if oPruefKopfdatenMem:HAT_WUNSCH_TERMIN then
+            dWunschBedarfsTermin := SToD(Left(oPruefStklMem:BEDARF_TERMIN_INDEX, 8)), // der Wunsch-Bedarfstermin ist schon im Feld "BEDARF_TERMIN_INDEX" hinterlegt
+                                                                                Prs('VPU_FillVerfuegbarkeitsInfosInStklMem: Wunschtermin definiert', {'Position ' + oPruefStklMem:POSNR, 'neuer Bedarfstermin: ' + DToC(dWunschBedarfsTermin)}),
+            VPU_ETR_CreateOrUpdateMovement( oEinzelTermRastMem,
+                                            oPruefStklMem:ARTNR,
+                                            oPruefStklMem:ETR_ZEILENTYP,
+                                            oPruefStklMem:ETR_DATENSATZ_ID,
+                                            dWunschBedarfsTermin ),
+         endif,
+
+         // TODO: Neue Spalte "Verfügbarkeitszeitpunkt bei Planung gegen WBZ / VPZ"
+
+
+         // Schritt 1:
+         //    "verfügbare Menge zum eigenen Bedarfs-Termin" ermitteln (der eigene Bedarf wird dabei ignoriert)
+         aVerfuegPruefRes  := VPU_ETR_Calc_VerfuegbarInfosFuerBedarf( oDM,
+                                                                      oPruefStklMem:ARTNR,
+                                                                      oEinzelTermRastMem,
+                                                                      aZeilenTypen,
+                                                                      oPruefStklMem:ETR_ZEILENTYP,    // Zeilen-Typ des Bedarfs nach ETR-Logik
+                                                                      oPruefStklMem:ETR_DATENSATZ_ID  // ID des Bedarfs         nach ETR-Logik
+                                                                     ),
+         nVerfuegbareMengeZuBedarfsTermin := aVerfuegPruefRes[1],
+         bUnterdeckungVorhanden           := aVerfuegPruefRes[3],
+
+         // Schritt 2:
+         //    Ermitteln, welche(r) Zugang/Zugänge den Bedarf (Abgang) decken
+         //       Rückgabe:
+         //             ...
+         //             [4] Array der Record-Nummern der Zugänge, die für den angefragten Abgang zugeordnet wurden
+         //             [5] Zugangstermin des letzten (spätesten) notwendigen Bedarfsdeckers ermitteln für den angefragten Abgang
+         //             [6] Status "in wiefern wird der Bedarf durch Lagerbestand gedeckt" (leer, 'J', 'T' oder 'N')
+
+         aZuordungRes := VPU_ETR_Calc_ZuordnungAbgaengeZugaenge( oDM,
+                                                                 oPruefStklMem:ARTNR,
+                                                                 oEinzelTermRastMem,
+                                                                 aZeilenTypen,
+                                                                 oPruefStklMem:ETR_ZEILENTYP,         // Zeilen-Typ des Bedarfs nach ETR-Logik
+                                                                 oPruefStklMem:ETR_DATENSATZ_ID),     // ID des Bedarfs         nach ETR-Logik
+
+         // Ergebnisse interpretieren und in Stücklisten-Memtable speichern
+         if oPruefStklMem:BEDARF_MENGE_LE > 0 then
+            aDemAbgangZugeordnZugaenge            := aZuordungRes[4],
+            cSpaetesterZugangsTerminBedarfsdecker := aZuordungRes[5],
+            cBedarfDurchLagerGedecktStatus        := aZuordungRes[6],
+            nDurchZugaengeGedeckteMenge           := aZuordungRes[7],
+            aDemAbgangZugeordnZugaengeDetails     := aZuordungRes[8],
+         else
+            aDemAbgangZugeordnZugaenge            := {},
+            cSpaetesterZugangsTerminBedarfsdecker := '',
+            cBedarfDurchLagerGedecktStatus        := '', // bei einem Bedarf <= 0 nicht auf 'J'a setzen, damit die Filterung auf "... <> 'J'" nicht 0-Bedarfe bzw. negative Bedarfe ausblendet
+            nDurchZugaengeGedeckteMenge           := 0,
+            aDemAbgangZugeordnZugaengeDetails     := {},
+         endif,
+
+         // WriteLn('aDemAbgangZugeordnZugaenge       ', aDemAbgangZugeordnZugaenge),
+         // WriteLn('aDemAbgangZugeordnZugaengeDetails', aDemAbgangZugeordnZugaengeDetails),
+
+         MyEdit(oPruefStklMem),
+         oPruefStklMem:VP_BESTAND_BEI_BEDARFSTERMIN           := nVerfuegbareMengeZuBedarfsTermin,
+         oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_LAGER          := cBedarfDurchLagerGedecktStatus,
+         oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_ZUGAENGE       := nDurchZugaengeGedeckteMenge,
+         oPruefStklMem:VP_BEDARF_VOLL_GEDECKT_DURCH_ZUGAENGE  := oPruefStklMem:BEDARF_MENGE_LE > 0 and (oPruefStklMem:BEDARF_MENGE_LE = nDurchZugaengeGedeckteMenge),
+         oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX := cSpaetesterZugangsTerminBedarfsdecker,
+         oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER       := TermIndexToStr(oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX),
+         oPruefStklMem:VP_ZUGANGS_ETR_INFOS                   := ArrToStr(aDemAbgangZugeordnZugaengeDetails),
+         oPruefStklMem:VP_UNTERDECKUNGEN_VORHANDEN            := bUnterdeckungVorhanden,
+         MyPost(oPruefStklMem),
+
+         MyEdit(oPruefStklMem), // Eigener Edit/Post damit Puffer-Berechnung auf fertige Werte der Memtable-Felder zugreift - verdeutlicht Unabhängigkeit des Schritts
+         oPruefStklMem:VP_PUFFER_KALTAGE                      := VPU_CalcPufferForStklPos(oPruefStklMem),
+         MyPost(oPruefStklMem),
+
+      always
+         DestroyObject(oEinzelTermRastMem),
+      stopseq,
+
+
+      DbSkip(1, oPruefStklMem),
+   end,
+end,
+
+//******************************************************************************
+// Die Funktion durchläuft die Prüfungs-Stücklisten-Memtable und berechnet
+//    Gesamt-Informationen / Aussagen für den Auftrag.
+//    Die Ergebnisse werden in der Kopf-Memtable abgelegt.
+//
+// @Result: Keine Rückgabe
+//******************************************************************************
+function VPU_CalcAndSaveOverallInfosForPruefStkl(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem)
+| cGesamtLagerDeckungsStatus, dSpaetMatVerfuegTermin, oRec,
+  bAlleBedarfeVollGedecktDurchZugaenge, bPositionVollGedeckt, dMatVerfuegTermin,
+  bUnterdeckungVorhanden |
+
+   cGesamtLagerDeckungsStatus           := 'J',
+   bAlleBedarfeVollGedecktDurchZugaenge := true,
+   dSpaetMatVerfuegTermin               := null,
+   bUnterdeckungVorhanden               := false,
+
+   foreach oRec in oPruefStklMem do
+
+      // Alle Bedarfs-Infos sind nur für Positionen mit (Rest-)Bedarfsmenge relevant
+      if oPruefStklMem:BEDARF_MENGE_LE >= 0 then
+
+         // "Schlechteste" Lagerdeckung aller Positionen?
+         case oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_LAGER
+            of 'T' :: cGesamtLagerDeckungsStatus := if cGesamtLagerDeckungsStatus = 'J' then
+                                                       cGesamtLagerDeckungsStatus := 'T',
+                                                    endif,
+            of 'N' :: cGesamtLagerDeckungsStatus := 'N',
+         endcase,
+
+         // Alle Positionen voll durch Lager oder Zugänge gedeckt?
+         bPositionVollGedeckt                 := oPruefStklMem:VP_BEDARF_VOLL_GEDECKT_DURCH_ZUGAENGE,
+         bAlleBedarfeVollGedecktDurchZugaenge := bAlleBedarfeVollGedecktDurchZugaenge and bPositionVollGedeckt,
+
+         // Spät. Materialverfügbarkeitstermin über alle Positionen?
+         if not empty(oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER) then
+            dMatVerfuegTermin := SToD(Left(oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX, 8)), // Hinweis: Das kann ein KW.99.99-Termin (Abruf) sein! => TODO: Dann für Liefertermin-Berechnung ignorieren?
+
+            if empty(dSpaetMatVerfuegTermin) then
+               dSpaetMatVerfuegTermin := dMatVerfuegTermin,
+            else
+               dSpaetMatVerfuegTermin := Max(dSpaetMatVerfuegTermin, dMatVerfuegTermin),
+            endif,
+         endif,
+
+         // Gibt es für die Position Unterdeckungen im ETR?
+         bUnterdeckungVorhanden := bUnterdeckungVorhanden or oPruefStklMem:VP_UNTERDECKUNGEN_VORHANDEN,
+
+      endif,
+   end,
+
+   MyEdit(oPruefKopfdatenMem),
+   oPruefKopfdatenMem:VP_BEDARF_GEDECKT_DURCH_LAGER               := cGesamtLagerDeckungsStatus,
+   oPruefKopfdatenMem:VP_ALLE_BEDARFE_VOLL_GEDECKT_DURCH_ZUGAENGE := bAlleBedarfeVollGedecktDurchZugaenge,
+   oPruefKopfdatenMem:VP_SPAET_MATVERFUEG_DATE                    := dSpaetMatVerfuegTermin,
+   oPruefKopfdatenMem:VP_UNTERDECKUNGEN_VORHANDEN                 := bUnterdeckungVorhanden,
+   MyPost(oPruefKopfdatenMem),
+end,
+
+//******************************************************************************
+// Berechnet den FA-Fertigstellungstermin für einen FA-Start-Termin
+//    => Vorwärtsterminierung per WBZ
+// @Result: Date
+//******************************************************************************
+function VPU_GetFertigstellungsTerminForStartTermin(oDM, cArtnrBaugruppe, dStartTermin)
+| oDab010, aDivision, dFertigstellungsTermin |
+   oDab010 := DbGetTable(oDM, waDab010),
+   oDab010.IndexName := 'DAB011',
+   MySeek({cArtnrBaugruppe}, oDab010),
+
+   if DPU_IsDayPlan(oDab010) then
+      aDivision              := 4,   // Unternehmensbereich "Produktion"
+      dFertigstellungsTermin := ETRU_Internal_DPU_Temp_DayPlan_GetNextWorkDate(dStartTermin, aDivision, oDab010:WBZ),    // TODO: Die function hat noch TODO's!
+   else
+      dFertigstellungsTermin := Date() + oDab010:WBZ,
+   endif,
+
+   Result := dFertigstellungsTermin,
+end,
+
+//******************************************************************************
+// Funktion berechnet für eine bereits gefüllte und geprüfte Memtable @oPruefStklMem
+//    den sich ergebenden frühesten Fertigstellungstermin
+//    (ggf. früher oder später als der zuvor geprüfte Termin)
+//
+//    TODO: Funktion ist gemacht für Memtables mit nur einer Ebene!
+//    TODO: Die Funktion behandelt nicht die Situationen, in denen für alle Positionen
+//          eine teilweise Verfügbarkeit gegeben ist - weder von Lager noch durch Zugänge
+//          => Funktion könnte so etwas ermitteln wie "Produktion kann für 215 Stück gestartet werden per xx.xx.xx, weitere 75 per xx.xx.xx, der Rest per xx.xx.xx".
+//
+//    Die Ergebnisse werden in der Kopf-Memtable abgelegt.
+//
+// @Result: keine Rückgabe
+//******************************************************************************
+function VPU_CalcAndSaveLieferterminForPruefStkl(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem)
+| dFAStartTermin_Berechnet, dFAFertigTermin_Berechnet, dToday, nKalTagePufferZuWunschTermin, dWunschTermin |
+
+   dToday                               := SToD(DToS(GetAdsServerTime())),
+
+   dFAStartTermin_Berechnet             := null,
+   dFAFertigTermin_Berechnet            := null,
+
+   // Wenn alles per Lager verfügbar ist, dann könnte man theoretisch sofort los legen
+   if oPruefKopfdatenMem:VP_BEDARF_GEDECKT_DURCH_LAGER = 'J' then
+      dFAStartTermin_Berechnet          := dToday,
+   else
+      // Alle Position sind durch Zugänge (irgendwann) komplett gedeckt
+      if oPruefKopfdatenMem:VP_ALLE_BEDARFE_VOLL_GEDECKT_DURCH_ZUGAENGE then
+         SetErrorIf(empty(oPruefKopfdatenMem:VP_SPAET_MATVERFUEG_DATE),
+                    'bAlleBedarfeVollGedecktDurchZugaenge - but empty(oPruefKopfdatenMem:VP_SPAET_MATVERFUEG_DATE)'), // Jetzt muss ein Materialverfügbarkeitstermin vorliegen!
+         dFAStartTermin_Berechnet       := oPruefKopfdatenMem:VP_SPAET_MATVERFUEG_DATE,
+      else
+         dFAStartTermin_Berechnet       := null,
+      endif,
+   endif,
+
+   if not empty(dFAStartTermin_Berechnet) then
+      dFAStartTermin_Berechnet          := Max(dFAStartTermin_Berechnet, dToday), // ein Start-Termin in der Vergangenheit vorzuschlagen, macht nicht viel Sinn...
+                                                                                  // Nice-To-Have: Hier müsste eigentlich der von heute gesehen nächste Produktions-Arbeitstag genutzt werden anstatt "Heute".
+      dFAFertigTermin_Berechnet         := VPU_GetFertigstellungsTerminForStartTermin(oDM, oPruefKopfdatenMem:ARTNR_BG, dFAStartTermin_Berechnet),
+   endif,
+
+   // Puffer / Verzögerung des berechneten Termins ggü. dem Wunschtermin
+   nKalTagePufferZuWunschTermin               := 0,
+   if not empty(dFAFertigTermin_Berechnet) then
+      dWunschTermin                 := SToD(Left(oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH_INDEX, 8)),
+      nKalTagePufferZuWunschTermin  := dWunschTermin - dFAFertigTermin_Berechnet,
+   endif,
+
+   MyEdit(oPruefKopfdatenMem),
+   oPruefKopfdatenMem:VP_START_TERMIN         := VPU_DToC(dFAStartTermin_Berechnet),
+   oPruefKopfdatenMem:VP_START_TERMIN_INDEX   := VPU_DateStr(oPruefKopfdatenMem:VP_START_TERMIN),
+   oPruefKopfdatenMem:VP_FERTIG_TERMIN        := VPU_DToC(dFAFertigTermin_Berechnet),
+   oPruefKopfdatenMem:VP_FERTIG_TERMIN_INDEX  := VPU_DateStr(oPruefKopfdatenMem:VP_FERTIG_TERMIN),
+
+   // Wunschtermin ist haltbar ja/nein ?
+   oPruefKopfdatenMem:VP_WUNSCHTERM_OK        :=     not empty(dFAFertigTermin_Berechnet)
+                                                 and oPruefKopfdatenMem:VP_FERTIG_TERMIN_INDEX <= oPruefKopfdatenMem:FERTIG_TERMIN_WUNSCH_INDEX,
+
+   oPruefKopfdatenMem:VP_WUNSCHTERM_PUFFER    := nKalTagePufferZuWunschTermin,
+   MyPost(oPruefKopfdatenMem),
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion für die Erstellung einer Eingabe-Maske für Numerische Werte für F12-Edits
+//    Stellt MPicture() nach
+// @Result: String, z.B. '[#][#][#][#][;,[#][#][#][#]]'
+//******************************************************************************
+function BuildDecimalPictureMask(bAllowNegative, nTotal, nDecimals)
+| nVorkommaStellen, cVorkommaMask, cNachkommaMask |
+
+   cVorkommaMask    := '',
+   cNachkommaMask   := '',
+
+   nVorkommaStellen := nTotal - nDecimals,
+
+   if nVorkommaStellen > 0 then
+      if bAllowNegative then
+         cVorkommaMask := '[{-,#}]',
+         nVorkommaStellen --, // Reduktion für DBF-Feld-Formate, da hier eine Byte für das Vorzeichen drauf geht !?
+      endif,
+      cVorkommaMask += Replicate('[#]', nVorkommaStellen),
+   else
+      if bAllowNegative then
+         cVorkommaMask := '[-]',
+      endif,
+   endif,
+
+   if nDecimals > 0 then
+      cNachkommaMask := '[;,' + Replicate('[#]', nDecimals) + ']',
+   endif,
+
+   Result           := cVorkommaMask + cNachkommaMask,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CreateAndShowEinzelterminraster()
+| aResultForm |
+   GFU_FormRefArr_Init(m_aDockingForms),
+   aResultForm := GFU_ShowForm( m_aDockingForms, 'EINZELTERMRAST', oForm, m_oDab010_EinzelterminrasterMaster, 'Lagerverwaltung\Einzel-Terminraster\GUI' ),
+   m_oEinzelTermRastForm := aResultForm[1],
+   m_aDockingForms       := aResultForm[2],
+
+   m_oEinzelTermRastForm.CbHelper.CbManualDock(pc_Dockings),
+   Show(m_oEinzelTermRastForm),
+
+   // Memtable des Einzelterminraster-Dockings suchen
+   m_oEinzelTermRastForm_Memtable := FindObject(m_oEinzelTermRastForm,  'EINZEL_TERMINRASTER'),
+   SetErrorIf(empty(m_oEinzelTermRastForm_Memtable), 'memtable not found in ETR docking!'),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+   m_oGUI_DM                      := CreateObject('TBeDbGet', '', oForm), // eigenes Datenmodul für die GUI erstellen
+
+   // Optionen-Memtable
+   m_oOptionsMem        := VPU_Options_CreateOptionsMem(oForm),
+
+   // Kopf-Memtable
+   m_oPruefKopfdatenMem := VPU_CreatePruefKopfdatenMem(oForm),
+   GU_LinkTableToGui(m_oPruefKopfdatenMem, ds_Kopf, grid_Kopf, m_cBrowserKopfID, false),
+
+   // Stkl-Memtable
+   m_oPruefStklMem      := VPU_CreatePruefStklMem(oForm),
+   GU_LinkTableToGui(m_oPruefStklMem,      ds_Stkl, grid_Stkl, m_cBrowserStklID, false),
+
+   // Einzelterminraster andocken
+   // => erfordert eine Dab010 als Master-Table
+    m_oDab010_EinzelterminrasterMaster := DbGetTable(m_oGUI_DM, waDab010, 'DAB010_GUI_ETR'), // muss eigene Instanz sein, damit die Tabelle nicht durch die interne Logik mitverwendet wird => GUI-geflackere...
+
+   CreateAndShowEinzelterminraster(),
+
+   // für den Test: GUI-Memtable
+   m_oVPUGuiMemTable := VPU_GUI_CreateStklStrukturMem(oForm),
+   GU_LinkTableToGui(m_oVPUGuiMemTable,   ds_VPUGUIMem, grid_VPUGUIMem, m_cBrowserVPUGuiMemID, false),
+end,
+
+//******************************************************************************
+// Berechnet für eine Zugangskopf-zeile in der GUI-Memtable den Puffer zwischen
+//    Bedarfstermin und Zugangstermin
+// @Result: Puffer in Kalendertagen
+//******************************************************************************
+function VPU_GUI_CalcPufferForZugangsKopfzeile(cBedarfsTerminIndex, cZugangsTerminIndex)
+| dBedarfsTermin, dZugangsTermin |
+   dBedarfsTermin := SToD(Left(cBedarfsTerminIndex, 8)),
+   dZugangsTermin := SToD(Left(cZugangsTerminIndex, 8)), // Hinweis: Das kann ein KW.99.99-Termin (Abruf) sein!
+
+   Result     := 0,
+   if not empty(dZugangsTermin) and not empty(dBedarfsTermin) then
+      Result  := dBedarfsTermin - dZugangsTermin, // => Positiv, wenn Zugang vor Bedarf
+   endif,
+end,
+
+//******************************************************************************
+// Funktion überträgt die Daten aus der internen KOPF- und Details-Memtable
+//    in die GUI-Memtable
+//
+//    TODO: - Funktion ist aktuell ausgelegt für Quell-Memtable mit nur einer Ebene
+//          - Es gibt aktuell kein GUI-Kopfmemtable-Pendant
+//
+// @Result: null                                                       
+//******************************************************************************
+function VPU_GUI_TransferDataToGUI(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, oVPUGuiMemTable, nVPUGUIStklMem_UniqueIDCounter:R)
+| oRec, nEbene, aZugeordneteZugaenge, i, aCurZugang, nBedarfsGUIMemtableID |
+
+   nEbene := 1,  // TODO
+
+   oVPUGuiMemTable.CbEmptyTable(),
+
+   foreach oRec in oPruefStklMem do
+
+      //************************************************************************
+      // 1. Bedarfsposition übertragen
+      //************************************************************************
+      MyAppend(oVPUGuiMemTable),
+
+      nVPUGUIStklMem_UniqueIDCounter ++,
+      oVPUGuiMemTable:ID                              := nVPUGUIStklMem_UniqueIDCounter,
+      nBedarfsGUIMemtableID                           := oVPUGuiMemTable:ID,
+
+      oVPUGuiMemTable:EBENE                           := nEbene,
+      oVPUGuiMemTable:TYP                             := gl_VPU_GUI_ZeilenTyp_Bedarf,
+      oVPUGuiMemTable:ETR_ZEILENTYP                   := oPruefStklMem:ETR_ZEILENTYP,
+      oVPUGuiMemTable:ETR_DATENSATZ_ID                := oPruefStklMem:ETR_DATENSATZ_ID,
+
+      oVPUGuiMemTable:ARTNR_BG                        := oPruefKopfdatenMem:ARTNR_BG,
+      oVPUGuiMemTable:ARTNR                           := oPruefStklMem:ARTNR,
+      oVPUGuiMemTable:ARTTYP                          := oPruefStklMem:ARTTYP,
+      oVPUGuiMemTable:ME                              := oPruefStklMem:ME,
+      oVPUGuiMemTable:BEZ1                            := oPruefStklMem:BEZ1,
+      oVPUGuiMemTable:BEZ2                            := oPruefStklMem:BEZ2,
+      oVPUGuiMemTable:WBZ                             := oPruefStklMem:WBZ,
+      oVPUGuiMemTable:POSNR                           := oPruefStklMem:POSNR,
+      oVPUGuiMemTable:PROD_ABT                        := oPruefStklMem:PROD_ABT,
+      oVPUGuiMemTable:NKSTELLEN                       := oPruefStklMem:NKSTELLEN,
+
+      oVPUGuiMemTable:BEDARF_MENGE_LE                 := oPruefStklMem:BEDARF_MENGE_LE,
+      oVPUGuiMemTable:BEDARF_TERMIN                   := oPruefStklMem:BEDARF_TERMIN,
+      oVPUGuiMemTable:BEDARF_TERMIN_INDEX             := oPruefStklMem:BEDARF_TERMIN_INDEX,
+
+      oVPUGuiMemTable:VP_BESTAND_AKTUELL              := oPruefStklMem:VP_BESTAND_AKTUELL,
+      oVPUGuiMemTable:VP_BESTAND_BEI_BEDARF           := oPruefStklMem:VP_BESTAND_BEI_BEDARFSTERMIN,
+      oVPUGuiMemTable:VP_BEDARF_GEDECKT_DURCH_LAGER   := oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_LAGER,
+      oVPUGuiMemTable:VP_PUFFER_KALTAGE               := oPruefStklMem:VP_PUFFER_KALTAGE,
+
+      oVPUGuiMemTable:ZUGANG_FUER_ID                  := 0,
+      oVPUGuiMemTable:ZUGANGS_TERMIN                  := oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER,
+      oVPUGuiMemTable:ZUGANGS_TERMIN_INDEX            := oPruefStklMem:VP_ZUGANGS_TERMIN_LTZT_BEDDECKER_INDEX,
+      oVPUGuiMemTable:ZUGANGS_INFO                    := '',
+      oVPUGuiMemTable:ZUGANGS_LAUFNUMMER              := 0,
+
+      oVPUGuiMemTable:IS_EXPANDED                     := false,
+      MyPost(oVPUGuiMemTable),
+
+      //************************************************************************
+      // 2. Bedarfsdeckende Zugänge eintragen
+      //************************************************************************
+      if oPruefStklMem:VP_BEDARF_GEDECKT_DURCH_LAGER <> 'J' then
+         aZugeordneteZugaenge := StrToArr(oPruefStklMem:VP_ZUGANGS_ETR_INFOS),
+
+         for i := 1 to ALen(aZugeordneteZugaenge) do
+            aCurZugang := aZugeordneteZugaenge[i],    // Ein Element enthält folgende Infos aus der Einzelterminraster-Bewegung
+                                                      // [1] ETR-Zeilentyp
+                                                      // [2] ETR-Datensatz-ID
+                                                      // [3] Termin des Zugangs
+                                                      // [4] Prod.Abt
+                                                      // [5] Anzeige-Text der Bewegung
+
+            MyAppend(oVPUGuiMemTable),
+            nVPUGUIStklMem_UniqueIDCounter ++,
+            oVPUGuiMemTable:ID                              := nVPUGUIStklMem_UniqueIDCounter,
+            oVPUGuiMemTable:EBENE                           := nEbene + 1,
+
+            oVPUGuiMemTable:TYP                             := gl_VPU_GUI_ZeilenTyp_Zugangskopf, // Zugangs-Kopf-Satz
+            oVPUGuiMemTable:ETR_ZEILENTYP                   := aCurZugang[1],
+            oVPUGuiMemTable:ETR_DATENSATZ_ID                := aCurZugang[2],
+
+            oVPUGuiMemTable:ARTNR_BG                        := oPruefKopfdatenMem:ARTNR_BG,
+            oVPUGuiMemTable:ARTNR                           := oPruefStklMem:ARTNR,
+            oVPUGuiMemTable:ARTTYP                          := oPruefStklMem:ARTTYP,
+            oVPUGuiMemTable:ME                              := oPruefStklMem:ME,
+            oVPUGuiMemTable:BEZ1                            := oPruefStklMem:BEZ1,
+            oVPUGuiMemTable:BEZ2                            := oPruefStklMem:BEZ2,
+            oVPUGuiMemTable:WBZ                             := oPruefStklMem:WBZ,
+            oVPUGuiMemTable:POSNR                           := '',
+            oVPUGuiMemTable:PROD_ABT                        := aCurZugang[4],
+            oVPUGuiMemTable:NKSTELLEN                       := oPruefStklMem:NKSTELLEN,
+
+            oVPUGuiMemTable:BEDARF_MENGE_LE                 := 0,
+            oVPUGuiMemTable:BEDARF_TERMIN                   := oPruefStklMem:BEDARF_TERMIN, // Auch hier den Bedarfs-Termin, damit man innerhalb der Zugangs-Zeile vergleichen kann, ob der Zugang rechtzeitig kommt.
+            oVPUGuiMemTable:BEDARF_TERMIN_INDEX             := oPruefStklMem:BEDARF_TERMIN_INDEX,
+
+            oVPUGuiMemTable:VP_BESTAND_AKTUELL              := 0,
+            oVPUGuiMemTable:VP_BESTAND_BEI_BEDARF           := 0,
+            oVPUGuiMemTable:VP_BEDARF_GEDECKT_DURCH_LAGER   := 'N',
+            oVPUGuiMemTable:VP_PUFFER_KALTAGE               := VPU_GUI_CalcPufferForZugangsKopfzeile(oPruefStklMem:BEDARF_TERMIN_INDEX, VPU_DateStr(aCurZugang[3])), // konkreter Puffer für diesen Zugang
+
+            oVPUGuiMemTable:ZUGANG_FUER_ID                  := nBedarfsGUIMemtableID,
+            oVPUGuiMemTable:ZUGANGS_TERMIN                  := aCurZugang[3],
+            oVPUGuiMemTable:ZUGANGS_TERMIN_INDEX            := VPU_DateStr(oVPUGuiMemTable:ZUGANGS_TERMIN),
+            oVPUGuiMemTable:ZUGANGS_INFO                    := aCurZugang[5],
+            oVPUGuiMemTable:ZUGANGS_LAUFNUMMER              := i, // braucht man für die Sortierung, sofern es mehrere zugeordnete Zugänge gibt
+
+            oVPUGuiMemTable:IS_EXPANDED                     := false,
+            MyPost(oVPUGuiMemTable),
+
+         next,
+      endif,
+
+   next,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function VPU_TestCompleteOrder(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, nOrderWorkarea, nOrderId, cWunschTermin)
+| nStklUniqueIDCounter, nKopfdatenUniqueIDCounter,
+  nVPUGUIStklMem_UniqueIDCounter, aTimes, nTime |
+
+   aTimes     := {},
+   VPU_Debug_Timer_Init(nTime),
+   startseq,
+
+         VPU_Debug_Timer_Lap(nTime, aTimes, 'Init'),
+
+         oPruefKopfdatenMem.CbDisableControls(),
+         oPruefStklMem.CbDisableControls(),
+         startseq
+            oPruefKopfdatenMem.CbEmptyTable(),
+            oPruefStklMem.CbEmptyTable(),                                       VPU_Debug_Timer_Lap(nTime, aTimes, 'Pruef-Kopf & -Stkl-Mem: created'),
+
+            nKopfdatenUniqueIDCounter := 0,
+            nStklUniqueIDCounter      := 0,
+            nVPUGUIStklMem_UniqueIDCounter := 0,
+            VPU_FillPruefStklMemWithOrder(           oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem,
+                                                     nOrderWorkarea, nOrderId, cWunschTermin,
+                                                     nKopfdatenUniqueIDCounter, nStklUniqueIDCounter),       VPU_Debug_Timer_Lap(nTime, aTimes, 'memtables: filled'),
+
+            VPU_FillVerfuegbarkeitsInfosInStklMem(   oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem),   VPU_Debug_Timer_Lap(nTime, aTimes, 'memtables: verfügbarkeitsprüfung done'),
+            VPU_CalcAndSaveOverallInfosForPruefStkl( oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem),   VPU_Debug_Timer_Lap(nTime, aTimes, 'memtables: overall infos done'),
+            VPU_CalcAndSaveLieferterminForPruefStkl( oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem),   VPU_Debug_Timer_Lap(nTime, aTimes, 'memtables: Berechnung Liefertermin done'),
+
+
+            VPU_GUI_TransferDataToGUI(oDM, oOptionsMem, oPruefKopfdatenMem, oPruefStklMem, m_oVPUGuiMemTable, nVPUGUIStklMem_UniqueIDCounter),
+
+         always
+            oPruefKopfdatenMem.CbEnableControls(),
+            oPruefStklMem.CbEnableControls(),
+         stopseq,
+
+   always
+      WriteLn(Replicate('-', 55)),
+      WriteLn(VPU_Debug_Timer_PrintValues(aTimes)),
+      WriteLn(Replicate('-', 55)),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Scroll-Update in der Stkl-Memtable
+//******************************************************************************
+function ds_StklScroll_Update( Sender )
+   if not empty(m_oDab010_EinzelterminrasterMaster) then
+      DbSeek({m_oPruefStklMem:ARTNR}, m_oDab010_EinzelterminrasterMaster),      // Prs('ds_StklScroll_Update', m_oPruefStklMem:ARTNR),
+   endif,
+end,
+
+//******************************************************************************
+// Event: Änderung der Auftragsnummer
+//******************************************************************************
+function edt_OrderNoChange( Sender )
+| nOrderWorkarea, cBestPosNr, oDab035 |
+
+   nOrderWorkarea := Val(cmb_OrderWorkarea.Value),
+
+   if nOrderWorkarea = waDab035 then
+      cBestPosNr := PadR(edt_OrderNo.Text, 8),
+
+      if LookUp(waDab035, 1, {{-1, cBestPosNr}}, 'Not EoF()', false) then
+
+         oDab035 := BeOpen(waDab035, 1),
+         startseq
+            MySeek({-1, cBestPosNr}, oDab035),
+
+            edt_ArtnrBaugruppe.Text               := RTrim(oDab035:ARTNR),
+            edt_FertigstellungsterminAktuell.Text := oDab035:TERMIN,
+            edt_FertigstellungsterminNeu.Text     := oDab035:TERMIN,
+            edt_Menge.Text                        := Str(oDab035:MENGE),
+
+         always
+            BeClose(oDab035),
+         stopseq,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Event: Änderung der Baugruppen-Artikelnr.
+//******************************************************************************
+function edt_ArtnrBaugruppeChange( Sender )
+| cArtNrBaugruppe, nNKStellen |
+
+   cArtNrBaugruppe := PadR(edt_ArtnrBaugruppe.Text, mBeArtNoLen),
+
+   if LookUp(waDab010, 'DAB011', {{cArtNrBaugruppe}}, 'not EoF()', false) then
+      nNKStellen                    := LookUp(waDab010, 'DAB011', {{cArtNrBaugruppe}}, 'NKSTELLEN', 0),
+      edt_Menge.Picture.PictureMask := GU_BuildBeEditPictureMask(13, nNKStellen, false),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function TestCheckVerfueg()
+| nOrderWorkarea, cBestPosNr, aZeilenTypen, nOrderId, oOptionsMem, nPruefModus, cWunschTermin |
+
+   nOrderWorkarea := Val(cmb_OrderWorkarea.Value),
+   SetErrorIf(nOrderWorkarea <> waDab035, 'nOrderWorkarea <> waDab035 not implemented'),
+
+   nPruefModus := Val(cmb_PruefModus.Value),
+   SetErrorIf(nPruefModus = gl_VPU_Pruefmodus_FreieEinstellung, 'nPruefModus = gl_VPU_Pruefmodus_FreieEinstellung not implemented in Test-GUI'),
+
+   cWunschTermin := AllTrim(edt_FertigstellungsterminNeu.Text),
+
+   m_oOptionsMem.CbEmptyTable(),
+   VPU_Options_LoadOptionsByPruefModus(m_oOptionsMem, nPruefModus),
+
+   cBestPosNr := PadR(edt_OrderNo.Text, 8),
+   nOrderId   := LookUp(waDab035, 'DAB036', {{-1, cBestPosNr}}, 'ID', -1),
+   VPU_TestCompleteOrder(m_oGUI_DM, m_oOptionsMem, m_oPruefKopfdatenMem, m_oPruefStklMem, nOrderWorkarea, nOrderId, cWunschTermin),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Verfügbarkeit berechnen
+//******************************************************************************
+function A_CalcExecute( Sender )
+   startseq
+      TestCheckVerfueg(),
+      ds_StklScroll_Update( nil ),
+   onerror
+      GU_ShowStdErrorMessage('Fehler in Test-Funktion', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+      oForm.FormStyle   := fsNormal,
+
+   else
+      oForm             := LoadForm(m_cFormID, oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+   oForm.PositionSaveID := m_cPositionSaveID,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+| aCmbWorkarea |
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Calc                           := FindObject(oForm, "A_Calc"),
+   actions                          := FindObject(oForm, "actions"),
+   BeBitBtn1                        := FindObject(oForm, "BeBitBtn1"),
+   cmb_OrderWorkarea                := FindObject(oForm, "cmb_OrderWorkarea"),
+   cmb_PruefModus                   := FindObject(oForm, "cmb_PruefModus"),
+   ds_Kopf                          := FindObject(oForm, "ds_Kopf"),
+   ds_Stkl                          := FindObject(oForm, "ds_Stkl"),
+   ds_VPUGUIMem                     := FindObject(oForm, "ds_VPUGUIMem"),
+   edt_ArtnrBaugruppe               := FindObject(oForm, "edt_ArtnrBaugruppe"),
+   edt_FertigstellungsterminAktuell := FindObject(oForm, "edt_FertigstellungsterminAktuell"),
+   edt_FertigstellungsterminNeu     := FindObject(oForm, "edt_FertigstellungsterminNeu"),
+   edt_Menge                        := FindObject(oForm, "edt_Menge"),
+   edt_OrderNo                      := FindObject(oForm, "edt_OrderNo"),
+   grid_Kopf                        := FindObject(oForm, "grid_Kopf"),
+   grid_Stkl                        := FindObject(oForm, "grid_Stkl"),
+   grid_VPUGUIMem                   := FindObject(oForm, "grid_VPUGUIMem"),
+   lbl_ArtnrBaugruppe               := FindObject(oForm, "lbl_ArtnrBaugruppe"),
+   lbl_FertigstellungsterminAktuell := FindObject(oForm, "lbl_FertigstellungsterminAktuell"),
+   lbl_FertigstellungsterminNeu     := FindObject(oForm, "lbl_FertigstellungsterminNeu"),
+   lbl_Menge                        := FindObject(oForm, "lbl_Menge"),
+   lbl_OrderNo                      := FindObject(oForm, "lbl_OrderNo"),
+   lbl_OrderWorkarea                := FindObject(oForm, "lbl_OrderWorkarea"),
+   lbl_PruefModus                   := FindObject(oForm, "lbl_PruefModus"),
+   pc_Dockings                      := FindObject(oForm, "pc_Dockings"),
+   pnl_Dockings                     := FindObject(oForm, "pnl_Dockings"),
+   pnl_Input                        := FindObject(oForm, "pnl_Input"),
+   pnl_Kopf                         := FindObject(oForm, "pnl_Kopf"),
+   pnl_Stkl                         := FindObject(oForm, "pnl_Stkl"),
+   ts_GUIMemTable                   := FindObject(oForm, "ts_GUIMemTable"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+   aCmbWorkarea                 := {},
+   aAdd(aCmbWorkarea, 'neuen Auftrag simulieren'   + Chr(9) + Str(-1)),
+   aAdd(aCmbWorkarea, 'Dab215 Dispositionsplanung' + Chr(9) + Str(waDab215)),
+   aAdd(aCmbWorkarea, 'Dab035 Fertigungsauftrag'   + Chr(9) + Str(waDab035)),
+
+   cmb_OrderWorkarea.MapList := true,
+   cmb_OrderWorkarea.Items   := aCmbWorkarea,
+
+   VPU_Options_GUI_LoadOptionsToCombo(cmb_PruefModus),
+   cmb_PruefModus.Value := '110',
+
+   edt_FertigstellungsterminNeu.Picture.PictureMask := '!!.##.##',
+   edt_Menge.Picture.PictureMask                    := BuildDecimalPictureMask(false, 13, 0),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.OrigCapt                                 := 'Verfügbarkeitsprüfung - Test GUI',
+   oForm.ImageIndex                               := 569,  // Image-Index für den Window-Navigator setzen
+
+   cmb_OrderWorkarea.Value   := Str(waDab035),
+   edt_OrderNo.Text          := '600015',
+
+   pc_Dockings.ActivePage := ts_GUIMemTable,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+

@@ -1,0 +1,71 @@
+ndif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   SetDefaults(),
+   ActionsEnabled(),
+   ShowGUI(),
+   if Empty(m_oOwner) then
+      DestroyObject(oForm),
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm
+   m_oProjController, m_oProjTaskBO, m_oProjTaskEffortBO, m_oTaskMemoBO,
+
+   // Tabellen
+   m_oDABPRV_Grid, m_oDABPVL_Grid,
+   m_oTaskMemosGrid,
+   m_oTaskPlannedActualChangeTracking,
+   m_oTaskChangeTracking,
+   m_oTaskEffortBookings,
+   m_oDab020_Grid,
+
+   // Browser-Konstanten
+   m_cProcessBrowser, m_cTaskEffortsBrowser,
+   m_cTaskMemosBrowser,
+   m_PlannedActualChangeTrackingBrowserV,
+   m_ChangeTrackingBrowserV,
+   m_TaskEffortBookingsV,
+
+   // zusätzliche Oberflächen-Controls
+   m_oTaskSplitter, m_oTaskEffortSplitter,
+
+   // sonstige
+   m_nMasterID,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_CancelTask, A_CancelTaskEffort, A_CancelTaskMemo, A_DeleteTask,
+   A_DeleteTaskEffort, A_IndentTask, A_InsertUserInTaskMemo, A_NewTask,
+   A_NewTaskEffort, A_NewTaskMemo, A_OpenTaskMemoInGroupware, A_OutdentTask,
+   A_PostTaskEffort, A_Refresh, A_SaveTask, A_SaveTaskEffort, A_SaveTaskMemo,
+   A_ShowTaskEffortPostings, A_TaskDown, A_TaskEffortBookingRefresh,
+   A_TaskPlannedActualChangeTrackingRefresh, A_TaskUp, bar_MemoToolBar,
+   bar_TaskEffortsToolBar, bar_TasksToolBar, bdc_MemoToolBarDock,
+   bdc_TaskEffortsToolBarDock, bdc_TaskToolBarDock, bipnl_TaskEffort,
+   bipnl_TaskEfforts, bipnl_TaskInfos, bipnl_Tasks, bmgr_Toolbars,
+   btn_RefreshChangesTracking, btn_RefreshTaskEffort,
+   btn_TaskPlannedActualChangeTrackingRefresh, ChangeTrackingActionList,
+   chk_TaskDone, chkcmb_TaskMemoNextAction, cmb_TaskEffortBookingUsers,
+   cmb_TaskEffortRessourceType, cmb_TaskEffortRessPersID, cmb_TaskMemoState,
+   cmb_TaskState, cmb_TaskType, ds_DAB065TaskMemosGrid, ds_DAB065TaskMemosMask,
+   ds_DABAVG, ds_MasterTable, ds_TaskChangeTracking, ds_TaskEffortMask,
+   ds_TaskEffortsGrid, ds_TaskEffortsPostings, ds_TaskMask,
+   ds_TaskPlannedActualChangeTracking, ds_TasksGrid,
+   dtp_ChangesTrackingDateFrom, dtp_TaskBegin, dtp_TaskEnd,
+   dtp_TaskMemoBringFwdDate, edt_AcquisitionPlanned, edt_AcquisitionValue,
+   edt_TaskDesc, edt_TaskEffortActualAmount, edt_TaskEffortAquisitionPrice,
+   edt_TaskEffortAquisitionPriceUnit, edt_TaskEffortDesc,
+   edt_TaskEffortPlannedAmountP

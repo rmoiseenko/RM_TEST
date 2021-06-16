@@ -1,0 +1,178 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Installations-Script für das Standard-Package "Taskplaner"
+//##############################################################################
+//##############################################################################
+
+|
+   // Workareas
+   nWorkarea_TSKPLSCHED,
+   nWorkarea_TSKPLTASK,
+   nWorkarea_TSKPLLOG,
+
+   // Merkmalstabellen IDs
+   nMMTID_SchedulerStatusGui,
+   nMMTID_TaskStatusGui,
+   nMMTID_StartType,
+   nMMTID_LogType,
+
+   // Tabellendefinitionen
+   oTableDef_TSKPLSCHED,
+   oTableDef_TSKPLTASK,
+   oTableDef_TSKPLLOG,
+
+   aDialogResult,
+   cUsername,
+   cPassword,
+
+   i,
+   oDM
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+nWorkarea_TSKPLSCHED := 730,
+nWorkarea_TSKPLTASK  := 731,
+nWorkarea_TSKPLLOG   := 732,
+
+nMMTID_SchedulerStatusGui := 8012,
+nMMTID_TaskStatusGui      := 8013,
+nMMTID_StartType          := 8014,
+nMMTID_LogType            := 8015,
+
+//##############################################################################
+//##############################################################################
+// Tabellendefinitionen
+//##############################################################################
+//##############################################################################
+
+oTableDef_TSKPLSCHED := PCKGU_TableDefinition_Create('TSKPLSCHED', nWorkarea_TSKPLSCHED, 'Taskplaner: Scheduler', '', True, False),
+oTableDef_TSKPLTASK  := PCKGU_TableDefinition_Create('TSKPLTASK',  nWorkarea_TSKPLTASK,  'Taskplaner: Tasks',     '', True, False),
+oTableDef_TSKPLLOG   := PCKGU_TableDefinition_Create('TSKPLLOG',   nWorkarea_TSKPLLOG,   'Taskplaner: Logs',      '', True, False),
+
+//##############################################################################
+//##############################################################################
+// Felddefinitionen
+//##############################################################################
+//##############################################################################
+
+//------------------------------------------------------------------------------
+// Felddefinitionen für Tabelle TSKPLSCHED
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLSCHED, 'NAME',       25, 0, ftString,         'Name des Schedulers',            'Name um Scheduler zu identifizieren', 0, 0, 'TBeEdit', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'not Empty(NAME)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLSCHED, 'STATUS',     0,  0, gl_PCKGU_ftShort, 'Health-Status',                  'Health-Status',                       0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLSCHED, 'HASTORUN',   0,  0, ftBoolean,        'Scheduler soll laufen',          'Gibt an, ob der Scheduler laufen soll',
+                                                                                                                                                                     0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLSCHED, 'LAST_RESP',  0,  0, ftDateTime,       'Letzte Rückmeldung / KeepAlive', 'Letzte Rückmeldung des Schedulers',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+// Felddefinitionen für Tabelle TSKPLTASK
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'SCHEDUL_ID', 0,  0, ftInteger,        'ID des zugehörigen Schedulers',   'Fremdschlüssel für TSKPLSCHED:ID',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'not Empty(SCHEDUL_ID)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'NAME',       0,  0, ftMemo,           'Name des Tasks',                  '',                                   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'not Empty(NAME)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'STATUS',     0,  0, gl_PCKGU_ftShort, 'Task-Status',                     'Task-Status',                        0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'INFO',       0,  0, ftMemo,           'Beschreibung des Tasks',          'Inhaltliche Beschreibung des Tasks', 0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_KIND', 0,  0, gl_PCKGU_ftShort, 'Aufrufs-Art',                     'Aufruf via Codeblock-Programm oder in eigener be-Instanz',
+                                                                                                                                                                     0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'SeekInArray(START_KIND, {' + CRLF + '   gl_TSKPL_StartKind_Codeblock,' + CRLF + '   gl_TSKPL_StartKind_BeInstance' + CRLF + '}) <> -1', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'STARTPARAM', 0,  0, ftMemo,           '(Commandline)-Parameter',         '',                                   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_TYPE', 0,  0, gl_PCKGU_ftShort, 'Art des Aufrufplans',             '',                                   0, 0, '',        '', nMMTID_StartType, True, False, False, True, False, True, '', False, 0, 0, '', '', 'SeekInArray(START_TYPE, {' + CRLF + '   gl_TSKPL_StartType_Once,' + CRLF + '   gl_TSKPL_StartType_Daily,' + CRLF + '   gl_TSKPL_StartType_Weekly,' + CRLF + '   gl_TSKPL_StartType_Monthly,' + CRLF + '   gl_TSKPL_StartType_Yearly,' + CRLF + '   gl_TSKPL_StartType_Periodic' + CRLF + '}) <> -1', '', 'if START_TYPE = gl_TSKPL_StartType_Once and Val(DbOldVal(''START_TYPE'')) <> START_TYPE then' + CRLF + '   STARTFIRST := 0,' + CRLF + '   START_LAST := 0,' + CRLF + 'endif,' + CRLF + 'START_TYPE', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_OPT',  0,  0, ftMemo,           'Ausführoptionen für Aufrufplan',  'Ausführoptionen für Aufrufplan STARTTYP im Array-Format',
+                                                                                                                                                                     0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'STARTFIRST', 0,  0, ftDateTime,       'Erste Ausführung des Tasks',      'Gibt an, wann der Task das erste Mal ausgeführt werden soll',
+                                                                                                                                                                     0, 0, 'TBeDateTimePicker',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'START_TYPE = gl_TSKPL_StartType_Once or not Empty(STARTFIRST)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_LAST', 0,  0, ftDateTime,       'Letzte Ausführung des Tasks',     'Gibt an, wann der Task das letzte Mal ausgeführt werden soll',
+                                                                                                                                                                     0, 0, 'TBeDateTimePicker',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '(Empty(STARTFIRST) or Empty(START_LAST)) or (START_LAST >= STARTFIRST)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_NEXT', 0,  0, ftDateTime,       'Nächste Ausführung',              'Vorberechneter Zeitpunkt der nächsten Ausführung',
+                                                                                                                                                                     0, 0, 'TBeDateTimePicker',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'ACTIVE',     0,  0, ftBoolean,        'Task aktiviert',                  'Gibt an, ob der Task ausgeführt werden kann/darf',
+                                                                                                                                                                     0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'not ACTIVE or not Empty(START_OPT)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'START_PROG',  0, 0, ftInteger,        'ID des Codeblock-Programms',      'ID des CodeBlock-Programms, das ausgeführt werden soll',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'not Empty(START_PROG)', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'LOCATION',    0, 0, gl_PCKGU_ftShort, 'Standort',                        '', 0, 0, 'TBeCombo', '',   0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'LOCATION >= 0', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'DEPARTMENT',  0, 0, gl_PCKGU_ftShort, 'Abteilung',                       '', 0, 0, 'TBeCombo', '',   0, True, False, False, True, False, True, '', False, 0, 0, '', '', 'DEPARTMENT >= 0 and DEPARTMENT <= 9', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'USER',        3, 0, ftString,         'Benutzer',                        '', 0, 0, 'TBeCombo', '', -11, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'LAST_MSG',   75, 0, ftString,         'Letzte Log-Nachricht',            '', 0, 0, '',         '',   0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'LASTSTATUS',  0, 0, gl_PCKGU_ftShort, 'Typ des letzten Logeintrags',     'Welcher Art von Typ ist der letzten Logeintrag (Status, Health, Execution, Fehler, etc.)', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLTASK,  'MAX_DUR',     0, 0, ftInteger,        'Maximale Dauer(min) des Task',    '', 0, 0, '', '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+//------------------------------------------------------------------------------
+
+//------------------------------------------------------------------------------
+// Felddefinitionen für Tabelle TSKPLLOG
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'TYPE',       0, 0, gl_PCKGU_ftShort, 'Typ des Logeintrags',             'Welcher Art von Typ ist der Logeintrag (Status, Health, Execution, Fehler, etc.)',        0, 0, '', '', 0,   True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'SENDER',     1, 0, ftString,         'Sender der Log-Nachricht',        'Dieses Feld beschreibt ob ein Task oder ein Scheduler die Log-Nachricht geschrieben hat', 0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'SCHEDUL_ID', 0, 0, ftInteger,        'ID des Schedulers',               '',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'TASK_ID',    0, 0, ftInteger,        'ID des Tasks',                    '',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'SCHED_ST',   0, 0, gl_PCKGU_ftShort, 'Scheduler-Status',                '',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'SCHED_ST_G', 0, 0, gl_PCKGU_ftShort, 'Scheduler-Status (Anzeige)',      '',   0, 0, '',        '', nMMTID_SchedulerStatusGui, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'TASK_ST',    0, 0, gl_PCKGU_ftShort, 'Task-Status',                     '',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'TASK_ST_G',  0, 0, gl_PCKGU_ftShort, 'Task-Status (Anzeige)',           '',   0, 0, '',        '', nMMTID_TaskStatusGui, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'TASK_PARAM', 0, 0, ftMemo,           'Task-Parameter',                  'Parameter, mit denen der Task aufgefrufen wird',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_TSKPLLOG,   'MEMO',       0, 0, ftMemo,           'Log-Nachricht',                   '',   0, 0, '',        '', 0, True, False, False, True, False, True, '', False, 0, 0, '', '', '', '', '', ''),
+//------------------------------------------------------------------------------
+
+//##############################################################################
+//##############################################################################
+// Indexdefinitionen
+//##############################################################################
+//##############################################################################
+
+// Index-Definitionen für Tabelle TSKPLSCHED
+PCKGU_TableDefinition_AddIndex(oTableDef_TSKPLSCHED, 'NAME', {'NAME'}, '', '', False, False, False, 512),
+
+// Index-Definitionen für Tabelle TSKPLTASK
+PCKGU_TableDefinition_AddIndex(oTableDef_TSKPLTASK, 'SCHEDUL_ID_ID', {'SCHEDUL_ID', 'ID'}, '', '', False, False, False, 512),
+
+// Index-Definitionen für Tabelle TSKPLLOG
+PCKGU_TableDefinition_AddIndex(oTableDef_TSKPLLOG, 'TASK_ID_ID_DESC', {'TASK_ID', 'ID'}, '', '', False, False, True, 512),
+PCKGU_TableDefinition_AddIndex(oTableDef_TSKPLLOG, 'ERSTELLT_DESC',   {'ERSTELLT'},      '', '', False, False, True, 512),
+
+//##############################################################################
+//##############################################################################
+// Installer
+//##############################################################################
+//##############################################################################
+
+startseq
+   aDialogResult := DU_InputDialog(
+      'ADS-User Anmeldung',
+      'Datenbank Anmeldeinformation für einen administrativen User angeben',
+      {
+         DU_InputDialog_CreateInputControlDefinition('USERNAME', 'Username', gl_DU_InputControlType_String,   '', 0, 'ADSSYS', True),
+         DU_InputDialog_CreateInputControlDefinition('PASSWORD', 'Passwort', gl_DU_InputControlType_Password, '', 0, '',       True)
+      },
+      {mrOK, mrCancel},
+      {}
+   ),
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = mrOK then
+      cUsername := DU_InputDialogResult_GetInputValue(aDialogResult, 'USERNAME'),
+      cPassword := DU_InputDialogResult_GetInputValue(aDialogResult, 'PASSWORD'),
+
+      oDM := CreateObject('TBeDbGet'),
+      startseq
+         oDM.CbTransaction_Begin(),
+         startseq
+
+            // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
+            //          müssen die folgenden beiden Zeilen einkommentiert werden:
+            //PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_TSKPLSCHED, 'TSKPLSCHED', cUsername, cPassword),
+            //PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_TSKPLTASK,  'TSKPLTASK',  cUsername, cPassword),
+            //PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_TSKPLLOG,   'TSKPLLOG',   cUsername, cPassword),
+
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_TSKPLSCHED, cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_TSKPLTASK,  cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_TSKPLLOG,   cUsername, cPassword),
+
+            oDM.CbTransaction_Commit(),
+         always
+            oDM.CbTransaction_TryRollback(),
+         stopseq,
+      always
+         DestroyObject(oDM),
+      stopseq,
+   endif,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+

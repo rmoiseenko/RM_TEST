@@ -1,0 +1,203 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Auswahldialog für aktiven Programmen im Taskplaner
+//
+// Parameter:
+//  - m_oDM:     Datenmodul, um die DabPRG zu öffnen
+//  - m_nPreset: Vorauswahl ein Program
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nPreset:P2,
+   m_oMainTable,
+   m_cDefaultFilter,
+   m_nResult,
+   m_bSelected
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+
+//******************************************************************************
+// Setzt den Standard-Font
+// @Result: null
+//******************************************************************************
+function SetStandardFont(oFont:O)
+   oFont.Name := 'Segoe UI',
+   oFont.Size := 10,
+end,
+
+//******************************************************************************
+// Programstabelle auswählen
+// @Result: integer, ID des Programes (PROGNR)
+//******************************************************************************
+function ShowSelectionDialog(oDM, nPreset)
+| oForm, oGrid, oSearch, ds_DabPRG, cDirectoryName |
+
+   Result := {0, ''},
+   oForm  := CreateObject('TFormEx', 'FormChooseProgram'),
+   startseq
+      oForm.OrigCapt := 'Task-Programm auswählen',
+      oForm.Width    := 825,
+      oForm.Height   := 600,
+
+      // Search-Edit erzeugen
+      oSearch                  := CreateObject('TBeSearchEdit', 'edt_Search', oForm, oForm),
+      oSearch.Text             := '',
+      oSearch.Align            := alTop,
+      oSearch.AlignWithMargins := True,
+      oSearch.Margins.Bottom   := 0,
+      oSearch.Height           := 25,
+      oSearch.TextHintProperties.TextHint := 'Suchen',
+      SetStandardFont(oSearch.Font),
+      AssignEvent(oSearch, 'OnKeyPress',      'edt_SearchKeyPress'),
+      AssignEvent(oSearch, 'OnSearchExecute', 'edt_SearchSearchExecute'),
+
+      // DabPRG holen
+      m_oMainTable           := DbGetTable(oDM, waDabPRG, 'DABPRG'),
+      m_oMainTable.IndexName := 'BEZ',
+      m_oMainTable.CbDisableControls(),
+      startseq
+         // Standard-Filter setzen
+         cDirectoryName   := 'geplante Tasks',
+         m_cDefaultFilter := 'Left(BEZ, ' + Str(Len(cDirectoryName)) + ') = "' + cDirectoryName + '" ',
+         m_cDefaultfilter += ' OR CONTAINS(BEZ, ''*\.tasks\*'')',
+
+         // Haupttabelle filtern
+         m_oMainTable.Filtered := False,
+         m_oMainTable.Filter   := m_cDefaultFilter,
+         m_oMainTable.Filtered := True,
+
+         // DataSource erzeugen
+         ds_DabPRG         := CreateObject('TDataSourceEx', 'ds_DabPRG', oForm, oForm),
+         ds_DabPRG.DataSet := m_oMainTable,
+
+         // Browser erzeugen
+         oGrid                  := CreateObject('TBeAltGrid', 'grd_DabPRG', oForm, oForm),
+         oGrid.Align            := alClient,
+         oGrid.AlignWithMargins := True,
+         oGrid.DataSource       := ds_DabPRG,    // DataSource zuweisen
+         oGrid.RegisterDataSet  := m_oMainTable, // DataSet im Browser registrieren
+         oGrid.ID               := '@PROGBRO',   // Default-Browser für DabPRG
+         oGrid.ReadWriteProps   := 0,
+         SetStandardFont(oGrid.Font),
+         AssignEvent(oGrid, 'OnKeyPress', 'Grid_KeyPress'),
+         AssignEvent(oGrid, 'OnDblClick', 'Grid_DblClick'),
+
+         // Versuchen auf Vorgabe-Datensatz zu positionieren
+         m_oMainTable.CbFindKey({nPreset}),
+      always
+         m_oMainTable.CbEnableControls(),
+      stopseq,
+
+      ShowModal(oForm),
+      if m_bSelected then
+         Result := {m_oMainTable:PROGNR, trim(m_oMainTable:BEZ)),
+      endif,
+   always
+      DestroyObject(oForm),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Key-Press im Such-Eingabefeld
+//******************************************************************************
+function edt_SearchKeyPress( Sender, cKey )
+   case Asc(cKey)
+     // ESC => Fenster schließen, wenn Suchtext leer
+     // (erstes Mal ESC drücken macht den Suchtext ggf. erst leer)
+     of 27 ::
+        if Empty(Sender.Text) then
+           m_bSelected := False,
+           CloseForm(GetOwner(Sender)),
+        endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Beim Ausführen der Volltextsuche
+//******************************************************************************
+function edt_SearchSearchExecute( Sender )
+| cSearchText, nCurrentRecord |
+
+   cSearchText := AllTrim(Sender.Text),
+   cSearchText := CharOnly('0123456789abcdefghijklmnopqrstuvwxyzäöüßABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ\-_ ', cSearchText),
+
+   nCurrentRecord := m_oMainTable:PROGNR,
+   startseq
+      m_oMainTable.Filtered := False,
+      m_oMainTable.Filter   := m_cDefaultFilter,
+      if not Empty(cSearchText) then
+         m_oMainTable.Filter := ConcatTrenner(m_oMainTable.Filter, 'CONTAINS(BEZ,"*' + cSearchText + '*")', ' AND '),
+      endif,
+      writeln('Filter => ' + m_oMainTable.Filter),
+      m_oMainTable.Filtered := True,
+   always
+      if m_oMainTable.CbDataAvailable then
+         m_oMainTable.CbFindKey({nCurrentRecord}),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Key-Press im Browser
+//******************************************************************************
+function Grid_KeyPress( Sender, cKey )
+   WriteLn(Asc(cKey)),
+   case Asc(cKey)
+      // Enter => Fenster mit Auswahl schließen
+      of 13 ::
+         m_bSelected := True,
+         CloseForm(GetOwner(Sender)),
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Browser
+//******************************************************************************
+function Grid_DblClick( Sender )
+   m_bSelected := True,
+   CloseForm(GetOwner(Sender)),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_bSelected := False,
+m_nResult   := {0, ''},
+startseq
+   // Um den Dialog in der Programmierumgebung testen zu können:
+   // Globales Datenmodul verwenden.
+   if EditorMode() then
+      m_oDM := gl_oDM,
+   endif,
+
+   SetErrorIf(Empty(m_oDM), 'Erwarte Datenmodul als Parameter 1 (P1)!'),
+   m_nResult := ShowSelectionDialog(m_oDM, m_nPreset),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+m_nResult
+

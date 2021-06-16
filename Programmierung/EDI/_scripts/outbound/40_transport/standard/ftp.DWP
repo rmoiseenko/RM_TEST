@@ -1,0 +1,116 @@
+//##############################################################################
+//##############################################################################
+//
+// Prozessschritt: Outbound Transport
+//
+//------------------------------------------------------------------------------
+//
+// Beschreibung:
+//   Dieses Programm bildet den ausgehenden Transport-Prozess für das
+//   Datenübertragungsprotokoll "FTP" ab.
+//
+// Rückgabe:
+//   array - KVU-Array in folgendem Format:
+//     {
+//        {'processStatus.success',      <boolean>},
+//        {'processStatus.errorMessage', <string>},
+//        {'processStatus.warnMessage',  <string>}
+//     }
+//
+//##############################################################################
+//##############################################################################
+
+|
+   m_oDM:P1,
+   m_nEDIMSGId:P2,
+   m_oProgressCallback:P3,
+
+   m_aResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function TransportOutbound_FTP(oDM:O, nEDIMSGId:N, oProgressCallback:O)
+|
+   oEDIMSG, oEDITRCH,
+   oSFTP,
+   cFilePath, cURI, cDestinationPath, aFileList,
+   oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive, nFTPResult
+|
+
+   result := nil,
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbIndexName := 'ID',
+   SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+   SetErrorIf(empty(oEDIMSG:FILE_NAME), 'EDIMSG:FILE_NAME must not be empty'),
+   SetErrorIf(empty(oEDIMSG:FILE_TYPE), 'EDIMSG:FILE_TYPE must not be empty'),
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindKey({oEDIMSG:EDITRCH_ID}), 'EDITRCH record not found: ' + str(oEDIMSG:EDITRCH_ID)),
+
+   cURI             := oEDITRCH:URI,
+   cDestinationPath := EDI_Transport_URI_EnsureTrailingPathSeperator(EDI_Transport_URI_GetResource(cURI)),
+   cFilePath        := EDI_Transport_Outbound_SaveTempFile(trim(oEDIMSG:FILE_NAME), EDI_Message_EDIMSG_GetMessageString(oDM, oEDIMSG), oEDIMSG),
+   startseq
+      EDI_Transport_FTP_SetAuthenticationInfo(oAuthenticationInfo, oEDITRCH, cURI),
+      EDI_Transport_FTP_GetAuthenticationInfo(oAuthenticationInfo, cHost, nPort, cUserName, cPassword, bPassive),
+
+      nFTPResult := FTPDir(
+         '',
+         cHost,
+         nPort,
+         cUserName,
+         cPassword,
+         bPassive,
+         aFileList,
+         cDestinationPath
+      ),
+      EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPDir'),
+
+      if not EDI_Transport_FileNameExistsInDirArray(aFileList, ExtractFileName(cFilePath)) then
+         nFTPResult := FTPUpload(
+            EDI_Message_EDIMSG_GenerateFileName(oDM, oEDIMSG),
+            cHost,
+            nPort,
+            cUserName,
+            cPassword,
+            bPassive,
+            {cFilePath},
+            cDestinationPath
+         ),
+         EDI_Transport_FTP_CheckForErrors(nFTPResult, 'FTPUpload'),
+      else
+         SetError('File ' + ExtractFileName(cFilePath) + ' already exists on the server.'),
+      endif,
+   always
+      DeleteFile(cFilePath),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+EDI_Core_ValidateDataModuleAndTable_Internal(m_oDM, nil, false),
+
+m_aResult := {},
+startseq
+   m_aResult := TransportOutbound_FTP(m_oDM, m_nEDIMSGId, m_oProgressCallback),
+   if empty(m_aResult) then
+      EDI_ProcessResult_SetSuccess(m_aResult),
+   endif,
+onerror
+   EDI_ProcessResult_SetError(m_aResult, GetErrorText(GetErrorObj())),
+stopseq,
+
+m_aResult
+

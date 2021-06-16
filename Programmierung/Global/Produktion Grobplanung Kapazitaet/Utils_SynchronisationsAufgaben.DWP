@@ -1,0 +1,217 @@
+//##############################################################################
+//##############################################################################
+//
+// Sammlung globaler Hilfs-Funktionen für Aufgaben der
+//    "Produktions Grobplanung Kapatitäts-Auswertung / Betrachtung"
+//
+//    Hinweise:
+//    - Der Funktions-Präfix 'PGKU' steht für 'P'roduktions 'G'robplanung 'K'apatitäts 'U'tils
+// Funktionen für die Synchronisations-Aufgaben-Verwaltung (PGKSYA.ADT)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Funktion legt für die übergebenen Daten eine Synchronisations-Aufgabe in der
+//   Tabelle PGKSYA.ADT an, wenn diese noch nicht existiert.
+//
+//    ACHTUNG: Die Funktion nutzt zur Durchführung der Aktionen nicht die       TODO: Transaktions-Handling
+//             Transaktion / das Datenmodul der auslösenden Umgebung
+//
+// @Result: die Funktion hat keine Rückgabe
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDelete(nStandort, nWorkarea, nID, cAenderungsArt, cArtnrBaugruppe, cBestPosNr)
+| oPGKSYA, bAppend, bPGKSYAgefunden |
+   Result          := nil,
+   bAppend         := false,
+   bPGKSYAgefunden := false,
+   SetErrorIf(empty(cAenderungsArt),                             'empty(cAenderungsArt)'),
+   SetErrorIf(not cAenderungsArt $ '/N/C/D/',                    'cAenderungsArt must be "N", "C" or "D"'),
+   SetErrorIf(empty(cArtnrBaugruppe),                            'empty(cArtnrBaugruppe)'), // vorerst muss die ARTNR der Baugruppe immer gesetzt sein
+   SetErrorIf(empty(nID) and empty(cBestPosNR),                  'empty(nID) and empty(cBestPosNR)'),
+   if nWorkarea = waDab035 then
+      SetErrorIf(empty(cBestPosNR), 'empty(cBestPosNR) and nWorkarea = waDab035 '), // bei DAB035 muss BESTPOSNR gefüllt sein
+   else
+      SetErrorIf(nID = 0, 'nID=0 and nWorkarea <> waDab035'), // nur bei DAB035 darf ID=0
+   endif,
+
+   oPGKSYA           := DbGetTable(gl_oDM, waPGKSYA, 'PGKSYA_GLOBAL_UPDATE'),   // TODO: globales Datenmodul nutzen oder lieber ein dediziertes?
+
+   // Wiederfinden eines Datensatzes in der PGKSYA
+   if nWorkarea = waDab035 then
+      oPGKSYA.IndexName := 'STANDORT_DS_WA_BESTPOSNR',       // STANDORT;DS_WA;BESTPOSNR
+      if DbSeek({nStandort, nWorkarea, cBestPosNr}, oPGKSYA) then
+         bPGKSYAgefunden := true,
+      endif,
+   else
+      oPGKSYA.IndexName := 'STANDORT_DS_WA_DS_ID',       // STANDORT;DS_WA;DS_ID
+      if DbSeek({nStandort, nWorkarea, nID}, oPGKSYA) then
+         bPGKSYAgefunden := true,
+      endif,
+   endif,
+
+   startseq
+      if not bPGKSYAgefunden then // kein Datensatz vorhanden -> dann muss einer hinzugefügt werden
+         bAppend := true,
+      else
+         // Es ist bereits ein DS vorhanden
+         // Wenn man ihn sperren kann, muss man ihn entsperren - nach noch ein paar Prüfungen,
+         // wenn er gesperrt ist (durch das Batch-Programm), dann muss ein DS hinzugefügt werden
+         if DBLock(oPGKSYA) then
+            DBEdit(oPGKSYA),
+            if cAenderungsArt = 'D' and oPGKSYA:AEND_ART <> 'D' then
+               oPGKSYA:AEND_ART    := 'D',
+            endif,
+            // Fall: DAB035:ID war bei Erstellung noch unbekannt, weil
+            // der Datensatz durch einen Trigger auf die DAB240 entstanden ist.
+            if nWorkarea = waDab035 and nID <> 0 then
+               oPGKSYA:DS_ID    := nID,
+            endif,
+            oPGKSYA:BEARBEITEN  := true, // Nach einer Änderung kann es sein, daß ein bislang fehlerhafter Batchlauf jetzt fehlerfrei durchläuft.
+                                         // Daher geben wir hier den Datensatz zur Bearbeitung frei.
+            DBPost(oPGKSYA),
+            DBUnLock(oPGKSYA),
+         else
+            bAppend := true,
+         endif,
+      endif,
+
+      if bAppend then
+         MyAppend(oPGKSYA),
+         oPGKSYA:STANDORT    := nStandort,
+         oPGKSYA:AEND_ART    := cAenderungsArt,
+         oPGKSYA:DS_WA       := nWorkarea,
+         oPGKSYA:DS_ID       := nID,
+         oPGKSYA:ARTNR_BG    := cArtnrBaugruppe,
+         oPGKSYA:BESTPOSNR   := cBestPosNr,
+         oPGKSYA:BEARBEITEN  := true,
+         oPGKSYA:FEHLER      := false,
+         oPGKSYA:FEHLER_ANZ  := 0,
+         MyPost(oPGKSYA),
+      endif,
+   always
+      if editModes(oPGKSYA) then
+          DbCancel(oPGKSYA),
+          DBUnLock(oPGKSYA),
+      endif,
+   stopseq,
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab035-FA-Auftragsköpfen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im DAB035-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab035(oDab035, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab035), 'empty(oDab035)'),
+   SetErrorIf(oDab035:LIEFNR <> -1, 'oDab035:LIEFNR <> -1. Only use this function for production orders.'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab035) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if bDelete = False  then
+      cAendArt := iif(DbState(oDab035) = dsInsert, 'N', 'C'),
+   else
+      cAendArt := 'D',
+   endif,
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab035:STANDORT, waDab035, oDab035:ID, cAendArt, oDab035:ARTNR, oDAB035:BESTPOSNR),
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab240-FA-Auftragspositionen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im DAB240-Kopf-Update-Trigger gedacht
+// Funktion schreibt aber für Auftragskopfsatz aus der DAB035
+// Die Änderungsart für die DAB035 ist immer Update, auch wenn ien DS der DAB240 gelöscht wurde
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeorDeleteTrigger_Dab240(oDab240)
+   Result := nil,
+   SetErrorIf(empty(oDab240), 'empty(oDab240)'),
+   SetErrorIf((oDab240:WORKAREA <> waDab240), 'oDab240:WORKAREA <> waDab240'),
+   // Wenn ein FA in einer Transaktion neu angelegt wird, dann ist der Dab035-DS
+   // ggf. noch nicht außerhalb der Transaktion sichtbar. Dennoch muss hier der
+   // Dab240-Insert verarbeitet werden.
+   // Die DAB035:ID kann an dieser Stelle nicht zuverlässig ermittelt werden.
+   // In diesem Fall: SubStr(oDab240:B_POS_LFD, 1, 8) in PGKSYA:BESTPOSNR speichern
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab240:STANDORT, waDab035, 0, 'C', oDab240:ARTNR1, SubStr(oDab240:B_POS_LFD, 1, 8)),
+end,
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab270-Datensätzen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im DAB270-Kopf-Update-Trigger gedacht
+// Funktion schreibt aber für Auftragskopfsatz aus der DAB035
+// Die Änderungsart für die DAB035 ist immer Update, auch wenn ein DS der DAB270 gelöscht wurde
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeorDeleteTrigger_Dab270(oDab270)
+   | aRes |
+   Result := nil,
+   SetErrorIf(empty(oDab270), 'empty(oDab270)'),
+   SetErrorIf(empty(oDab270:ARBG_ID), 'empty(oDab270:ARBG_ID)'),
+   // Wenn ein FA in einer Transaktion neu angelegt wird, dann ist der Dab035-DS
+   // ggf. noch nicht außerhalb der Transaktion sichtbar. Dennoch muss hier der
+   // Dab270-Insert verarbeitet werden.
+   // Die DAB035:ID kann an dieser Stelle nicht zuverlässig ermittelt werden.
+   // In diesem Fall: SubStr(oDab240:B_POS_LFD, 1, 8) in PGKSYA:BESTPOSNR speichern
+   aRes := Lookup(waDAB240, 'DAB245', {{oDAB270:ARBG_ID}}, '{STANDORT, B_POS_LFD, ARTNR1}', {0, '', ''}),
+
+   // Wenn der Dab240-Satz zu einem Dab270-Satz nicht gefunden wurde, dann handelt es sich sehr sicher
+   // um die Situation "Fertigungsauftrag wird in Transaktion angelegt". Der LookUp hier schaut
+   // nicht "in die Transaktion", sieht die Dab240 also (noch) nicht.
+   // => einfach ignorieren, denn es gibt in dieser Situation schon die SYA-Aufgaben-Sätze für die Dab035
+   if not empty(aRes[2]) and not empty(aRes[3]) then
+      PGKU_SYA_HandleInsertOrChangeOrDelete(aRes[1], waDab035, 0, 'C', aRes[3], SubStr(aRes[2], 1, 8)),
+   endif,
+end,
+
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab215-FA-Dispovorschlägen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im Dab215-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab215(oDab215, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab215), 'empty(oDab215)'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab215) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if oDab215:DISPO <> 0 and not empty(oDab215:TERMIN) then // Hinweis-Datensätze (Ausnahmemeldungen) ignorieren
+      if bDelete = False  then
+         cAendArt := iif(DbState(oDab215) = dsInsert, 'N', 'C'),
+      else
+         cAendArt := 'D',
+      endif,
+      PGKU_SYA_HandleInsertOrChangeOrDelete(oDab215:STANDORT, waDab215, oDab215:ID, cAendArt, oDab215:ARTNR, ''),
+   endif,
+end,
+
+
+//******************************************************************************
+// Funktion schreibt bei Neuanlagen und Änderungen oder Löschungen an Dab320-FA-Dispovorschlägen
+//    eine Synchronisations-Aufgabe in die Tabelle PGKSYA.ADT
+// => Funktion ist für den Aufruf im Dab320-Kopf-Update-Trigger gedacht
+// @Result: die Funktion hat keine Rückgabe, kann aber ggf. eine Exception auslösen
+//******************************************************************************
+function _PGKU_SYA_HandleInsertOrChangeOrDeleteTrigger_Dab320(oDab320, bDelete)
+   | cAendArt |
+   Result := nil,
+   SetErrorIf(empty(oDab320), 'empty(oDab320)'),
+   SetErrorIf(bDelete <> True and bDelete <> False, 'bDelete not boolean'),
+   SetErrorIf(bDelete = True and DbState(oDab320) = dsInsert, 'bDelete und Insertmode geht nicht'),
+
+   if bDelete = False  then
+      cAendArt := iif(DbState(oDab320) = dsInsert, 'N', 'C'),
+   else
+      cAendArt := 'D',
+   endif,
+   PGKU_SYA_HandleInsertOrChangeOrDelete(oDab320:STANDORT, waDab320, oDab320:ID, cAendArt, oDab320:ARTNR, ''),
+
+end,
+
+

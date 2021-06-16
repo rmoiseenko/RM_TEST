@@ -1,0 +1,222 @@
+//##############################################################################
+//##############################################################################
+//
+// Dieses Hilfsprogramm erstellt ein SQL-SELECT Statement für die Systemtabelle
+// "Browser" (DabBRO)
+// -> Es werden userspezifische Browser-Definitionen selektiert, die aus
+//    "systemnahen" Oberflächen stammen oder sonstige userspezifischen
+//    Definitionen, die üblicherweise unproblematisch gelöscht werden können.
+// -> Hinweis:
+//    In einem Kunden-DB ist das Löschen mit Vorsicht zu genießen, es sollte
+//    auf jeden Fall vorher eine Sicherung gemacht werden
+//
+//##############################################################################
+//##############################################################################
+
+
+| aFixedIdsArray, aStdMMTabIdsArray, i, cFixedIdInList, cStdMMTabIdInList, cDabBROWhere |
+
+//******************************************************************************
+// Array mit fixen Browser-IDs aufbauen
+// @Result: null
+//******************************************************************************
+function BuildFixedIdsArray()
+
+   //***************************************************************************
+   // Einen Eintrag in das Browser-Array hinzufügen
+   // @Result: null
+   //***************************************************************************
+   function AddBrowser(cBrowserID)
+      AAdd(aFixedIdsArray, Upper(cBrowserID)),
+   end,
+
+   //***************************************************************************
+   // Modul "ERP" - System-Bereiche
+   //***************************************************************************
+
+   // Table-Logging
+   AddBrowser('LOGWND'),       // Änderungen
+
+   // Benutzerverwaltung
+   AddBrowser('USR_ADM'),      // Benutzer
+   AddBrowser('ULRFUID'),      // Passwörter / Rechte
+
+   // Systemverwaltung
+   AddBrowser('SYS_WS'),       // Angemeldete Workstations
+   AddBrowser('SYS_TBL'),      // Gesperrte Datensätze
+   AddBrowser('SYS_DB'),       // Datenbank
+   AddBrowser('ERR_LOG'),      // Fehler-Protokolle
+   AddBrowser('SQL_LOG'),      // SQL-Protokolle
+
+   // Datenbank-Verwaltung
+   AddBrowser('DB_LIST'),      // Tabellen
+   AddBrowser('FLD_LST'),      // Felder
+
+   // Individual-Menü-Editor
+   AddBrowser('MNUEDTR'),      // Menüs
+
+   // Programmierung
+   AddBrowser('scbprg'),       // Programmsuche (Strg+P)
+   AddBrowser('resultp'),      // Programmsuche Ergebniszeile (Strg+P)
+
+   // Passwort-Verwaltung
+   AddBrowser('PW_ADMI'),      
+
+
+   //***************************************************************************
+   // Modul "ERP" - Bereich "Festwerte"
+   //***************************************************************************
+
+   AddBrowser('WOTAGUB'),      // Arbeitstage je Unt. Bereich
+   AddBrowser('STORSEL'),      // Lager-Auswahlliste
+   AddBrowser('LAGNAMS'),      // Lagername
+   AddBrowser('~018E81'),      // "Dab020 Statistik nur für Felder"
+   AddBrowser('USRMAILCFG'),   // User - berechtigte E-Mail-Konten
+   AddBrowser('USROUTLCFG'),   // User - berechtigte Outlook-Konten
+   AddBrowser('EXCRCTL'),      // Erweiterte Kreditkontrolle
+   AddBrowser('CURTBL1'),      // Währungstabelle
+   AddBrowser('CS_TBL'),       // Größen / Farben Tabelle
+   AddBrowser('AESTVL'),       // Intrastat, statistische Werte
+   AddBrowser('CPI_CDO'),      // Länderverzeichnis
+   AddBrowser('PARAPRD'),      // Produktionsabteilungen
+   AddBrowser('ATTRADO'),      // MM-Tabellen
+   AddBrowser('MDT'),          // MM-Tabellen feste Werte
+   AddBrowser('ATTDEF'),       // MM-Tabellen Standard-Browser für statische Tabellen
+   AddBrowser('SZC_BRO'),      // Lagerort-Größenklassen
+   AddBrowser('BHT_GRD'),      // Behältertypen
+   AddBrowser('BHG_GRD'),      // Behälter in Größenklassen
+   AddBrowser('MAILSVRCFG'),   // E-Mail-Server
+   AddBrowser('MAILACCCFG'),   // E-Mail-Konten
+   AddBrowser('OLSYNCACC'),    // Outlook-Konten
+   AddBrowser('BDEHOL3'),      // Feiertage
+   AddBrowser('PARA_TO'),      // Dialog "Parameter - Standortübernahme"
+
+
+   //***************************************************************************
+   // Modul "ERP" - Sonstige Bereiche
+   //***************************************************************************
+
+   // CRM-Aktionen
+   AddBrowser('CRMHIST'),      // Verarbeitungs-Historie
+   AddBrowser('PLACEHO'),      // Platzhalter
+
+   //***************************************************************************
+   // Modul "Printmanager"
+   //***************************************************************************
+
+   AddBrowser('FIXPRT1'),      // Druckerzuweisungen
+   AddBrowser('ARC_SEL'),      // Belegarchiv
+
+   // Stapeldruck-Browser (es fehlen jeweils noch die Positions-Details-Browser)
+   AddBrowser('PRWOFFE'),      // Verkauf - Angebot
+   AddBrowser('PRWCONS'),      // Verkauf - Service-Anforderungen
+   AddBrowser('PRWCONF'),      // Verkauf - Auftragsbestätigungen
+   AddBrowser('PRWCOMM'),      // Verkauf - Kommiss-Scheine
+   AddBrowser('PRWDELR'),      // Verkauf - Entnahemschein Einzeln
+   AddBrowser('PRWCUMR'),      // Verkauf - Entnahemschein Sammel
+   AddBrowser('PRWDELV'),      // Verkauf - Lieferscheine
+   AddBrowser('PRWCUMD'),      // Verkauf - Sammel-Lieferscheine
+   AddBrowser('PRWREDE'),      // Verkauf - Miet-Lieferscheine
+   AddBrowser('PRMVMRU'),      // Verkauf - Lieferschein Rückgabe Vermietung
+   AddBrowser('PRWBILL'),      // Verkauf - Rechnungen
+   AddBrowser('PRMABRE'),      // Verkauf - Abschlags-Rechnungen
+   AddBrowser('PRWCUMB'),      // Verkauf - Sammel-Rechnungen
+   AddBrowser('PRWREIN'),      // Verkauf - Miet-Zwischen-Rechnungen
+   AddBrowser('PRWINQU'),      // Einkauf - Preisanfragen
+   AddBrowser('PRWSUBS'),      // Einkauf - Bestellungen
+   AddBrowser('PRWSUBC'),      // Einkauf - Abrufeinteilung
+   AddBrowser('PRWSUBR'),      // Einkauf - Bestellmahnung
+
+   //***************************************************************************
+   // Modul "Reportgenerator"
+   //***************************************************************************
+   AddBrowser('ST_UST'),       // Reports
+
+end,
+
+//******************************************************************************
+// Aus einem Array von Browser-IDs eine IN-Select-Liste der Form
+//  ('MER-13', 'MER-11', 'MER1001') bauen
+// @Result: null
+//******************************************************************************
+function BuildSqlInListFromIdArray(aIdArray)
+| i |
+   Result := '',
+   for i := 1 to ALen(aIdArray) do
+      Result := ConcatTrenner(Result, "'" + aIdArray[i] + "'", ', '),
+      if mod(i, 8) = 0 then
+         Result += crlf + Replicate(' ', 18),
+      endif,
+   next,
+   if not empty(Result) then
+      Result := '(' + Result + ')',
+   endif,
+end, 
+
+//******************************************************************************
+// Array mit Browser-IDs von Standard-MM-Tabellen bauen
+// @Result: null
+//******************************************************************************
+function BuildStdMMTablesIdsArray()
+  | cDabMTASql, oSqlQuery |
+
+  // Userspezifische Browser-Definitionen für Standard-Merkmals-Tabellen
+  //       => nur BROWSER mit "USER" > 0 löschen
+  cDabMTASql :=
+    'SELECT DISTINCT BROWSERID ' + crlf +
+    '   FROM ' + DbSqlTableName(waDabMTA, false) + ' DABMTA ' + crlf +
+    '   WHERE NOT (TAB_ID BETWEEN 0 AND 99999) ORDER BY TAB_ID',
+
+  oSqlQuery := CreateObject('TBeAdsQuery'),
+  startseq
+     oSqlQuery.Sql    := cDabMTASql,
+     oSqlQuery.Active := true,
+     DbGoTop(oSqlQuery),
+     while not Eof(oSqlQuery) do
+        AAdd(aStdMMTabIdsArray, Upper(AllTrim(oSqlQuery:BROWSERID))),
+        DbSkip(1, oSqlQuery),
+     end,
+  always
+     DestroyObject(oSqlQuery),
+  stopseq,
+
+end,
+
+aFixedIdsArray    := {},
+aStdMMTabIdsArray := {},
+
+BuildFixedIdsArray(),
+BuildStdMMTablesIdsArray(), // WriteLn(Alen(aStdMMTabIdsArray), DebugArr(aStdMMTabIdsArray)),
+
+cFixedIdInList    := BuildSqlInListFromIdArray(aFixedIdsArray),
+cStdMMTabIdInList := BuildSqlInListFromIdArray(aStdMMTabIdsArray),
+
+cDabBROWhere :=
+  'SELECT * FROM ' + DbSqlTableName(waDabBRO, false) + ' ' + crlf +
+  '   WHERE ' + crlf +
+  '       ( ("USER" > 0) ' + crlf +
+  '          AND ( ' + crlf +
+  '                // Liste fest definierter "System"-Browser' + crlf +
+  '                (UPPER(BROWSER_ID) ' + crlf +
+  '                    IN ' + cFixedIdInList + ' ) ' + crlf + crlf +
+  '                // Individual-Browser für Standard-MM-Tabellen' + crlf +
+  '                OR (UPPER(BROWSER_ID) ' + crlf +
+  '                    IN ' + cStdMMTabIdInList + ' ) ' + crlf + crlf +
+  '                // Individuelle Browser im Fenster "SQL Browser"' + crlf +
+  '                OR (BROWSER_ID BETWEEN ''BSQL001'' AND ''BSQL999'') ' + crlf + crlf +
+  '                // Individuelle Browser im Fenster "Tabelle anzeigen"' + crlf +
+  '                OR (BROWSER_ID BETWEEN ''INBR001'' AND ''INBR999'') ' + crlf + crlf +
+  '                // Userspezifische Browser aus z.B. F12-GUIs oder für individuelle MM-Tabellen' + crlf +
+  '                // Achtung: Für dieser browser können individuelle Default-Browser (USER = 0) definiert' + crlf +
+  '                //          werden, dieser werden hier nicht selektiert' + crlf +
+  '                OR (LEFT(BROWSER_ID, 1) = ''@'') ' + crlf + crlf +
+  '              ) )',
+
+
+// ** Anzahl Browser je User:
+//    SELECT "USER" as "USER_NR", SUM(1) as ANZAHL FROM "DABBRO.ADT" DABBRO GROUP BY DABBRO."USER"
+//
+// ** Liste der Indi-Browser von User 065
+//    SELECT * FROM "DABBRO.ADT" DABBRO WHERE "USER" = 065 ORDER BY BUCH_DATUM
+
+cDabBROWhere

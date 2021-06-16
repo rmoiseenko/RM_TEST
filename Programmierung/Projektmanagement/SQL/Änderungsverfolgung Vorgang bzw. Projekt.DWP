@@ -1,0 +1,233 @@
+//******************************************************************************
+// Für dieses SQL Script wird das Ergebnis des Scripts
+// "Änderungsverfolgung Vorgangsleistungen" benötigt
+//   => SELECT * FROM #PLAN_IST_NACH_LEISTUNG
+//******************************************************************************
+
+// ***************************************************
+// Leistungs bzw. Vorgangs-übergreifend summieren
+// => Es soll je Verdichtungs-Zeitpunkt eine Summe für
+//    den Vorgang bzw. das Projekt enstehen
+// ***************************************************
+
+DECLARE @PLAN_IST    CURSOR;
+DECLARE @PLAN_IST_GP CURSOR;
+
+DECLARE @CUR_DABPVL_ID   Integer;
+DECLARE @CUR_VORG_ID     Integer;
+DECLARE @CUR_ROWID       String;
+
+DECLARE @MENGE_PLAN_LAST Double;  // letzter Wert MENGE_PLAN_VERLAUF
+DECLARE @MENGE_PLAN_DIFF Double;
+
+DECLARE @EK_WRTPLAN_LAST Double;  // letzter Wert EK_WRTPLAN_VERLAUF
+DECLARE @EK_WRTPLAN_DIFF Double;
+
+DECLARE @ARBEIT_MENGE_PLAN_KUM Double;
+DECLARE @EK_WRTPLAN_KUM        Double;
+DECLARE @ARBEIT_IST_MENGE_KUM  Double;
+DECLARE @IST_EK_WERT_KUM       Double;
+
+// Damit Summierungen / Kumulierungen Leistungs-übergreifend
+//   überhaupt Sinn machen, müssen vorerst Differenzwerte
+//   für die PLAN-Felder berechnet werden:
+
+TRY
+   ALTER TABLE #PLAN_IST_NACH_LEISTUNG
+     ADD COLUMN MENGE_PLAN_DIFF Double
+     ADD COLUMN EK_WRTPLAN_DIFF Double;
+CATCH ALL END TRY;
+
+// ********************************************
+// Differenz-Werte berechnen
+// ********************************************
+OPEN @PLAN_IST AS SELECT PLAN_IST.*, ROWID FROM #PLAN_IST_NACH_LEISTUNG PLAN_IST; // Sortierung ist durch Order By beim Enstehen der TempTabelle oben sichergestellt
+@CUR_DABPVL_ID   = -1;
+@MENGE_PLAN_LAST = null;
+@MENGE_PLAN_DIFF = 0;
+@EK_WRTPLAN_LAST = null;
+@EK_WRTPLAN_DIFF = 0;
+
+WHILE FETCH @PLAN_IST DO
+
+   // auf nächstem DABPVL-Satz angekommen ? Dann befinden wir uns auf dem ersten DS in diesem Vorgangsleistungs-Block
+   IF @PLAN_IST.DABPVL_ID <> @CUR_DABPVL_ID THEN
+      @CUR_DABPVL_ID   = @PLAN_IST.DABPVL_ID;
+      @MENGE_PLAN_LAST = null;
+      @EK_WRTPLAN_LAST = null;
+   END IF;
+
+   // Werte für das Update des aktuellen Datensatzes zusammenstellen
+
+   // MENGE_PLAN-Werte Differenz berechnen
+   IF @PLAN_IST.MENGE_PLAN_VERLAUF is not null THEN
+      @MENGE_PLAN_DIFF = @PLAN_IST.MENGE_PLAN_VERLAUF - IfNull(@MENGE_PLAN_LAST, 0);
+      @MENGE_PLAN_LAST = @PLAN_IST.MENGE_PLAN_VERLAUF;
+   ELSE
+      @MENGE_PLAN_DIFF = 0;
+   END IF;
+
+   // EK_WRTPLAN Differenz berechnen
+   IF @PLAN_IST.EK_WRTPLAN_VERLAUF is not null THEN
+      @EK_WRTPLAN_DIFF  = @PLAN_IST.EK_WRTPLAN_VERLAUF - IfNull(@EK_WRTPLAN_LAST, 0);
+      @EK_WRTPLAN_LAST  = @PLAN_IST.EK_WRTPLAN_VERLAUF;
+   ELSE
+      @EK_WRTPLAN_DIFF  = 0;
+   END IF;
+
+
+   // Updates durchführen
+   @CUR_ROWID = @PLAN_IST.ROWID;
+   IF @MENGE_PLAN_DIFF <> 0 THEN
+      UPDATE #PLAN_IST_NACH_LEISTUNG SET MENGE_PLAN_DIFF = @MENGE_PLAN_DIFF WHERE ROWID = @CUR_ROWID;
+   END IF;
+   IF @EK_WRTPLAN_DIFF <> 0 THEN
+      UPDATE #PLAN_IST_NACH_LEISTUNG SET EK_WRTPLAN_DIFF = @EK_WRTPLAN_DIFF WHERE ROWID = @CUR_ROWID;
+   END IF;
+
+END WHILE;
+
+CLOSE @PLAN_IST;
+// ENDE Differenzen-Berechnung
+// ********************************************
+
+// Zur Kontrolle (Browser #3)
+//   SELECT * FROM #PLAN_IST_NACH_LEISTUNG;
+
+// Gruppieren nach Projekt [und ggf. Vorgang]
+TRY DROP TABLE #PLAN_IST_GROUPED; CATCH ALL END TRY;
+SELECT
+    VS_YEAR, VS_MONTH, VS_DAY,
+    PLAN_IST.PRJ_ID, // PLAN_IST.VORG_ID, // ggf. auf Vorgangs-Ebene gruppieren
+
+    // Minuten Arbeit PLAN Menge
+    Sum(iif(DABPVL.RESTYP = 'M', MENGE_PLAN_DIFF, 0)) AS ARBEIT_MENGE_PLAN_DIFF,
+    Convert(0, SQL_Double) as ARBEIT_MENGE_PLAN_KUM,
+    // Kosten (alle) PLAN
+    Sum(EK_WRTPLAN_DIFF) AS EK_WRTPLAN_DIFF,
+    Convert(0, SQL_Double) as EK_WRTPLAN_KUM,
+    // Minuten Arbeit IST Menge
+    Sum(iif(DABPVL.RESTYP = 'M', IST_MENGE, 0)) AS ARBEIT_IST_MENGE,
+    Convert(0, SQL_Double) as ARBEIT_IST_MENGE_KUM,
+    // Kosten (alle) IST
+    Sum(IST_EK_WERT) AS IST_EK_WERT,
+    Convert(0, SQL_Double) as IST_EK_WERT_KUM
+
+  INTO #PLAN_IST_GROUPED
+  FROM #PLAN_IST_NACH_LEISTUNG PLAN_IST
+  INNER JOIN "DABPVL.ADT" DABPVL ON (DABPVL.ID = PLAN_IST.DABPVL_ID) // muss gejoint werden, damit DABPVL.RESTYP zur Verfügung steht
+  GROUP BY
+    PLAN_IST.PRJ_ID, // PLAN_IST.VORG_ID, // ggf. auf Vorgangs-Ebene gruppieren
+    VS_YEAR, VS_MONTH, VS_DAY // Die Verdichtungs-Gruppierung MUSS identisch sein mit der Verdichtung der Ausgangstabelle, sonst wird Blödsinn summiert
+    ;
+
+// Zur Kontrolle (Browser #4)
+//   SELECT * FROM #PLAN_IST_GROUPED;
+
+// ********************************************
+// Kumulierung der "_KUM"-Felder über den
+// Zeitverlauf aus dem jeweiligen Quell-Feld
+// ********************************************
+
+OPEN @PLAN_IST_GP AS SELECT PLAN_IST_GP.*, ROWID FROM #PLAN_IST_GROUPED PLAN_IST_GP; // Sortierung ist durch Group By beim Enstehen der TempTabelle oben sichergestellt
+
+@CUR_VORG_ID           = -1;
+@ARBEIT_MENGE_PLAN_KUM = 0;
+@EK_WRTPLAN_KUM        = 0;
+@ARBEIT_IST_MENGE_KUM  = 0;
+@IST_EK_WERT_KUM       = 0;
+
+WHILE FETCH @PLAN_IST_GP DO
+
+// Diesen Block einkommentieren, sofern eine Gruppierung zusätzlich nach Vorgang notwendig ist
+/*
+   // auf nächstem Vorgangs-Satz angekommen ?
+   IF @PLAN_IST_GP.VORG_ID <> @CUR_VORG_ID THEN
+      @CUR_VORG_ID   = @PLAN_IST_GP.VORG_ID;
+
+      @ARBEIT_MENGE_PLAN_KUM = 0;
+      @EK_WRTPLAN_KUM        = 0;
+      @ARBEIT_IST_MENGE_KUM  = 0;
+      @IST_EK_WERT_KUM       = 0;
+   END IF;
+*/
+
+   @ARBEIT_MENGE_PLAN_KUM = @ARBEIT_MENGE_PLAN_KUM + IfNull(@PLAN_IST_GP.ARBEIT_MENGE_PLAN_DIFF, 0);
+   @EK_WRTPLAN_KUM        = @EK_WRTPLAN_KUM        + IfNull(@PLAN_IST_GP.EK_WRTPLAN_DIFF,        0);
+   @ARBEIT_IST_MENGE_KUM  = @ARBEIT_IST_MENGE_KUM  + IfNull(@PLAN_IST_GP.ARBEIT_IST_MENGE,       0);
+   @IST_EK_WERT_KUM       = @IST_EK_WERT_KUM       + IfNull(@PLAN_IST_GP.IST_EK_WERT,            0);
+
+   @CUR_ROWID = @PLAN_IST_GP.ROWID;
+   UPDATE #PLAN_IST_GROUPED SET ARBEIT_MENGE_PLAN_KUM = @ARBEIT_MENGE_PLAN_KUM  WHERE ROWID = @CUR_ROWID;
+   UPDATE #PLAN_IST_GROUPED SET EK_WRTPLAN_KUM        = @EK_WRTPLAN_KUM         WHERE ROWID = @CUR_ROWID;
+   UPDATE #PLAN_IST_GROUPED SET ARBEIT_IST_MENGE_KUM  = @ARBEIT_IST_MENGE_KUM   WHERE ROWID = @CUR_ROWID;
+   UPDATE #PLAN_IST_GROUPED SET IST_EK_WERT_KUM       = @IST_EK_WERT_KUM        WHERE ROWID = @CUR_ROWID;
+
+END WHILE;
+
+CLOSE @PLAN_IST_GP;
+
+//*****************************************************************************
+// Einfügen von Datensätzen für jedes Jahr, Monat und KW zur besseren Lesbarkeit
+//*****************************************************************************
+
+// Zwei neue Spalten (Kalenderwoche und Zeilentyp) anlegen und für "echte"
+// DAtensätze füllen
+ALTER TABLE #PLAN_IST_GROUPED
+   ADD COLUMN ZEILEN_TYP char(1)
+   ADD COLUMN ISOWEEK_NR integer;
+
+UPDATE #PLAN_IST_GROUPED
+   SET ZEILEN_TYP = 'E',
+   ISOWEEK_NR = ISOWEEK(CREATETIMESTAMP(VS_YEAR, VS_MONTH, VS_DAY, 0, 0, 0, 0));
+
+// Für jedes Jahr eine Zeile anlegen
+INSERT INTO #PLAN_IST_GROUPED (VS_YEAR, ZEILEN_TYP)
+  SELECT
+     VS_YEAR AS VS_YEAR,
+     'Y' AS ZEILEN_TYP
+  FROM #PLAN_IST_GROUPED
+  WHERE ZEILEN_TYP = 'E'
+  GROUP BY VS_YEAR;
+
+// Für jeden Monat eine Zeile anlegen
+//    Die Monate werden vorerst nicht in die Gruppierung eingebunden, damit die KW
+//    nicht gesplittet werden.
+//    Kann später so erweitert werden, dass man die Monate optional mitanzeigen
+//    kann.
+//INSERT INTO #PLAN_IST_GROUPED (VS_YEAR, VS_MONTH, ZEILEN_TYP)
+//  SELECT
+//     VS_YEAR,
+//     VS_MONTH,
+//     'M' AS ZEILEN_TYP
+//  FROM #PLAN_IST_GROUPED
+//  WHERE ZEILEN_TYP = 'E'
+//  GROUP BY VS_YEAR, VS_MONTH;
+
+
+
+// Für jede Woche eine Zeile anlegen
+//    Die Monate werden vorerst nicht in die Gruppierung eingebunden, damit die KW
+//    nicht gesplittet werden
+INSERT INTO #PLAN_IST_GROUPED (VS_YEAR,
+                               // VS_MONTH,
+                               ISOWEEK_NR,
+                               ZEILEN_TYP)
+  SELECT
+     VS_YEAR,
+//     VS_MONTH,
+     ISOWEEK(CREATETIMESTAMP(VS_YEAR, VS_MONTH, VS_DAY, 0, 0, 0, 0)) AS ISOWEEK_NR,
+     'W' AS ZEILEN_TYP
+  FROM #PLAN_IST_GROUPED
+  WHERE ZEILEN_TYP = 'E'
+  GROUP BY
+     VS_YEAR,
+//     VS_MONTH,
+     ISOWEEK(CREATETIMESTAMP(VS_YEAR, VS_MONTH, VS_DAY, 0, 0, 0, 0));
+
+
+// ENDE Kumulierung
+// ********************************************
+
+// Endergebnis liegt jetzt vor (Browser #4)
+// SELECT * FROM #PLAN_IST_GROUPED;

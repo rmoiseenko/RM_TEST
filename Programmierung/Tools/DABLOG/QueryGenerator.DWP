@@ -1,0 +1,200 @@
+//#############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Script generiert ein SQL-Statement zur Abfrage aller bisher
+//   geschriebenen Log-Einträge in allen verfügbaren DABLOG-Tabellen.
+//
+// Rückgabe:
+//   string - Das Programm gibt das erzeugte SQL-Statement als String zurück.
+//            Sind keine DABLOG-Tabellen vorhanden, ist die Rückgabe Leerstring.
+//##############################################################################
+//##############################################################################
+
+|
+   m_dtRangeFrom:P1, m_dtRangeUntil:P2,
+   m_oDablogDDInfoTable, m_cResult
+|
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Schneidet den Zeit-Anteil eines DateTime-Wertes ab
+// @result: date
+//******************************************************************************
+function TruncateTime(dtDateTime:DT)
+   result := CToD(DToC(Trunc(dtDateTime))),
+end,
+
+//******************************************************************************
+// Anhand des Dateinamens der DABLOG-Tabelle prüfen, ob die Tabelle für den
+// angegebenen Log-Zeitraum relevant ist.
+//
+// HINWEIS: Aktuelles Format für das Datum im Dateinamen ist:
+//          ...__YYYY_MM_dd.adt
+//
+// @result: boolean
+//******************************************************************************
+function TableIsWithinTimeRange(cTableName:C, dtRangeFrom:DT, dtRangeUntil:DT)
+| cTimeString, nYear, nMonth, nDay, dtLogTableDateTime |
+
+   cTimeString := Right(cTableName, 14),                   // Zeitstempel aus Dateinamen extrahieren
+   cTimeString := Left(cTimeString, Len(cTimeString) - 4), // Dateinamenserweiterung entfernen
+
+   nYear  := Token(cTimeString, '_', 1),
+   nMonth := Token(cTimeString, '_', 2),
+   nDay   := Token(cTimeString, '_', 3),
+
+   dtLogTableDateTime := EncodeDate(nYear, nMonth, nDay),
+
+   result := (dtLogTableDateTime >= TruncateTime(dtRangeFrom)) and
+             (dtLogTableDateTime <= TruncateTime(dtRangeUntil)),
+end, 
+
+//******************************************************************************
+// Tabelle bzw. Liste mit allen DD gebundenen DABLOG-Tabellen erstellen
+// HINWEIS: Die erzeugte Tabelle muss nach Verwendung wieder zerstört werden!
+//
+// Die Ergebnis-Tabelle enthält folgende Felder:
+//   * NAME:      Aliasname der Tabelle im ADS-DD
+//   * FILE_PATH: Relativer Pfad zur DABLOG-Tabelle (i.d.R.: "..\winbehid\logs\")
+//   * FILE_NAME: Dateiname der DABLOG-Tabelle (ohne Pfad)
+//
+// @result: object - TBeMemTable
+//******************************************************************************
+function CreateDablogDDInfoTable()
+| oQuery |
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := 'SELECT Name, Table_Relative_Path FROM system.tables WHERE Name LIKE ''DABLOG%''',
+      oQuery.Active := true,
+      oQuery.CbFirst(),
+
+      result := CreateObject('TBeMemTable'),
+      result.CbAddField('NAME',      ftString, 256),
+      result.CbAddField('FILE_NAME', ftString, 256),
+      result.CbAddField('FILE_PATH', ftMemo,   0),
+      result.CbAddIndex('FILE_NAME', 'FILE_NAME', 0),
+      result.CbIndexName := 'FILE_NAME',
+      result.Active      := true,
+      while not oQuery.CbEof do
+         result.CbAppend(),
+         result:NAME      := Trim(oQuery:Name),
+         result:FILE_PATH := ExtractFilePath(oQuery:Table_Relative_Path),
+         result:FILE_NAME := Trim(ExtractFileName(oQuery:Table_Relative_Path)),
+         result.CbPost(),
+         oQuery.CbNext(),
+      end,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+// Erzeugt das SQL-Statement, das den Inhalt aller DABLOG-Tabellen als "eine
+// Tabelle" zurückliefert.
+//
+// @result: string - SQL-Statement
+//******************************************************************************
+function GenerateSQLQuery(oDDBoundDablogTables:O, dtRangeFrom:DT, dtRangeUntil:DT)
+|
+   cDablogBasePath,
+   aLogFiles, aLogTables,
+   cSQLDateTimeFormat, cOrderByFieldName, cWhereClause,
+   i, nLength,
+   bRangeFromEmpty, bRangeUntilEmpty
+|
+
+   // Basis-Pfad zu den DABLOG-Tabellen ermitteln
+   if oDDBoundDablogTables.CbDataAvailable then
+      cDablogBasePath := oDDBoundDablogTables:FILE_PATH,
+   else
+      cDablogBasePath := '..\winbehid\logs\',
+   endif,
+
+   aLogTables         := {},
+   cSQLDateTimeFormat := 'YYYY-mm-dd hh:mm:ss',
+   cOrderByFieldName  := 'ERSTELLT',
+   cWhereClause       := '',
+
+   // Verfügbare DABLOG-Tabellen ermitteln:
+   // Nur die *.adt-Dateien im logs-Verzeichnis beachten
+   aLogFiles := DirArray(mBeDefault + cDablogBasePath, '*.adt'),
+
+   // SQL-Query nur erzeugen, sofern überhaupt DABLOG-Tabllen vorhanden sind
+   if ALen(aLogFiles) > 0 then
+      bRangeFromEmpty  := Empty(dtRangeFrom),
+      bRangeUntilEmpty := Empty(dtRangeUntil),
+
+      if not (bRangeFromEmpty and bRangeUntilEmpty) then
+         // Sofern angegeben, Range (von - bis) in WHERE-Clause angeben
+         if not bRangeFromEmpty then
+            cWhereClause := 'ERSTELLT >= ''' + FormatDateTime(cSQLDateTimeFormat, dtRangeFrom) + '''',
+         endif,
+         if not bRangeUntilEmpty then
+            cWhereClause := ConcatTrenner(cWhereClause, 'ERSTELLT <= ''' + FormatDateTime(cSQLDateTimeFormat, dtRangeUntil) + '''', ' AND '),
+         endif,
+         cWhereClause := iif(Empty(cWhereClause), '', 'WHERE ' + cWhereClause),
+      endif,
+
+      // Range (von - bis) für anschließende Vorfilterung der DABLOG-Tabellen
+      // ggf. mit Minimal-/Maximal-Werten füllen
+      dtRangeFrom  := iif(bRangeFromEmpty,  SToD('00000000'), dtRangeFrom),
+      dtRangeUntil := iif(bRangeUntilEmpty, Now() + 365,      dtRangeUntil),
+
+      // Liste aller verfügbarer DABLOG-Tabellen nach angegebenen Zeitraum
+      // vorfiltern, damit später im SQL-Statement bestimmte Tabellen garnicht
+      // erst SELECTed werden müssen.
+      for i := 1 to ALen(aLogFiles) do
+         if TableIsWithinTimeRange(aLogFiles[i, 1], dtRangeFrom, dtRangeUntil) then
+            // DABLOG-Tabelle, die sich bereits im DD befinden müssen über deren
+            // Tabellen-Alias im SQL SELECTed werden
+            // => Prüfen ob der DABLOG-Dateiname in oDDBoundDablogTables vorkommt
+            if oDDBoundDablogTables.CbFindKey({aLogFiles[i, 1]}) then
+               AAdd(aLogTables, Trim(oDDBoundDablogTables:NAME)),
+            else
+               AAdd(aLogTables, cDablogBasePath + aLogFiles[i, 1]),
+            endif,
+         endif,
+      next,
+
+      // SQL-Statement erzeugen
+      nLength := ALen(aLogTables),
+      result  := 'SELECT * FROM (' + CRLF,
+      for i := 1 to nLength do
+         result += Replicate(' ', 2) + 'SELECT * FROM ' +
+                   '"' + aLogTables[i] + '"' + CRLF,
+         result += iif(i = nLength, '', Replicate(' ', 2) + 'UNION ALL' + CRLF),
+      next,
+      result += ') AS DABLOG_COMPLETE' + CRLF +
+                cWhereClause + CRLF +
+                'ORDER BY ' + cOrderByFieldName + ' DESC',
+   else
+      result := '',
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   m_oDablogDDInfoTable := CreateDablogDDInfoTable(),
+   startseq
+      m_cResult := GenerateSQLQuery(m_oDablogDDInfoTable, m_dtRangeFrom, m_dtRangeUntil),
+   always
+      DestroyObject(m_oDablogDDInfoTable),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   m_cResult := '',
+stopseq,
+
+m_cResult
+

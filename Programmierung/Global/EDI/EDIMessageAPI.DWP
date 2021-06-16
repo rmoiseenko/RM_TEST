@@ -1,0 +1,1347 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//   Dieses Programm enthält globale Funktionen für den Umgang mit EDIMSG
+//   Datensätzen (EDI-Nachrichten).
+//
+// Das Präfix EDI steht für "Electronic data interchange"
+//##############################################################################
+//##############################################################################
+
+function _EDI_Message_EDIMSG_WriteStatusAndLogs_Internal(oEDIMSG:O, aNewErrors:A, aNewWarnings:A) ... end,
+function _EDI_Message_CreateContentObject_Internal(nDataFormat:N, nProcessDirection:N) ... end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion liefert den Message-String (Dateiinhalt) des übergebenen
+// EDI-Nachrichten Datensatzes zurück.
+//
+// @result: string - Message-String der EDI-Nachricht
+//******************************************************************************
+function _EDI_Message_EDIMSG_GetMessageString(oDM:O, oEDIMSG:O)
+| oEDIBSP |
+
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDIMSG, false),
+
+   result  := '',
+   oEDIBSP := MyGetTable(oDM, waEDIBSP, 'EDIBSP_GET_MESSAGE_STRING'),
+   oEDIBSP.CbIndexName := 'GUID_STR',
+
+   if oEDIBSP.CbFindKey({oEDIMSG:D_GUID_STR}) then
+      result := oEDIBSP:DATA,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion speichert den übergenen Nachrichteninhalt im EDIBSP-Datensatz,
+// der mit der Nachricht verknüpft ist. Ggf. wird ein neuer EDIBSP-Datensatz
+// angelegt.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_EDIMSG_SetMessageString(oDM:O, oEDIMSG:O, cContent:C)
+|
+   oEDIBSP, bExplicitEdit,
+   cBlobFieldName, cBlobUUID
+|
+
+   // Datenmodul und Tabellen validieren
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDIMSG, true),
+
+   cBlobFieldName := 'DATA',
+
+   oEDIBSP := MyGetTable(oDM, waEDIBSP, ''),
+   oEDIBSP.CbIndexName := 'GUID_STR',
+
+   cBlobUUID := trim(oEDIMSG:D_GUID_STR),
+   if empty(cBlobUUID) or
+      not oEDIBSP.CbFindKey({cBlobUUID}) then
+      cBlobUUID := CreateClassId(),
+      oEDIBSP.CbAppend(),
+      oEDIBSP:GUID_STR := cBlobUUID,
+   else
+      oEDIBSP.CbEdit(),
+   endif,
+
+   // Blob-Daten in Feld speichern
+   if oEDIBSP.CbReplace(cBlobFieldName, cContent) then
+      oEDIBSP.CbPost(),
+
+      // Ggf. die GUID des Blob-Datensatzes in dem EDIMSG-Datensatz aktualisieren
+      if cBlobUUID <> oEDIMSG:D_GUID_STR then
+         bExplicitEdit := not EditModes(oEDIMSG),
+         if bExplicitEdit then
+            oEDIMSG.CbEdit(),
+         endif,
+         oEDIMSG:D_GUID_STR := cBlobUUID,
+         if bExplicitEdit then
+            oEDIMSG.CbPost(),
+         endif,
+      endif,
+   else
+      oEDIBSP.CbCancel(),
+      SetError('Error while loading content to field: ' + cBlobFieldName),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion gibt die im Profil hinterlegte Dateinamenserweiterung zur
+// Nachricht zurück. Ist im Profil keine Dateinamenserweiterung hinterlegt, wird
+// die Standard-Dateinamenserweiterung zurückgegeben.
+//
+// @result: string - Dateinamenserweiterung
+//******************************************************************************
+function _EDI_Message_EDIMSG_GenerateFileExtension(oDM:O, oEDIMSG:O)
+| oEDIPROF, cProfileFileExtension |
+
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDIMSG, false),
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, 'EDIPROF_SEEK'),
+   oEDIPROF.CbIndexName := 'ID',
+
+   SetErrorIf(not oEDIPROF.CbFindKey({oEDIMSG:EDIPROF_ID}), 'EDIPROF record with ID <' + str(oEDIMSG:EDIPROF_ID) + '> does not exist'),
+
+   cProfileFileExtension := trim(oEDIPROF:FILEN_EXT),
+   result := iif(empty(cProfileFileExtension), gl_EDI_DefaultFileExtension, cProfileFileExtension),
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt einen Dateinamen aus dem Muster des übergebenen Profil
+// Datensatzes.
+//
+// @result: string - Dateiname
+//******************************************************************************
+function _EDI_Message_EDIMSG_GenerateFileName(oDM:O, oEDIMSG:O)
+|
+   oEDIPROF,
+   cDefaultVariableToken,
+   cFileNamePattern, cFileExtension, dtNow,
+   i, cCurrentChar, cVariableNameBuffer, nState
+|
+
+   //***************************************************************************
+   // Diese Funktion sanatisiert den übergebenen String, damit dieser in einem
+   // Dateinamen verwendet werden kann.
+   //
+   // @result: string
+   //***************************************************************************
+   function SanatizeStringForFileName(cString:C)
+      result := CharOnly(
+         'abcdefghijklmnopqrstuvwxyzäöüABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ0123456789+-_.',
+         cString
+      ),
+   end,
+
+   //***************************************************************************
+   // Diese Funktion ermittelt den Wert für den übergebenen Variablen-Namen.
+   // @result: string
+   //***************************************************************************
+   function ResolveVariable(oEDIMSG:O, oEDIPROF:O, cVariableName:C, dtNow:DT)
+      case cVariableName
+         of 'PROFILE_MC' ::
+            result := SanatizeStringForFileName(trim(oEDIPROF:MATCHCODE)),
+
+         of 'ID' ::
+            result := str(oEDIMSG:ID),
+
+         of 'BELEGLIST_ID' ::
+            result := str(oEDIMSG:EDIDOCL_ID),
+
+         of 'DATE_CREATED' ::
+            result := FormatDateTime(gl_EDI_DefaultFileNameDateFormat, trunc(oEDIMSG:ERSTELLT)),
+
+         of 'TIME_CREATED' ::
+            result := FormatDateTime(gl_EDI_DefaultFileNameTimeFormat, frac(oEDIMSG:ERSTELLT)),
+
+         of 'DATE_SENT' ::
+            result := FormatDateTime(gl_EDI_DefaultFileNameDateFormat, trunc(dtNow)),
+
+         of 'TIME_SENT' ::
+            result := FormatDateTime(gl_EDI_DefaultFileNameTimeFormat, frac(dtNow)),
+
+         otherwise
+            result := '',
+      endcase,
+   end,
+
+   cDefaultVariableToken := '@',
+
+   result := '',
+   nState := -1,
+   dtNow  := GetAdsServerTime(),
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, 'EDIPROF_SEEK'),
+   oEDIPROF.CbIndexName := 'ID',
+
+   SetErrorIf(not oEDIPROF.CbFindKey({oEDIMSG:EDIPROF_ID}), 'EDIPROF record with ID <' + str(oEDIMSG:EDIPROF_ID) + '> does not exist'),
+
+   cFileNamePattern := oEDIPROF:FILEN_PAT,
+   if empty(cFileNamePattern) then
+      cFileNamePattern := gl_EDI_DefaultFileNamePattern,
+   endif,
+   cFileExtension := EDI_Message_EDIMSG_GenerateFileExtension(oDM, oEDIMSG),
+
+   for i := 1 to Len(cFileNamePattern) do
+      cCurrentChar := SubStr(cFileNamePattern, i, 1),
+      if cCurrentChar == cDefaultVariableToken then
+         if nState = 1 then
+            nState := 2,
+            result += ResolveVariable(oEDIMSG, oEDIPROF, cVariableNameBuffer, dtNow),
+         else
+            nState := 1,
+            cVariableNameBuffer := '',
+         endif,
+      else
+         if nState = 1 then
+            cVariableNameBuffer += cCurrentChar,
+         else
+            result += cCurrentChar,
+         endif,
+      endif,
+   next,
+
+   result += '.' + cFileExtension,
+end,
+
+//******************************************************************************
+// Diese Funktion löscht alle vorhanden Inhouseformats-Datensätze für die EDI-
+// Message mit der übergebenen EDIMSG-ID.
+// Diese Funktion wird beispielsweise genutzt um eine EDI-Message, für die
+// bereits Inhouseformat-Daten vorhanden sind, den Parsing-Prozess erneut
+// durchzuführen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_EDIMSG_DeleteInhouseFormatRecords(oDM:O, nEDIMSGId:N)
+| oEDIHEAD, oEDIPOS |
+
+   oEDIHEAD := MyGetTable(oDM, waEDIHEAD, ''),
+   oEDIHEAD.CbIndexName := 'EDIMSG_ID',
+   oEDIPOS := MyGetTable(oDM, waEDIPOS, ''),
+   oEDIPOS.CbIndexName := 'EDIHEAD_ID',
+
+   oEDIHEAD.CbSetRangeEx({nEDIMSGId}),
+   startseq
+      oEDIHEAD.CbFirst(),
+      while not oEDIHEAD.CbEof do
+         oEDIPOS.CbSetRangeEx({oEDIHEAD:ID}),
+         startseq
+            oEDIPOS.CbFirst(),
+            while not oEDIPOS.CbEof do
+               oEDIPOS.CbDelete(),
+            end,
+         always
+            oEDIPOS.CbCancelRange(),
+         stopseq,
+
+         oEDIHEAD.CbDelete(),
+      end,
+   always
+      oEDIHEAD.CbCancelRange(),
+   stopseq,
+end,
+
+//******************************************************************************
+// TODO: Funktion sollte umgestellt werden auf EDI_Message_*() API oder
+//       umbenannt werden in EDI_Message_EDIMSG_Send().
+//******************************************************************************
+// Diese Funktion versendet eine Nachricht über den mit der Nachricht
+// verknüpften Transportkanal.
+// Wenn alles geklappt hat, dann ist anschließend die Nachricht im Prozessschritt
+// "versendet" und die verbunde Belegliste im Prozessschritt "Nachricht versendet"
+//
+//
+// @result: array - EDI-ProcessResult
+//******************************************************************************
+function _EDI_Message_Send(oDM:O, cScriptName:C, nEDIMSGId:N, oProgressCallback:O)
+| oEDIMSG, oEDIDOCL |
+
+   oDM.CbTransaction_Begin(),
+   startseq
+      oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+      oEDIMSG.CbIndexName := 'ID',
+      SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+
+      oEDIMSG.CbEdit(),
+      oEDIMSG:FILE_TYPE := EDI_Message_EDIMSG_GenerateFileExtension(oDM, oEDIMSG),
+      oEDIMSG:FILE_NAME := EDI_Message_EDIMSG_GenerateFileName(oDM, oEDIMSG),
+      oEDIMSG.CbPost(),
+
+      result := Call(cScriptName, oDM, nEDIMSGId, oProgressCallback),
+      oEDIMSG.CbEdit(),
+      if EDI_ProcessResult_IsSuccess(result) then
+         oEDIMSG:PROC_STEP    := gl_EDI_ProcessStep_EDIMSG_Outbound_Sent,
+         oEDIDOCL             := MyGetTable(oDM, waEDIDOCL, ''),
+         oEDIDOCL.CbIndexName := 'EDIMSG_ID',
+         SetErrorIf(not oEDIDOCL.CbFindKey({nEDIMSGId}), 'EDIDOCL record with EDIMSG_ID <' + str(nEDIMSGId) + '> does not exist'),
+         oEDIDOCL.CbEdit(),
+         oEDIDOCL:PROC_STEP := gl_EDI_ProcessStep_EDIDOCL_MessageSent,
+         oEDIDOCL.CbPost(),
+      endif,
+      EDI_ProcessResult_WriteStatusToTable(result, oEDIMSG),
+      oEDIMSG.CbPost(),
+
+      oDM.CbTransaction_Commit(),
+   always
+      if oDM.CbTransaction_TryRollback() then
+         DbResetDM(oDM),
+      endif,
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (EDIMessage)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// TODO: Diese Funktion muss nach Global\BasicPackage\... ausgelagert werden.
+//******************************************************************************
+// Diese Funktion parst die XML-Datei mit dem übergebenen Dateinamen und befüllt
+// den abstrakten Syntax-Baum (AST).
+//
+// Parameter:
+//   - oAST:
+//       Der abstrakte Syntax-Baum. Dieser muss mit der Funktion
+//       EDI_Edifact_AST_Create() vor der übergabe an diese Funktion
+//       erzeugt werden.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _ParseXMLDocument(cFileName:C)
+|oXMLAttrib, oXMLReader, oXMLElem, oForm, oTree, oNode, oOrgNode,
+ aArr, depth, lstdepth, i|
+
+   //XML-Reader
+   //erzeugt einen Baum aus dem XML-File
+
+   function addAttributsToXMLNode(oXMLElem,aArr)
+     |i|
+     for i := 1 to CollCount(oXMLElem.Attributes) do
+       oXMLAttrib:=CollItem(oXMLElem.Attributes, i),
+       aAdd(aArr,"AttributName"),
+       aAdd(aArr, oXMLAttrib.name),
+       aAdd(aArr,"AttributValue"),
+       aAdd(aArr,  oXMLAttrib.Value),
+     next,
+     result:=aArr,
+   end,
+
+
+   //***************************************************************************
+   // Diese Funktion gibt den Wert des ÃƒÂ¼bergebenen Knotens zurÃƒÂ¼ck.
+   // @result: string
+   //***************************************************************************
+   function XMLTree_NodeValue(oNode:O)
+   | i, aArr |
+
+       result := '',
+       aArr   := StrToArr(oNode.Text),
+       for i := 1 to Alen(aArr) do
+          if aArr[i] == 'Value' then
+             result := aArr[i + 1],
+             break,
+          endif,
+       next,
+   end,
+
+   //XML-Reader instanziieren und XML-Datei ÃƒÂ¶ffnen
+   oXMLReader := CreateObject('TBeXMLReader','BeXMLReader'),
+   oXMLReader.Encoding := 'UTF-8',
+   oXMLReader.FileName := cFileName,
+   oXMLReader.Active   := true,
+
+   //Tree Objekt erzeugen
+   oForm:=CreateObject('TFormEx',, Application),
+   oForm.Position := poDesktopCenter,
+   oForm.Height := 750,
+   oForm.Width := 390,
+   oTree := CreateObject('TTreeViewEx','Tree', oForm, oForm),
+   oTree.align:=alclient,
+
+   oNode:=CollAdd(oTree.Items),
+   oNode.Text:='XMLDokument',
+   oOrgNode:=oNode,
+
+
+   lstdepth:=0,
+
+   while oXMLReader.ReadNextElement  do
+
+     oXMLElem := oXMLReader.CurrElement,
+
+     if oXMLElem.NodeType = XMLELEMTEXT_NODE then
+         aArr:=strToArr(oNode.text),
+         aAdd(aArr,"Value"),
+         aAdd(aArr, oXMLElem.value),
+         oNode.text:=arrtostr(aArr),
+         XMLTree_NodeValue(oNode),
+
+     endif,
+
+     if oXMLElem.NodeType = XMLELEMELEMENT_NODE   then
+         depth:=oXMLElEm.depth+1,
+
+         if depth<lstdepth then
+            for i:=depth to lstdepth    do
+                oNode:=oNode.parent,
+            next,
+         endif,
+
+         if depth=lstdepth then
+            oNode:=oNode.Parent,
+         endif,
+
+         oNode:=oNode.AddChild,
+         aArr:= {"AttributName","Node","AttributValue",oXMLElem.name},
+         aArr:= addAttributsToXMLNode(oXMLElem,aArr),
+         oNode.text:=arrtostr(aArr),
+         lstDepth:=depth,
+
+     endif,
+
+   end,
+
+   //ShowModal(oForm),
+   //DestroyObject(oForm),
+   //oXMLReader.Active := false,
+   DestroyObject(oXMLReader),
+
+   result := oTree,
+end,
+
+//******************************************************************************
+// Diese Funktion gibt das interne Datenmodul der EDIMessage zurück.
+// @result: object - TBeDbGet
+//******************************************************************************
+function _EDI_Message_GetDataModule(oEDIMessage:A)
+   result := KVU_GetAssert(oEDIMessage, 'ediMessage.dataModule'),
+end,
+
+//******************************************************************************
+// Diese Funktion gibt die interne EDIMSG Tabellen-Instanz der EDIMessage zurück.
+// @result: object - TBeRightsTable
+//******************************************************************************
+function _EDI_Message_GetTable(oEDIMessage:A)
+   result := KVU_GetAssert(oEDIMessage, 'ediMessage.edimsgTable'),
+end,
+
+//******************************************************************************
+// Diese Funktion gibt zurück, ob es sich bei der übergebenen EDIMessage um eine
+// Dummy-Message handelt.
+//
+// @result: boolean
+//******************************************************************************
+function _EDI_Message_IsDummy(oEDIMessage:A)
+   result := KVU_Get(oEDIMessage, 'ediMessage.isDummy', false),
+end,
+
+//******************************************************************************
+// Diese Funktion ermittelt das Datenformat zu einer EDIMessage.
+// @result: integer - Datenformat
+//******************************************************************************
+function _EDI_Message_GetDataFormat(oEDIMessage:A)
+| oDM, oEDIMSG, oEDIPROF, nProfileId |
+
+   result := KVU_Get(oEDIMessage, 'ediMessage.dataFormat', 0),
+   if empty(result) then
+      SetErrorIf(EDI_Message_IsDummy(oEDIMessage), 'Property <dataFormat> not available in dummy object unless set explicitly'),
+
+      oEDIMSG    := EDI_Message_GetTable(oEDIMessage),
+      nProfileId := oEDIMSG:EDIPROF_ID,
+      if empty(nProfileId) then
+         SetError('No data format provided for message, message not yet identified'),
+      else
+         oDM      := EDI_Message_GetDataModule(oEDIMessage),
+         oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+         oEDIPROF.CbIndexName := 'ID',
+         SetErrorIf(not oEDIPROF.CbFindKey({nProfileId}), 'EDIPROF record with ID <' + str(nProfileId) + '> does not exist'),
+         result := oEDIPROF:DATA_FMT,
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _EDI_Message_GetMessageStandard(oEDIMessage:A)
+| oEDIMSG |
+
+   result := KVU_Get(oEDIMessage, 'ediMessage.messageStandard', 0),
+   if empty(result) then
+      SetErrorIf(EDI_Message_IsDummy(oEDIMessage), 'Property <messageStandard> not available in dummy object unless set explicitly'),
+
+      oEDIMSG := EDI_Message_GetTable(oEDIMessage),
+      result  := oEDIMSG:STANDARD,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _EDI_Message_GetMessageType(oEDIMessage:A)
+| oEDIMSG |
+
+   result := KVU_Get(oEDIMessage, 'ediMessage.messageType', 0),
+   if empty(result) then
+      SetErrorIf(EDI_Message_IsDummy(oEDIMessage), 'Property <messageType> not available in dummy object unless set explicitly'),
+
+      oEDIMSG := EDI_Message_GetTable(oEDIMessage),
+      result  := oEDIMSG:MSG_TYPE,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liefert das Writer-Objekt zum Schreiben einer Nachricht zurück.
+// @result: object
+//******************************************************************************
+function _EDI_Message_Outbound_GetWriter(oEDIMessage:R, nDataFormat:N:=0)
+   result := KVU_Get(oEDIMessage, 'ediMessage.writer', nil),
+   if empty(result) then
+      nDataFormat := iif(nDataFormat = 0, EDI_Message_GetDataFormat(oEDIMessage), nDataFormat),
+      result      := EDI_Message_CreateContentObject_Internal(nDataFormat, gl_EDI_ProcessDirection_Outbound),
+      KVU_Set(oEDIMessage, 'ediMessage.writer', result),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion liefert das Reader-Objekt zum Lesen einer Nachricht zurück.
+// @result: object
+//******************************************************************************
+function _EDI_Message_Inbound_GetReader(oEDIMessage:R)
+|
+   oDM,
+   nDataFormat,
+   cFilePath, oFile,
+   nMessageStandard, nMessageType, aSchemeAST, cMessageString
+|
+
+   result := KVU_Get(oEDIMessage, 'ediMessage.reader', nil),
+   if empty(result) then
+      nDataFormat := EDI_Message_GetDataFormat(oEDIMessage),
+      result      := EDI_Message_CreateContentObject_Internal(nDataFormat, gl_EDI_ProcessDirection_Inbound),
+
+      case nDataFormat
+         of gl_EDI_DataFormat_XML ::
+            if EDI_Message_IsDummy(oEDIMessage) then
+               cFilePath := KVU_GetAssert(oEDIMessage, 'ediMessage.inbound.dummyFilePath'),
+            else
+               cFilePath := EDI_Core_GetTemporaryFilePath_Internal(),
+               oFile := FOpen(cFilePath, _or(FO_CREATE, FO_WRITE)),
+               startseq
+                  FWrite(oFile, EDI_Message_EDIMSG_GetMessageString(
+                     EDI_Message_GetDataModule(oEDIMessage),
+                     EDI_Message_GetTable(oEDIMessage)
+                  )),
+               always
+                  FClose(oFile),
+               stopseq,
+            endif,
+
+            // TODO:
+            //   Aktueller Workaround, den AST in result wieder zerstören, weil
+            //   Funktion ParseXMLDocument() nocht nicht umgestellt wurde.
+            DestroyObject(result),
+            result := ParseXMLDocument(cFilePath),
+
+         of gl_EDI_DataFormat_Edifact ::
+            aSchemeAST       := {},
+            nMessageStandard := EDI_Message_GetMessageStandard(oEDIMessage),
+            nMessageType     := EDI_Message_GetMessageType(oEDIMessage),
+            if EDI_Message_IsDummy(oEDIMessage) then
+               oDM := gl_oDM,
+               EDI_Edifact_Scheme_Parse(oDM, aSchemeAST, nMessageStandard, nMessageType),
+               cMessageString := EDI_Core_GetFileContent_Internal(KVU_GetAssert(oEDIMessage, 'ediMessage.inbound.dummyFilePath')),
+            else
+               oDM            := EDI_Message_GetDataModule(oEDIMessage),
+               cMessageString := EDI_Message_EDIMSG_GetMessageString(oDM, EDI_Message_GetTable(oEDIMessage)),
+            endif,
+
+            EDI_Edifact_Context_SetByMessageString(nMessageStandard, cMessageString),
+            cMessageString := EDI_Edifact_MessageString_StripUNASegment_Internal(cMessageString),
+            EDI_Edifact_Scheme_Parse(oDM, aSchemeAST, nMessageStandard, nMessageType),
+            EDI_Edifact_AST_ParseMessageString(result, cMessageString, aSchemeAST),
+
+         otherwise
+            SetError('Invalid data format: ' + str(nDataFormat)),
+      endcase,
+
+      KVU_Set(oEDIMessage, 'ediMessage.reader', result),
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _EDI_Message_SetMessageStandard(oEDIMessage:R, nMessageStandard:N)
+   KVU_Set(oEDIMessage, 'ediMessage.messageStandard', nMessageStandard),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function _EDI_Message_SetMessageType(oEDIMessage:R, nMessageType:N)
+   KVU_Set(oEDIMessage, 'ediMessage.messageType', nMessageType),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den Message-Key im EDIMessage-Objekt.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetMessageKey(oEDIMessage:R, cMessageKey:C)
+   KVU_Set(oEDIMessage, 'ediMessage.messageKey', cMessageKey),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den übergebenen Dateinamen im EDIMessage-Objekt. Dieser
+// wird dann beispielsweise beim Erstellen einer Nachricht im Outbound-Prozess
+// als Dateiname herangezogen.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetFileName(oEDIMessage:R, cFileName:C)
+   KVU_Set(oEDIMessage, 'ediMessage.fileName', cFileName),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den übergebenen Standort im EDIMessage-Objekt.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetLocation(oEDIMessage:R, nLocation:N)
+   KVU_Set(oEDIMessage, 'ediMessage.location', nLocation),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt die übergebene Abteilung im EDIMessage-Objekt.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetDepartment(oEDIMessage:R, nDepartment:N)
+   KVU_Set(oEDIMessage, 'ediMessage.department', nDepartment),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt die übergebene Profil-ID im EDIMessage-Objekt.
+// Typischerweise wird diese Funktion dazu genutzt, eine Eingehende Nachricht
+// zu identifizieren.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetProfile(oEDIMessage:R, nEDIPROFId:N)
+   KVU_Set(oEDIMessage, 'ediMessage.profileId', nEDIPROFId),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt die übergebene Partnerkonfigurations-ID im
+// EDIMessage-Objekt.
+// Typischerweise wird diese Funktion dazu genutzt, eine Eingehende Nachricht
+// zu identifizieren.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetPartnerConfiguration(oEDIMessage:R, nEDIPARTId:N)
+   KVU_Set(oEDIMessage, 'ediMessage.partnerConfigurationId', nEDIPARTId),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt das übergebene TestFlag im
+// EDIMessage-Objekt.
+// Typischerweise wird diese Funktion dazu genutzt, eine Eingehende Nachricht
+// zu identifizieren.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_SetTestFlag(oEDIMessage:R, nTestFlag:N)
+   KVU_Set(oEDIMessage, 'ediMessage.TestFlag', nTestFlag),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den Nachrichteninhalt im EDIMessage-Objekt, sofern es
+// sich um das Datenformat "Plaintext" handelt.
+//
+// @result: string - Nachrichteninhalt als String
+//******************************************************************************
+function _EDI_Message_SetContent(oEDIMessage:R, cContent:C)
+   SetErrorIf(
+      KVU_GetAssert(oEDIMessage, 'ediMessage.dataFormat') <> gl_EDI_DataFormat_PlainText,
+      'Message object is not compatible with plain text data format'
+   ),
+
+   KVU_Set(oEDIMessage, 'ediMessage.content', cContent),
+end,
+
+//******************************************************************************
+// Diese Funktion setzt den Nachrichteninhalt im EDIMessage-Objekt, sofern es
+// sich um das Datenformat "Plaintext" handelt.
+//
+// @result: string - Nachrichteninhalt als String
+//******************************************************************************
+function _EDI_Message_SetContentFromFile(oEDIMessage:R, cFilePath:C)
+|
+   oFile, aFilesList, aFileAttributes,
+   cFileName, nFileSize, cContent, nBytesRead
+|
+
+   SetErrorIf(
+      KVU_GetAssert(oEDIMessage, 'ediMessage.dataFormat') <> gl_EDI_DataFormat_PlainText,
+      'Message object is not compatible with plain text data format'
+   ),
+
+   cFileName       := ExtractFileName(cFilePath),
+   aFilesList      := DirArray(ExtractFilePath(cFilePath), cFileName),
+   aFileAttributes := aFilesList[1],
+
+   nFileSize := aFileAttributes[3],
+
+   // Dateigröße prüfen: Wird die maximale Dateigröße (default: 200 MB)
+   // überschritten, darf die Datei nicht verarbeitet werden.
+   SetErrorIf(
+      nFileSize > gl_EDI_InboundTransportMaximumFileSize,
+      'File <' + cFileName + '> exceeds maximum size of ' + EDI_Core_FileSizeToString(gl_EDI_InboundTransportMaximumFileSize)
+   ),
+
+   oFile := FOpen(cFilePath, FO_READ),
+   startseq
+      nBytesRead := FRead(oFile, cContent, oFile.Size),
+      SetErrorIf(nBytesRead <> oFile.Size, 'Failed to read file: ' + cFilePath),
+   always
+      FClose(oFile),
+   stopseq,
+
+   EDI_Message_SetFileName(oEDIMessage, cFileName),
+   KVU_Set(oEDIMessage, 'ediMessage.content',        cContent),
+   KVU_Set(oEDIMessage, 'ediMessage.fileSize',       nFileSize),
+   KVU_Set(oEDIMessage, 'ediMessage.fileChangeDate', FileDateToDateTime(aFileAttributes[2])),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt einen EDIMSG-Datensatz auf Basis der übergebenen
+// Profil-ID und erzeugt je nach Typ das Writer-Objekt.
+//
+// @result: array - EDIMessage
+//******************************************************************************
+function _EDI_Message_Outbound_Create(oDM:O, nEDIPROFId:N)
+|
+   nDataFormat,
+   oEDIPROF, oEDIMSG
+|
+
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, nil, true),
+
+   result := {},
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+   oEDIPROF.CbIndexName := 'ID',
+   SetErrorIf(not oEDIPROF.CbFindkey({nEDIPROFId}), 'EDIPROF record with ID <' + str(nEDIPROFId) + '> does not exist'),
+
+   nDataFormat := oEDIPROF:DATA_FMT,
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbAppend(),
+   oEDIMSG:EDITRCH_ID := oEDIPROF:EDITRCH_ID,
+   oEDIMSG:EDIPROF_ID := oEDIPROF:ID,
+   oEDIMSG:STANDARD   := oEDIPROF:STANDARD,
+   oEDIMSG:MSG_TYPE   := oEDIPROF:MSG_TYPE,
+   oEDIMSG:PROF_MC    := oEDIPROF:MATCHCODE,
+   oEDIMSG:STANDORT   := mStandort,
+   oEDIMSG:ABTEILUNG  := mAbteilung,
+   oEDIMSG:DIRECTION  := gl_EDI_ProcessDirection_Outbound,
+   oEDIMSG:STATUS     := gl_EDI_ProcessStatus_Ok,
+   oEDIMSG:PROCESS    := oEDIPROF:PROCESS,
+   oEDIMSG:TEST       := false,
+   // Prozessschritt mit 0 initialisieren, damit der Zustand
+   // "Nachricht erstellt" explizit gesetzt werden kann.
+   oEDIMSG:PROC_STEP  := gl_EDI_ProcessStep_EDIMSG_Initialized,
+
+   oEDIMSG.CbPost(),
+
+   KVU_Set(result, 'ediMessage.dataFormat',  nDataFormat),
+   KVU_Set(result, 'ediMessage.direction',   gl_EDI_ProcessDirection_Outbound),
+   KVU_Set(result, 'ediMessage.edimsgTable', oEDIMSG),
+   KVU_Set(result, 'ediMessage.dataModule',  oDM),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt ein Dummy-EDIMessage Objekt für den ausgehenden
+// Prozess.
+//
+// @result: array - EDIMessage
+//******************************************************************************
+function _EDI_Message_Outbound_CreateDummy(nProfileId:N)
+| oEDIPROF |
+
+   result := {},
+
+   KVU_Set(result, 'ediMessage.isDummy',   true),
+   KVU_Set(result, 'ediMessage.direction', gl_EDI_ProcessDirection_Outbound),
+   if not empty(nProfileId) then
+      oEDIPROF := BeOpen(waEDIPROF, 'ID'),
+      startseq
+         SetErrorIf(not oEDIPROF.CbFindKey({nProfileId}), 'EDIPROF record with ID <' + str(nProfileId) + '> does not exist'),
+         KVU_Set(result, 'ediMessage.dataFormat', oEDIPROF:DATA_FMT),
+      always
+         BeClose(oEDIPROF),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt einen EDIMSG-Datensatz auf Basis der übergebenen
+// Profil-ID und erzeugt je nach Typ das Reader-Objekt.
+//
+// @result: array - EDIMessage
+//******************************************************************************
+function _EDI_Message_Inbound_Create(oDM:O, nEDITRCHId:N)
+| oEDITRCH, oEDIMSG |
+
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, nil, true),
+
+   result := {},
+
+   oEDITRCH := MyGetTable(oDM, waEDITRCH, ''),
+   oEDITRCH.CbIndexName := 'ID',
+   SetErrorIf(not oEDITRCH.CbFindkey({nEDITRCHId}), 'EDITRCH record with ID <' + str(nEDITRCHId) + '> does not exist'),
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbAppend(),
+   oEDIMSG:EDITRCH_ID := oEDITRCH:ID,
+   oEDIMSG:STANDORT   := mStandort,
+   oEDIMSG:ABTEILUNG  := mAbteilung,
+   oEDIMSG:DIRECTION  := gl_EDI_ProcessDirection_Inbound,
+   oEDIMSG:STATUS     := gl_EDI_ProcessStatus_Ok,
+   oEDIMSG:PROCESS    := true,
+   oEDIMSG:TEST       := false,
+   // Prozessschritt mit 0 initialisieren, damit der Zustand
+   // "Nachricht erstellt" explizit gesetzt werden kann.
+   oEDIMSG:PROC_STEP  := gl_EDI_ProcessStep_EDIMSG_Initialized,
+
+   oEDIMSG.CbPost(),
+
+   KVU_Set(result, 'ediMessage.dataFormat',  gl_EDI_DataFormat_PlainText),
+   KVU_Set(result, 'ediMessage.direction',   gl_EDI_ProcessDirection_Inbound),
+   KVU_Set(result, 'ediMessage.edimsgTable', oEDIMSG),
+   KVU_Set(result, 'ediMessage.dataModule',  oDM),
+end,
+
+//******************************************************************************
+// Diese Funktion erstellt ein Dummy-EDIMessage Objekt für den eingehenden
+// Prozess.
+//
+// @result: array - EDIMessage
+//******************************************************************************
+function _EDI_Message_Inbound_CreateDummy(nProfileId:N:=0, cDummyFilePath:C:='')
+| oEDIPROF |
+
+   result := {},
+
+   KVU_Set(result, 'ediMessage.isDummy',   true),
+   KVU_Set(result, 'ediMessage.direction', gl_EDI_ProcessDirection_Inbound),
+   if not empty(cDummyFilePath) then
+      KVU_Set(result, 'ediMessage.inbound.dummyFilePath', cDummyFilePath),
+   endif,
+   if not empty(nProfileId) then
+      oEDIPROF := BeOpen(waEDIPROF, 'ID'),
+      startseq
+         SetErrorIf(not oEDIPROF.CbFindKey({nProfileId}), 'EDIPROF record with ID <' + str(nProfileId) + '> does not exist'),
+         KVU_Set(result, 'ediMessage.dataFormat',      oEDIPROF:DATA_FMT),
+         KVU_Set(result, 'ediMessage.messageStandard', oEDIPROF:STANDARD),
+         KVU_Set(result, 'ediMessage.messageType',     oEDIPROF:MSG_TYPE),
+      always
+         BeClose(oEDIPROF),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion öffnet die EDI-Nachricht mit der übergebenen EDIMSG-ID.
+// @result: array - EDIMessage
+//******************************************************************************
+function _EDI_Message_Open(oDM:O, nEDIMSGId:N)
+| oEDIMSG, oEDIPROF, nProcessDirection, nDataFormat |
+
+   result := {},
+
+   oEDIMSG := MyGetTable(oDM, waEDIMSG, ''),
+   oEDIMSG.CbIndexname := 'ID',
+
+   SetErrorIf(not oEDIMSG.CbFindKey({nEDIMSGId}), 'EDIMSG record with ID <' + str(nEDIMSGId) + '> does not exist'),
+
+   oEDIPROF := MyGetTable(oDM, waEDIPROF, ''),
+   oEDIPROF.CbIndexname := 'ID',
+
+   nProcessDirection := oEDIMSG:DIRECTION,
+   if oEDIMSG:EDIPROF_ID > 0 then
+      SetErrorIf(not oEDIPROF.CbFindKey({oEDIMSG:EDIPROF_ID}), 'EDIPROF record with ID <' + str(oEDIMSG:EDIPROF_ID) + '> does not exist'),
+      nDataFormat := oEDIPROF:DATA_FMT,
+   else
+      nDataFormat := 0,
+   endif,
+
+   KVU_Set(result, 'ediMessage.dataFormat',  nDataFormat),
+   KVU_Set(result, 'ediMessage.direction',   nProcessDirection),
+   KVU_Set(result, 'ediMessage.edimsgTable', oEDIMSG),
+   KVU_Set(result, 'ediMessage.dataModule',  oDM),
+end,
+
+//******************************************************************************
+// Diese Funktion zerstört je nach Prozessrichtung und Datenformat das Reader-
+// oder Writer-Objekt des übergebenen EDIMessage-Objekts.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_Destroy(oEDIMessage:R)
+
+   //***************************************************************************
+   // Diese Funktion zerstört das übergebene Content-Objekt, sofern dieses nicht
+   // leer ist und vom Typ O - Object ist.
+   //
+   // @result: boolean - übergebenes Content-Objekt war nicht leer Ja/Nein
+   //***************************************************************************
+   function DestroyContentObject(oContentObject:O)
+      | oForm |
+
+      Result := not empty(oContentObject),
+      if ValType(oContentObject) == 'O' and result then
+         oForm := GetOwnerForm(oContentObject),
+         DestroyObject(oContentObject),
+         if not empty(oForm) then
+            DestroyObject(oForm),
+         endif,
+      endif,
+   end,
+
+   if DestroyContentObject(KVU_Get(oEDIMessage, 'ediMessage.writer', nil)) then
+      KVU_Set(oEDIMessage, 'ediMessage.writer', nil),
+   endif,
+
+   if DestroyContentObject(KVU_Get(oEDIMessage, 'ediMessage.reader', nil)) then
+      KVU_Set(oEDIMessage, 'ediMessage.reader', nil),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion schreibt den Nachrichten-Inhalt des Writers in die Datenbank.
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_FlushContentToDatabase(oEDIMessage:A)
+|
+   oDM, oEDIMSG, oEDIBSP, bExplicitEdit,
+   oContentObject, nDataFormat,
+   cBlobFieldName, cBlobUUID
+|
+
+   //***************************************************************************
+   // Diese Funktion ermittelt auf Basis der Processrichtung den Reader bzw.
+   // Writer und gibt diesen zurück.
+   //
+   // @result: object - Reader/Writer
+   //***************************************************************************
+   function EDI_Message_GetContentObject_Internal(oEDIMessage:A)
+   | nProcessDirection |
+
+      nProcessDirection := KVU_GetAssert(oEDIMessage, 'ediMessage.direction'),
+
+      case nProcessDirection
+         of gl_EDI_ProcessDirection_Outbound :: result := KVU_Get(oEDIMessage, 'ediMessage.writer', nil),
+         of gl_EDI_ProcessDirection_Inbound ::  result := KVU_Get(oEDIMessage, 'ediMessage.reader', nil),
+
+         otherwise
+            SetError('Invalid process direction:' + str(nProcessDirection)),
+      endcase,
+   end,
+
+   oDM     := EDI_Message_GetDataModule(oEDIMessage),
+   oEDIMSG := EDI_Message_GetTable(oEDIMessage),
+
+   // Datenmodul und Tabellen validieren
+   EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDIMSG, true),
+
+   cBlobFieldName := 'DATA',
+
+   oEDIBSP := MyGetTable(oDM, waEDIBSP, ''),
+   oEDIBSP.CbIndexName := 'GUID_STR',
+
+   // EDIBSP-Datensatz positionieren oder ggf. neu anlegen
+   cBlobUUID := trim(oEDIMSG:D_GUID_STR),
+   if empty(cBlobUUID) or
+      not oEDIBSP.CbFindKey({cBlobUUID}) then
+      cBlobUUID := CreateClassId(),
+      oEDIBSP.CbAppend(),
+      oEDIBSP:GUID_STR := cBlobUUID,
+   else
+      oEDIBSP.CbEdit(),
+   endif,
+
+   // Je nach Datenformat die Message in das Blob-Feld schreiben
+   oContentObject := EDI_Message_GetContentObject_Internal(oEDIMessage),
+   nDataFormat    := KVU_GetAssert(oEDIMessage, 'ediMessage.dataFormat'),
+   case nDataFormat
+      of gl_EDI_DataFormat_XML ::
+         if oContentObject.UseMemoryWriter then
+            oEDIBSP:DATA := oContentObject.XMLAsString(),
+         else
+            if not LoadFile(oEDIBSP.CbFieldByName(cBlobFieldName), oContentObject.FileName) then
+               oEDIBSP.CbCancel(),
+               SetError('Error while loading file content to field <' + cBlobFieldName + '> : ' + oContentObject.FileName),
+            endif,
+         endif,
+
+      of gl_EDI_DataFormat_EDIFACT ::
+         oEDIBSP:DATA := EDI_Edifact_AST_ComposeMessage(oContentObject),
+
+      of gl_EDI_DataFormat_PlainText ::
+         oEDIBSP:DATA := KVU_GetAssert(oEDIMessage, 'ediMessage.content'),
+
+      otherwise
+         SetError('Invalid data format: ' + str(nDataFormat)),
+   endcase,
+
+   oEDIBSP.CbPost(),
+
+   // Ggf. die UUID des Blob-Datensatzes im EDIMSG-Datensatz aktualisieren
+   if cBlobUUID <> oEDIMSG:D_GUID_STR then
+      bExplicitEdit := not EditModes(oEDIMSG),
+      if bExplicitEdit then
+         oEDIMSG.CbEdit(),
+      endif,
+      oEDIMSG:D_GUID_STR := cBlobUUID,
+      if bExplicitEdit then
+         oEDIMSG.CbPost(),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion speichert die an dem EDIMessage-Objekt vorgenommenen
+// Änderungen ab. Dabei wird geprüft, ob Fehler oder Warnungen protokolliert
+// wurden. Entsprechend wird der Status der Nachricht gesetzt.
+//
+// Parameter:
+//   - oEDIMessage:
+//       EDIMessage Objekt (Enthält u.a. auch das Datenmodul).
+//
+//   - nNewProcessStep:
+//       Definiert den Zustand, in den die Nachricht übergehen soll.
+//       Zustandsübergang nur sofern Status = OK oder Status = WARNING.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_Save(oEDIMessage:A, nNewProcessStep:N:=0)
+|
+   oDM, oEDIMSG, oEDIPROF, oEDIPART,
+   nProcessDirection, nEDIPROFId, nEDIPARTId, cFileName
+|
+
+   //***************************************************************************
+   function ValidateNewProcessStep(nProcessDirection:N, nNewProcessStep:N)
+      case nProcessDirection
+         of gl_EDI_ProcessDirection_Inbound ::
+            SetErrorIf(
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Inbound_Read and
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Inbound_Identified and
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Inbound_Parsed and
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Inbound_Imported,
+               'Invalid EDIMSG process step <' + str(nNewProcessStep) + '> for process direction "Inbound"'
+            ),
+
+         of gl_EDI_ProcessDirection_Outbound ::
+            SetErrorIf(
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Outbound_Created and
+               nNewProcessStep <> gl_EDI_ProcessStep_EDIMSG_Outbound_Sent,
+               'Invalid EDIMSG process step <' + str(nNewProcessStep) + '> for process direction "Outbound"'
+            ),
+
+         otherwise
+            SetError('Invalid process direction:' + str(nProcessDirection)),
+      endcase,
+   end,
+
+   if EDI_Edifact_Context_IsSet() then
+      EDI_Edifact_Context_Clear(),
+   endif,
+
+   if not EDI_Message_IsDummy(oEDIMessage) then
+      oDM     := EDI_Message_GetDataModule(oEDIMessage),
+      oEDIMSG := EDI_Message_GetTable(oEDIMessage),
+
+      EDI_Core_ValidateDataModuleAndTable_Internal(oDM, oEDIMSG, true),
+
+      nProcessDirection := KVU_GetAssert(oEDIMessage, 'ediMessage.direction'),
+
+      oEDIMSG.CbEdit(),
+
+      //------------------------------------------------------------------------
+      // 1. Schritt: Daten in Message schreiben
+
+      // Inhalt des Readers/Writers in die Datenbank schreiben, sofern sich die
+      // Nachricht im ersten Prozesschritt befindet.
+      if oEDIMSG:PROC_STEP = gl_EDI_ProcessStep_EDIMSG_Initialized then
+         if KVU_Find(oEDIMessage, 'ediMessage.content') <> -1 then
+            EDI_Message_FlushContentToDatabase(oEDIMessage),
+         endif,
+
+         if nProcessDirection = gl_EDI_ProcessDirection_Inbound then
+            cFileName := KVU_GetAssert(oEDIMessage, 'ediMessage.fileName'),
+            oEDIMSG:FILE_TYPE := SubStr(ExtractFileExt(cFileName), 2),
+            oEDIMSG:FILE_NAME := cFileName,
+            oEDIMSG:FILE_SIZE := KVU_GetAssert(oEDIMessage, 'ediMessage.fileSize'),
+            oEDIMSG:FILE_AEND := KVU_GetAssert(oEDIMessage, 'ediMessage.fileChangeDate'),
+         endif,
+      endif,
+
+      // Dateinamen und -typ nur im ausgehenden Prozess immer erzeugen oder aus
+      // fileName-Attribut ermitteln.
+      if nProcessDirection = gl_EDI_ProcessDirection_Outbound then
+         cFileName := KVU_Get(oEDIMessage, 'ediMessage.fileName', EDI_Message_EDIMSG_GenerateFileName(oDM, oEDIMSG)),
+         oEDIMSG:FILE_TYPE := SubStr(ExtractFileExt(cFileName), 2),
+         oEDIMSG:FILE_NAME := cFileName,
+      endif,
+
+      // Ggf. Standort und Abteilung setzen
+      oEDIMSG:STANDORT  := KVU_Get(oEDIMessage, 'ediMessage.location', oEDIMSG:STANDORT),
+      oEDIMSG:ABTEILUNG := KVU_Get(oEDIMessage, 'ediMessage.department', oEDIMSG:ABTEILUNG),
+
+      // Ggf. Profilzuordnung setzen
+      if KVU_Find(oEDIMessage, 'ediMessage.profileId') <> -1 then
+         nEDIPROFId := KVU_GetAssert(oEDIMessage, 'ediMessage.profileId'),
+         oEDIPROF   := MyGetTable(oDM, waEDIPROF, ''),
+         oEDIPROF.CbIndexName := 'ID',
+         SetErrorIf(not oEDIPROF.CbFindkey({nEDIPROFId}), 'EDIPROF record with ID <' + str(nEDIPROFId) + '> does not exist'),
+         oEDIMSG:PROF_MC    := trim(oEDIPROF:MATCHCODE),
+         oEDIMSG:PROCESS    := oEDIPROF:PROCESS,
+         oEDIMSG:STANDARD   := oEDIPROF:STANDARD,
+         oEDIMSG:MSG_TYPE   := oEDIPROF:MSG_TYPE,
+         oEDIMSG:EDIPROF_ID := nEDIPROFId,
+      endif,
+
+      // Ggf. Partnerkonfiguration setzen
+      if KVU_Find(oEDIMessage, 'ediMessage.partnerConfigurationId') <> -1 then
+         nEDIPARTId := KVU_GetAssert(oEDIMessage, 'ediMessage.partnerConfigurationId'),
+         oEDIPART   := MyGetTable(oDM, waEDIPART, ''),
+         oEDIPART.CbIndexName := 'ID',
+         SetErrorIf(not oEDIPART.CbFindkey({nEDIPARTId}), 'EDIPART record with ID <' + str(nEDIPARTId) + '> does not exist'),
+         oEDIMSG:EDIPART_ID := nEDIPARTId,
+      endif,
+
+      // Ggf. Message-Key setzen
+      if KVU_Find(oEDIMessage, 'ediMessage.messageKey') <> -1 then
+         oEDIMSG:MSG_KEY := KVU_GetAssert(oEDIMessage, 'ediMessage.messageKey'),
+      endif,
+
+//      // Ggf. TestFlag setzten
+//      if KVU_Find(oEDIMessage, 'ediMessage.TestFlag') <> - 1 then
+//         oEDIMSG:TEST := KVU_GetAssert(oEDIMessage, 'ediMessage.TestFlag'),
+//      endif,
+
+      //------------------------------------------------------------------------
+      // 2. Schritt: Neuen Status setzen
+
+      EDI_Message_EDIMSG_WriteStatusAndLogs_Internal(
+         oEDIMSG,
+         KVU_Get(oEDIMessage, 'ediMessage.newErrors',   {}),
+         KVU_Get(oEDIMessage, 'ediMessage.newWarnings', {})
+      ),
+
+      //------------------------------------------------------------------------
+      // 3. Schritt: Übergang in neuen Prozessschritt
+
+      // Die Nachricht kann nur in den nächsten Prozessschritt übergehen, wenn
+      // kein Fehler aufgetreten ist.
+      if nNewProcessStep <> 0 and
+         (oEDIMSG:STATUS = gl_EDI_ProcessStatus_Ok or
+          oEDIMSG:STATUS = gl_EDI_ProcessStatus_Warning) then
+         // nNewProcessStep in Abhängigkeit von DIRECTION validieren
+         ValidateNewProcessStep(nProcessDirection, nNewProcessStep),
+         oEDIMSG:PROC_STEP := nNewProcessStep,
+      endif,
+
+      oEDIMSG.CbPost(),
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion loggt eine Warnung, welcher durch den Aufruf von
+// EDI_Message_Save() in die Datenbank geschrieben wird.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_LogWarning(oEDIMessage:R, cWarningText:C)
+| aWarnings |
+
+   aWarnings := KVU_Get(oEDIMessage, 'ediMessage.newWarnings', {}),
+   AAdd(aWarnings, cWarningText),
+
+   KVU_Set(oEDIMessage, 'ediMessage.newWarnings', aWarnings),
+end,
+
+//******************************************************************************
+// Diese Funktion loggt einen Fehler, welcher durch den Aufruf von
+// EDI_Message_Save() in die Datenbank geschrieben wird.
+//
+// Parameter:
+//   - oEDIMessage:
+//       EDIMessage Objekt
+//
+//   - uErrorObjectOrErrorText:
+//       Entweder Exception-Objekt (ValType: O)
+//       oder String (ValType: C)
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_LogError(oEDIMessage:R, uErrorObjectOrErrorText:U)
+| aNewErrors, cErrorText |
+
+   if ValType(uErrorObjectOrErrorText) == 'O' then
+      cErrorText := GetErrorText(uErrorObjectOrErrorText),
+   else
+      cErrorText := uErrorObjectOrErrorText,
+   endif,
+
+   aNewErrors := KVU_Get(oEDIMessage, 'ediMessage.newErrors', {}),
+   AAdd(aNewErrors, cErrorText),
+
+   KVU_Set(oEDIMessage, 'ediMessage.newErrors', aNewErrors),
+
+   if EDI_Message_IsDummy(oEDIMessage) then
+      MessageDlg(cErrorText, mtError),
+   endif,
+end,
+
+//******************************************************************************
+// Loggt einen Fehler und speichert die EDI-Nachricht in die Datenbank
+// zurück, ohne den Prozess-Schritt zu verändern.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_LogErrorAndSave(oEDIMessage:R, oErrorObject:O, bUseInternalTransaction:L:=false)
+| oDM |
+
+   EDI_Message_LogError(oEDIMessage, oErrorObject),
+
+   if not EDI_Message_IsDummy(oEDIMessage) then
+      oDM := EDI_Message_GetDataModule(oEDIMessage),
+
+      // Fehler auslösen, sofern die Funktion eine interne Transaktion starten soll
+      // (bUseInternalTransaction = true), aber bereits eine Transaktion auf dem
+      // Datenmodul aktiv ist.
+      SetErrorIf(bUseInternalTransaction and oDM.CbTransaction_Active(), 'Cannot start internal transaction, transaction is already active'),
+
+      if bUseInternalTransaction then
+         oDM.CbTransaction_Begin(),
+      endif,
+      startseq
+         EDI_Message_Save(oEDIMessage),
+
+         if bUseInternalTransaction then
+            oDM.CbTransaction_Commit(),
+         endif,
+      always
+         if bUseInternalTransaction then
+            if oDM.CbTransaction_TryRollback() then
+               DbResetDM(oDM),
+            endif,
+         endif,
+      stopseq,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Funktionen (Internal)
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Diese Funktion schreibt das den übergebenen Status inklusive neuer Fehler-
+// bzw. Warnungs-Meldungen in die EDIMSG-Tabelle.
+//
+// @result: null - keine Rückgabe
+//******************************************************************************
+function _EDI_Message_EDIMSG_WriteStatusAndLogs_Internal(oEDIMSG:O, aNewErrors:A, aNewWarnings:A)
+| i |
+
+   //***************************************************************************
+   function LogStatusMessage(oTable:O, cStatusMessageFieldName:O, cMessage:C)
+      if not empty(cMessage) then
+         cMessage := FormatDateTime('YYYY-MM-DD HH:NN:SS', GetAdsServerTime()) + ': ' + cMessage,
+         oTable.CbReplace(
+            cStatusMessageFieldName,
+            ConcatTrenner(cMessage, AsString(cStatusMessageFieldName, oTable), CRLF)
+         ),
+      endif,
+   end,
+
+   SetErrorIf(not EditModes(oEDIMSG), 'Table <' + oEDIMSG.AliasName + '> must be in edit-mode'),
+
+   oEDIMSG:STATUS := gl_EDI_ProcessStatus_Ok,
+
+   if ALen(aNewWarnings) > 0 then
+      for i := ALen(aNewWarnings) downto 1 do
+         LogStatusMessage(oEDIMSG, 'WARN_MSG', aNewWarnings[i]),
+      next,
+      oEDIMSG:STATUS := gl_EDI_ProcessStatus_Warning,
+   endif,
+
+   if ALen(aNewErrors) > 0 then
+      for i := ALen(aNewErrors) downto 1 do
+         LogStatusMessage(oEDIMSG, 'ERROR_MSG', aNewErrors[i]),
+      next,
+      oEDIMSG:STATUS := gl_EDI_ProcessStatus_Error,
+   endif,
+end,
+
+//******************************************************************************
+// Diese Funktion erzeugt auf Basis des Datenformats und der Prozessrichtung das
+// entsprechende Content-Objekt, und gibt dieses zurück.
+//
+// @result: object - Content-Objekt
+//******************************************************************************
+function _EDI_Message_CreateContentObject_Internal(nDataFormat:N, nProcessDirection:N)
+
+   //***************************************************************************
+   function ThrowInvalidDataFormat(nDataFormat:N)
+      SetError('Invalid content object type: ' + str(nDataFormat)),
+   end,
+
+   //***************************************************************************
+   function ThrowCannotCreateContentObjectForPlainTextDataFormat()
+      SetError('Cannot create content object for data format "PlainText"'),
+   end,
+
+   result := nil,
+
+   case nProcessDirection
+      of gl_EDI_ProcessDirection_Inbound ::
+         case nDataFormat
+            of gl_EDI_DataFormat_XML ::       result := EDI_Edifact_AST_Create(),
+            of gl_EDI_DataFormat_EDIFACT ::   result := EDI_Edifact_AST_Create(),
+            of gl_EDI_DataFormat_PlainText :: ThrowCannotCreateContentObjectForPlainTextDataFormat(),
+
+            otherwise
+               ThrowInvalidDataFormat(nDataFormat),
+         endcase,
+
+      of gl_EDI_ProcessDirection_Outbound ::
+         case nDataFormat
+            of gl_EDI_DataFormat_XML ::       result := CreateObject('TBeXMLWriter'),
+            of gl_EDI_DataFormat_EDIFACT ::   result := EDI_Edifact_AST_Create(),
+            of gl_EDI_DataFormat_PlainText :: ThrowCannotCreateContentObjectForPlainTextDataFormat(),
+
+            otherwise
+               ThrowInvalidDataFormat(nDataFormat),
+         endcase,
+
+      otherwise
+         SetError('Invalid process direction: ' + str(nProcessDirection)),
+   endcase,
+end,
+
