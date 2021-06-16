@@ -4,8 +4,8 @@
 //##############################################################################
 //##############################################################################
 |
-   m_cRepoPath:P1, m_cGitUrl:P2, m_cGitUser:P3, m_cGitToken:P4, m_bIsSSHCommunication:P5,
-   m_cSystemMatchcode:P6, m_cInstanceMatchcode:P7, m_cInstanceType:P8,
+   m_cRepoPath:P1, m_cGitUrl:P2, m_cGitUser:P3, m_cGitToken:P4, m_bIsSSHCommunication:P5, m_cRepoGitPath:P6,
+   m_cSystemMatchcode:P7, m_cInstanceMatchcode:P8, m_cInstanceType:P9,
 
    m_cGitBashPath,
 
@@ -178,7 +178,7 @@ end,
 //******************************************************************************
 function GitClone()
    if m_bIsSSHCommunication then
-      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.RM_TEST:rmoiseenko/RM_TEST.git . "', m_cRepoPath, sw_Hide, true) <> 0 then
+      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.' + m_cSystemMatchcode + ':' + m_cRepoGitPath + ' . "', m_cRepoPath, sw_Hide, true) <> 0 then
          SetError('"git clone" nicht möglich.'),
       endif,
    else
@@ -211,7 +211,7 @@ startseq
       ForceDirectories(m_cRepoPath),
       GitClone(),
    endif,
-   
+
    if empty(m_cInstanceMatchcode) then
       ChangeBranch(lower(m_cInstanceType)),
    else
