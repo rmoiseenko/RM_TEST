@@ -139,19 +139,19 @@ end,
 //******************************************************************************
 function GitCommitAndPush()
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git add *"', m_cRepoPath, sw_SHOW, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git add *"', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git add *" nicht möglich.'),
    endif,
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git commit -m \"automatischer commit vom ' + DateTimeToStr(GetAdsServerTime()) + '\" "', m_cRepoPath, sw_SHOW, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git commit -m \"automatischer commit vom ' + DateTimeToStr(GetAdsServerTime()) + '\" "', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git commit" nicht möglich.'),
    endif,
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git push"', m_cRepoPath, sw_SHOW, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git push"', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git push" nicht möglich.'),
    endif,
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git reset --hard && git clean -fd"', m_cRepoPath, sw_SHOW, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git reset --hard && git clean -fd"', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git reset --hard && git clean -fd" nicht möglich.'),
    endif,
 
