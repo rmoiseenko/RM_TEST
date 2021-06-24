@@ -128,7 +128,6 @@ function ExportBrowser(cBasicPath, bCompleteExport, dChangesSince, nUserNo:N)
          else
             oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
          endif,
-         browse(,oDabBRO),
          oDabBRO.CbFirst(),
          while not oDabBRO.CbEoF do
             i++,
@@ -678,8 +677,12 @@ function GetBrowserPackageString(bCompleteExport, dChangesSince, nUserNo:N)
    startseq
       oDabBRO := BeOpen(waDabBRO),
       startseq
-         oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
-
+         if nUserNo == 0 then
+            oDabBRO.CbSetFilter('USER = ' + str(nUserNo) + ' AND LEFT(BROWSER_ID, 1) = ''@'''),
+         else
+            oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
+         endif,
+         browse(,oDabBRO),
          oDabBRO.CbFirst(),
          while not oDabBRO.CbEoF do
             i++,
