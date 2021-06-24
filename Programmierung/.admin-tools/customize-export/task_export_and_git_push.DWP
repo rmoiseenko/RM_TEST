@@ -187,6 +187,11 @@ function GitClone()
       endif,
 
       if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config http.sslVerify \"false\""', m_cRepoPath, sw_Show, true) <> 0 then
+         SetError('"git config http.sslVerify" nicht möglich.'),
+      endif,
+
+      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config credential.helper \"\""', m_cRepoPath, sw_Show, true) <> 0 then
+         SetError('"git config credential.helper" nicht möglich.'),
       endif,
    endif,
 end,
