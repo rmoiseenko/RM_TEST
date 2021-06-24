@@ -1,9 +1,9 @@
 # RM_TEST
 
-- Zeitpunkt: 18.06.2021 13:58:41
+- Zeitpunkt: 24.06.2021 07:55:58
 
 - Datenbestand: \c:\delphi\datenbestand\leere_installation_7_2\winbe\
-- Dauer: 00:00:11
+- Dauer: 00:00:07
 - git-User: 
 - Instanz Name: 
 - Instanz Typ: PRODUCTION

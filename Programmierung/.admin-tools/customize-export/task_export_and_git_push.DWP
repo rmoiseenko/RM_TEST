@@ -177,9 +177,7 @@ end,
 // @Result: null
 //******************************************************************************
 function GitClone()
-CopyToClipboard('git clone git@git.' + m_cSystemMatchcode + ':' + m_cRepoGitPath + ' . '),
-   if m_bIsSSHCommunication then    meld(m_bIsSSHCommunication),
-
+   if m_bIsSSHCommunication then
       if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.' + m_cSystemMatchcode + ':' + m_cRepoGitPath + ' . "', m_cRepoPath, sw_Hide, true) <> 0 then
          SetError('"git clone" nicht möglich.'),
       endif,
