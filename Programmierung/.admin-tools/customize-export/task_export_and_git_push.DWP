@@ -185,7 +185,7 @@ function GitClone()
       if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone ' + GetGitPushUrl() + ' . "', m_cRepoPath, sw_Hide, true) <> 0 then
          SetError('"git clone" nicht möglich.'),
       endif,
-
+      sleep(200),
       if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config http.sslVerify \"false\""', m_cRepoPath, sw_Show, true) <> 0 then
          SetError('"git config http.sslVerify" nicht möglich.'),
       endif,
