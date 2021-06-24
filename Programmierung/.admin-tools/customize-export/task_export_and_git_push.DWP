@@ -61,12 +61,12 @@ function RemoveAll()
    // Rekrusiver aufruf für jeden gefundenen Unterordner
       for i := 3 to alen(aDirArray) do
          Result := myRemoveDir(cDir + aDirArray[i, 1]),
-         Result := Result and RemoveDir(cDir + aDirArray[i, 1]),
 
          if not Result then
             break,
          endif,
       next,
+      Result := Result and RemoveDir(cDir),
    end,
 
    result := true,
@@ -90,6 +90,14 @@ function RemoveAll()
    endif,
    if DirectoryExists(m_cRepoPath + 'F12-Formulare-ohne-Zuweisung') then
       result := myRemoveDir(m_cRepoPath + 'F12-Formulare-ohne-Zuweisung'),
+   endif,
+
+   if DirectoryExists(m_cRepoPath + 'Standard-Masken') then
+      result := myRemoveDir(m_cRepoPath + 'Standard-Masken'),
+   endif,
+
+   if DirectoryExists(m_cRepoPath + 'Browser') then
+      result := myRemoveDir(m_cRepoPath + 'Browser'),
    endif,
 end,
 
@@ -178,7 +186,7 @@ end,
 //******************************************************************************
 function GitClone()
    if m_bIsSSHCommunication then
-      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.' + m_cSystemMatchcode + ':' + m_cRepoGitPath + ' . "', m_cRepoPath, sw_Hide, true) <> 0 then
+      if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git clone git@git.' + m_cSystemMatchcode + ':' + m_cRepoGitPath + ' . "', m_cRepoPath, sw_Show, true) <> 0 then
          SetError('"git clone" nicht möglich.'),
       endif,
    else
@@ -187,11 +195,11 @@ function GitClone()
       endif,
    endif,
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config http.sslVerify \"false\""', m_cRepoPath, sw_Show, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config http.sslVerify \"false\""', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git config http.sslVerify" nicht möglich.'),
    endif,
 
-   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config credential.helper \"\""', m_cRepoPath, sw_Show, true) <> 0 then
+   if ShellExecute(, 'OPEN', m_cGitBashPath, '-c "git config credential.helper \"\""', m_cRepoPath, sw_Hide, true) <> 0 then
       SetError('"git config credential.helper" nicht möglich.'),
    endif,
 end,

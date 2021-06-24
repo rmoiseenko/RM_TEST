@@ -89,7 +89,7 @@ function ExportMasks(cBasicPath, bCompleteExport, dChangesSince)
    startseq
       oDabFRM := beOpen(waDabFRM),
       startseq
-         ForceDirectories(cBasicPath + 'Masken'),
+         ForceDirectories(cBasicPath + 'Standard-Masken'),
          oDabFRM.CbFilter   := 'not DEFAULT',
          oDabFRM.CbFiltered := true,
          oDabFRM.CbFirst(),
@@ -124,10 +124,11 @@ function ExportBrowser(cBasicPath, bCompleteExport, dChangesSince, nUserNo:N)
       startseq
          ForceDirectories(cBasicPath + 'Browser'),
          if nUserNo == 0 then
-            oDabBRO.CbSetFilter('USER = ' + str(nUserNo) + ' AND BROWSER_ID LIKE ''@%'''),
+            oDabBRO.CbSetFilter('USER = ' + str(nUserNo) + ' AND LEFT(BROWSER_ID, 1) = ''@'''),
          else
             oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
          endif,
+
          oDabBRO.CbFirst(),
          while not oDabBRO.CbEoF do
             i++,
@@ -651,7 +652,7 @@ function GetMaskPackageString(bCompleteExport, dChangesSince)
             if bCompleteExport or oDabFRM:GEAENDERT > dChangesSince then
                ProgressBarUpdate(0, Trim(oDabFRM:MASK_ID), true),
 
-               Result += 'TYPE=STDMASK;FOLDER=Masken;NAME=' + Trim(oDabFRM:BEZ) + ';ID=' + oDabFRM:MASK_ID + crlf,
+               Result += 'TYPE=STDMASK;FOLDER=Standard-Masken;NAME=' + Trim(oDabFRM:BEZ) + ';ID=' + oDabFRM:MASK_ID + crlf,
             endif,
             oDabFRM.CbNext(),
          end,
@@ -682,7 +683,7 @@ function GetBrowserPackageString(bCompleteExport, dChangesSince, nUserNo:N)
          else
             oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
          endif,
-         browse(,oDabBRO),
+
          oDabBRO.CbFirst(),
          while not oDabBRO.CbEoF do
             i++,
