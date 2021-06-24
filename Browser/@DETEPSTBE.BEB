@@ -1,0 +1,291 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.DETQUERY')
+  ShowSelAlways = True
+  Striped = True
+end
+object Col_8: TBeAttr
+  Caption = 'Datum'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'DATUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'DATUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Projekt'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if PRJ_ID > 0 then'#13#10'   cRes := Lookup(w' +
+    'aDABPRJ, '#39'ID'#39', {{ColumnResult}}, '#39'BEZ'#39', iif(BOF(DETEMPTABLE) and' +
+    ' EOF(DETEMPTABLE), '#39#39', '#39'Projekt nicht mehr verf'#252'gbar'#39'))'#13#10'endif,'#13 +
+    #10#13#10'cRes'
+  ColResultBlock = 'PRJ_ID'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PRJ_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 242
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TBeAttr
+  Caption = 'Vorgang'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if VORG_ID > 0 then'#13#10'   cRes := Lookup(' +
+    'waDABPRV, '#39'ID'#39', {{ColumnResult}}, '#39'BEZ'#39', iif(BOF(DETEMPTABLE) an' +
+    'd EOF(DETEMPTABLE), '#39#39', '#39'Vorgang nicht mehr verf'#252'gbar'#39'))'#13#10'endif,' +
+    #13#10#13#10'cRes'
+  ColResultBlock = 'VORG_ID'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'VORG_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 219
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Erstellt am / um'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'ERSTELLT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| bIsAbwesenheit |'#13#10#13#10'// Bei mehr als 13 Stellen handelt es sich' +
+    ' um eine BDE-Buchung mit "Grund"'#13#10'bIsAbwesenheit := At('#39'@BDE@'#39', ' +
+    'AllTrim(ARTNR)) = 1 and Len(AllTrim(ARTNR)) > 13,'#13#10#13#10'// Feld her' +
+    'vorheben, wenn des Buchungsdatum <> dem Tag der Buchung ist'#13#10'// ' +
+    '=> bei Abwesenheiten (Urlaub, Krank) ist das meistens der Fall u' +
+    'nd nichts'#13#10'//    besonderes, deshalb hier auf eine hervorhebung ' +
+    'verzichten'#13#10'iif( not bIsAbwesenheit and Trunc(DETEMPTABLE:ERSTEL' +
+    'LT) <> DETEMPTABLE:DATUM,'#13#10'     GetBeDesignColor(dcbOrange, dcgL' +
+    'evel1),'#13#10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ERSTELLT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 107
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'Menge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', ProjMgtGUI_CalcDisplayValueForQuant' +
+    'ityValue(ColumnResult))'
+  ColResultBlock = 'MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = '// Negative Werte in ROT'#13#10'iif(MENGE < 0, clRed, clNone)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 56
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TBeAttr
+  Caption = 'BDE-Info'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cKey, cRes, cValue |'#13#10#13#10'cRes := '#39#39','#13#10#13#10'cValue := AllTrim(Colum' +
+    'nResult),'#13#10#13#10'// BDE-Abwesenheitsgrund ermitteln (Urlaub, Krankhe' +
+    'it, Berufsschule ...)'#13#10'if At('#39'@BDE@'#39', cValue) = 1 then'#13#10'   // Be' +
+    'i mehr als 13 Stellen handelt es sich um eine BDE-Buchung mit "G' +
+    'rund"'#13#10'   if Len(cValue) > 13 then'#13#10'      cKey := Right(Alltrim(' +
+    'ColumnResult), 1),'#13#10'      if cKey $ '#39'F/K/U/A/B/Z/S/R/G/D/'#39' then'#13 +
+    #10'         cRes := AttribDispMultiVal(102070, Trim(cKey))'#13#10'      ' +
+    'endif'#13#10'   else'#13#10'      // Bei genau 13 Stellen handelt es sich um' +
+    ' eine normale BDE-Buchung'#13#10'      if Len(cValue) = 13 then'#13#10'     ' +
+    '    cRes := GetLangText(15508), // txtTMPersInHouse "Anwesenheit' +
+    '"'#13#10'      endif,'#13#10'   endif,'#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = 'ARTNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 272
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

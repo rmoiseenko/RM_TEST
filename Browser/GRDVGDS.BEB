@@ -1,0 +1,137 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeDBGet.')
+  RowColorBlock = 
+    '|nColor|'#13#10'if DABVGD:REC_ID=0 then'#13#10'   if DABVGD:WorkArea=40 or D' +
+    'ABVGD:WorkArea=54 then'#13#10'      nColor := clYellow,'#13#10'   else'#13#10'    ' +
+    '  nColor := clRed,'#13#10'   endif,'#13#10'else'#13#10'   nColor := clGreen,'#13#10'endi' +
+    'f,'#13#10'nColor'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = '|cRes, obj|'#13#10'obj := GetOwner(BROWSER),'#13#10'obj.CurrDesc'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 337
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Information'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'INFO'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DABVGD'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'INFO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 127
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Priorit'#228't'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'PRIORI'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DABVGD'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PRIORI'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 72
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

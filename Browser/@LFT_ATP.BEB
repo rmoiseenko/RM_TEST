@@ -1,0 +1,193 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TApplication.'
+    'TFormEx.')
+end
+object Col_3: TBeAttr
+  Caption = 'Liefertermin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'LIEFER_TERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'LIEFERTERMINE_ATP'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '// bei Verz'#246'gerung rot hervorheben'#13#10'iif(PUFFER < 0, clRed, clGre' +
+    'en)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LIEFER_TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Zeilenart'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10#13#10'case ColumnResult'#13#10'   of '#39'T'#39' :: cRes :=' +
+    ' '#39'Teil-Lieferung'#39','#13#10'   of '#39'K'#39' :: cRes := '#39'Komplett-Lieferung'#39','#13#10 +
+    '   of '#39'X'#39' :: cRes := '#39'kein Liefertermin f'#252'r diese Menge verf'#252'gba' +
+    'r'#39','#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'ZEILEN_ART'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'LIEFERTERMINE_ATP'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nRes |'#13#10#13#10'nRes := clNone,'#13#10#13#10'if ColumnResult = '#39'X'#39' then'#13#10'   nR' +
+    'es := clRed,'#13#10'endif,'#13#10#13#10'nRes'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZEILEN_ART'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 240
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Verz'#246'gerung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(ZEILEN_ART $ '#39'KT'#39','#13#10'    iif(empty(ColumnResult),'#13#10'        '#39'k' +
+    'eine'#39','#13#10'        Str(ColumnResult * -1) + '#39' Kal.Tage'#39'),'#13#10'    '#39#39')'
+  ColResultBlock = 'PUFFER'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'LIEFERTERMINE_ATP'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '// bei Verz'#246'gerung rot hervorheben'#13#10'iif(PUFFER < 0, clRed, clGre' +
+    'en)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PUFFER'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 171
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TBeAttr
+  Caption = 'Menge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'LIEFERTERMINE_ATP'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '// bei Verz'#246'gerung oder "kein Liefertermin" die Menge rot hervor' +
+    'heben'#13#10'iif(PUFFER < 0 or ZEILEN_ART = '#39'X'#39', clRed, clGreen)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 83
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

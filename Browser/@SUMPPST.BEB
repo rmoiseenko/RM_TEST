@@ -1,0 +1,449 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.SUMQUERY')
+  RowColorBlock = 
+    '| nColor |'#13#10'nColor := clNone,'#13#10'case SUMTABLE:ZEILEN_TYP'#13#10'   of '#39 +
+    'S'#39' :: nColor := clNone,'#13#10'   of '#39'T'#39' :: nColor := GetBeDesignColor' +
+    '(dcbCyan, dcgLevel1),'#13#10'   of '#39'W'#39' :: nColor := GetBeDesignColor(d' +
+    'cbCyan, dcgLevel3),'#13#10'endcase,'#13#10'nColor'
+  ShowSelAlways = True
+end
+object Col_0: TBeAttr
+  Caption = 'Datum'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := '#39#39',' +
+    #13#10'   of '#39'T'#39' :: cRes := ColumnResult,'#13#10'   of '#39'W'#39' :: cRes := '#39'KW.'#39 +
+    ' + KW(ColumnResult),'#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'DATUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if not empty(Self.ColumnFont) then'#13#10'   if ZEILEN_TYP = '#39'W'#39' then'#13 +
+    #10'      Self.ColumnFont.Style := fsBold,'#13#10'   else'#13#10'      Self.Col' +
+    'umnFont.Style := 0,'#13#10'   endif,'#13#10'endif,'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'DATUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'Tag'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'if ZEILEN_TYP = '#39'T'#39' then'#13#10'   case ColumnR' +
+    'esult'#13#10'      of 2 :: cRes := '#39'Mo'#39','#13#10'      of 3 :: cRes := '#39'Di'#39','#13 +
+    #10'      of 4 :: cRes := '#39'Mi'#39','#13#10'      of 5 :: cRes := '#39'Do'#39','#13#10'     ' +
+    ' of 6 :: cRes := '#39'Fr'#39','#13#10'      of 0 :: cRes := '#39'Sa'#39','#13#10'      of 1 ' +
+    ':: cRes := '#39'So'#39','#13#10'   endcase,'#13#10'endif,'#13#10'cRes'
+  ColResultBlock = 'DOW(DATUM)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 26
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Res.Typ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := Col' +
+    'umnResult,'#13#10'   of '#39'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := '#39#39','#13#10 +
+    'endcase,'#13#10'cRes'
+  ColResultBlock = 'RES_TYP'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RES_TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 44
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Person'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' ::'#13#10'      case' +
+    ' RES_TYP'#13#10'         of '#39'M'#39' :: cRes := LookUp(waDab262, '#39'DAB263'#39', ' +
+    '{{ColumnResult}}, '#39'AllTrim(NAME) + " (" + Str(PERSNR) + ")"'#39', '#39'?' +
+    #39'),'#13#10'         of '#39'R'#39' :: cRes := LookUp(waDab330, '#39'ID'#39',     {{Col' +
+    'umnResult}}, '#39'AllTrim(BEZ)  + " (" + Str(ID)     + ")"'#39', '#39'?'#39'),'#13#10 +
+    '      endcase,'#13#10'   of '#39'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := '#39 +
+    #39','#13#10'endcase,'#13#10'cRes'
+  ColResultBlock = 'PERSNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PERSNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 125
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'Anwesenheit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := Pro' +
+    'jMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult),'#13#10'   of '#39 +
+    'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := ProjMgtGUI_CalcDisplayVa' +
+    'lueForQuantityValue(ColumnResult),'#13#10'endcase,'#13#10'cRes'
+  ColResultBlock = 'SUMME_ANWESENHEITEN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if not empty(Self.ColumnFont) then'#13#10'   if ZEILEN_TYP = '#39'W'#39' then'#13 +
+    #10'      Self.ColumnFont.Style := fsBold,'#13#10'   else'#13#10'      Self.Col' +
+    'umnFont.Style := 0,'#13#10'   endif,'#13#10'endif,'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SUMME_ANWESENHEITEN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TBeAttr
+  Caption = 'Abwesenheit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := Pro' +
+    'jMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult),'#13#10'   of '#39 +
+    'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := ProjMgtGUI_CalcDisplayVa' +
+    'lueForQuantityValue(ColumnResult),'#13#10'endcase,'#13#10'cRes'
+  ColResultBlock = 'SUMME_ABWESENHEITEN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if not empty(Self.ColumnFont) then'#13#10'   if ZEILEN_TYP = '#39'W'#39' then'#13 +
+    #10'      Self.ColumnFont.Style := fsBold,'#13#10'   else'#13#10'      Self.Col' +
+    'umnFont.Style := 0,'#13#10'   endif,'#13#10'endif,'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SUMME_ABWESENHEITEN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TBeAttr
+  Caption = 'Projektzeit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := Pro' +
+    'jMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult),'#13#10'   of '#39 +
+    'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := ProjMgtGUI_CalcDisplayVa' +
+    'lueForQuantityValue(ColumnResult),'#13#10'endcase,'#13#10'cRes'
+  ColResultBlock = 'SUMME_PROJEKTZEITEN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if not empty(Self.ColumnFont) then'#13#10'   if ZEILEN_TYP = '#39'W'#39' then'#13 +
+    #10'      Self.ColumnFont.Style := fsBold,'#13#10'   else'#13#10'      Self.Col' +
+    'umnFont.Style := 0,'#13#10'   endif,'#13#10'endif,'#13#10#13#10'// Negative Werte in R' +
+    'OT'#13#10'iif(SUMME_PROJEKTZEITEN  < 0, clRed, clNone)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SUMME_PROJEKTZEITEN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Differenz'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'S'#39' :: cRes := Pro' +
+    'jMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult),'#13#10'   of '#39 +
+    'T'#39' :: cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := ProjMgtGUI_CalcDisplayVa' +
+    'lueForQuantityValue(ColumnResult),'#13#10'endcase,'#13#10'cRes'
+  ColResultBlock = 'DIFFERENZ'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10#13#10'if not empty(Self.ColumnFont)' +
+    ' then'#13#10'   if ZEILEN_TYP = '#39'W'#39' then'#13#10'      Self.ColumnFont.Style ' +
+    ':= fsBold,'#13#10'   else'#13#10'      Self.ColumnFont.Style := 0,'#13#10'   endif' +
+    ','#13#10'endif,'#13#10#13#10'// Positive Werte in GR'#220'N, negative in ROT'#13#10'if DIFF' +
+    'ERENZ > 0 then'#13#10'   nColor := clGreen,'#13#10'else if DIFFERENZ < 0 the' +
+    'n'#13#10'   nColor := clRed,'#13#10'endif,'#13#10'endif,'#13#10#13#10'nColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'DIFFERENZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = 'Abwesenheits-Info'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', ProjMgmtGUI_AbsenseTypeDisplayValue' +
+    '(ColumnResult))'
+  ColResultBlock = 'ABWESENHEITEN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ABWESENHEITEN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 400
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

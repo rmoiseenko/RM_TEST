@@ -1,0 +1,108 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormForecastSubInfo.mem_ForeCast')
+  SelComplLines = True
+  ShowSelAlways = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Vertreter'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'FloatToStr(VTNR) + " " + Lookup(16,1,{{VTNR}},"Alltrim(MATCHCODE' +
+    ')","")'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 110
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+  Fixed = True
+end
+object Col_1: TbeAttr
+  Caption = 'Menge'
+  CaptionBlock = 
+    '|oOwner|'#13#10'oOwner := GetOwner(BROWSER),'#13#10'"KW."+KW(oOwner.StartDat' +
+    'e+self.ReplicIndex*7)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '|nSoll, nIst|'#13#10'nSoll := AsVariant("MENGE_"+FloatToStr(self.Repli' +
+    'cIndex)),'#13#10'nIst  := AsVariant("MENGEIST_"+FloatToStr(self.Replic' +
+    'Index)),'#13#10'iif( not Empty(nSoll) or not Empty(nIst),'#13#10'     FloatT' +
+    'oStr(nSoll) + '#39'  ('#39' + iif(nIst-nSoll>0,'#39'+'#39','#39#39')+FloatToStr(nIst-n' +
+    'Soll) + '#39')'#39', "" )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'MEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '|nSoll, nIst|'#13#10'nSoll := AsVariant("MENGE_"+FloatToStr(self.Repli' +
+    'cIndex)),'#13#10'nIst  := AsVariant("MENGEIST_"+FloatToStr(self.Replic' +
+    'Index)),'#13#10'iif( not Empty(nIst) or not Empty(nSoll),'#13#10'     iif( n' +
+    'Ist < nSoll, RGB(255,230,230),'#13#10'          iif( nIst = nSoll, RGB' +
+    '(255,255,230), RGB(230,255,230))),clWindow)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE_0'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 74
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

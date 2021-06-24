@@ -1,0 +1,246 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormTurnOver.MemTable')
+  SelComplLines = True
+  ShowSelAlways = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Monat'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  ColResultBlock = 
+    '// Spalte wird immer als String behandelt, damit alles identisch' +
+    ' exportiert werden kann'#13#10'iif( MONAT = 13, "Summe",'#13#10'  iif( MONAT' +
+    ' = 14, "%",'#13#10'    iif( MONAT = 15, "VJ-Zeitraum",'#13#10'         CMont' +
+    'h(EncodeDate(Year(Date()), MONAT, 1)) )))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMTABLE'
+  ForeColor = 5855577
+  BackColor = 536870911
+  BackColorBlock = 'clBtnFace'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MONAT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+  Fixed = True
+end
+object Col_1: TbeAttr
+  Caption = 'Menge'
+  CaptionBlock = 
+    '| cRes, dStartDate, nYears |'#13#10#13#10'nYears := 5 - Self.ReplicIndex,'#13 +
+    #10'//*** Anfangs-Zeitpunkt berechnen'#13#10'if DabPar:GJ_BEGINN = 0 then' +
+    #13#10'  dStartDate := BoY( Date() )'#13#10'else'#13#10'  dStartDate := BoM( DabP' +
+    'ar:GJ_BEGINN ),'#13#10'endif,'#13#10'dStartDate := BoM( dStartDate - 365 * (' +
+    'nYears-1) ),'#13#10'if Month(dStartDate) = 1 then'#13#10'   cRes := GetLangT' +
+    'extEx(4711, {FormatDateTime('#39'yy'#39',dStartDate)})'#13#10'else'#13#10'   cRes :=' +
+    ' GetLangTextEx(4711, {FormatDateTime('#39'yy'#39',dStartDate) + '#39'/'#39' + Fo' +
+    'rmatDateTime('#39'yy'#39',dStartDate+365)})'#13#10'endif,'#13#10#13#10'cRes'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'FormatQuantity(ColumnResult, 0)'
+  ColResultBlock = 
+    '| oObj |'#13#10#13#10'oObj         := GetOwner(BROWSER),'#13#10'self.visible := ' +
+    'self.ReplicIndex >= 5 - oObj.YearCount,'#13#10#13#10'AsVariant('#39'MENGE'#39' + F' +
+    'loatToStr(Self.ReplicIndex))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'function GetColorForColumn(nColumn)  '#13#10'   if Mod(nColumn, 2) = 0' +
+    ' then'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel2),'#13#10'  ' +
+    ' else'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel1),'#13#10'  ' +
+    ' endif,'#13#10'end,'#13#10#13#10'iif( MONAT >= 13,'#13#10'     clNone,'#13#10'     GetColorF' +
+    'orColumn(Self.ReplicIndex))'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE0'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 80
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Umsatz'
+  CaptionBlock = 
+    '| cRes, dStartDate, nYears |'#13#10'nYears := 5 - Self.ReplicIndex,'#13#10'/' +
+    '/*** Anfangs-Zeitpunkt berechnen'#13#10'if DabPar:GJ_BEGINN = 0 then'#13#10 +
+    '  dStartDate := BoY( Date() )'#13#10'else'#13#10'  dStartDate := BoM( DabPar' +
+    ':GJ_BEGINN ),'#13#10'endif,'#13#10'dStartDate := BoM( dStartDate - 365 * (nY' +
+    'ears-1) ),'#13#10'if Month(dStartDate) = 1 then'#13#10'   cRes := GetLangTex' +
+    'tEx(4712, {FormatDateTime('#39'yy'#39',dStartDate)})'#13#10'else'#13#10'   cRes := G' +
+    'etLangTextEx(4712, {FormatDateTime('#39'yy'#39',dStartDate) + '#39'/'#39' + Form' +
+    'atDateTime('#39'yy'#39',dStartDate+365)})'#13#10'endif,'#13#10'cRes'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( MONAT < 14 or MONAT = 15,'#13#10'     FormatCurrencyAmount(Column' +
+    'Result, false, true, DABPAR:STDWAE_NR, 0),'#13#10'     FormatQuantity(' +
+    'ColumnResult, 1, true) + "% z.VJ" + iif(self.ReplicIndex = 4, "Z' +
+    'R", "") )'
+  ColResultBlock = 
+    '| nSum, oObj |'#13#10#13#10'oObj         := GetOwner(BROWSER),'#13#10'Self.Visib' +
+    'le := Self.ReplicIndex >= 5 - oObj.YearCount,'#13#10#13#10'nSum := AsVaria' +
+    'nt("UMSATZ" + FloatToStr(Self.ReplicIndex)),'#13#10'nSum := iif( Empty' +
+    '(nSum), 0, nSum ),'#13#10#13#10'nSum'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'function GetColorForColumn(nColumn)'#13#10'   if Mod(nColumn, 2) = 0 t' +
+    'hen'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel2),'#13#10'   e' +
+    'lse'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel1),'#13#10'   e' +
+    'ndif,'#13#10'end,'#13#10#13#10#13#10'iif( MONAT >= 13,'#13#10'     clNone,'#13#10'     GetColorF' +
+    'orColumn(Self.ReplicIndex))'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'UMSATZ0'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 88
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Marge'
+  CaptionBlock = 
+    '| cRes, dStartDate, nYears |'#13#10'nYears := 5 - Self.ReplicIndex,'#13#10'/' +
+    '/*** Anfangs-Zeitpunkt berechnen'#13#10'if DabPar:GJ_BEGINN = 0 then'#13#10 +
+    '  dStartDate := BoY( Date() )'#13#10'else'#13#10'  dStartDate := BoM( DabPar' +
+    ':GJ_BEGINN ),'#13#10'endif,'#13#10'dStartDate := BoM( dStartDate - 365 * (nY' +
+    'ears-1) ),'#13#10'if Month(dStartDate) = 1 then'#13#10'   cRes := GetLangTex' +
+    'tEx(4713, {FormatDateTime('#39'yy'#39',dStartDate)})'#13#10'else'#13#10'   cRes := G' +
+    'etLangTextEx(4713, {FormatDateTime('#39'yy'#39',dStartDate) + '#39'/'#39' + Form' +
+    'atDateTime('#39'yy'#39',dStartDate+365)})'#13#10' endif,'#13#10' cRes'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( MONAT < 14 or MONAT = 15,'#13#10'     FormatCurrencyAmount(Column' +
+    'Result, false, true, DABPAR:STDWAE_NR, 0),'#13#10'     FormatQuantity(' +
+    'ColumnResult, 1, true) + "%" )'
+  ColResultBlock = 
+    '| nSum, oObj |'#13#10#13#10'oObj         := GetOwner(BROWSER),'#13#10'Self.visib' +
+    'le := Self.ReplicIndex >= 5 - oObj.YearCount,'#13#10#13#10'nSum := AsVaria' +
+    'nt("MARGE" + FloatToStr(Self.ReplicIndex)),'#13#10'nSum := iif( Empty(' +
+    'nSum), 0, nSum ),'#13#10'nSum'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'function GetColorForColumn(nColumn)'#13#10'   if Mod(nColumn, 2) = 0 t' +
+    'hen'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel2),'#13#10'   e' +
+    'lse'#13#10'      Result := GetBeDesignColor(dcbCyan, dcgLevel1),'#13#10'   e' +
+    'ndif,'#13#10'end,'#13#10#13#10'iif( MONAT >= 13,'#13#10'     clNone,'#13#10'     GetColorFor' +
+    'Column(Self.ReplicIndex))'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MARGE0'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 88
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

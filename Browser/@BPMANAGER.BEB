@@ -1,0 +1,236 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.MEM_PACKAGES')
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+end
+object Col_1: TBeAttr
+  Caption = 'package name'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'package_name'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'BEMEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'package_name'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 241
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TBeAttr
+  Caption = 'install folder'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'be_base_folder'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'BEMEMTABLE'
+  ForeColor = 12566463
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'be_base_folder'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 215
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'installed version'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'installed_version'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'BEMEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'installed_version'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 107
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'installed at'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'install_datetime'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'BEMEMTABLE'
+  ForeColor = 12566463
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'install_datetime'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 130
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'update available'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39'?'#39','#13#10#13#10'case true'#13#10'  of not empty(error)    ' +
+    '     :: cRes := error,'#13#10'  of empty(update_available)  :: cRes :=' +
+    ' '#39#39','#13#10'  of update_available = '#39'U'#39'   :: cRes := '#39'up-to-date'#39','#13#10'  ' +
+    'of update_available = '#39'Y'#39'   :: cRes := latest_version,'#13#10'  of upd' +
+    'ate_available = '#39'O'#39'   :: cRes := '#39'local newer ! '#39' + RTrim(latest' +
+    '_version),'#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'update_available'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'BEMEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10#13#10'case true'#13#10'  of not empty(err' +
+    'or)         :: nColor := clWhite,'#13#10'  of update_available = '#39'O'#39'  ' +
+    ' :: nColor := clWhite,'#13#10'endcase,'#13#10#13#10'nColor'
+  BackColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10#13#10'case true'#13#10'  of not empty(err' +
+    'or)         :: nColor := 8929,     // entspricht be 7 = beSkinCo' +
+    'lor(clarRed, clarAccent2) '#13#10'  of update_available = '#39'Y'#39'   :: nCo' +
+    'lor := 446717,   // entspricht be 7 = beSkinColor(clarYellow, cl' +
+    'arAccent5)'#13#10'  of update_available = '#39'O'#39'   :: nColor := 8027648, ' +
+    ' // entspricht be 7 = beSkinColor(clarTeal, clarAccent1)'#13#10'endcas' +
+    'e,'#13#10#13#10'nColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'update_available'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 154
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

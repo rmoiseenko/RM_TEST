@@ -1,0 +1,152 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeArrayGridPanel.pnMemSelGrd_')
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_2: TbeAttr
+  Caption = 'Stufe'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| nStufe |'#13#10'nStufe:= DbRecNo(),'#13#10'If (nStufe = 0) and (DbState() ' +
+    '= dsInsert) then'#13#10'   nStufe:= LastRec() + 1'#13#10'EndIf,'#13#10'FormatFloat' +
+    '('#39'###'#39', nStufe)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = -2147483630
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 38
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = 'Dauer (Jahre) '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'Str(MemArray:Jahre) + '#39' '#39
+  FooterBlock = 
+    '| aRes, oParent, oDfGAb, aGAbTab, nSumme, i |'#13#10'aRes   := '#39#39','#13#10'oP' +
+    'arent:= GetParent(Browser),'#13#10'oDfGAb := oParent.DS_MainTable.Data' +
+    'Set,'#13#10'If !Empty(oDfGAb) and oDfGAb:GAb_Degr then'#13#10'   aGAbTab:= S' +
+    'trToArr(oDfGAb:GAb_Tab),'#13#10'   nSumme := 0,'#13#10'   For i:= 1 to ALen(' +
+    'aGAbTab) do'#13#10'       nSumme += aGAbTab[i, 1]'#13#10'   Next,'#13#10'   aRes:=' +
+    ' FormatFloat('#39'#,##0'#39', nSumme)'#13#10'EndIf,'#13#10'aRes + '#39' '#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'JAHRE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = #39'###'#39
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 101
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'AfA-Prozent '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'FormatFloat('#39'#,##0.00'#39', Proz) + '#39' % '#39
+  FooterBlock = 
+    '| aRes, oParent, oDfGAb, aGAbTab, nSumme, i |'#13#10'aRes   := '#39#39','#13#10'oP' +
+    'arent:= GetParent(Browser),'#13#10'oDfGAb := oParent.DS_MainTable.Data' +
+    'Set,'#13#10'If !Empty(oDfGAb) and oDfGAb:GAb_Degr then'#13#10'   aGAbTab:= S' +
+    'trToArr(oDfGAb:GAb_Tab),'#13#10'   nSumme := 0,'#13#10'   For i:= 1 to ALen(' +
+    'aGAbTab) do'#13#10'       nSumme += Round(aGAbTab[i, 1] * aGAbTab[i, 2' +
+    '], 2)'#13#10'   Next,'#13#10'   aRes:= FormatFloat('#39'#,##0.00'#39', nSumme)'#13#10'EndI' +
+    'f,'#13#10'aRes + '#39' % '#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PROZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = #39'###.##'#39
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 91
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

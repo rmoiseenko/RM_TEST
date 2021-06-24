@@ -1,0 +1,252 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormSchedulerEventDialog.MEMTRM')
+  SelComplLines = True
+  ShowSelAlways = True
+  StripeColor1 = 16775137
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_2: TbeAttr
+  Caption = 'Name'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'AllTrim(ColumnResult)'
+  ColResultBlock = 'ITEM_DESC'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ITEM_DESC'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    '| nImageIdx |'#13#10'// Unterscheiden Zwischen Teilnehmer, die Mitarbe' +
+    'iter, Ressource oder Kontakte sind'#13#10'nImageIdx := -1,'#13#10#13#10'case TEI' +
+    'LN_WA'#13#10'  of 40 :: nImageIdx := 534, // Mitarbeiter'#13#10'  of 54 :: n' +
+    'ImageIdx := 332, // Ressourcen'#13#10'  of 38 :: nImageIdx := 214, // ' +
+    'Kontakte'#13#10'endcase,'#13#10#13#10'nImageIdx'
+  Band = 0
+  BandSize = 1
+  BandWidth = 250
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TbeAttr
+  Caption = 'Matchcode'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult[3]'
+  ColResultBlock = 
+    '| cMatchCode, aRes, cKontaktTyp, nPersnr, nWorkarea, nIndex |'#13#10#13 +
+    #10'cKontaktTyp := '#39#39','#13#10'nPersnr     := 0,'#13#10'cMatchCode  := '#39#39','#13#10'// W' +
+    'enn der Teilnehmer eine Kontaktperson ist, dann den Kunden- / Li' +
+    'ef. / Vertreter-Matchcode anzeigen'#13#10'if TEILN_WA = 38 then'#13#10#13#10'  c' +
+    'MatchCode := '#39'???'#39','#13#10'  // Typ des Kontakts und Persnr'#13#10'  aRes   ' +
+    '    := lookup(38, '#39'DAB007'#39', {{TEILN_ID}}, '#39'{TYP, PERSNR}'#39', '#39'{"",' +
+    ' 0}'#39'),'#13#10#13#10'  cKontaktTyp := aRes[1],'#13#10'  nPersnr     := aRes[2],'#13#10 +
+    #13#10'  nWorkarea   := -1,'#13#10'  // Master-Workarea'#13#10'  case cKontaktTyp' +
+    #13#10'    of '#39'K'#39' :: nWorkarea := 1,'#13#10'              nIndex    := 3   ' +
+    '// '#39'KDNR'#39#13#10'    of '#39'Z'#39' :: nWorkarea := 5,'#13#10'              nIndex  ' +
+    '  := 3   // '#39'LINR'#39#13#10'    of '#39'V'#39' :: nWorkarea := 16,'#13#10'            ' +
+    '  nIndex    := 1   // '#39'STR(VTNR,8)'#39#13#10'  endcase,'#13#10#13#10'  if nWorkare' +
+    'a <> -1 then'#13#10'    cMatchCode := lookup(nWorkarea, nIndex, {{nPer' +
+    'snr}}, '#39'MATCHCODE'#39', '#39'???'#39'), // Str(nWorkarea),'#13#10'  endif,'#13#10#13#10'endi' +
+    'f,'#13#10#13#10'{cKontaktTyp, nPersnr, cMatchCode}'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ITEM_DESC'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    '| cMasterTyp, nImageIdx |'#13#10#13#10'cMasterTyp := ColumnResult[1],'#13#10'nIm' +
+    'ageIdx  := -1,'#13#10#13#10'case cMasterTyp'#13#10'  of '#39'K'#39' :: nImageIdx  := 328' +
+    ','#13#10'  of '#39'Z'#39' :: nImageIdx  := 332,'#13#10'  of '#39'V'#39' :: nImageIdx  := 3,'#13 +
+    #10'endcase,'#13#10#13#10'nImageIdx'
+  Band = 1
+  BandSize = 1
+  BandWidth = 250
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = 'Rolle'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'AttribDispVal(SELF.BeAttr.AttribID, ColumnResult)'
+  ColResultBlock = 'ROLLE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ROLLE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = 102039
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 110
+  Template = 'TdagBeCombo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Anwesenheit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'AttribDispVal(SELF.BeAttr.AttribID, ColumnResult)'
+  ColResultBlock = 'ANWESHEIT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ANWESHEIT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = 102040
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 110
+  Template = 'TdagBeCombo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'R'#252'ckmeldung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'AttribDispVal(SELF.BeAttr.AttribID, Str(ColumnResult))'
+  ColResultBlock = 'RESP_STAT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RESP_STAT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = 102041
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 110
+  Template = 'TdagBeCombo'
+  Expanded = False
+end

@@ -1,0 +1,135 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TApplication.'
+    'TBeDBGet.')
+end
+object Col_0: TBeAttr
+  Caption = 'Sachmerkmalleiste'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif(Empty(ID), '#39#39', ColumnResult)'
+  ColResultBlock = 
+    'iif(empty(SML_ID), '#39#39', LookUp(waSMLSTM, '#39'ID'#39', {{SML_ID}}, '#39'BEZ'#39',' +
+    ' '#39'?'#39'))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'SMLZUO'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SML_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 227
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Zuletzt ge'#228'ndert'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif(Empty(ID), '#39#39', ColumnResult)'
+  ColResultBlock = 'BeUserName(Val(GEAEND_USR))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'SMLZUO'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'GEAEND_USR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 90
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Zuletzt ge'#228'ndert'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif(Empty(ID), '#39#39', ColumnResult)'
+  ColResultBlock = 'GEAENDERT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'SMLZUO'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'GEAENDERT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 104
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

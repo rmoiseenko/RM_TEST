@@ -1,0 +1,186 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeDBGet.tbl_DabFRM')
+  RowColorBlock = 
+    'iif( Mod(Val(DABFRM:MASK_ID), 1000) = 0, GetBeDesignColor(dcbCya' +
+    'n, dcgLevel2), clNone)'
+end
+object Col_0: TBeAttr
+  Caption = 'Masken-ID'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'MASK_ID'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DABFRM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MASK_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 69
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '// Handelt es sich um einen Masken-Typen-Datensatz?'#13#10'iif( Mod(Va' +
+    'l(MASK_ID), 1000) = 0, BEZ, '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DABFRM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BEZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = [fsBold]
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif( Val(MASK_ID) >= 700000,'#13#10'     409,'#13#10'     -1)'
+  Band = 0
+  BandSize = 1
+  BandWidth = 207
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Masken-Name'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '// Handelt es sich nicht um einen Masken-Typen-Datensatz?'#13#10'iif( ' +
+    'Mod(Val(MASK_ID), 1000) <> 0, BEZ, '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    '// Handelt es sich um eine Default-Maske?'#13#10'iif( DEFAULT AND Mod(' +
+    'Val(MASK_ID), 1000) <> 0,'#13#10'     337,'#13#10'     // Indi-Maske ?'#13#10'    ' +
+    ' iif(Mod(Val(MASK_ID), 1000) >= 100, 18, -1))'
+  Band = 0
+  BandSize = 1
+  BandWidth = 214
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'Aktuelles Format'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'iif(not empty(DATA), '#39'Ja'#39', '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 94
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

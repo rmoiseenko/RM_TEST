@@ -1,0 +1,300 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.MEM_QUALI_TREE')
+  RowColorBlock = 
+    'iif( BEMEMTABLE:ROOT_KNOTEN, // Root-Knoten hervorheben'#13#10'     Ge' +
+    'tBeDesignColor(dcbPurple, dcgLevel1),'#13#10'     iif( BEMEMTABLE:REST' +
+    'YP = '#39'R'#39','#13#10'          GetBeDesignColor(gl_PGKU_GUI_nRessourcenBas' +
+    'eColor, dcgLevel1),'#13#10'          GetBeDesignColor(gl_PGKU_GUI_nPer' +
+    'sonenBaseColor,   dcgLevel1)))'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+end
+object Col_0: TBeAttr
+  Caption = 'S'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'SELECTED'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SELECTED'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 22
+  Template = 'TdagBeBoolean'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Typ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = '""'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RESTYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    'iif(empty(RESTYP) and not empty(ID), // "Gesamt"-Eintrag'#13#10'    33' +
+    '6,'#13#10'    AttribImageInfo(101004, RESTYP))'
+  ImageAlignH = ialhCenter
+  Band = 0
+  BandSize = 1
+  BandWidth = 19
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  ColResultBlock = 
+    'Replicate('#39'      '#39', EBENE) + AllTrim(BEZ) + iif(RES_ID > 0, '#39' ('#39 +
+    ' + Str(RES_ID) + '#39')'#39', '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '//**************************************************************' +
+    '****************'#13#10'//'#13#10'// @Result: Farb-Code'#13#10'//*****************' +
+    '*************************************************************'#13#10'f' +
+    'unction BrowserForegroundColorAndStyle(oMemQualiTree, oColumnFon' +
+    't)'#13#10'  | nFontStyle |'#13#10'  if not empty(oColumnFont) then'#13#10'     if ' +
+    '   oMemQualiTree:QUALI_ID > 0     // Quali-Zeile'#13#10'        or oMe' +
+    'mQualiTree:ROOT_KNOTEN then // "Gesamt"-Eintrag'#13#10'        nFontSt' +
+    'yle := fsBold,'#13#10'     else'#13#10'        nFontStyle := 0,'#13#10'     endif,' +
+    #13#10'     oColumnFont.Style := nFontStyle,'#13#10'  endif,'#13#10#13#10'  Result :=' +
+    ' clNone,'#13#10'end,'#13#10#13#10'BrowserForegroundColorAndStyle(BEMEMTABLE, Sel' +
+    'f.ColumnFont)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BEZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif(QUALI_ID > 0, 244, -1), -1'
+  ImageAlignH = ialhRight
+  Band = 0
+  BandSize = 1
+  BandWidth = 176
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TBeAttr
+  Caption = 'Angebot (h)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39',  FormatStd(ColumnResult, 2) + '#39' h'#39')'
+  ColResultBlock = 'KAPA_STUNDEN_ANGEBOT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'KAPA_STUNDEN_ANGEBOT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Bedarf (h)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39',  FormatStd(ColumnResult, 2) + '#39' h'#39')'
+  ColResultBlock = 'KAPA_STUNDEN_NACHFRAGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'KAPA_STUNDEN_NACHFRAGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = 'Ausl. %'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', FormatStd(ColumnResult, 2) + '#39' %'#39')'
+  ColResultBlock = 
+    'iif( KAPA_STUNDEN_ANGEBOT <> 0,'#13#10'     Round(KAPA_STUNDEN_NACHFRA' +
+    'GE / KAPA_STUNDEN_ANGEBOT * 100, 2),'#13#10'     0 )'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| nAuslastungUeberZeitraum |'#13#10#13#10'nAuslastungUeberZeitraum := 0,'#13#10 +
+    'if KAPA_STUNDEN_ANGEBOT <> 0 then'#13#10'   nAuslastungUeberZeitraum :' +
+    '= Round(KAPA_STUNDEN_NACHFRAGE / KAPA_STUNDEN_ANGEBOT * 100, 2),' +
+    #13#10'endif,'#13#10#13#10'// Rot anzeigen, wenn die Bedarfssumme '#252'ber alle Per' +
+    'ioden die Angebotssumme '#252'bersteigt'#13#10'// Orange, wenn in mind. ein' +
+    'er Periode der Bedarf das Angebot '#252'bersteigt'#13#10'iif( nAuslastungUe' +
+    'berZeitraum >= 100,'#13#10'     GetBeDesignColor(dcbRed, dcgLevel2),'#13#10 +
+    '     iif( HAS_UEBERLASTETE_PERIODEN,'#13#10'          GetBeDesignColor' +
+    '(dcbOrange, dcgLevel2),'#13#10'          clNone)'#13#10'   )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RES_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 53
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

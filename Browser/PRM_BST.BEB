@@ -1,0 +1,273 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBlockSort.'
+    'TPd_OrderStorno.oDab010'
+    'TPd_OrderStorno.oDab035'
+    'TPd_OrderStorno.oDab035Call'
+    'TPd_OrderStorno.oDab050'
+    'TPd_OrderStorno.oDab055'
+    'TPd_OrderStorno.oDab100'
+    'TPd_OrderStorno.oDab110'
+    'TPd_OrderStorno.oDab510'
+    'TPd_OrderStorno.oDetail'
+    'TPd_OrderStorno.oSelect'
+    'TPd_OrderStorno.oText')
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Bestell-Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'Left(BESTPOSNR,6)'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  HideBlock = 
+    'BROWSER.AltColors.Stripe0 :=  clWindow,'#13#10'BROWSER.AltColors.Strip' +
+    'e1 :=  RGB(230,255,230),'#13#10'BROWSER.AltOptions        :=  BROWSER.' +
+    'AltOptions or Power(2,16) or'#13#10'Power(2,17),'#13#10'True'#13#10
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BESTPOSNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 52
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Pos.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'Right(BESTPOSNR,2)'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BESTPOSNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 52
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Artikel-Nr'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ARTNR'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARTNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 124
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'Alltrim(DAB010:BEZ1)+'#39' '#39'+Alltrim(DAB010:BEZ2)'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 325
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Menge EK'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'MENGE_EK'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE_EK'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Storno'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'MEMDETAIL:SELECTED'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif( MEMTABLE:PRINTED, clGray,'#13#10'iif( MEMDETAIL:SELECTED, clGreen' +
+    ', clRed ) )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SELECTED'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 40
+  Template = 'TdagBeBoolean'
+  Expanded = False
+end

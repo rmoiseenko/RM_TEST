@@ -1,0 +1,526 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormTableBrowser.sql_Query'
+    'TFormTableBrowser.tbl_Main')
+  RowColorBlock = 
+    '| nColor |'#13#10'nColor := clNone,'#13#10'case MEM_PCHTRA:ZEILEN_TYP'#13#10'   of' +
+    ' '#39'E'#39' :: nColor := clNone,'#13#10'   of '#39'W'#39' :: nColor := GetBeDesignCol' +
+    'or(dcbCyan, dcgLevel1),'#13#10'   of '#39'M'#39' :: nColor := GetBeDesignColor' +
+    '(dcbCyan, dcgLevel2),'#13#10'   of '#39'Y'#39' :: nColor := GetBeDesignColor(d' +
+    'cbCyan, dcgLevel3),'#13#10'endcase,'#13#10'nColor'
+end
+object Col_0: TBeAttr
+  Caption = 'Zeitpunkt'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case ZEILEN_TYP'#13#10'   of '#39'Y'#39' :: cRes := VS_' +
+    'YEAR,'#13#10'   of '#39'W'#39' :: cRes := '#39'KW.'#39' + StrZero(ISOWEEK_NR, 2) + '#39'.'#39 +
+    ' + StrToken(Str(VS_YEAR), '#39'0'#39', 2),'#13#10'   of '#39'E'#39' :: cRes := EncodeD' +
+    'ate(VS_YEAR, VS_MONTH, VS_DAY),'#13#10'endcase,'#13#10#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if not empty(Self.ColumnFont) then'#13#10'   if ZEILEN_TYP $ '#39'Y/W'#39' the' +
+    'n'#13#10'      Self.ColumnFont.Style := fsBold,'#13#10'   else'#13#10'      Self.C' +
+    'olumnFont.Style := 0,'#13#10'   endif,'#13#10'endif,'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_13: TBeAttr
+  Caption = 'Bearbeitungs-Status'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(STATUS_VERLAUF))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEM_PCHTRA'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, STATUS_VERLAUF)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'STATUS_VERLAUF'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = -15
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 152
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Status-Ampel Gesamt'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(SA_GESAMT_VERLAUF))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEM_PCHTRA'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, SA_GESAMT_VERLAUF)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SA_GESAMT_VERLAUF'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = 102066
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 148
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TBeAttr
+  Caption = 'Plan-Arbeit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ProjMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult)'
+  ColResultBlock = 'ARBEIT_MENGE_PLAN_KUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARBEIT_MENGE_PLAN_KUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 100
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TBeAttr
+  Caption = #196'nderung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ProjMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult)'
+  ColResultBlock = 'ARBEIT_MENGE_PLAN_DIFF'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)         '
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARBEIT_MENGE_PLAN_DIFF'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clGray
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clGray
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_10: TBeAttr
+  Caption = 'Ist-Arbeit'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ProjMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult)'
+  ColResultBlock = 'ARBEIT_IST_MENGE_KUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10'if ZEILEN_TYP = '#39'E'#39' then'#13#10'   //' +
+    ' ab 20% '#220'berschreitung hervorheben'#13#10'   if ARBEIT_IST_MENGE_KUM >' +
+    ' 0 and ARBEIT_IST_MENGE_KUM >= (ARBEIT_MENGE_PLAN_KUM  * 1.2) th' +
+    'en'#13#10'      nColor := GetBeDesignColor(dcbOrange, dcgLevel3),'#13#10'   ' +
+    'else'#13#10'      nColor := GetBeDesignColor(dcbOrange, dcgLevel1),'#13#10' ' +
+    '  endif,'#13#10'endif,'#13#10'nColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARBEIT_IST_MENGE_KUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 100
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = #196'nderung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ProjMgtGUI_CalcDisplayValueForQuantityValue(ColumnResult)'
+  ColResultBlock = 'ARBEIT_IST_MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)         '
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARBEIT_IST_MENGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clGray
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clGray
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Plan-Kosten'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FormatFloat('#39'#,##0.00'#39', ColumnResul' +
+    't) + '#39' '#8364#39')'
+  ColResultBlock = 'EK_WRTPLAN_KUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)         '
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'EK_WRTPLAN_KUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 100
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TBeAttr
+  Caption = #196'nderung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FormatFloat('#39'#,##0.00'#39', ColumnResul' +
+    't) + '#39' '#8364#39')'
+  ColResultBlock = 'EK_WRTPLAN_DIFF'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)         '
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'EK_WRTPLAN_DIFF'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clGray
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clGray
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_12: TBeAttr
+  Caption = 'Ist-Kosten'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FormatFloat('#39'#,##0.00'#39', ColumnResul' +
+    't) + '#39' '#8364#39')'
+  ColResultBlock = 'IST_EK_WERT_KUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10'if ZEILEN_TYP = '#39'E'#39' then'#13#10'   //' +
+    ' ab 20% '#220'berschreitung hervorheben'#13#10'   if ARBEIT_IST_MENGE_KUM >' +
+    ' 0 and ARBEIT_IST_MENGE_KUM >= (ARBEIT_MENGE_PLAN_KUM  * 1.2) th' +
+    'en'#13#10'      nColor := GetBeDesignColor(dcbOrange, dcgLevel3),'#13#10'   ' +
+    'else'#13#10'      nColor := GetBeDesignColor(dcbOrange, dcgLevel1),'#13#10' ' +
+    '  endif,'#13#10'endif,'#13#10'nColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'IST_EK_WERT_KUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 100
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_11: TBeAttr
+  Caption = #196'nderung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FormatFloat('#39'#,##0.00'#39', ColumnResul' +
+    't) + '#39' '#8364#39')'
+  ColResultBlock = 'IST_EK_WERT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(ZEILEN_TYP = '#39'E'#39', GetBeDesignColor(dcbGreen, dcgLevel1), clN' +
+    'one)            '
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'IST_EK_WERT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clGray
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clGray
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

@@ -1,0 +1,239 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEditOutstandDeb.DfWaeS')
+  RowColorBlock = 'iif(WAENR = 1000, clInfoBk, clWindow)'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'W'#228'hrung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    'iif(BoF(DFWAES) and EoF(DFWAES), '#39#39', iif(WAENR = 1000, '#39'Summe'#39', ' +
+    'Str(WAENR) + '#39' - '#39' + WAEKZ))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DFWAES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WAENR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 66
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Saldo W'#228'hrung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| aFormat, aRes |'#13#10'if WAENR < 1000 then'#13#10'   aFormat:= '#39'#,##0'#39' + ' +
+    'iif(CurrDecimals(WAENR) > 0, '#39'.'#39', '#39#39') +'#13#10'          Replicate('#39'0'#39 +
+    ', CurrDecimals(WAENR)) + '#39';;""'#39','#13#10'   aRes:= FormatFloat(aFormat,' +
+    ' FWSALDO),'#13#10'else'#13#10'   aRes:= '#39#39','#13#10'endif,'#13#10'aRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DFWAES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'FWSALDO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 153
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'F'#228'llig W'#228'hrung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| aFormat, aRes |'#13#10'if WAENR < 1000 then'#13#10'   aFormat:= '#39'#,##0'#39' + ' +
+    'iif(CurrDecimals(WAENR) > 0, '#39'.'#39', '#39#39') +'#13#10'             Replicate(' +
+    #39'0'#39', CurrDecimals(WAENR)) + '#39';;""'#39','#13#10'   aRes:= FormatFloat(aForm' +
+    'at, FWFAELLIG),'#13#10'else'#13#10'   aRes:= '#39#39#13#10'endif,'#13#10'aRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DFWAES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'FWFAELLIG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 160
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Saldo'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| aFormat, aWaeNr |'#13#10'aWaeNr := iif(WAENR = 1000, 0, WAENR),'#13#10'aFo' +
+    'rmat:= '#39'#,##0'#39' + iif(CurrDecimals(aWaeNr) > 0, '#39'.'#39', '#39#39') +'#13#10'     ' +
+    '     Replicate('#39'0'#39', CurrDecimals(aWaeNr)) + '#39';;""'#39','#13#10'FormatFloat' +
+    '(aFormat, SALDO)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DFWAES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SALDO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 97
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'F'#228'llig'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| aFormat, aWaeNr |'#13#10'aWaeNr := iif(WAENR = 1000, 0, WAENR),'#13#10'aFo' +
+    'rmat:= '#39'#,##0'#39' + iif(CurrDecimals(aWaeNr) > 0, '#39'.'#39', '#39#39') +'#13#10'     ' +
+    '     Replicate('#39'0'#39', CurrDecimals(aWaeNr)) + '#39';;""'#39','#13#10'FormatFloat' +
+    '(aFormat, FAELLIG)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DFWAES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'FAELLIG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 106
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

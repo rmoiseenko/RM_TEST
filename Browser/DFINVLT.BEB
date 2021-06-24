@@ -1,0 +1,278 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeArrayGridPanel.pnMemSelGrd_')
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Jahr'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| oParent, oDfInv, dDatum, aJahrTab, nJahre, cRes |'#13#10'cRes:= '#39#39','#13 +
+    #10'If !(BoF(MemArray) and EoF(MemArray)) then'#13#10'   oParent:= GetPar' +
+    'ent(Browser),'#13#10'   oDfInv := oParent.DS_MainTable.DataSet,'#13#10'   If' +
+    ' !Empty(oDfInv) then'#13#10'      nJahre:= DbRecNo(MemArray),'#13#10'      I' +
+    'f (nJahre = 0) and DbState(MemArray) = dsInsert then'#13#10'         n' +
+    'Jahre:= LastRec(MemArray) + 1'#13#10'      EndIf,'#13#10'      If nJahre > 0' +
+    ' then'#13#10'         dDatum  := iif(Empty(oDfInv:AfA_Dat), Date(), oD' +
+    'fInv:AfA_Dat),'#13#10'         aJahrTab:= AfAGJahrTab(dDatum, nJahre),' +
+    #13#10'         cRes    := aJahrTab[nJahre, 4]'#13#10'      EndIf'#13#10'   EndIf' +
+    ','#13#10'EndIf,'#13#10'cRes'
+  FooterBlock = #39'Summe'#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = -2147483630
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 98
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Leistung '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| aRes, oParent, oDfInv, cEinheit |'#13#10'aRes:= '#39#39','#13#10'If !Empty(MemAr' +
+    'ray:Leist) then'#13#10'   oParent:= GetParent(Browser),'#13#10'   oDfInv := ' +
+    'oParent.DS_MainTable.DataSet,'#13#10'   If !Empty(oDfInv) then'#13#10'      ' +
+    'cEinheit:= '#39' '#39' + oDfInv:Leist_Eh'#13#10'   else'#13#10'      cEinheit:= '#39#39#13#10 +
+    '   EndIf,'#13#10'   aRes:= Trim(FormatFloat('#39'#,##0.00'#39', MemArray:Leist' +
+    ') + cEinheit)'#13#10'EndIf,'#13#10'aRes + '#39' '#39
+  FooterBlock = 
+    '| oParent, oDfInv, aLeistTab, i, aSum, cEinheit, aResult |'#13#10'aRes' +
+    'ult:= '#39#39','#13#10'oParent:= GetParent(Browser),'#13#10'oDfInv := oParent.DS_M' +
+    'ainTable.DataSet,'#13#10'If !Empty(oDfInv) then'#13#10'   aSum     := 0,'#13#10'  ' +
+    ' aLeistTab:= StrToArr(oDfInv:Leist_Tab),'#13#10'   For i:= 1 to ALen(a' +
+    'LeistTab) do'#13#10'       aSum += aLeistTab[i, 1]'#13#10'   Next,'#13#10'   If !E' +
+    'mpty(aSum) then'#13#10'      cEinheit:= '#39' '#39' + oDfInv:Leist_Eh,'#13#10'      ' +
+    'aResult := AllTrim(FormatFloat('#39'#,##0.00'#39', Round(aSum, 2)) + cEi' +
+    'nheit)'#13#10'   EndIf'#13#10'EndIf,'#13#10'aResult + '#39' '#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LEIST'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 189
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = '%'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| cRes, oParent, oDfInv, nLeistung |'#13#10'cRes:= '#39#39','#13#10'If !(BoF(MemAr' +
+    'ray) and EoF(MemArray)) then'#13#10'   oParent:= GetParent(Browser),'#13#10 +
+    '   oDfInv := oParent.DS_MainTable.DataSet,'#13#10'   If !Empty(oDfInv)' +
+    ' then'#13#10'      nLeistung:= oDfInv:Leist_Ges,'#13#10'      If !Empty(nLei' +
+    'stung) then'#13#10'         cRes:= FormatFloat('#39'#0.00;;""'#39','#13#10'         ' +
+    '       Round(MemArray:Leist / nLeistung * 100, 2)),'#13#10'      EndIf' +
+    ','#13#10'   EndIf,'#13#10'EndIf,'#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = -2147483630
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 59
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Leistungs-AfA '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes, oParent, oDfInv, nJahr, aPlan, i |'#13#10'cRes:= '#39#39','#13#10'If !(BoF' +
+    '(MemArray) and EoF(MemArray)) then'#13#10'   oParent:= GetParent(Brows' +
+    'er),'#13#10'   oDfInv := oParent.DS_MainTable.DataSet,'#13#10'   If !Empty(o' +
+    'DfInv)           and'#13#10'      !Empty(oDfInv:AH_Kosten) and'#13#10'      ' +
+    '!Empty(oDfInv:AfA_Dat)   and'#13#10'      !Empty(oDfInv:AfA_Jahre) and' +
+    #13#10'      !Empty(oDfInv:Leist_Ges) then'#13#10'      nJahr:= DbRecNo(Mem' +
+    'Array),'#13#10'      If nJahr > 0 then'#13#10'         aPlan:= AfAPlan(oDfIn' +
+    'v, safaLeistOhneLin),'#13#10'         For i:= 1 to ALen(aPlan) do'#13#10'   ' +
+    '          If aPlan[i, 1] = nJahr then'#13#10'                cRes:= Fo' +
+    'rmatFloat('#39'#,##0.00 ;;""'#39','#13#10'                                   M' +
+    'ax(aPlan[i, 5] - aPlan[i, 16], 0)),'#13#10'                Break,'#13#10'   ' +
+    '          EndIf,'#13#10'         Next,'#13#10'      EndIf,'#13#10'   EndIf,'#13#10'EndIf' +
+    ','#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = -2147483630
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 130
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'lineare AfA '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| aRes, oParent, oDfInv, nJahr, aLinPlan, aSoATab, aBewegTab, i ' +
+    '|'#13#10'aRes:= '#39#39','#13#10'If !(BoF(MemArray) and EoF(MemArray)) then'#13#10'   nJ' +
+    'ahr  := DbRecNo(MemArray),'#13#10'   oParent:= GetParent(Browser),'#13#10'  ' +
+    ' oDfInv := oParent.DS_MainTable.DataSet,'#13#10'   If !Empty(oDfInv) a' +
+    'nd'#13#10'      !Empty(oDfInv:AH_Kosten) and'#13#10'      !Empty(oDfInv:AfA_' +
+    'Dat)   and'#13#10'      !Empty(oDfInv:AfA_Jahre) then'#13#10'      aSoATab:=' +
+    ' EmptyValue(),'#13#10'      If oDfInv:SoA_Jahre > 0 then'#13#10'         aSo' +
+    'ATab:= StrToArr(oDfInv:SoA_Tab),'#13#10'      EndIf,'#13#10'      aBewegTab:' +
+    '= AfABewegTab(oDfInv),'#13#10'      aLinPlan := AfAPlan(AfA_Linear,'#13#10' ' +
+    '                         oDfInv:AH_Kosten,'#13#10'                    ' +
+    '      oDfInv:AfA_Dat,'#13#10'                          oDfInv:AfA_Jahr' +
+    'e,'#13#10'                          oDfInv:Rest_Wert,,,'#13#10'             ' +
+    '             oDfInv:Ueb_Dat,'#13#10'                          oDfInv:U' +
+    'eb_Wert,,,,'#13#10'                          oDfInv:SoA_Jahre,'#13#10'      ' +
+    '                    aSoATab,,,'#13#10'                          aBeweg' +
+    'Tab,,'#13#10'                          oDfInv:Red_Bem),'#13#10#13#10'       For ' +
+    'i:= 1 to ALen(aLinPlan) do'#13#10'           If aLinPlan[i, 1] = nJahr' +
+    ' then'#13#10'              aRes:= FormatFloat('#39'#,##0.00 ;;""'#39','#13#10'      ' +
+    '                           Max(aLinPlan[nJahr, 5] - aLinPlan[nJa' +
+    'hr, 16], 0)),'#13#10'              Break,'#13#10'           EndIf'#13#10'       Ne' +
+    'xt,'#13#10'   EndIf,'#13#10'EndIf,'#13#10'aRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = -2147483630
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 130
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

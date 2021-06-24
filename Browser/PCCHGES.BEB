@@ -1,0 +1,405 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_2: TbeAttr
+  Caption = 'Typ der '#196'nderung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if not empty(PRODCAPA_CHANGES:ID) then'#13 +
+    #10'   case ColumnResult'#13#10'      of 0 :: cRes := '#39'Ressourcen-Fixieru' +
+    'ng'#39','#13#10'      of 1 :: cRes := '#39'Ressoucen-Einplanung'#39','#13#10'      of 2 ' +
+    ':: cRes := '#39'Startzeit-Fixierung'#39','#13#10'      of 3 :: cRes := '#39'Startz' +
+    'eit-Einplanung'#39','#13#10#13#10'      of 4 :: cRes := '#39'Auftrag: Sperrung'#39','#13#10 +
+    '      of 5 :: cRes := '#39'Auftrag: Priorit'#228't'#39','#13#10'      of 6 :: cRes ' +
+    ':= '#39'Auftrag: Term.Richt.'#39','#13#10'      of 7 :: cRes := '#39'Auftrag: Max.' +
+    ' DLZ-'#220'b.'#39','#13#10'      of 8 :: cRes := '#39'Auftrag: Termin'#39','#13#10'   otherwi' +
+    'se'#13#10'      cRes := '#39'unbekannt'#39','#13#10'   endcase,'#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = 'CHANGETYPE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'CHANGETYPE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    'if(PRODCAPA_CHANGES:ID>0, PRODCAPA_CHANGES:CHANGETYPE_IMGIND, -1' +
+    ')'
+  ImageAlignV = ialvCenter
+  Band = 0
+  BandSize = 1
+  BandWidth = 150
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Auftrag'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'AUFTRAG'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'AUFTRAG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 52
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TbeAttr
+  Caption = 'Lfd.Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'if(not empty(PRODCAPA_CHANGES:ID) and not empty(PRODCAPA_CHANGES' +
+    ':REQUEST_ID), ColumnResult, '#39#39')'
+  ColResultBlock = 'LFD_NR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LFD_NR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 43
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TbeAttr
+  Caption = 'Position'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10#13#10'cRes := AllTrim(ColumnResult),'#13#10#13#10'// ' +
+    'Artikel-Bezeichnung dazu '#13#10'if not empty(ColumnResult) then'#13#10'   i' +
+    'f not empty(POSITION_ARTNR_BEZ) then'#13#10'      cRes += '#39' / '#39' + AllT' +
+    'rim(POSITION_ARTNR_BEZ),'#13#10'   endif,'#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = 'POSITION_ARTNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'POSITION_ARTNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 138
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Termin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'TERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TbeAttr
+  Caption = 'Baugruppe'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10#13#10'cRes := AllTrim(ColumnResult),'#13#10#13#10'// ' +
+    'Artikel-Bezeichnung dazu'#13#10'if not empty(ColumnResult) then'#13#10'   if' +
+    ' not empty(AUFTRAG_ARTNR_BEZ) then'#13#10'      cRes += '#39' / '#39' + AllTri' +
+    'm(AUFTRAG_ARTNR_BEZ),'#13#10'   endif,'#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = 'AUFTRAG_ARTNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'AUFTRAG_ARTNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageIndex = 
+    '| cArtikelTyp |'#13#10'cArtikelTyp := lookup(2, 1, {{AUFTRAG_ARTNR}}, ' +
+    #39'ARTTYP'#39', '#39#39'),'#13#10'AttribImageInfo(102024, cArtikelTyp)'
+  Band = 0
+  BandSize = 1
+  BandWidth = 276
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TbeAttr
+  Caption = 'Alter Wert'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'if(not empty(ColumnResult), ColumnResult, '#39#39')'
+  ColResultBlock = 
+    '| cValue, cValueDesc |'#13#10#13#10'cValue := '#39#39','#13#10'if not empty(PRODCAPA_C' +
+    'HANGES:ID) then'#13#10'   cValue        := AllTrim(VALUE_OLD),'#13#10'   cVa' +
+    'lueDesc    := AllTrim(VALUE_OLD_DESC),'#13#10'   case PRODCAPA_CHANGES' +
+    ':CHANGETYPE'#13#10'      of 0 :: cValue := if(Val(cValue) > 0, cValue ' +
+    '+ '#39' / '#39' + cValueDesc, '#39#39'),'#13#10'      of 1 :: cValue := if(Val(cValu' +
+    'e) > 0, cValue + '#39' / '#39' + cValueDesc, '#39#39'),'#13#10'      of 2 :: cValue ' +
+    ':= if(Val(cValue) > 0, cValue, '#39#39'),'#13#10'      of 3 :: cValue := if(' +
+    'Val(cValue) > 0, cValue, '#39#39'),'#13#10#13#10'      of 4 :: cValue := cValueD' +
+    'esc,'#13#10'      of 5 :: cValue := cValue,'#13#10'      of 6 :: cValue := A' +
+    'ttribDispVal(102046, cValue),'#13#10'      of 7 :: cValue := AttribDis' +
+    'pVal(-12,    cValue),'#13#10'      of 8 :: cValue := cValue,'#13#10'   other' +
+    'wise'#13#10'      cValue := '#39'unbekannt'#39','#13#10'   endcase,'#13#10'endif,'#13#10#13#10'cValu' +
+    'e'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'VALUE_OLD'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 129
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_10: TbeAttr
+  Caption = 'Neuer Wert'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| cValue, cValueDesc, aTimesArr |'#13#10#13#10'cValue := '#39#39','#13#10'if not empty' +
+    '(PRODCAPA_CHANGES:ID) then'#13#10'   cValue        := AllTrim(VALUE_NE' +
+    'W),'#13#10'   cValueDesc    := AllTrim(VALUE_NEW_DESC),'#13#10'   writeln('#39'C' +
+    'HANGETYPE: '#39' + Str(PRODCAPA_CHANGES:CHANGETYPE)),'#13#10'   case PRODC' +
+    'APA_CHANGES:CHANGETYPE'#13#10'      of 0 :: cValue := if(Val(cValue) >' +
+    ' 0, cValue + '#39' / '#39' + cValueDesc, '#39#39'),'#13#10'      of 1 :: cValue := i' +
+    'f(Val(cValue) > 0, cValue + '#39' / '#39' + cValueDesc, '#39'nicht eingeplan' +
+    't'#39'),'#13#10'      of 2 :: cValue := if(Val(cValue) > 0, cValue, '#39#39'),'#13#10 +
+    '      of 3 ::'#13#10'              aTimesArr := StrToArr(cValue),'#13#10'   ' +
+    '           if ALen(aTimesArr) > 0 then'#13#10'                 // wenn' +
+    ' beide Werte im Array leer sind, dann handelt es sich um das L'#246's' +
+    'chen der Plandaten'#13#10'                 if empty(AllTrim(aTimesArr[' +
+    '1] + aTimesArr[2])) then'#13#10'                    cValue := '#39'nicht e' +
+    'ingeplant'#39#13#10'                 else'#13#10'                    cValue :=' +
+    ' aTimesArr[1] + '#39' - '#39' + aTimesArr[2]'#13#10'                 endif,'#13#10' ' +
+    '             else'#13#10'                 cValue := '#39#39','#13#10'             ' +
+    ' endif,'#13#10#13#10'      of 4 :: cValue := cValueDesc,'#13#10'      of 5 :: cV' +
+    'alue := cValue,'#13#10'      of 6 :: cValue := AttribDispVal(102046, c' +
+    'Value),'#13#10'      of 7 :: cValue := AttribDispVal(-12,    cValue),'#13 +
+    #10'      of 8 :: cValue := cValue,'#13#10'   otherwise'#13#10'      cValue := ' +
+    #39'unbekannt'#39','#13#10'   endcase,'#13#10'endif,'#13#10#13#10'cValue'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'PRODCAPA_CHANGES'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'VALUE_NEW'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 218
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

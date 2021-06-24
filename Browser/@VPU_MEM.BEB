@@ -1,0 +1,1257 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.ITEMTABLE')
+  RowColorBlock = 
+    '| nColor |'#13#10#13#10'nColor := clNone,'#13#10#13#10'if ITEMTABLE:TYP = 10 then  /' +
+    '/ 10 = St'#252'cklisten-Bedarfs-Position'#13#10#13#10'   // Unterdeckung zum Be' +
+    'darfszeitpunkt ?'#13#10'   //   => nur Hervorheben, wenn eine (Rest)Be' +
+    'darfsmenge vorhanden ist'#13#10'   if     ITEMTABLE:BEDARF_MENGE <> 0'#13 +
+    #10'      and ITEMTABLE:CALC_BESTAND_BEI_BEDARF < ITEMTABLE:BEDARF_' +
+    'MENGE then'#13#10'      nColor :=  GetBeDesignColor(dcbRed, dcgLevel2)' +
+    ','#13#10#13#10'   // Ansonsten: Handelt es sich um einen Bedarf, der auf Z' +
+    'ug'#228'nge angeweisen ist'#13#10'   //            um gedeckt zu werden => ' +
+    'als nicht komplett Lager gedeckt wird'#13#10'   else'#13#10'      if     ITE' +
+    'MTABLE:BEDARF_MENGE <> 0'#13#10'         and ITEMTABLE:CALC_BEDARF_GED' +
+    'ECKT_DURCH_LAGER $ '#39'/N/T/'#39' then // '#39'N'#39'icht / '#39'T'#39'teilweise durchs' +
+    ' Lager gedeckt'#13#10'         nColor :=  GetBeDesignColor(dcbOrange, ' +
+    'dcgLevel1),'#13#10'      endif,'#13#10'   endif,'#13#10#13#10'endif,'#13#10#13#10'nColor'
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+end
+object Col_0: TBeAttr
+  Caption = 'Ebene / Artikel-Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes, cTrenner, cIndent |'#13#10#13#10'cRes     := '#39#39','#13#10#13#10'case TYP'#13#10'  of' +
+    ' 10 ::  cTrenner := Str(EBENE) + '#39' || '#39','#13#10'            cIndent  :' +
+    '= Replicate('#39' '#39', (EBENE - 1) * 6),'#13#10'            cRes     := cInd' +
+    'ent + cTrenner + AllTrim(ColumnResult),'#13#10'            '#13#10'  of 20 :' +
+    ':  cTrenner := Str(EBENE - 1) + '#39' || '#39','#13#10'            cIndent  :=' +
+    ' Replicate('#39' '#39', (EBENE - 2) * 6),'#13#10'            cRes     := cInde' +
+    'nt + cTrenner,'#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'ARTNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARTNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 170
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_13: TBeAttr
+  Caption = 'WBZ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    'iif( TYP = 10,'#13#10'     iif(empty(ColumnResult), '#39#39', ColumnResult),' +
+    #13#10'     '#39#39' )'
+  ColResultBlock = 'WBZ'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WBZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 30
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Typ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = #39#39
+  ColResultBlock = 'ARTTYP'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARTTYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif( TYP = 10,'#13#10'     GU_ArtTypImageIndex(ARTTYP),'#13#10'     -1 )'
+  ImageAlignV = ialvCenter
+  ImageAlignH = ialhCenter
+  Band = 0
+  BandSize = 1
+  BandWidth = 21
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = 'Bezeichnung / Info'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| cRes, bZugangIstZuSpaet, bZugangHatPuffer, nPufferInKalenderTa' +
+    'gen,'#13#10'  cKalTagePufferText,'#13#10'  nVerspaetungInKalenderTagen, dBed' +
+    'arfsTermin, dZugangsTermin, cVerspaetText,'#13#10'  nKalenderTageDiff,' +
+    ' cZugangsZusatzInfoText, cIndent |'#13#10#13#10'cRes     := '#39#39','#13#10'cIndent  ' +
+    ':= '#39#39','#13#10#13#10'case TYP'#13#10'     of 10 :: // Bedarfs-Position **********' +
+    '************************************'#13#10'               cIndent  :=' +
+    ' Replicate('#39' '#39', (EBENE - 1) * 6),'#13#10'               cRes     := Al' +
+    'ltrim(Alltrim(BEZ1) + '#39' '#39' + Alltrim(BEZ2)),'#13#10#13#10'     of 20 ::  //' +
+    ' "Zugangs-Kopf"  **********************************************'#13 +
+    #10#13#10'               cIndent  := Replicate('#39' '#39', (EBENE - 2) * 6),'#13#10 +
+    '               // Wenn der Zugang zu sp'#228't kommt, dann den Zugang' +
+    'stermin rot hervorheben'#13#10'               bZugangIstZuSpaet :=    ' +
+    ' not empty(ZUGANGS_TERMIN_INDEX)'#13#10'                              ' +
+    '      and not empty(BEDARF_TERMIN_INDEX)'#13#10'                      ' +
+    '              and ZUGANGS_TERMIN_INDEX > BEDARF_TERMIN_INDEX,'#13#10#13 +
+    #10'               // Puffer von 0-n Kal. Tagen zwischen Zugang und' +
+    ' Bedarf?'#13#10'               bZugangHatPuffer  :=     not empty(ZUGA' +
+    'NGS_TERMIN_INDEX)'#13#10'                                    and not e' +
+    'mpty(BEDARF_TERMIN_INDEX)'#13#10'                                    a' +
+    'nd Left(ZUGANGS_TERMIN_INDEX, 8) <= Left(BEDARF_TERMIN_INDEX, 8)' +
+    ' // Freitags-KW-Termin vs. Freitags-Tages-Termin nicht (!) als P' +
+    'uffer interpretieren'#13#10'                                    and ZE' +
+    'ILEN_TYP <> gl_ETRU_Typ_VerfuegBestand, // bei "Zug'#228'ngen" aus La' +
+    'gerbestand interessiert der "Puffer" nicht'#13#10#13#10'               nVe' +
+    'rspaetungInKalenderTagen := 0,'#13#10'               nPufferInKalender' +
+    'Tagen      := 0,'#13#10'               nKalenderTageDiff           := ' +
+    '0,'#13#10'               cZugangsZusatzInfoText      := '#39#39','#13#10#13#10'       ' +
+    '        if bZugangIstZuSpaet or bZugangHatPuffer then'#13#10#13#10'       ' +
+    '           if ZUGANGS_TERMIN = '#39'KW.99.99'#39' then'#13#10'                ' +
+    '     if bZugangIstZuSpaet then'#13#10'                        cZugangs' +
+    'ZusatzInfoText   := '#39'(Versp'#228't.: Abruf?)'#39','#13#10'                     ' +
+    'endif,'#13#10'                  else'#13#10'                     dBedarfsTer' +
+    'min              := SToD(Left(BEDARF_TERMIN_INDEX,  8)),'#13#10'      ' +
+    '               dZugangsTermin              := SToD(Left(ZUGANGS_' +
+    'TERMIN_INDEX, 8)),'#13#10'                     nKalenderTageDiff      ' +
+    '     := Abs(dBedarfsTermin - dZugangsTermin),'#13#10#13#10#13#10'             ' +
+    '        if nKalenderTageDiff = 1 then'#13#10'                        c' +
+    'KalTagePufferText       := Str(nKalenderTageDiff) + '#39' Kal.Tag'#39','#13 +
+    #10'                     else'#13#10'                        if nKalender' +
+    'TageDiff > 1 then'#13#10'                           cKalTagePufferText' +
+    '       := Str(nKalenderTageDiff) + '#39' Kal.Tage'#39','#13#10'               ' +
+    '         endif,'#13#10'                     endif,'#13#10#13#10'                ' +
+    '     if bZugangIstZuSpaet then'#13#10'                        cZugangs' +
+    'ZusatzInfoText := '#39'(Versp'#228't. '#39' + cKalTagePufferText + '#39')'#39','#13#10'    ' +
+    '                 else'#13#10'                        if nKalenderTageD' +
+    'iff = 0 then'#13#10'                           cZugangsZusatzInfoText ' +
+    ':= '#39'(kein Puffer)'#39','#13#10'                        else'#13#10'             ' +
+    '              cZugangsZusatzInfoText := '#39'(Puffer '#39' + cKalTagePuf' +
+    'ferText + '#39')'#39','#13#10'                        endif,'#13#10'                ' +
+    '     endif,'#13#10'                  endif,'#13#10#13#10'               endif,'#13#10 +
+    #13#10'               cRes               := '#39'-> Zugang'#39' +'#13#10'          ' +
+    '                           iif( not empty(cZugangsZusatzInfoText' +
+    '),'#13#10'                                          '#39' '#39' + cZugangsZusa' +
+    'tzInfoText,'#13#10'                                          '#39#39'),'#13#10'end' +
+    'case,'#13#10#13#10'cIndent + iif(Len(cIndent) = 999, '#39#39', '#39'|| '#39') + cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nFontColor, nFontStyle, bZugangIstZuSpaet |'#13#10#13#10'nFontColor := c' +
+    'lNone,'#13#10'nFontStyle := 0,'#13#10#13#10'if not empty(SELF.ColumnFont) then'#13#10 +
+    '   case TYP'#13#10'      of 10 :: // Bedarfs-Position ****************' +
+    '*****************************'#13#10#13#10#13#10'      of 20 ::  // "Zugangs-K' +
+    'opf"  *********************************************'#13#10'           ' +
+    '    nFontStyle := fsItalic,'#13#10#13#10'               // Wenn der Zugang' +
+    ' zu sp'#228't kommt, dann den Zugangstermin rot hervorheben'#13#10'        ' +
+    '       bZugangIstZuSpaet :=     not empty(ZUGANGS_TERMIN_INDEX)'#13 +
+    #10'                                    and not empty(BEDARF_TERMIN' +
+    '_INDEX )'#13#10'                                    and ZUGANGS_TERMIN' +
+    '_INDEX > BEDARF_TERMIN_INDEX,'#13#10'               nFontColor        ' +
+    ':= iif(bZugangIstZuSpaet, clRed, clGreen),'#13#10#13#10'   endcase,'#13#10'   SE' +
+    'LF.ColumnFont.Style := nFontStyle,'#13#10'endif,'#13#10#13#10'nFontColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 233
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_11: TBeAttr
+  Caption = 'Abt.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'PROD_ABT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nFontStyle |'#13#10'if not empty(SELF.ColumnFont) then'#13#10'   case TYP'#13 +
+    #10'      of 20 :: nFontStyle := fsItalic, // "Zugangs-Kopf"'#13#10'   ot' +
+    'herwise'#13#10'      nFontStyle := 0,'#13#10'   endcase,'#13#10'   SELF.ColumnFont' +
+    '.Style := nFontStyle,'#13#10'endif,'#13#10#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PROD_ABT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 27
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TBeAttr
+  Caption = 'Bedarfsmenge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10#13#10'if TYP = 10 then'#13#10'   cRes := iif(empty(' +
+    'ColumnResult), '#39#39', ColumnResult),'#13#10'else'#13#10'   if TYP = 20 then'#13#10'  ' +
+    '    // bei einem Zugangskopf der aufgel'#246'st wurde und keine R'#252'cks' +
+    't'#228'nde mehr hat'#13#10'      // -> Info im Browser direkt anzeigen, den' +
+    'n die "Bedarfsmenge = 0"-S'#228'tze sind'#13#10'      //    typischerweise ' +
+    'ausgefiltert und man "wundert" sich sonst ggf. dar'#252'ber, dass'#13#10'  ' +
+    '    //    nach der Aufl'#246'sung keine St'#252'cklistn-S'#228'tze zu sehen sin' +
+    'd '#13#10'      if IS_EXPANDED = true AND HAT_MAT_RUECKSTAND = '#39'N'#39' the' +
+    'n'#13#10'         cRes := '#39'keine R'#252'ckst.'#39','#13#10'      endif,'#13#10'   endif,'#13#10'e' +
+    'ndif,'#13#10#13#10'cRes'
+  ColResultBlock = 'BEDARF_MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nColor, nFontStyle |'#13#10'nColor     := clNone,'#13#10'nFontStyle := 0,'#13 +
+    #10#13#10'if TYP = 10 then'#13#10'   nColor := clNone,'#13#10'else'#13#10'   if TYP = 20 ' +
+    'then'#13#10'      if IS_EXPANDED = true AND HAT_MAT_RUECKSTAND = '#39'N'#39' t' +
+    'hen'#13#10'         nColor := clGreen,'#13#10'         nFontStyle := fsItali' +
+    'c,  '#13#10'      endif,'#13#10'   endif,'#13#10'endif,'#13#10#13#10'if not empty(SELF.Colum' +
+    'nFont) then'#13#10'   SELF.ColumnFont.Style := nFontStyle,'#13#10'endif,'#13#10#13#10 +
+    'nColor'
+  BackColorBlock = 
+    'iif( TYP = 10,'#13#10'     GetBeDesignColor(dcbYellow, dcgLevel1),'#13#10'  ' +
+    '   clNone ),'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 68
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_12: TBeAttr
+  Caption = 'ME'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'iif( TYP = 10,'#13#10'     ColumnResult,'#13#10'     '#39#39' )'
+  ColResultBlock = 
+    'iif( empty(ARTNR),'#13#10'     '#39#39','#13#10'     LookUp(waDab010, '#39'DAB011'#39', {{' +
+    'ARTNR}}, '#39'ME'#39', '#39'?'#39') )'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 26
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'Bedarfstermin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '// Bei "Zugangs-Zeilen" wird der Bedarfs-Termin nicht (wiederhol' +
+    't) angezeigt, denn'#13#10'//    er ist identisch wie bei der hierarchi' +
+    'sch '#252'bergeordneten Bedarfs-Zeile '#13#10'iif( TYP = 10,'#13#10'     iif(empt' +
+    'y(ColumnResult), '#39#39', ColumnResult),'#13#10'     '#39#39' )'
+  ColResultBlock = 'BEDARF_TERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif( TYP = 10,'#13#10'     GetBeDesignColor(dcbYellow, dcgLevel1),'#13#10'  ' +
+    '   clNone ),'#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TBeAttr
+  Caption = 'Lfd.Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'iif(empty(Dab240_ID), '#39#39', ColumnResult)'
+  ColResultBlock = 'Val(SubStr(B_POS_LFD, 9, 3))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 38
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_16: TBeAttr
+  Caption = 'Zugangstermin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| cRes, bKeinZugangGefundenWarnung |'#13#10#13#10'cRes := ColumnResult,'#13#10#13 +
+    #10'case TYP'#13#10'   of 10 :: // Bedarfs-Position *********************' +
+    '***************************'#13#10#13#10'            // (Rest)bedarfsmenge' +
+    ' vorhanden, Unterdeckung zum Bedarfszeitpunkt und kein Zugangste' +
+    'rmin'#13#10'            bKeinZugangGefundenWarnung :=     BEDARF_MENGE' +
+    ' <> 0'#13#10'                                          and CALC_BESTAN' +
+    'D_BEI_BEDARF < BEDARF_MENGE'#13#10'                                   ' +
+    '       and empty(ZUGANGS_TERMIN),'#13#10#13#10'            cRes := iif( bK' +
+    'einZugangGefundenWarnung,'#13#10'                         '#39'<kein Zugan' +
+    'g>'#39','#13#10'                         '#39#39' ),'#13#10#13#10'   of 20 :: // Zugangs-K' +
+    'opf     ************************************************'#13#10'      ' +
+    '      cRes := ColumnResult,'#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'ZUGANGS_TERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nFontStyle, nFontColor, bKeinZugangGefundenWarnung, bZugangIst' +
+    'ZuSpaet |'#13#10#13#10'nFontColor := clNone,'#13#10#13#10'if not empty(SELF.ColumnFo' +
+    'nt) then'#13#10'   case TYP'#13#10'      of 10 :: // Bedarfs-Position ******' +
+    '***************************************'#13#10'               nFontSty' +
+    'le := 0,'#13#10#13#10'               // (Rest)bedarfsmenge vorhanden, Unte' +
+    'rdeckung zum Bedarfszeitpunkt und kein Zugangstermin'#13#10'          ' +
+    '     bKeinZugangGefundenWarnung :=     BEDARF_MENGE <> 0'#13#10'      ' +
+    '                                       and CALC_BESTAND_BEI_BEDA' +
+    'RF < BEDARF_MENGE'#13#10'                                             ' +
+    'and empty(ZUGANGS_TERMIN),'#13#10'               nFontColor := iif( bK' +
+    'einZugangGefundenWarnung,'#13#10'                                  clR' +
+    'ed,'#13#10'                                  clNone ),'#13#10#13#10'      of 20 ' +
+    '::  // "Zugangs-Kopf"  *****************************************' +
+    '****'#13#10'               nFontStyle := fsItalic,'#13#10#13#10'               /' +
+    '/ Wenn der Zugang zu sp'#228't kommt, dann den Zugangstermin rot herv' +
+    'orheben'#13#10'               bZugangIstZuSpaet :=     not empty(ZUGAN' +
+    'GS_TERMIN_INDEX)'#13#10'                                    and not em' +
+    'pty(BEDARF_TERMIN_INDEX )'#13#10'                                    a' +
+    'nd ZUGANGS_TERMIN_INDEX > BEDARF_TERMIN_INDEX,'#13#10'               n' +
+    'FontColor        := iif(bZugangIstZuSpaet, clRed, clGreen),'#13#10#13#10#13 +
+    #10'   endcase,'#13#10'   SELF.ColumnFont.Style := nFontStyle,'#13#10'endif,'#13#10#13 +
+    #10'nFontColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZUGANGS_TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 72
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_14: TBeAttr
+  Caption = 'Zugangstyp'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( TYP = 20,'#13#10'     ETRU_GUI_DisplayTextForTyp(ZEILEN_TYP),'#13#10'  ' +
+    '   '#39#39' )'
+  ColResultBlock = 'ZEILEN_TYP'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nFontStyle |'#13#10'if not empty(SELF.ColumnFont) then'#13#10'   case TYP'#13 +
+    #10'      of 20 :: nFontStyle := fsItalic, // "Zugangs-Kopf"'#13#10'   ot' +
+    'herwise'#13#10'      nFontStyle := 0,'#13#10'   endcase,'#13#10'   SELF.ColumnFont' +
+    '.Style := nFontStyle,'#13#10'endif,'#13#10#13#10'clNone'
+  BackColorBlock = 
+    'iif( TYP = 20,'#13#10'     ETRU_GUI_ColorForTyp(ZEILEN_TYP),'#13#10'     clN' +
+    'one )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZEILEN_TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 91
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_17: TBeAttr
+  Caption = 'Zugangsinfo'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ZUGANGS_INFO'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nFontStyle |'#13#10'if not empty(SELF.ColumnFont) then'#13#10'   case TYP'#13 +
+    #10'      of 20 :: nFontStyle := fsItalic, // "Zugangs-Kopf"'#13#10'   ot' +
+    'herwise'#13#10'      nFontStyle := 0,'#13#10'   endcase,'#13#10'   SELF.ColumnFont' +
+    '.Style := nFontStyle,'#13#10'endif,'#13#10#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZUGANGS_INFO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 86
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'Verf'#252'gbar zu Bedarfstermin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif( TYP = 10,'#13#10'     ColumnResult,'#13#10'     '#39#39' )'
+  ColResultBlock = 'CALC_BESTAND_BEI_BEDARF'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '// Unterdeckung zum Bedarfszeitpunkt ?'#13#10'//   => nur Hervorheben,' +
+    ' wenn eine (Rest)Bedarfsmenge vorhanden ist'#13#10'iif( ITEMTABLE:TYP ' +
+    '= 10,'#13#10'     iif(     ITEMTABLE:BEDARF_MENGE <> 0'#13#10'          and ' +
+    'ITEMTABLE:CALC_BESTAND_BEI_BEDARF < ITEMTABLE:BEDARF_MENGE,'#13#10'   ' +
+    '       clRed,'#13#10'          clNone ),'#13#10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 73
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_23: TBeAttr
+  Caption = 'ZUGANGS_TERMIN'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ZUGANGS_TERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZUGANGS_TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 113
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_24: TBeAttr
+  Caption = 'ZUGANGS_TERMIN_INDEX'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ZUGANGS_TERMIN_INDEX'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZUGANGS_TERMIN_INDEX'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 135
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_7: TBeAttr
+  Caption = 'ARTGRUPPE'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ARTGRUPPE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARTGRUPPE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_15: TBeAttr
+  Caption = 'TYP'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'TYP'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_5: TBeAttr
+  Caption = 'Verf'#252'gbar aktuell'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'CALC_BESTAND_AKTUELL'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 'iif(ColumnResult >= 0, clNone, clRed)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'CALC_BESTAND_AKTUELL'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 94
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_18: TBeAttr
+  Caption = 'EBENE'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'EBENE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'EBENE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 38
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_19: TBeAttr
+  Caption = 'REC_NO'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'DbRecNo()'
+  ColResultBlock = 'REC_NO'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'REC_NO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 47
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_2: TBeAttr
+  Caption = 'Lag.Kennz.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'AttribDispVal(Self.BeAttr.AttribID, LAGER_KZ)'
+  ColResultBlock = 'LAGER_KZ'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LAGER_KZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  AttribID = 102020
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 81
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_10: TBeAttr
+  Caption = 'Pos.Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'POSNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'POSNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 40
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_20: TBeAttr
+  Caption = 'SORT_KEY'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'SORT_KEY'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SORT_KEY'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Lucida Console'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 558
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_22: TBeAttr
+  Caption = 'ZUGANGS_LAUFNUMMER'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'ZUGANGS_LAUFNUMMER'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZUGANGS_LAUFNUMMER'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 174
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_21: TBeAttr
+  Caption = 'Bedarf ged. durch Lager?'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    'iif( TYP = 10,'#13#10'     iif(ColumnResult = '#39'J'#39','#13#10'         '#39'Ja'#39','#13#10'  ' +
+    '       iif(ColumnResult = '#39'T'#39','#13#10'             '#39'Teilweise'#39','#13#10'     ' +
+    '        iif(ColumnResult = '#39'N'#39','#13#10'                 '#39'Nein'#39','#13#10'     ' +
+    '            '#39#39'))),'#13#10'     '#39#39' )'
+  ColResultBlock = 'CALC_BEDARF_GEDECKT_DURCH_LAGER'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'ITEMTABLE'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'CALC_BEDARF_GEDECKT_DURCH_LAGER'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 124
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end

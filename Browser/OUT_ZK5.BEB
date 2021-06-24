@@ -1,0 +1,511 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEditCustomer.MainTable'
+    'TFormZahlung.DfOpS'
+    'TFormZahlung.DfWaeS'
+    'TFormZahlung.MainTable'
+    'TFormZahlung.qry_Main'
+    'TFormZahlung.tbl_DfZaA')
+  RowColorBlock = 'IIf(ZAHLOPNR = 0, clNone, RGB(230, 230, 230))'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_10: TbeAttr
+  Caption = ' '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = #39#39
+  ColResultBlock = 'ZAHLOPNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'QRY015'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'IIf(not Empty(REC_NO) and ZAHLOPNR = 0,'#13#10'    IIf(not Empty(OPNR)' +
+    ' and '#39'/'#39' + AllTrim(Right(LIEFNROPNR, 6)) + '#39'/'#39' $ DFOPS:OPS,'#13#10'   ' +
+    '     RGB(0, 240, 20),'#13#10'        clRed),'#13#10'    clNone)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZAHLOPNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 17
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = 'OP-Nr'
+  CaptionBlock = 
+    '|cFeldName|'#13#10'cFeldName := '#39#39','#13#10'if not Empty(DBField("LIEFNROPNR"' +
+    ', DF140)) then'#13#10'   cFeldName := '#39'LIEFNROPNR'#39','#13#10'else'#13#10'   cFeldNam' +
+    'e := '#39'OPNR'#39','#13#10'endif,'#13#10'SELF.BeAttr.FieldName := cFeldName,'#13#10'SELF.' +
+    'BeAttr.Caption'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'Str(ColumnResult, 8)'
+  ColResultBlock = 
+    '|cResult|'#13#10'cResult := '#39#39','#13#10'if not Empty(DBField("LIEFNROPNR", DF' +
+    '140)) then'#13#10'   cResult   := Val(SubStr(AsString("LIEFNROPNR", DF' +
+    '140), 9, 6)),'#13#10'else'#13#10'   cResult   := AsNumber("OPNR", DF140),'#13#10'e' +
+    'ndif,'#13#10'cResult'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LIEFNROPNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 56
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Beleg-Nr'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'Trim(ColumnResult)'
+  ColResultBlock = 'RENUMMER'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB015'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RENUMMER'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 72
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Bel.Dat.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'DToC(ColumnResult)'
+  ColResultBlock = 'REDATUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB015'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'REDATUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 50
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Betrag'
+  CaptionBlock = 
+    'SELF.BeAttr.FieldName := IIf(DABPAR:OP = '#39'I'#39', '#39'BETRAG'#39', '#39'FW_BETR' +
+    'AG'#39'),'#13#10'SELF.BeAttr.Caption'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'IIf(not Empty(ColumnResult), FormatFloat('#39',##0.'#39' + Replicate('#39'0'#39 +
+    ', IIf(DABPAR:OP = '#39'I'#39', DABPAR:STDWAE_NK, CurrDecimals(WAEKZ))), ' +
+    'ColumnResult), '#39#39')'
+  ColResultBlock = 
+    'IIf(not BUCHART $ '#39'AE'#39','#13#10'   IIf(DABPAR:OP = '#39'I'#39','#13#10'      IIf(BETR' +
+    'AG <> 0, Round(BETRAG, DABPAR:STDWAE_NK), 0),'#13#10'      IIf(FW_BETR' +
+    'AG <> 0, Round(FW_BETRAG, CurrDecimals(WAEKZ)), 0) ), 0)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB015'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'FW_BETRAG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 81
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'W'#228'hr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'Str(WAEKZ) + '#39' - '#39' + CurrSign(WAEKZ)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB015'
+  HideBlock = 'DABPAR:OP <> '#39'I'#39
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WAEKZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 45
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TbeAttr
+  Caption = 'Zahlung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'IIf(not Empty(ColumnResult), FormatFloat('#39',##0.'#39' + Replicate('#39'0'#39 +
+    ', IIf(DABPAR:OP = '#39'I'#39', DABPAR:STDWAE_NK, CurrDecimals(WAEKZ))), ' +
+    'ColumnResult), '#39#39')'
+  ColResultBlock = 
+    'IIf(BUCHART $ '#39'AE'#39','#13#10'   IIf(DABPAR:OP = '#39'I'#39','#13#10'      IIf(TEILZAHL' +
+    ' <> 0, Round(TEILZAHL, DABPAR:STDWAE_NK), 0),'#13#10'      IIf(FW_TEIL' +
+    'Z  <> 0, Round(FW_TEILZ, CurrDecimals(WAEKZ)), 0) ), 0)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 74
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Skonto'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'IIf(not Empty(ColumnResult), FormatFloat('#39',##0.'#39' + Replicate('#39'0'#39 +
+    ', IIf(DABPAR:OP = '#39'I'#39', DABPAR:STDWAE_NK, CurrDecimals(WAEKZ))), ' +
+    'ColumnResult), '#39#39')'
+  ColResultBlock = 
+    'IIf(BUCHART $ '#39'AE'#39','#13#10'   IIf(DABPAR:OP = '#39'I'#39','#13#10'      IIf(BETRAG <' +
+    '> 0, Round(BETRAG, DABPAR:STDWAE_NK), 0),'#13#10'      IIf(FW_BETRAG <' +
+    '> 0, Round(FW_BETRAG, CurrDecimals(WAEKZ)), 0) ), 0)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 74
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TbeAttr
+  Caption = 'BuA'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'BUCHART'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BUCHART'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 26
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TbeAttr
+  Caption = 'OP-Zahl.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'IIf(not Empty(ColumnResult), ColumnResult, '#39#39')'
+  ColResultBlock = 'ZAHLOPNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZAHLOPNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 54
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TbeAttr
+  Caption = 'Sach-Kto.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'IIf(not Empty(ColumnResult), ColumnResult, '#39#39')'
+  ColResultBlock = 'GEGENKONTO'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'GEGENKONTO'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 74
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

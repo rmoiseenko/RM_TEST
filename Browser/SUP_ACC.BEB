@@ -1,0 +1,412 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TDM_SuppOrders.Dab010'
+    'TDM_SuppOrders.Dab050'
+    'TDM_SuppOrders.Dab055'
+    'TDM_SuppOrders.Dab100'
+    'TDM_SuppOrders.Dab510'
+    'TFormSuppBackOrd.MainTable'
+    'TFormSuppOrdReceived.Mem035')
+  RowColorBlock = 'if( MEMTABLE:SELECTED, RGB(230,255,230), clWindow )'
+  SelComplLines = True
+  ShowSelAlways = True
+  ReportDesc = 'Inventur-Liste'#13#10'von Mir !!!'
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Buchen'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    'if( MEMTABLE:BOF() and MEMTABLE:EOF(), '#39#39', if( MEMTABLE:SELECTED' +
+    ', "Ja",  "Nein" ) )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 44
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Kommission'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'DAB035:KOMMISS'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 85
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Termin'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'DAB035:TERMIN'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 85
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '|mbez1| mbez1 := '#39#39',   if !empty(DAB055:(APNUMMER)) then       m' +
+    'bez1:=padr(ltrim(TRIM(DAB055:BEZ1)+" "+ alltrim(DAB055:BEZ2)+  "' +
+    ' "+memoline(memo,40,1)),30),  else        mbez1:=padr(ltrim(TRIM' +
+    '(DAB010:BEZ1)+" "+alltrim(DAB010:BEZ2) +   " "+memoline(memo,40,' +
+    '1)),30),    endif,     if mfug='#39'J'#39' .and. '#39'J'#39' $   DABPAR:(groesse' +
+    'n+farben) then       if DABPAR:groessen='#39'J'#39' .and.  DABPAR:farben' +
+    '='#39'J'#39' and  Len(alltrim(artnr))>DABPAR:LARTNR then            mbez' +
+    '1 := mbez1 + '#39'/'#39'+substr(artnr,14,4)+'#39'/'#39'+substr(artnr,18),     en' +
+    'dif,    else       if  DABPAR:groessen='#39'J'#39' and Len(Alltrim(artnr' +
+    '))>DABPAR:LARTNR  then       mbez1 := mbez1+'#39'/'#39'+substr(artnr,14,' +
+    '4),    else  if J->farben='#39'J'#39'   and Len(Alltrim(artnr))>DABPAR:L' +
+    'ARTNR then        mbez1 :=   padr(mbez1,26)+'#39'/'#39'+substr(artnr,18)' +
+    ',      endif,    endif,   endif,  mbez1'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 176
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Zugangs-Menge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|aMenge| aMenge :=  if(liefnr>0, menge_ek/if(ve_nr=1,max(DAB010:' +
+    'VE,1),1),  menge_ek/if(ve_nr=1,max(DAB010:VE,1),1)), if( aMenge ' +
+    '<> 0, FloatToStr(  aMenge, DABPAR:NKSTELLEN ), '#39#39' )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 93
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TbeAttr
+  Caption = 'WE'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|aMenge| aMenge := menge_we/if(ve_nr=1,max(DAB010:VE,1),1), if( ' +
+    'aMenge <> 0,  FloatToStr( aMenge,DABPAR:NKSTELLEN), '#39#39' )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'if( menge_we <> 0, clYellow, if( MEMTABLE:SELECTED, RGB(230,255,' +
+    '230),  clWindow ))'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 93
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TbeAttr
+  Caption = 'ME'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'if(ve_nr=1,DAB010:ME_VE,if(empty(DAB510:me_ek),DAB010:ME_EK,DAB5' +
+    '10:me_ek))'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 30
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TbeAttr
+  Caption = 'Pos.Wert'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|mpe_ek| CurrCheck(WAEKZ),    mpe_ek:=if(empty(DAB510->pe_ek),DA' +
+    'B010:pe_ek,DAB510->pe_ek),    FloatToStr(   ekpewert(menge_ek,so' +
+    'ek,mpe_ek,rabatt1,rabatt2,rabatt3,{z_kost1,z_kost2,z_kos    t3},' +
+    '{z_mode1,z_mode2,z_mode3},fw_kurs), CurrDecimals(WAEKZ) )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'DAB035'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Differenz'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '(DAB035:MENGE_EK - MEMTABLE:MENGE_EK_ALT) / if(ve_nr=1,max(DAB01' +
+    '0:VE,1),1)'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'if( DAB035:MENGE_EK - MEMTABLE:MENGE_EK_ALT = 0, clWindow,  if( ' +
+    ' DAB035:MENGE_EK - MEMTABLE:MENGE_EK_ALT < 0, clRed, clGreen ) )'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 75
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

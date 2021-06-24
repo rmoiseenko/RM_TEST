@@ -1,0 +1,155 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeArrayGridPanel.pnMemSelGrd_')
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_2: TbeAttr
+  Caption = 'Jahr'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| oParent, oDfInv, aDate, aJahrTab, aJahre, aResult |'#13#10'aResult:=' +
+    ' '#39#39','#13#10'oParent:= GetParent(Browser),'#13#10'oDfInv := oParent.DS_MainTa' +
+    'ble.DataSet,'#13#10'If !Empty(oDfInv) then'#13#10'   aJahre:= DbRecNo(MemArr' +
+    'ay),'#13#10'   If (aJahre = 0) and DbState(MemArray) = dsInsert then'#13#10 +
+    '      aJahre:= LastRec(MemArray) + 1'#13#10'   EndIf,'#13#10'   If aJahre > ' +
+    '0 then'#13#10'      aDate   := iif(Empty(oDfInv:AfA_Dat), Date(), oDfI' +
+    'nv:AfA_Dat),'#13#10'      aJahrTab:= AfAGJahrTab(aDate, aJahre),'#13#10'    ' +
+    '  aResult := aJahrTab[aJahre, 4]'#13#10'   EndIf'#13#10'EndIf,'#13#10'aResult'
+  FooterBlock = #39'Summe'#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 74
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = '%-Wert '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'FormatFloat('#39'#,##0.00;;""'#39', MEMARRAY:PROZ) + '#39' '#39
+  FooterBlock = 
+    '| oParent, oDfInv, aSoATab, i, aSum, aResult |'#13#10'aResult:= '#39#39','#13#10'o' +
+    'Parent:= GetParent(Browser),'#13#10'oDfInv := oParent.DS_MainTable.Dat' +
+    'aSet,'#13#10'If !Empty(oDfInv) then'#13#10'   aSum   := 0,'#13#10'   aSoaTab:= Str' +
+    'ToArr(oDfInv:SOA_TAB),'#13#10'   For i:= 1 to ALen(aSoaTab) do'#13#10'      ' +
+    ' aSum += aSoaTab[i, 1]'#13#10'   Next,'#13#10'   aResult:= FormatFloat('#39'#0.0' +
+    '0;;""'#39', Round(aSum, 2))'#13#10'EndIf,'#13#10'aResult + '#39' '#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PROZ'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 125
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Betrag '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'FormatFloat('#39'#,##0.00;;""'#39', MEMARRAY:BETRAG) + '#39' '#39
+  FooterBlock = 
+    '| oParent, oDfInv, aSoATab, i, aSum, aResult |'#13#10'aResult:= '#39#39','#13#10'o' +
+    'Parent:= GetParent(Browser),'#13#10'oDfInv := oParent.DS_MainTable.Dat' +
+    'aSet,'#13#10'If !Empty(oDfInv) then'#13#10'   aSum   := 0,'#13#10'   aSoaTab:= Str' +
+    'ToArr(oDfInv:SOA_TAB),'#13#10'   For i:= 1 to ALen(aSoaTab) do'#13#10'      ' +
+    ' aSum += aSoaTab[i, 2]'#13#10'   Next,'#13#10'   aResult:= FormatFloat('#39'#,##' +
+    '0.00;;""'#39', Round(aSum, 2))'#13#10'EndIf,'#13#10'aResult + '#39' '#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'MEMARRAY'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BETRAG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 180
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

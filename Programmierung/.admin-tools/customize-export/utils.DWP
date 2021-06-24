@@ -123,8 +123,12 @@ function ExportBrowser(cBasicPath, bCompleteExport, dChangesSince, nUserNo:N)
       oDabBRO := BeOpen(waDabBRO),
       startseq
          ForceDirectories(cBasicPath + 'Browser'),
-
-         oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
+         if nUserNo == 0 then
+            oDabBRO.CbSetFilter('USER = ' + str(nUserNo) + ' AND BROWSER_ID LIKE ''@%'''),
+         else
+            oDabBRO.CbSetFilter('USER = ' + str(nUserNo)),
+         endif,
+         browse(,oDabBRO),
          oDabBRO.CbFirst(),
          while not oDabBRO.CbEoF do
             i++,

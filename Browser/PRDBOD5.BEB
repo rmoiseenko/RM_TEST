@@ -1,0 +1,882 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormProdBackOrders.MainTable'
+    'TFormProdBODetail.Dab035'
+    'TFormProdBODetail.MainTable'
+    'TFormProdBODetail.tbl_Dab010'
+    'Tpd_ProdFileCard.mem_Detail')
+  RowColorBlock = 
+    '| nColor, oDab340:DB:='#39'waDAB340,B_POS_LFD_OFFEN'#39' |'#13#10#13#10'nColor := ' +
+    'clNone,'#13#10#13#10'// Gel'#246'schte Positionen'#13#10'if empty(ARTNR_E) and not em' +
+    'pty(B_POS_LFD) then'#13#10'   nColor := cl3dLight,'#13#10'else'#13#10'   // Derzei' +
+    't aktive Positionen (offene BDE-/MDE-Buchungen)'#13#10'   if DBSeek({D' +
+    'AB240:B_POS_LFD}, oDab340) then'#13#10'      // Gleiches Gr'#252'n wie ein ' +
+    'aktiver Arbg. in der Kapa und im'#13#10'      // Personalstamm-Browser' +
+    ' sowie in den offenen Buchungen'#13#10'      nColor := RGB(157, 244, 1' +
+    '57),'#13#10'   else'#13#10'      // Keine Buchung aber vielleicht bereits ko' +
+    'mmissionierte Position?'#13#10'      if not empty(B_DATUM) then'#13#10'     ' +
+    '    nColor := GetBeDesignColor(dcbGreen, dcgLevel1),'#13#10'      endi' +
+    'f,'#13#10'   endif,'#13#10'endif,'#13#10#13#10'nColor'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_1: TbeAttr
+  Caption = 'Abt.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'iif(empty(PROD_ABT), DAB035:PROD_ABT, PROD_ABT)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PROD_ABT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 30
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = 'Lfd.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'Val(SubStr(B_POS_LFD, 9, 3))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'B_POS_LFD'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 31
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Pos.Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'POSNR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'POSNR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 43
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_10: TbeAttr
+  Caption = 'E'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = #39#39
+  ColResultBlock = 
+    '| bErsatzArtikelWirdGenutzt |'#13#10#13#10'// Wenn ein Ersatzartikel gew'#228'h' +
+    'lt wurde oder hinterlegt ist (und die Verwendung eines Ersatzart' +
+    'ikels nicht gesperrt ist ('#39'@'#39')), dann '#39'E'#39' anzeigen anstatt '#39'>'#39#13#10 +
+    'bErsatzArtikelWirdGenutzt :=     DABPAR:ERSATZART = '#39'J'#39#13#10'       ' +
+    '                      and not empty(ARTNR_E)'#13#10'                  ' +
+    '           and ARTNR_E <> ARTNR2'#13#10'                             a' +
+    'nd not '#39'@'#39' $ (ARTNR_E1 + ARTNR_E2 + ARTNR_E3), // '#39'@'#39' in der St'#252 +
+    'ckliste (Dab210) bewirkt die Sperrung der Funktion "Ersatzartike' +
+    'l"'#13#10#13#10'bErsatzArtikelWirdGenutzt'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif(ColumnResult, 586, -1)'
+  ImageAlignV = ialvCenter
+  ImageAlignH = ialhCenter
+  Band = 0
+  BandSize = 2
+  BandWidth = 18
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Artikel-Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '// Gel'#246'schte Positionen anzeigen (ARTNR_E ist dann leer)'#13#10'iif(em' +
+    'pty(ARTNR_E) and not empty(B_POS_LFD),'#13#10'    '#39'gel'#246'schte / leere P' +
+    'osition'#39','#13#10'    ColumnResult)'
+  ColResultBlock = 'ARTNR_E'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| bGeloescht |'#13#10#13#10'bGeloescht := empty(ARTNR_E) and not empty(B_P' +
+    'OS_LFD),'#13#10#13#10'if not empty(SELF.ColumnFont) then'#13#10'   SELF.ColumnFo' +
+    'nt.Style := iif(bGeloescht, fsItalic, 0),'#13#10'endif,'#13#10#13#10'clNone'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ARTNR_E'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageIndex = 'AttribImageInfo(102024, DAB010:ARTTYP)'
+  Band = 0
+  BandSize = 1
+  BandWidth = 155
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TbeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'MEMDETAIL:BEZ1'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 278
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'R'#252'st/St'#252'ck/Mat.Erford.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'FieldValLabel(DbField("R_S"))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'R_S'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 122
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_16: TbeAttr
+  Caption = '.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = #39#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 5855577
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 1
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_13: TbeAttr
+  Caption = 'Soll-Menge fix'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| nMenge |'#13#10#13#10'// R'#252'st-Sollmengen f'#252'r Arbeitsg'#228'nge werden in der ' +
+    'Spalte "Soll-Menge Fix"'#13#10'//   angezeigt, auch wenn diese im Feld' +
+    ' SOLL gepflegt werden.'#13#10#13#10'if R_S = '#39'R'#39' then'#13#10'   nMenge := SOLL,'#13 +
+    #10'else'#13#10'   nMenge := FIX_SOLL,'#13#10'endif,'#13#10#13#10'iif(empty(nMenge), '#39#39', ' +
+    'FloatToStr(nMenge) + '#39' '#39' + AllTrim(DAB010:ME))'
+  ColResultBlock = 'FIX_SOLL'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'FIX_SOLL'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 90
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_14: TbeAttr
+  Caption = 'Soll-Menge / Teil'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '// R'#252'st-Sollmengen f'#252'r Arbeitsg'#228'nge werden in der Spalte "Soll-M' +
+    'enge Fix"'#13#10'//   angezeigt, auch wenn diese im Feld SOLL gepflegt' +
+    ' werden.'#13#10'iif(empty(ColumnResult) or R_S = '#39'R'#39','#13#10'    '#39#39','#13#10'    Fl' +
+    'oatToStr(ColumnResult) + '#39' '#39' + AllTrim(DAB010:ME))'
+  ColResultBlock = 'SOLL'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'SOLL'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 90
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TbeAttr
+  Caption = 'Ges. Soll-Bedarf '
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FloatToStr(ColumnResult) + '#39' '#39' + Al' +
+    'lTrim(DAB010:ME))'
+  ColResultBlock = 
+    '// bis zum Auftragsdruck entspricht RUECKS_PR dem berechneten Ge' +
+    'samt-Soll-Bedarf'#13#10'iif( Empty(B_DATUM),'#13#10'     RUECKS_PR,'#13#10'     ME' +
+    'MDETAIL:XSOLL )'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 95
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TbeAttr
+  Caption = 'Gebucht'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( empty(ColumnResult) and Empty(B_DATUM),'#13#10'     '#39#39','#13#10'     Flo' +
+    'atToStr(ColumnResult) + '#39' '#39' + AllTrim(DAB010:ME) )'
+  ColResultBlock = 'IST'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| nColor, bIsKommissioniert |'#13#10#13#10'nColor            := clNone,'#13#10#13 +
+    #10'if not empty(ARTNR_E) then'#13#10'   bIsKommissioniert := not empty(B' +
+    '_DATUM),'#13#10#13#10'   // Hervorheben, wenn gebuchte Menge von Soll-Meng' +
+    'e abweicht'#13#10'   if bIsKommissioniert then'#13#10'      nColor := iif( I' +
+    'ST = MEMDETAIL:XSOLL,'#13#10'                     clNone,'#13#10'           ' +
+    '          iif(      ((SOLL >= 0) and (IST > MEMDETAIL:XSOLL))'#13#10' ' +
+    '                           or ((SOLL <  0) and (IST < MEMDETAIL:' +
+    'XSOLL)),'#13#10'                          GetBeDesignColor(dcbGreen,  ' +
+    'dcgLevel3),'#13#10'                          GetBeDesignColor(dcbOrang' +
+    'e, dcgLevel3) )'#13#10'                   ),'#13#10'   endif,'#13#10#13#10'endif,'#13#10#13#10'n' +
+    'Color'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 76
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_11: TbeAttr
+  Caption = 'Verf'#252'gbar'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes, nAvailQuant, bCalcVerfuegbarkeitFuerPosition, cProdAbt, ' +
+    'cRelevanteLAGER_KZ_D240 |'#13#10#13#10'cRes        := '#39#39','#13#10'nAvailQuant := ' +
+    'MEMDETAIL:SOLL,'#13#10#13#10'bCalcVerfuegbarkeitFuerPosition := false,'#13#10#13#10 +
+    '// keine "gel'#246'schte" Position?'#13#10'if not empty(ARTNR_E) then'#13#10'   /' +
+    '/ Verf'#252'gbarkeit wird nur angezeigt, so lange f'#252'r die Position ke' +
+    'ine AKA gedruckt ist'#13#10'   // => Warum? macht doch auch f'#252'r "Nachl' +
+    'ieferung" Sinn?'#13#10'   //    => MEMDETAIL:SOLL liefern aber keine D' +
+    'aten im Standard!'#13#10'   if Empty(B_DATUM) then'#13#10'      // Verf'#252'gbar' +
+    'e Menge nicht als '#39'0'#39' anzeigen, wenn keine Lagerf'#252'hrung f'#252'r Arti' +
+    'kel / Position'#13#10'      cProdAbt                := iif(empty(PROD_' +
+    'ABT), DAB035:PROD_ABT, PROD_ABT),'#13#10'      cRelevanteLAGER_KZ_D240' +
+    ' := '#39'NP'#39' + iif('#39'*'#39' $ cProdAbt, '#39#39', '#39'X'#39'),'#13#10#13#10'      if     not ART' +
+    'TYP $ '#39'AE'#39#13#10'         and (FIX_SOLL + SOLL) > 0'#13#10'         and not' +
+    ' DAB010:LAGER_KZ $ cRelevanteLAGER_KZ_D240'#13#10'      then'#13#10'        ' +
+    ' bCalcVerfuegbarkeitFuerPosition := true,'#13#10'      endif,'#13#10'   endi' +
+    'f,'#13#10'endif,'#13#10#13#10'if bCalcVerfuegbarkeitFuerPosition then'#13#10'   cRes :' +
+    '= FloatToStr(nAvailQuant) + '#39' '#39' + AllTrim(DAB010:ME),'#13#10'endif,'#13#10#13 +
+    #10'cRes'
+  ColResultBlock = 
+    '// Hinweis zu "MEMDETAIL:SOLL"'#13#10'//   MEMDETAIL:SOLL enth'#228'lt die ' +
+    'f'#252'r die Produktion dieser Position'#13#10'//   verf'#252'gbare Menge.'#13#10'//  ' +
+    ' -> ber'#252'cksichtigt -2 Artikel Beschaffung'#13#10'//   -> ber'#252'cksichtig' +
+    't Rohwaren-Best'#228'nde, Produktions-Handlager'#13#10'//   -> Reservierung' +
+    'en durch "Bindung" in Dab240'#13#10'//   -> Mehrfachverwendung in der ' +
+    'gleichen St'#252'ckliste'#13#10'//   -> etc.    '#13#10'MEMDETAIL:SOLL'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '| nColor, nAvailQuant, bCalcVerfuegbarkeitFuerPosition, cProdAbt' +
+    ', cRelevanteLAGER_KZ_D240 |'#13#10#13#10'// Hinweis: Logik ist identisch m' +
+    'it Codeblock f'#252'r die "Anzeige-Funk."!'#13#10#13#10'nColor      := clNone,'#13 +
+    #10'nAvailQuant := MEMDETAIL:SOLL,'#13#10#13#10'bCalcVerfuegbarkeitFuerPositi' +
+    'on := false,'#13#10#13#10'// keine "gel'#246'schte" Position?'#13#10'if not empty(ART' +
+    'NR_E) then'#13#10'   // Verf'#252'gbarkeit wird nur angezeigt, so lange f'#252'r' +
+    ' die Position keine AKA gedruckt ist'#13#10'   // => Warum? macht doch' +
+    ' auch f'#252'r "Nachlieferung" Sinn?'#13#10'   //    => MEMDETAIL:SOLL lief' +
+    'ern aber keine Daten im Standard!'#13#10'   if Empty(B_DATUM) then'#13#10'  ' +
+    '    // Verf'#252'gbare Menge nicht als '#39'0'#39' anzeigen, wenn keine Lager' +
+    'f'#252'hrung f'#252'r Artikel / Position'#13#10'      cProdAbt                :=' +
+    ' iif(empty(PROD_ABT), DAB035:PROD_ABT, PROD_ABT),'#13#10'      cReleva' +
+    'nteLAGER_KZ_D240 := '#39'NP'#39' + iif('#39'*'#39' $ cProdAbt, '#39#39', '#39'X'#39'),'#13#10#13#10'    ' +
+    '  if     not ARTTYP $ '#39'AE'#39#13#10'         and (FIX_SOLL + SOLL) > 0'#13#10 +
+    '         and not DAB010:LAGER_KZ $ cRelevanteLAGER_KZ_D240'#13#10'    ' +
+    '  then'#13#10'         bCalcVerfuegbarkeitFuerPosition := true,'#13#10'     ' +
+    ' endif,'#13#10'   endif,'#13#10'endif,'#13#10#13#10#13#10#13#10'if bCalcVerfuegbarkeitFuerPosi' +
+    'tion then'#13#10'   nColor := iif( RUECKS_PR > 0 AND Round(nAvailQuant' +
+    ', DAB010:ME_RUNDEN) < Round(RUECKS_PR, DAB010:ME_RUNDEN),'#13#10'     ' +
+    '             GetBeDesignColor(dcbRed,   dcgLevel2),'#13#10'           ' +
+    '       GetBeDesignColor(dcbGreen, dcgLevel2) ),'#13#10#13#10'   WriteLn(nA' +
+    'vailQuant, RUECKS_PR),'#13#10'   WriteLn(Round(nAvailQuant, DAB010:ME_' +
+    'RUNDEN), Round(RUECKS_PR, DAB010:ME_RUNDEN)),'#13#10'endif,'#13#10#13#10'nColor'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_15: TbeAttr
+  Caption = 'Gebunden'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    'iif( PRIOR_PR = 0,'#13#10'     '#39#39','#13#10'     iif( PRIOR_PR >= RUECKS_PR,'#13#10 +
+    '          '#39'Ja'#39','#13#10'          '#39'Teil.'#39') + '#39' ('#39' + FloatToStr(PRIOR_PR' +
+    ') + '#39')'#39#13#10'   )'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif( PRIOR_PR > 0,'#13#10'     GetBeDesignColor(dcbOrange, dcgLevel2),' +
+    #13#10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PRIOR_PR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_12: TbeAttr
+  Caption = 'Karte'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'iif(not empty(ColumnResult), DToC(ColumnResult), '#39#39')'
+  ColResultBlock = 'B_DATUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'B_DATUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif(not empty(ColumnResult), 31, -1)'
+  ImageAlignV = ialvBottom
+  ImageAlignH = ialhCenter
+  Band = 0
+  BandSize = 2
+  BandWidth = 55
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_17: TbeAttr
+  Caption = '.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = #39#39
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 5855577
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 1
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Gutmenge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 2646351
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 59
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TbeAttr
+  Caption = 'Ausschuss'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'MENGE_AUSS'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'DAB240'
+  ForeColor = 617699
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE_AUSS'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 61
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

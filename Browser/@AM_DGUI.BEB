@@ -1,0 +1,301 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeDBGet.'
+    'TFormProdDispoPlan.MainTable')
+  RowColorBlock = 
+    '// Wenn f'#252'r die Ausnahme eine Wiedervorlage f'#252'r die Zukunft gese' +
+    'tzt ist, dann'#13#10'//   farblich zur'#252'cknehmen'#13#10'iif( KDNDAM:WV_TS >= ' +
+    'Now(),'#13#10'     GetBeDesignColor(dcbGreen, dcgLevel1),'#13#10'     // Wen' +
+    'n die Wiedervorlage "f'#228'llig" ist => r'#246'tlich anzeigen'#13#10'     iif( ' +
+    'not empty(KDNDAM:ID),'#13#10'          GetBeDesignColor(dcbRed, dcgLev' +
+    'el3),'#13#10'          clNone ) )'
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+end
+object Col_11: TBeAttr
+  Caption = 'Prio'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'PRIORI'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not empty(ColumnResult) and WV_TS <= Now(),'#13#10'     clWhite,'#13 +
+    #10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PRIORI'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 33
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_10: TBeAttr
+  Caption = 'Typ der Ausnahmemeldung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'FieldValLabel(DbField("AUSN_TYP"))'
+  ColResultBlock = 'AUSN_TYP'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not empty(ColumnResult) and WV_TS <= Now(),'#13#10'     clWhite,'#13 +
+    #10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'AUSN_TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 218
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_19: TBeAttr
+  Caption = 'zuletzt aufgetreten'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'LTZT_AUFTR'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LTZT_AUFTR'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 121
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_20: TBeAttr
+  Caption = 'Wiedervorlage'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '//**************************************************************' +
+    '****************'#13#10'// @Result: string'#13#10'//************************' +
+    '******************************************************'#13#10'function' +
+    ' WiederVorlageToText(dWVTimeStamp)'#13#10'   dWVTimeStamp := Trunc(dWV' +
+    'TimeStamp),                                         // WriteLn(d' +
+    'WVTimeStamp),'#13#10#13#10'   if empty(dWVTimeStamp) then'#13#10'      Result :=' +
+    ' '#39#39','#13#10'   else'#13#10'      if (dWVTimeStamp >= Date()) and (dWVTimeSta' +
+    'mp <= Date() + 2) then'#13#10'         if dWVTimeStamp = Date() then'#13#10 +
+    '            Result := '#39'heute'#39','#13#10'         else'#13#10'            if dW' +
+    'VTimeStamp = Date() + 1 then'#13#10'               Result := '#39'morgen'#39',' +
+    #13#10'            else'#13#10'               Result := '#39#252'bermorgen'#39#13#10'     ' +
+    '       endif,'#13#10'         endif,'#13#10'      else'#13#10'         Result := F' +
+    'ormatDateTime('#39'DD.MM.YY'#39', dWVTimeStamp),'#13#10'      endif,'#13#10'   endif' +
+    ','#13#10#13#10'end,'#13#10#13#10#13#10'iif( empty(WV_TS),'#13#10'     iif(ID > 0, '#39'<keine Wied' +
+    'ervorlage gesetzt>'#39', '#39#39'),'#13#10'     iif( WV_TS <= Now(), '#39'f'#228'llig: '#39',' +
+    ' '#39#39')'#13#10'        + WiederVorlageToText(WV_TS)'#13#10'        + '#39' (von '#39' +' +
+    ' iif(empty(WV_USER), '#39'?'#39', BeUserShortName(WV_USER))'#13#10'        + '#39 +
+    ', am '#39' + FormatDateTime('#39'DD.MM.YY'#39', WV_GEAEND ) + '#39')'#39#13#10'    )'
+  ColResultBlock = 'WV_TS'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 'iif( WV_TS <= Now(),'#13#10'     clWhite,'#13#10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WV_TS'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif(WV_TS >= Now(), 568, -1)'
+  ImageAlignV = ialvCenter
+  Band = 0
+  BandSize = 1
+  BandWidth = 204
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_22: TBeAttr
+  Caption = 'WV - ge'#228'nd. um'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    'iif(empty(ColumnResult), '#39#39', FormatDateTime('#39'HH:MM:SS'#39', ColumnRe' +
+    'sult))'
+  ColResultBlock = 'WV_GEAEND'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WV_GEAEND'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 107
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TBeAttr
+  Caption = 'WV Kommentar'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'RtfToText(WV_KOMMENT)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'KDNDAM'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'iif(not empty(ColumnResult), GetBeDesignColor(dcbYellow, dcgLeve' +
+    'l2), clnone)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'WV_KOMMENT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 97
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

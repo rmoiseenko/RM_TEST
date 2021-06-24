@@ -1,0 +1,330 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormForecastMain.mem_ForeCast'
+    'TFormForecastMain.mem_ForeEdit'
+    'TFormForecastMain.tbl_Fore010')
+  SelComplLines = True
+  ShowSelAlways = True
+  UseStandardFont = True
+end
+object Col_0: TbeAttr
+  Caption = 'Planung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|nSumme|'#13#10'nSumme := Val(AsString("MENGE_"+FloatToStr(self.Replic' +
+    'Index),MemTable)),'#13#10'iif( Empty(nSumme), "", nSumme )'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'MEMEDIT'
+  ForeColor = 536870911
+  BackColor = -2147483624
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE_0'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TbeAttr
+  Caption = 'Ges.Summe'
+  CaptionBlock = 
+    '|oOwner|'#13#10'oOwner := GetOwner(BROWSER),'#13#10'"KW."+KW(oOwner.StartDat' +
+    'e+self.ReplicIndex*7)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '|nSumme, nDiff|'#13#10'nSumme := 0,'#13#10'nSumme := nSumme'#13#10'          +  MA' +
+    'X( Val(AsString("SUMME_"+FloatToStr(self.ReplicIndex),MemTable))' +
+    ','#13#10'                    Val(AsString("TRHAUPT_"+FloatToStr(self.R' +
+    'eplicIndex),MemTable)) +'#13#10'                    Val(AsString("TRUN' +
+    'TER_"+FloatToStr(self.ReplicIndex),MemTable)) ),'#13#10'nDiff := Max(0' +
+    ', nSumme - ( Val(AsString("TRHAUPT_"+FloatToStr(self.ReplicIndex' +
+    '),MemTable)) +'#13#10'                    Val(AsString("TRUNTER_"+Floa' +
+    'tToStr(self.ReplicIndex),MemTable)) +'#13#10'                    Val(A' +
+    'sString("MENGEIST_"+FloatToStr(self.ReplicIndex),MemTable)) ) ),' +
+    #13#10'iif( nSumme <> 0 or nDiff <> 0, '#39'Total: '#39' + FloatToStr(nSumme)' +
+    ' + iif( nDiff <> 0, '#39', offener Forecast: '#39' + FloatToStr( nDiff )' +
+    ', '#39#39' ), '#39#39' )'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    '//iif( Mod(self.ReplicIndex,2) = 0, RGB(230,255,200), RGB(230,23' +
+    '0,200) )'#13#10'RGB(230,255,200)'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 332
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TbeAttr
+  Caption = 'Plan.Andere'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|nSumme|'#13#10'nSumme := Val(AsString("SUMME_"+FloatToStr(self.Replic' +
+    'Index),MemTable))'#13#10'          - Val(AsString("MENGE_"+FloatToStr(' +
+    'self.ReplicIndex),MemTable)),'#13#10'iif( Empty(nSumme), "", nSumme )'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = -2147483624
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Ist'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '|nSumme|'#13#10'nSumme := Val(AsString("MENGEIST_"+FloatToStr(self.Rep' +
+    'licIndex),MemTable)),'#13#10'iif( Empty(nSumme), "", nSumme )'
+  CanEditFunc = False
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = 'MEMEDIT'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = False
+  CanEditField = False
+  CanEditHide = False
+  EditMask = #39'!!!'#39
+  UserDefined = False
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Abg.Haupt'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| nSumme |'#13#10'nSumme := Val(AsString("TRHAUPT_"+FloatToStr(self.Re' +
+    'plicIndex),MemTable)),'#13#10'iif( Empty(nSumme), "", FloatToStr(nSumm' +
+    'e) )'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 'RGB(240,240,240)'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 66
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TbeAttr
+  Caption = 'Abg.Unter'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( Empty(AsVariant("TRUNTER_"+FloatToStr(self.ReplicIndex),Mem' +
+    'Table)), "", AsVariant("TRUNTER_"+FloatToStr(self.ReplicIndex),M' +
+    'emTable) )'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 'RGB(240,240,240)'
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 1
+  BandSize = 1
+  BandWidth = 70
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_12: TbeAttr
+  Caption = 'Art.Nr.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'Alltrim(ARTNR)+crlf+'#13#10'Lookup(2,1,{{ARTNR}},"Alltrim(BEZ1)+'#39' '#39'+Al' +
+    'ltrim(BEZ2)","")'
+  CanEditFunc = True
+  CanEditMask = False
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = -2147483633
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = False
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 2
+  BandWidth = 120
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+  Fixed = True
+end

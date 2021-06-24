@@ -1,0 +1,201 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormTMResAssign.MainTable')
+  RowColorBlock = 
+    'iif( Eof(Dab270) and Bof(Dab270), clWindow, '#13#10'iif( DAB270:RES_ID' +
+    ' = 0, RGB(255,150,150), RGB(150,255,150) ) )'
+  SelComplLines = True
+  ShowSelAlways = True
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
+end
+object Col_4: TbeAttr
+  Caption = 'Res.Typ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '|cRes, i, aQuali, oLook270, nRefParent|'#13#10'oLook270 := BeOpen(59,2' +
+    '),'#13#10'startseq'#13#10'  if REF_RESZNR > 0 then'#13#10'     nRefParent := D270_' +
+    'ResZNrParent(oLook270,REF_RESZNR),'#13#10'     DBSeek( {nRefParent}, o' +
+    'Look270 ),'#13#10'     cRes := "REFERENZ: "+FieldValLabel(DbField("RES' +
+    'TYP",oLook270)),'#13#10'  else'#13#10'     cRes := FieldValLabel(DbField("RE' +
+    'STYP"))'#13#10'  endif,'#13#10'always'#13#10'  BeClose(oLook270)'#13#10'stopseq,'#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 125
+  Template = 'TdagBeCombo'
+  Expanded = False
+end
+object Col_1: TbeAttr
+  Caption = 'Bezeichnung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '|cRes, i, aQuali, oLook270, nRefParent|'#13#10'oLook270 := BeOpen(59,2' +
+    '),'#13#10'startseq'#13#10'  if REF_RESZNR > 0 then'#13#10'     nRefParent := D270_' +
+    'ResZNrParent(oLook270,REF_RESZNR),'#13#10'     DBSeek( {nRefParent}, o' +
+    'Look270 ),'#13#10'     cRes := oLook270:BEZ'#13#10'  else'#13#10'     cRes := BEZ'#13 +
+    #10'  endif,'#13#10'always'#13#10'  BeClose(oLook270)'#13#10'stopseq,'#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 250
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TbeAttr
+  Caption = 'Zugeordnete/r Ressource/MA'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '|cRes|'#13#10'if RESTYP="M" then'#13#10'   cRes := Lookup(40,1,{{RES_ID}},"R' +
+    'Trim(Str(PERSNR)) + '#39' - '#39' + RTrim(NAME)","",lm_Lookup)'#13#10'else   '#13 +
+    #10'   cRes := Lookup(54,1,{{RES_ID}},"RTrim(Str(ID)) + '#39' - '#39' + RTr' +
+    'im(BEZ)","",lm_Lookup),'#13#10'endif,'#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'RES_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 300
+  Template = 'TdagBeLookupCmb'
+  Expanded = False
+end
+object Col_0: TbeAttr
+  Caption = 'Notwendige Qualifikationen'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '|cRes, i, aQuali, oLook270, nRefParent|'#13#10'startseq'#13#10'  if REF_RESZ' +
+    'NR > 0 then'#13#10'     oLook270   := BeOpen(59,2),'#13#10'     nRefParent :' +
+    '= D270_ResZNrParent(oLook270,REF_RESZNR),'#13#10'  else'#13#10'     oLook270' +
+    '   := DAB270,'#13#10'     nRefParent := ID'#13#10'  endif,'#13#10'    '#13#10'  cRes := ' +
+    #39#39','#13#10'  if (nRefParent > 0) and'#13#10'     ( (REF_RESZNR = 0) or'#13#10'    ' +
+    '   DBSeek({nRefParent}, oLook270) ) then'#13#10'    aQuali := oLook270' +
+    ':RESQLIST,'#13#10'    for i := 1 to TokenCount(oLook270:RESQLIST,'#39'/'#39') ' +
+    'do'#13#10'       aQuali := Token(oLook270:RESQLIST,'#39'/'#39',i),'#13#10'       if ' +
+    'not Empty(aQuali) then'#13#10'          cRes := cRes + iif(not Empty(c' +
+    'Res),'#39', '#39','#39#39') + Lookup(200,1,{{val(aQuali)}},"Alltrim(BEZ)",""),' +
+    #13#10'       endif,'#13#10'    next,'#13#10'  endif,'#13#10'always'#13#10'  if REF_RESZNR > ' +
+    '0 then'#13#10'     BeClose(oLook270),'#13#10'  endif,'#13#10'stopseq,'#13#10'cRes'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 300
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

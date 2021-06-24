@@ -1,0 +1,526 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.oDabPRJ'
+    'TFormEx.oDabPRV'
+    'TFormEx.ProjectProjectPostings')
+  RowColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsBrowserBackgroundColor(MEM_PZE' +
+    'IBU:ZEILEN_TYP)'
+  ShowSelAlways = True
+  Striped = True
+end
+object Col_3: TBeAttr
+  Caption = 'Projekt'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case MEM_PZEIBU:ZEILEN_TYP'#13#10'   of '#39'A'#39' :: ' +
+    'cRes := '#39'<Summe Anwesenheit>'#39','#13#10'   of '#39'W'#39' :: cRes := '#39'<Summe Abw' +
+    'esenheit>'#39','#13#10'   of '#39'B'#39' :: cRes := ProjMgmtGUI_ShowProjectLabel(M' +
+    'EM_PZEIBU:PRJ_ID),'#13#10'   of '#39'P'#39' :: cRes := '#39'<Summe Projektzeit>'#39','#13 +
+    #10'   of '#39'D'#39' :: cRes := '#39'<Differenz>'#39','#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'PRJ_ID'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PRJ_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 250
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'Vorgang'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10'cRes := '#39#39','#13#10'case MEM_PZEIBU:ZEILEN_TYP'#13#10'   of '#39'A'#39' :: ' +
+    'cRes := '#39#39','#13#10'   of '#39'W'#39' :: cRes := '#39#39','#13#10'   of '#39'B'#39' :: cRes := Look' +
+    'up(waDABPRV, '#39'ID'#39', {{ColumnResult}}, '#39'BEZ'#39', iif(BOF(MEM_PZEIBU) ' +
+    'and EOF(MEM_PZEIBU), '#39#39', '#39'Vorgang nicht gefunden'#39'))'#13#10'   of '#39'P'#39' :' +
+    ': cRes := '#39#39','#13#10'   of '#39'D'#39' :: cRes := '#39#39','#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'VORG_ID'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'VORG_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 250
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_1'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_1'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)'
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_2'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_2'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_11: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_3'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_3'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_13: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_4'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_4'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_15: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_5'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_5'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_17: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_6'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_6'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 65
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_19: TBeAttr
+  Caption = '.'
+  CaptionBlock = 
+    'ProjMgmtGUI_CalcPostingDateFieldTitle(MEM_PZEIBU:START_DATE, SEL' +
+    'F.FieldName)'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnFormatValue(ColumnResult' +
+    ', MEM_PZEIBU)'
+  ColResultBlock = 'TAG_NEW_7'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnForegroundColor(MEM_PZEI' +
+    'BU, SELF)'
+  BackColorBlock = 
+    'ProjMgmtGUI_ProjectAcquirePostingsColumnBackgroundColor(MEM_PZEI' +
+    'BU, SELF.FieldName)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TAG_NEW_7'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  EditMask = 
+    '| cRes |'#13#10#13#10'cRes := '#39#39','#13#10'if MEM_PZEIBU:EINGABE_EINHEIT <> '#39'h'#39' th' +
+    'en'#13#10'   cRes := '#39'#####'#39', // Bei Minuten sind nur Ganze-Werte erla' +
+    'ubt'#13#10'endif,'#13#10#13#10'cRes'
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'ProjMGMTGUI_CommentImageIndex(MEM_PZEIBU, Self)        '
+  Band = 0
+  BandSize = 1
+  BandWidth = 60
+  Template = 'TdagBeMemo'
+  Expanded = False
+end

@@ -1,0 +1,731 @@
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TFormEx.EINZEL_TERMINRASTER')
+  RowColorBlock = 'ETRU_GUI_BrowserBackgroundColor(EINZEL_TERMINRASTER)'
+end
+object Col_14: TBeAttr
+  Caption = 'A'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'iif(MARKIERUNG_ABGANG, '#39'>'#39', '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MARKIERUNG_ABGANG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 15
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_13: TBeAttr
+  Caption = 'Z'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'iif(MARKIERUNG_ZUGANG, '#39'<'#39', '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MARKIERUNG_ZUGANG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 14
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_9: TBeAttr
+  Caption = 'KW'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 
+    '| dDayDate |'#13#10'dDayDate := iif(TERMIN = '#39'KW'#39', FrKw(Right(TERMIN, ' +
+    '5)), CToD(TERMIN)),'#13#10'iif(not empty(dDayDate), KW(dDayDate), '#39#39')'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     ETRU_GUI_BrowserFore' +
+    'groundColorAndStyle(ZEILEN_TYP, SELF.ColumnFont) )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 33
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_3: TBeAttr
+  Caption = 'Datum'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := iif(empty(ColumnResult), '#39#39', FormatDateTime(' +
+    #39'ddd, DD.MM.YY'#39', ColumnResult)),'#13#10#13#10'cRes'
+  ColResultBlock = 
+    '| dDayDate |'#13#10'dDayDate := iif(TERMIN = '#39'KW'#39', FrKw(Right(TERMIN, ' +
+    '5)), CToD(TERMIN)),'#13#10'dDayDate'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     ETRU_GUI_BrowserFore' +
+    'groundColorAndStyle(ZEILEN_TYP, SELF.ColumnFont) )'
+  BackColorBlock = 
+    '// Termine in der Vergangenheit rot hervorheben'#13#10'iif(not empty(C' +
+    'olumnResult),'#13#10'    iif(ColumnResult < Date(),'#13#10'        GetBeDesi' +
+    'gnColor(dcbRed,    dcgLevel2),'#13#10'        clNone),'#13#10'    clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'TERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 71
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_0: TBeAttr
+  Caption = 'Typ'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ETRU_GUI_DisplayTextForTyp(ZEILEN_TYP)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     ETRU_GUI_BrowserFore' +
+    'groundColorAndStyle(ZEILEN_TYP, SELF.ColumnFont) )'
+  BackColorBlock = 'ETRU_GUI_ColorForTyp(ZEILEN_TYP)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZEILEN_TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 115
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_5: TBeAttr
+  Caption = 'Info'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'ETRU_GUI_DisplayInfoTextForTyp(EINZEL_TERMINRASTER)'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     ETRU_GUI_BrowserFore' +
+    'groundColorAndStyle(ZEILEN_TYP, SELF.ColumnFont) )'
+  BackColorBlock = 'iif(IST_KONKRETE_BEW, ETRU_GUI_ColorForTyp(ZEILEN_TYP), clNone)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'DATENSATZ_ID'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 226
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_2: TBeAttr
+  Caption = 'Zugang/Bedarf'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'MENGE'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     clNone )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 'iif(MARKIERUNG_IST_SIMULIERT, 569, -1)'
+  ImageAlignH = ialhCenter
+  Band = 0
+  BandSize = 1
+  BandWidth = 83
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_7: TBeAttr
+  Caption = 'Baugr. / Lief. / Kunde'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'iif( KDNR > 0,'#13#10'     LookUp(waDab000, 1, {{KDNR}}, '#39'AllTrim(MATC' +
+    'HCODE) + " " + AllTrim(NAME1) + " " + AllTrim(NAME2)'#39', '#39'???'#39'),'#13#10 +
+    '     iif( LIEFNR > 0,'#13#10'          LookUp(waDab100, 1, {{LIEFNR}},' +
+    ' '#39'AllTrim(MATCHCODE) + " " + AllTrim(NAME1) + " " + AllTrim(NAME' +
+    '2)'#39', '#39'???'#39'),'#13#10'          iif( empty(BAUGRUPPE),'#13#10'               '#39 +
+    #39','#13#10'               BAUGRUPPE) ) )'
+  ColResultBlock = 'iif(KDNR > 0, KDNR, iif(LIEFNR > 0, LIEFNR, BAUGRUPPE))'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     GetBeDesignColor(dcb' +
+    'Black, dcgLevel3) )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'BAUGRUPPE'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clGray
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  ImageList = 'ImageListMain'
+  ImageIndex = 
+    'iif( KDNR > 0,'#13#10'     280,'#13#10'     iif( LIEFNR > 0,'#13#10'          178,' +
+    #13#10'          -1 ) )'
+  Band = 0
+  BandSize = 1
+  BandWidth = 134
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_8: TBeAttr
+  Caption = 'Abt.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = 'PROD_ABT'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif( not ATP_ISTRELEVANT and (IST_ZUGANG or IST_ABGANG),'#13#10'     G' +
+    'etBeDesignColor(dcbWhite, dcgLevel4),'#13#10'     GetBeDesignColor(dcb' +
+    'Black, dcgLevel3) )'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'PROD_ABT'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 27
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TBeAttr
+  Caption = 'verf'#252'gb. Menge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes |'#13#10#13#10'cRes := ColumnResult,'#13#10'case ZEILEN_TYP'#13#10'   of { gl_E' +
+    'TRU_Typ_HeuteInfo,'#13#10'        gl_ETRU_Typ_EndeWBZInfo }  :: cRes :' +
+    '= '#39#39', // keine "Verf'#252'gbar-Menge" in der Info-Zeile & "Heute"-Zei' +
+    'le...'#13#10'endcase,'#13#10#13#10'cRes'
+  ColResultBlock = 'MENGE_VERFUEG'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 'iif(MENGE_VERFUEG >= 0, clNone, clRed)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'MENGE_VERFUEG'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 87
+  Template = 'TdagBeMemo'
+  Expanded = False
+  Visible = False
+end
+object Col_10: TBeAttr
+  Caption = '.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = '"<Undefined>"'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 8355711
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 3
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_15: TBeAttr
+  Caption = 'Verf'#252'gbarkeit Menge'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| cRes, cInTime, cNotInTime |'#13#10#13#10'cRes := '#39#39','#13#10#13#10'// Berechnen, in' +
+    'wiefern die angefragte Menge gedeckt ist'#13#10'if ATP_ISTRELEVANT and' +
+    ' IST_ABGANG then'#13#10'   if ATP_KOMPL_BESTAETIGT_IN_TIME then'#13#10'     ' +
+    ' cRes := '#39'ok'#39','#13#10'   else'#13#10'      cInTime    := '#39#39','#13#10'      cNotInTi' +
+    'me := '#39#39','#13#10#13#10'      if ATP_MENGE_BESTAETIGT_IN_TIME < 0 then'#13#10'   ' +
+    '      cInTime    := '#39'ok: '#39' + Str(ATP_MENGE_BESTAETIGT_IN_TIME),'#13 +
+    #10'      endif,'#13#10#13#10'      if ATP_MENGE_BESTAETIGT_NOT_IN_TIME < 0 t' +
+    'hen'#13#10'         cNotInTime := '#39'versp'#228'tet: '#39' + Str(ATP_MENGE_BESTAE' +
+    'TIGT_NOT_IN_TIME),'#13#10'      endif,'#13#10#13#10'      cRes := ConcatTrenner(' +
+    'cInTime, cNotInTime, '#39', '#39'),   '#13#10'   endif,                       ' +
+    '      '#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = '"<Undefined>"'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| nRes, nMengeNichtRechtzeitig |'#13#10#13#10'nRes := clNone,'#13#10#13#10'// Berech' +
+    'nen, inwiefern die angefragte Menge gedeckt ist'#13#10#13#10'if ATP_ISTREL' +
+    'EVANT and IST_ABGANG then'#13#10'   if ATP_KOMPL_BESTAETIGT_IN_TIME th' +
+    'en'#13#10'      nRes := clNone,'#13#10'   else'#13#10'      if ATP_MENGE_BESTAETIG' +
+    'T_IN_TIME < 0 then'#13#10'         nRes := GetBeDesignColor(dcbOrange,' +
+    ' dcgLevel4), '#13#10'      else'#13#10'         nRes := clRed,'#13#10'      endif,' +
+    #13#10#13#10'   endif,'#13#10'endif,'#13#10#13#10'nRes'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ZEILEN_TYP'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 128
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_11: TBeAttr
+  Caption = 'Komplett-Lieferung'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    '| bKomplettGedeckt, cRes |'#13#10#13#10'cRes := '#39#39','#13#10#13#10'// Berechnen, was z' +
+    'ur Komplett-Lieferung notwendig ist'#13#10#13#10'if ATP_ISTRELEVANT and IS' +
+    'T_ABGANG then'#13#10'   bKomplettGedeckt := (ATP_MENGE_BESTAETIGT_IN_T' +
+    'IME + ATP_MENGE_BESTAETIGT_NOT_IN_TIME ) = MENGE,'#13#10#13#10'   if ATP_K' +
+    'OMPL_BESTAETIGT_IN_TIME then'#13#10'      cRes := '#39'ok'#39','#13#10'   else'#13#10'    ' +
+    '  if not empty(ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN) then'#13#10'       ' +
+    '  cRes := '#39'ab <'#39' + AllTrim(ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN) +' +
+    ' '#39'>'#39','#13#10'      else'#13#10'         cRes := '#39'nicht m'#246'glich'#39','#13#10'      endi' +
+    'f,'#13#10'   endif,'#13#10'endif,'#13#10#13#10'cRes'
+  ColResultBlock = 'ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    '| bKomplettGedeckt, nRes |'#13#10#13#10'nRes := clNone,'#13#10#13#10'// Berechnen, w' +
+    'as zur Komplett-Lieferung notwendig ist'#13#10#13#10'if ATP_ISTRELEVANT an' +
+    'd IST_ABGANG then'#13#10'   bKomplettGedeckt := (ATP_MENGE_BESTAETIGT_' +
+    'IN_TIME + ATP_MENGE_BESTAETIGT_NOT_IN_TIME ) = MENGE,'#13#10#13#10'   if A' +
+    'TP_KOMPL_BESTAETIGT_IN_TIME then'#13#10'      nRes := clNone,'#13#10'   else' +
+    #13#10'      if not empty(ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN) then'#13#10' ' +
+    '        nRes := GetBeDesignColor(dcbOrange, dcgLevel4),'#13#10'      e' +
+    'lse'#13#10'         nRes := clRed,'#13#10'      endif,'#13#10'   endif,'#13#10'endif,'#13#10#13 +
+    #10'nRes'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ATP_KOMPL_LIEF_SPAET_ZUGANGSTERMIN'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 106
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_12: TBeAttr
+  Caption = '.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 'ColumnResult'
+  ColResultBlock = '"<Undefined>"'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = '<BROWSER>'
+  ForeColor = 536870911
+  BackColor = 8355711
+  CanMoveCol = True
+  CanResizeCol = True
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 3
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_4: TBeAttr
+  Caption = 'ATP Kum.'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taRightJustify
+  Freezed = False
+  FuncBlock = 'iif(empty(ColumnResult), '#39#39', ColumnResult)'
+  ColResultBlock = 'ATP_MENGE_VERFUEG_KUM'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'EINZEL_TERMINRASTER'
+  ForeColor = 536870911
+  BackColor = 536870911
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'ATP_MENGE_VERFUEG_KUM'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = DEFAULT_CHARSET
+  CaptionFont.Color = clWindowText
+  CaptionFont.Height = -11
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = DEFAULT_CHARSET
+  TextFont.Color = clWindowText
+  TextFont.Height = -11
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 64
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
