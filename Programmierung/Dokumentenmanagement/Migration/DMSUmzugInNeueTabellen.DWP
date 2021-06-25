@@ -72,6 +72,7 @@ function UmzugEinDatensatz()
             m_oDMSBSP:DATA       := m_oKDNDOK:DATA,
             m_oDMSBSP:PLATZ      := m_oKDNDOK:PLATZ,
             m_oDMSBSP:ERSTELLT   := m_oKDNDOK:ERSTELLT,
+            m_oDMSBSP:SUCHE      := m_oKDNDOK:SUCHE,
             MyPost(m_oDMSBSP),
             if not empty(m_oKDNDOK:THUMBNAIL) then
                MyAppend(m_oDMSBSP),
@@ -79,7 +80,8 @@ function UmzugEinDatensatz()
                m_oDMSBSP:DATA       := m_oKDNDOK:THUMBNAIL,
                m_oDMSBSP:PLATZ      := m_oKDNDOK:PLATZ,
                m_oDMSBSP:ERSTELLT   := m_oKDNDOK:ERSTELLT,
-              MyPost(m_oDMSBSP),
+//               m_oDMSBSP:SUCHE      := m_oKDNDOK:SUCHE,
+               MyPost(m_oDMSBSP),
             endif,
          endif,
          DbCommit(m_oDM.AdsConnection),  // im "Test-Modus" diese Zeile auskommentieren, dann gibt es immer einen RollBack => Änderungen im Logging-Tool prüfen

@@ -24,27 +24,23 @@
    oSelectBox,
    // @VDB@ der nachfolgende Teil wird automatisch gepflegt
    oForm, A_AktiveAnzeigen, A_Cancel, a_DatumUser, A_Delete, A_DeleteEndgueltig,
-   A_HelpContent, a_hilfe, A_KuenftigeAnzeigen, A_LoadFileOrDefineLink,
-   A_NewDocument, A_NewFilelink, A_NewFileScan, A_NewHyperlink, A_NewVersion,
-   A_OpenFileDocument, A_OpenFileOrHyperlink, a_reactivate, A_Refresh, A_Save,
-   A_SaveFile, a_showDeleted, A_StatusAktuelleVersion, A_StatusInBearbeitung,
+   A_KuenftigeAnzeigen, A_LoadFileOrDefineLink, A_NewDocument, A_NewFilelink,
+   A_NewFileScan, A_NewHyperlink, A_NewVersion, A_OpenFileDocument,
+   A_OpenFileOrHyperlink, a_reactivate, A_Refresh, A_Save, A_SaveFile,
+   a_showDeleted, A_StatusAktuelleVersion, A_StatusInBearbeitung,
    A_StatusVeraltet, A_StatusZurUeberpruefung, A_VeralteteAnzeigen,
-   A_Zugriffsberechtigung, Actions, beBarButton_showdeleted, beBarButton2,
-   beBarButton3, beBarButton4, beBarButton5, BeBarDockControl1,
-   beBarDockControl2, beBarDockControl3, BeBarManager, BeBarManagerBar1,
-   BeBarManagerBar2, BeBarManagerBar3, BeBarManagerBar4, BeBarManagerBar5,
-   BeBarManagerStatusBar1, BeBarSeparator1, BeBarSubItem1, beBarSubItem2,
-   beGroupPanel1, beGroupPanel2, beGroupPanel3, beGroupPanel4, beGroupPanel5,
-   BePageControl1, BeSplitter1, BeSplitter2, BeTabSheet_Bemerkung,
-   BeTabSheet_Main, bipnl_devinfos, bipnl_NoActionForSemaphorInsert,
-   bipnl_TableNotSynchronized, btn_datumUser, btn_delete, btn_hilfe,
-   btn_LoadFileOrDefineLink_File, btn_LoadFileOrDefineLink_Link, btn_loeschen,
-   btn_OpenFileDocument, btn_OpenFileOrHyperlink, btn_reactivate, btn_refresh,
-   btn_SaveDocumentFile, btn_SaveLinkFile, btn_ShowDeleted,
+   A_Zugriffsberechtigung, Actions, BeBarButton1, BeBarDockControl1,
+   BeBarDockControl2, BeBarDockControlDeleteButton, BeBarManager,
+   BeBarManagerBar1, BeBarManagerBar2, BeBarManagerBar4, BeBarManagerStatusBar1,
+   BeBarSeparator1, BeBarSubItem1, Bevel1, Bevel2, bipnl_DevInfos,
+   bipnl_NoActionForSemaphorInsert, bipnl_TableNotSynchronized, btn_datumUser,
+   btn_delete, btn_LoadFileOrDefineLink_File, btn_LoadFileOrDefineLink_Link,
+   btn_loeschen, btn_OpenFileDocument, btn_OpenFileOrHyperlink, btn_reactivate,
+   btn_refresh, btn_SaveDocumentFile, btn_SaveLinkFile, btn_ShowDeleted,
    btn_StatusAktuelleVersion, btn_StatusInBearbeitung, btn_StatusVeraltet,
    btn_StatusZurUeberpruefung, cmb_DocumentAccessCategory,
    cmb_DocumentApprovalState, cmb_DocumentCategory, cmb_DocumentConfidentiality,
-   cmb_DocumentResposibility, cmb_DocumentState, cmb_documentType,
+   cmb_DocumentResposibility, cmb_DocumentState, cmb_DocumentType,
    cmb_DocumentUsage, ds_Documents_Grid, ds_Documents_Mask, ds_MainTable,
    edt_DocumentName, edt_DocumentNo, edt_DocumentVersDesc, edt_DocumentVersNo,
    edt_FileChangeDate, edt_FileOrHyperLink, edt_FileSize, edt_FileType,
@@ -53,11 +49,12 @@
    lbl_DocumentLinkData, lbl_DocumentLinkDataInfo, lbl_DocumentName,
    lbl_DocumentNo, lbl_DocumentResponsibility, lbl_DocumentState,
    lbl_DocumentType, lbl_DocumentUsage, lbl_DocumentVersDesc,
-   lbl_FileChangeDate, lbl_FileType, lbl_geloescht, MainMenu1, pnl_DateiButtons,
-   pnl_details_top, pnl_details_top2, pnl_File, pnl_FileLinkOrHyperLink,
-   pnl_FileLinkOrHyperLinkCaption, pnl_Filter, pnl_geloeschte_anzeigen,
-   pnl_Grid, pnl_leftTree, pnl_LinkButtons, pnl_Main, pnl_mask, pnl_MiddleGrid,
-   pnl_search, pnl_statusaendern_new, pnl_StatusFilter, pnl_Top,
+   lbl_DocumentVersNo, lbl_File, lbl_FileChangeDate, lbl_FileSize, lbl_FileType,
+   lbl_geloescht, lbl_Memo, MainMenu1, pnl_DatumUser, pnl_File, pnl_FileButtons,
+   pnl_FileCaption, pnl_FileLinkOrHyperLink, pnl_FileLinkOrHyperLinkCaption,
+   pnl_Filter, pnl_geloeschteanzeigen, pnl_Grid, pnl_leftTree, pnl_LinkButtons,
+   pnl_Main, pnl_Mask, pnl_MaskBottomArea, pnl_MaskTopArea, pnl_MemoArea,
+   pnl_MiddleGrid, pnl_StatusFilter, pnl_StatusToolBarParent, pnl_Top,
    richedit_DocumentMemo, splitter_Mask, sub_StatusAendern, SubLoeschen,
    tb_Cancel, tb_NewDocument, tb_NewFileLink, tb_NewFileScan, tb_NewHyperlink,
    tb_NewVersion, tb_save, tb_Zugriffsberechtigung
@@ -144,12 +141,7 @@ function OpenDataBaseAndLinkToGUI()
       AssignEvent(m_oDmsVer_Mask,    'AfterCancel',     'DMSVER_Mask_AfterCancel'),
       AssignEvent(m_oDmsVer_Mask,    'BeforePost',      'DMSVER_Mask_BeforePost'),
       AssignEvent(m_oDmsVer_MemGrid, 'BeforeScroll',    'DMSVER_MemGrid_BeforeScroll'),
-      // TODO: Dynamisches Setzen der Bezeichnungen der Status-Buttons
-      // A_StatusZurUeberpruefung.Caption := Lookup(waDABMDT,'WERT', {{gl_DMSU_MMTabellenID_Status, gl_DMSU_DokumentenStatus_zurUeberpruefung}}, 'BEZ1', 'zur Überprüfung'),
-      // A_StatusAktuelleVersion.Caption  := Lookup(waDABMDT,'WERT', {{gl_DMSU_MMTabellenID_Status, gl_DMSU_DokumentenStatus_aktuelleVersion}}, 'BEZ1', 'aktiv'),
-      // A_StatusInBearbeitung.Caption    := Lookup(waDABMDT,'WERT', {{gl_DMSU_MMTabellenID_Status, gl_DMSU_DokumentenStatus_inBearbeitung}}, 'BEZ1', 'in Bearbeitung'),
-      // A_StatusVeraltet.Caption         := Lookup(waDABMDT,'WERT', {{gl_DMSU_MMTabellenID_Status, gl_DMSU_DokumentenStatus_Veraltet}}, 'BEZ1', 'veraltet'),
-   
+
    onerror,
       SetError('Fehler in OpenTables(): ' + GetErrorText()),
    stopseq,
@@ -158,20 +150,18 @@ end,
 //******************************************************************************
 // Funktion zum ermitteln der MatserTable-ID
 //    Funktion kann beliebig erweitert werden für Fälle in der sich DMS auf kein
-//    "ID"-Feld bezieht.
-//    FUNKTION DIENT NUR ZUR ANLAGE VON DOKUMENTEN
+//    "ID"-Feld bezieht
 //
 // @Result: numeric
 //******************************************************************************
-function DMSU_GetMasterIDForNewDoc(bNumeric:L:=true)
+function DMSU_GetMasterIdOrArtNr()
    Result := m_oMasterTable:ID,
    case m_nMasterWorkarea
       of waDab065 :: Result := m_oMasterTable:MEMO_ID,
-      of waDab010 :: Result := iif(gl_DMSU_ShowAllDocsForArtNr and not bNumeric, m_oMasterTable:ARTNR, m_oMasterTable:ID),
+      of waDab010 :: Result := iif(gl_DMSU_ShowAllDocsForArtNr, m_oMasterTable:ARTNR, m_oMasterTable:ID),
       otherwise      Result := m_oMasterTable:ID
    endcase,
 end,
-
 
 //******************************************************************************
 // Fügt einen neuen Knoten für eine Kategorie auf Basis der MM-Tabelle Kategorie
@@ -204,8 +194,8 @@ function DMSU_FillDocumentTree()
    // Hauptknoten erzeugen
    oMasterNode := CollAdd(m_oTree.Items),
    oMasterNode.Text          := 'Alle Dokumente ' + ' (' + Str(m_nTotalSichtbar) + ')',
-   oMasterNode.ImageIndex    := 274,
-   oMasterNode.SelectedIndex := 274,
+   oMasterNode.ImageIndex    := 350,
+   oMasterNode.SelectedIndex := 350,
 
    // MM-Tabelle durchgehen und als Kategorie hinzufügen
    DbGoTop(m_oDabMdtKategorieMem),
@@ -337,7 +327,7 @@ function ActionsEnabled()
                 else
                    A_LoadFileOrDefineLink.Caption       := 'Datei ersetzen',
                 endif,
-                A_LoadFileOrDefineLink.ImageIndex    := 183,
+                A_LoadFileOrDefineLink.ImageIndex    := 426,
 
       of gl_DMSU_DokumentenArt_Filelink ::
                 A_LoadFileOrDefineLink.Caption       := 'Datei-Link ändern',
@@ -371,11 +361,6 @@ function ActionsEnabled()
                                  and DMSU_CheckPermission_DELETE(m_oDmsVer_Mask:KATEG_ZUGR),
    A_ShowDeleted.Enabled      := not EditModes(m_oDmsVer_Mask) and
                                  bMasterRecordAvail and not m_bMasterTableIsInEditMode,
-
-   // Workaround, weil die Eigenschaft a_Action.checked bei Toolbars mit Dockcontrol nicht mehr funktioniert
-   // TODO be 7 Toolbar sauber nutzen
-   beBarButton_showdeleted.Buttonstyle := iif(A_ShowDeleted.Checked, 'bschecked', 'bsdefault'),
-   beBarButton_showdeleted.Down        := A_ShowDeleted.Checked,
 
    A_Refresh.Enabled          := not EditModes(m_oDmsVer_Mask) and
                                  bMasterRecordAvail and bDocumentAvail and not m_bMasterTableIsInEditMode,
@@ -564,21 +549,16 @@ end,
 // synchronisieren => falls das nicht geht => Info-Panel anzeigen
 // @Result: null
 //******************************************************************************
-function TryToSynchronizeDocumentTable(nNewDocID:N:=0)
+function TryToSynchronizeDocumentTable(nNewDocID:=0)
 | oRec, oDmsVer_FillMem |                                                       prs('TryToSynchronizeDocumentTable()', 'START'),
 
    if not empty(m_oDmsVer_Mask) and m_oDmsVer_Mask.Active then
       if not EditModes(m_oDmsVer_Mask) then
          // Sind keine Aktionen erlaubt => Tabelle per Scope leeren
          if m_bMasterTableIsInEditMode then
-            //AZe bei der DAB010 als Mastertable muss MasterIDorArtNr eine String sein.
-            if m_nMasterWorkarea = waDab010 and gl_DMSU_ShowAllDocsForArtNr then
-               m_nMasterIdOrArtNr := '  ',
-            else
-               m_nMasterIdOrArtNr := -1,
-            endif,
+            m_nMasterIdOrArtNr := -1,
          else
-            m_nMasterIdOrArtNr := DMSU_GetMasterIDForNewDoc(false),
+            m_nMasterIdOrArtNr := DMSU_GetMasterIdOrArtNr(),
          endif,
 
          oDmsVer_FillMem                  := DbGetTable(m_oDM_Gui, waDmsVer, 'DMSVER_FILLMEM'),
@@ -593,6 +573,7 @@ function TryToSynchronizeDocumentTable(nNewDocID:N:=0)
          startseq
             DbScope({m_nMasterWorkarea, m_nMasterIdOrArtNr},
                     {m_nMasterWorkarea, m_nMasterIdOrArtNr}, oDmsVer_FillMem),
+                                                                                                                             
             if not empty(m_cContainsFilter) then
                DbFilter(m_cContainsFilter, oDmsVer_FillMem),
             endif,
@@ -778,7 +759,8 @@ end,
 function DMSU_GUI_AppendNewDocument(nDocType)
    m_bExplicitInsert := True,
    startseq
-      DMSU_AppendNewDocument(m_oDM_Gui, m_oDmsVer_Mask, nDocType, -1, -1, '', m_nMasterWorkarea, DMSU_GetMasterIDForNewDoc(), m_cParamLastFolder),
+//      DMSU_AppendNewDocument(m_oDM_Gui, m_oDmsVer_Mask, nDocType, -1, -1, '', m_nMasterWorkarea, m_nMasterIdOrArtnr, m_cParamLastFolder),
+      DMSU_AppendNewDocument(m_oDM_Gui, m_oDmsVer_Mask, nDocType, -1, -1, '', m_nMasterWorkarea, m_oMasterTable:ID, m_cParamLastFolder),
    always
       m_bExplicitInsert := False,
    stopseq,
@@ -828,7 +810,7 @@ function LoadFileIntoDocumentViaScanDialog()
             startseq
                m_bExplicitInsert := True,
                startseq
-                  DMSU_AppendNewDocument(m_oDM_Gui, m_oDmsVer_Mask, gl_DMSU_DokumentenArt_File, -1, -1, '', m_nMasterWorkarea, DMSU_GetMasterIDForNewDoc(), m_cParamLastFolder),
+                  DMSU_AppendNewDocument(m_oDM_Gui, m_oDmsVer_Mask, gl_DMSU_DokumentenArt_File, -1, -1, '', m_nMasterWorkarea, m_oMasterTable:ID, m_cParamLastFolder),
                always
                   m_bExplicitInsert := True,
                stopseq,
@@ -1035,50 +1017,46 @@ end,
 //******************************************************************************
 function DMSVER_Mask_BeforeEdit()
 | nDocNo |
-   startseq
-      // Sind gerade keine Aktionen erlaubt, dann muss der Edit abgebrochen werden.
-      // Siehe HandleSemaphorTableStateChanges()
-                                                                                     prs('DMSVER_Mask_BeforeEdit', 'START'),
-      if m_bMasterTableIsInEditMode then
-         StatusError('Fehler wegen gleichzeitiger Bearbeitung des Dokumenten - und des MasterDatensatzes'),
-         Abort(True),
-      endif,
-      // endgültig gelöscht (Datensatz ist inzwischen nicht mehr da - anderer User hat ihn gelöscht)
-      if Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'ID',0) = 0 then
-         StatusError('Das Dokument wurde endgültig gelöscht. Der Browser wird aktualisiert'),
-         TryToSynchronizeDocumentTable(),
-         Abort(True),
-      endif,
+   // Sind gerade keine Aktionen erlaubt, dann muss der Edit abgebrochen werden.
+   // Siehe HandleSemaphorTableStateChanges()
+                                                                                  prs('DMSVER_Mask_BeforeEdit', 'START'),
+   if m_bMasterTableIsInEditMode then
+      StatusError('Fehler wegen gleichzeitiger Bearbeitung des Dokumenten - und des MasterDatensatzes'),
+      Abort(True),
+   endif,
 
-   // Diesen Code darf man nicht verwenden, weil beim reaktivieren auch der Edit-Modus
-   // benötigt wird und da darf dieser Abort nicht stattfinden
-   //   // "gelöscht" markiert
-   //   if (not empty(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'LOESCH_USR','FEHLER')) ) then
-   //      StatusError('Dieses Dokument wurde gelöscht. Bitte aktualisieren Sie den Browser!'),
-   //      Abort(True),
-   //   endif,
+   // endgültig gelöscht (Datensatz ist inzwischen nicht mehr da - anderer User hat ihn gelöscht)
+   if Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'ID',0) = 0 then
+      StatusError('Das Dokument wurde endgültig gelöscht. Der Browser wird aktualisiert'),
+      TryToSynchronizeDocumentTable(),
+      Abort(True),
+   endif,
 
-      // kein Lese-Recht
-      if not DMSU_CheckPermission_READ(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'KATEG_ZUGR', 0,,,, true)) then
-         StatusError('Sie haben keine ausreichenden Rechte. Bitte aktualisieren Sie ggf. den Browser!'),
-         Abort(True),
-      endif,
+// Diesen Code darf man nicht verwenden, weil beim reaktivieren auch der Edit-Modus
+// benötigt wird und da darf dieser Abort nicht stattfinden
+//   // "gelöscht" markiert
+//   if (not empty(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'LOESCH_USR','FEHLER')) ) then
+//      StatusError('Dieses Dokument wurde gelöscht. Bitte aktualisieren Sie den Browser!'),
+//      Abort(True),
+//   endif,
 
-      // kein Schreibrecht
-      if not DMSU_CheckPermission_WRITE(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'KATEG_ZUGR',0)) then
-         StatusError('Sie haben keine ausreichenden Rechte. Bitte aktualisieren Sie ggf. den Browser!'),
-         Abort(True),
-      endif,
+   // kein Lese-Recht
+   if not DMSU_CheckPermission_READ(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'KATEG_ZUGR', 0,,,, true)) then
+      StatusError('Sie haben keine ausreichenden Rechte. Bitte aktualisieren Sie ggf. den Browser!'),
+      Abort(True),
+   endif,
 
-      nDocNo := m_oDmsVer_Mask:DOC_NR,
-      if not DMSU_SemaphorEdit(nDocNo, True) then
-         StatusError('Eine Version dieses Dokuments ist anderweitig in Bearbeitung. Bitte aktualisieren Sie ggf. den Browser!'),
-         Abort(True),
-      endif,
-   onerror
-      GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
-   stopseq,
-                                                                  prs('DMSVER_Mask_BeforeEdit', 'ENDE'),
+   // kein Schreibrecht
+   if not DMSU_CheckPermission_WRITE(Lookup(waDMSVER, 'ID', {{m_oDmsVer_Mask:ID}}, 'KATEG_ZUGR',0)) then
+      StatusError('Sie haben keine ausreichenden Rechte. Bitte aktualisieren Sie ggf. den Browser!'),
+      Abort(True),
+   endif,
+
+   nDocNo := m_oDmsVer_Mask:DOC_NR,
+   if not DMSU_SemaphorEdit(nDocNo, True) then
+      StatusError('Eine Version dieses Dokuments ist anderweitig in Bearbeitung. Bitte aktualisieren Sie ggf. den Browser!'),
+      Abort(True),
+   endif,                                                                       prs('DMSVER_Mask_BeforeEdit', 'ENDE'),
 end,
 
 //******************************************************************************
@@ -1132,6 +1110,13 @@ end,
 //******************************************************************************
 function bipnl_DevInfosClick( Sender )                                          prs('bipnl_DevInfosClick', 'START'),
    ShellExecute(DMSU_CalcUserTempPath(c_usr)),                                  prs('bipnl_DevInfosClick', 'ENDE'),
+end,
+
+//******************************************************************************
+// Event: beim Panel-Resize: Breite des Dokumenten-Namen-Edits anpassen
+//******************************************************************************
+function pnl_MaskTopAreaResize( Sender )                                        prs('pnl_MaskTopAreaResize', 'START'),
+   edt_DocumentName.Width := pnl_MaskTopArea.Width - 10,                        prs('pnl_MaskTopAreaResize', 'ENDE'),
 end,
 
 //******************************************************************************
@@ -1261,13 +1246,6 @@ end,
 // Actionhandler
 //##############################################################################
 //##############################################################################
-
-//******************************************************************************
-// Action: Individuelle Onlinehilfe aufrufen
-//******************************************************************************
-function a_hilfeExecute( Sender )
-    IOHU_Internal_ShowOnlineHelpGUI(gl_DMSU_HilfeSQL, -1)
-end,
 
 //******************************************************************************
 //  Schreibt Datum und User ins memo-Feld
@@ -1542,21 +1520,9 @@ end,
 // Action: Bearbeitung abbrechen
 //******************************************************************************
 function A_CancelExecute( Sender )
-   | nID, cIndexName |
    startseq
       if JN('Änderungen verwerfen?') then
-         if not nods(m_oDmsVer_MemGrid) then
-            nID :=  m_oDmsVer_MemGrid:ID,
-         else
-            nID := -1,
-         endif,
          DMSU_CancelDocument(m_oDM_Gui, m_oDmsVer_Mask),
-         if nID > 0 then
-            cIndexName := m_oDmsVer_Mask.IndexName,
-            m_oDmsVer_Mask.IndexName := 'ID' ,
-            MySeek({nID}, m_oDmsVer_Mask),
-            m_oDmsVer_Mask.IndexName := cIndexName,
-         endif,
          ActionsEnabled(),
       endif,
    onerror
@@ -1683,17 +1649,17 @@ end,
 // @Result: null
 //******************************************************************************
 function SetDefaults()                                                          prs('SetDefaults', 'START'),
-   oForm.ImageIndex                        := 183,   // Für den Fenster-Navigator und Tabkarten-Symbole
+   oForm.ImageIndex                        := 426,   // Für den Fenster-Navigator und Tabkarten-Symbole
    edt_FileOrHyperLink.BorderStyle         := bsNone,
    edt_FileOrHyperLink.Cursor              := crHandPoint,
    pnl_Mask.Constraints.MinWidth           := 50,
-   pnl_Mask.Width                          := 473,
+   pnl_Mask.Width                          := 360,
    bipnl_DevInfos.Visible                  := False, // Info-Panel für die Anzeige des aktuellen Master-Datensatzes
    edt_SearchText.Text                     := '',
    bipnl_NoActionForSemaphorInsert.Visible := False,
    m_nKategorienFilter                     := 0,                                prs('SetDefaults', 'ENDE'),
 
-   m_nMasterIdOrArtNr                      := DMSU_GetMasterIDForNewDoc(),
+   m_nMasterIdOrArtNr                      := DMSU_GetMasterIdOrArtNr(),
 end,
 
 
@@ -1709,8 +1675,6 @@ function LoadGUI()                                                              
       a_DatumUser                     := FindObject(oForm, "a_DatumUser"),
       A_Delete                        := FindObject(oForm, "A_Delete"),
       A_DeleteEndgueltig              := FindObject(oForm, "A_DeleteEndgueltig"),
-      A_HelpContent                   := FindObject(oForm, "A_HelpContent"),
-      a_hilfe                         := FindObject(oForm, "a_hilfe"),
       A_KuenftigeAnzeigen             := FindObject(oForm, "A_KuenftigeAnzeigen"),
       A_LoadFileOrDefineLink          := FindObject(oForm, "A_LoadFileOrDefineLink"),
       A_NewDocument                   := FindObject(oForm, "A_NewDocument"),
@@ -1732,40 +1696,24 @@ function LoadGUI()                                                              
       A_VeralteteAnzeigen             := FindObject(oForm, "A_VeralteteAnzeigen"),
       A_Zugriffsberechtigung          := FindObject(oForm, "A_Zugriffsberechtigung"),
       Actions                         := FindObject(oForm, "Actions"),
-      beBarButton_showdeleted         := FindObject(oForm, "beBarButton_showdeleted"),
-      beBarButton2                    := FindObject(oForm, "beBarButton2"),
-      beBarButton3                    := FindObject(oForm, "beBarButton3"),
-      beBarButton4                    := FindObject(oForm, "beBarButton4"),
-      beBarButton5                    := FindObject(oForm, "beBarButton5"),
+      BeBarButton1                    := FindObject(oForm, "BeBarButton1"),
       BeBarDockControl1               := FindObject(oForm, "BeBarDockControl1"),
-      beBarDockControl2               := FindObject(oForm, "beBarDockControl2"),
-      beBarDockControl3               := FindObject(oForm, "beBarDockControl3"),
+      BeBarDockControl2               := FindObject(oForm, "BeBarDockControl2"),
+      BeBarDockControlDeleteButton    := FindObject(oForm, "BeBarDockControlDeleteButton"),
       BeBarManager                    := FindObject(oForm, "BeBarManager"),
       BeBarManagerBar1                := FindObject(oForm, "BeBarManagerBar1"),
       BeBarManagerBar2                := FindObject(oForm, "BeBarManagerBar2"),
-      BeBarManagerBar3                := FindObject(oForm, "BeBarManagerBar3"),
       BeBarManagerBar4                := FindObject(oForm, "BeBarManagerBar4"),
-      BeBarManagerBar5                := FindObject(oForm, "BeBarManagerBar5"),
       BeBarManagerStatusBar1          := FindObject(oForm, "BeBarManagerStatusBar1"),
       BeBarSeparator1                 := FindObject(oForm, "BeBarSeparator1"),
       BeBarSubItem1                   := FindObject(oForm, "BeBarSubItem1"),
-      beBarSubItem2                   := FindObject(oForm, "beBarSubItem2"),
-      beGroupPanel1                   := FindObject(oForm, "beGroupPanel1"),
-      beGroupPanel2                   := FindObject(oForm, "beGroupPanel2"),
-      beGroupPanel3                   := FindObject(oForm, "beGroupPanel3"),
-      beGroupPanel4                   := FindObject(oForm, "beGroupPanel4"),
-      beGroupPanel5                   := FindObject(oForm, "beGroupPanel5"),
-      BePageControl1                  := FindObject(oForm, "BePageControl1"),
-      BeSplitter1                     := FindObject(oForm, "BeSplitter1"),
-      BeSplitter2                     := FindObject(oForm, "BeSplitter2"),
-      BeTabSheet_Bemerkung            := FindObject(oForm, "BeTabSheet_Bemerkung"),
-      BeTabSheet_Main                 := FindObject(oForm, "BeTabSheet_Main"),
-      bipnl_devinfos                  := FindObject(oForm, "bipnl_devinfos"),
+      Bevel1                          := FindObject(oForm, "Bevel1"),
+      Bevel2                          := FindObject(oForm, "Bevel2"),
+      bipnl_DevInfos                  := FindObject(oForm, "bipnl_DevInfos"),
       bipnl_NoActionForSemaphorInsert := FindObject(oForm, "bipnl_NoActionForSemaphorInsert"),
       bipnl_TableNotSynchronized      := FindObject(oForm, "bipnl_TableNotSynchronized"),
       btn_datumUser                   := FindObject(oForm, "btn_datumUser"),
       btn_delete                      := FindObject(oForm, "btn_delete"),
-      btn_hilfe                       := FindObject(oForm, "btn_hilfe"),
       btn_LoadFileOrDefineLink_File   := FindObject(oForm, "btn_LoadFileOrDefineLink_File"),
       btn_LoadFileOrDefineLink_Link   := FindObject(oForm, "btn_LoadFileOrDefineLink_Link"),
       btn_loeschen                    := FindObject(oForm, "btn_loeschen"),
@@ -1786,7 +1734,7 @@ function LoadGUI()                                                              
       cmb_DocumentConfidentiality     := FindObject(oForm, "cmb_DocumentConfidentiality"),
       cmb_DocumentResposibility       := FindObject(oForm, "cmb_DocumentResposibility"),
       cmb_DocumentState               := FindObject(oForm, "cmb_DocumentState"),
-      cmb_documentType                := FindObject(oForm, "cmb_documentType"),
+      cmb_DocumentType                := FindObject(oForm, "cmb_DocumentType"),
       cmb_DocumentUsage               := FindObject(oForm, "cmb_DocumentUsage"),
       ds_Documents_Grid               := FindObject(oForm, "ds_Documents_Grid"),
       ds_Documents_Mask               := FindObject(oForm, "ds_Documents_Mask"),
@@ -1814,27 +1762,33 @@ function LoadGUI()                                                              
       lbl_DocumentType                := FindObject(oForm, "lbl_DocumentType"),
       lbl_DocumentUsage               := FindObject(oForm, "lbl_DocumentUsage"),
       lbl_DocumentVersDesc            := FindObject(oForm, "lbl_DocumentVersDesc"),
+      lbl_DocumentVersNo              := FindObject(oForm, "lbl_DocumentVersNo"),
+      lbl_File                        := FindObject(oForm, "lbl_File"),
       lbl_FileChangeDate              := FindObject(oForm, "lbl_FileChangeDate"),
+      lbl_FileSize                    := FindObject(oForm, "lbl_FileSize"),
       lbl_FileType                    := FindObject(oForm, "lbl_FileType"),
       lbl_geloescht                   := FindObject(oForm, "lbl_geloescht"),
+      lbl_Memo                        := FindObject(oForm, "lbl_Memo"),
       MainMenu1                       := FindObject(oForm, "MainMenu1"),
-      pnl_DateiButtons                := FindObject(oForm, "pnl_DateiButtons"),
-      pnl_details_top                 := FindObject(oForm, "pnl_details_top"),
-      pnl_details_top2                := FindObject(oForm, "pnl_details_top2"),
+      pnl_DatumUser                   := FindObject(oForm, "pnl_DatumUser"),
       pnl_File                        := FindObject(oForm, "pnl_File"),
+      pnl_FileButtons                 := FindObject(oForm, "pnl_FileButtons"),
+      pnl_FileCaption                 := FindObject(oForm, "pnl_FileCaption"),
       pnl_FileLinkOrHyperLink         := FindObject(oForm, "pnl_FileLinkOrHyperLink"),
       pnl_FileLinkOrHyperLinkCaption  := FindObject(oForm, "pnl_FileLinkOrHyperLinkCaption"),
       pnl_Filter                      := FindObject(oForm, "pnl_Filter"),
-      pnl_geloeschte_anzeigen         := FindObject(oForm, "pnl_geloeschte_anzeigen"),
+      pnl_geloeschteanzeigen          := FindObject(oForm, "pnl_geloeschteanzeigen"),
       pnl_Grid                        := FindObject(oForm, "pnl_Grid"),
       pnl_leftTree                    := FindObject(oForm, "pnl_leftTree"),
       pnl_LinkButtons                 := FindObject(oForm, "pnl_LinkButtons"),
       pnl_Main                        := FindObject(oForm, "pnl_Main"),
-      pnl_mask                        := FindObject(oForm, "pnl_mask"),
+      pnl_Mask                        := FindObject(oForm, "pnl_Mask"),
+      pnl_MaskBottomArea              := FindObject(oForm, "pnl_MaskBottomArea"),
+      pnl_MaskTopArea                 := FindObject(oForm, "pnl_MaskTopArea"),
+      pnl_MemoArea                    := FindObject(oForm, "pnl_MemoArea"),
       pnl_MiddleGrid                  := FindObject(oForm, "pnl_MiddleGrid"),
-      pnl_search                      := FindObject(oForm, "pnl_search"),
-      pnl_statusaendern_new           := FindObject(oForm, "pnl_statusaendern_new"),
       pnl_StatusFilter                := FindObject(oForm, "pnl_StatusFilter"),
+      pnl_StatusToolBarParent         := FindObject(oForm, "pnl_StatusToolBarParent"),
       pnl_Top                         := FindObject(oForm, "pnl_Top"),
       richedit_DocumentMemo           := FindObject(oForm, "richedit_DocumentMemo"),
       splitter_Mask                   := FindObject(oForm, "splitter_Mask"),
@@ -1849,10 +1803,6 @@ function LoadGUI()                                                              
       tb_save                         := FindObject(oForm, "tb_save"),
       tb_Zugriffsberechtigung         := FindObject(oForm, "tb_Zugriffsberechtigung"),
       // @VZE@ der vorangehende Teil wird automatisch gepflegt
-
-      // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
-      A_Save.tag                      := 32165479,
-      A_Cancel.tag                    := 32165478,
 
       oSelectBox              := CreateObject('TSelectBoxEx', '', pnl_StatusFilter, pnl_StatusFilter),
       oSelectBox.Align        := alClient,
@@ -1911,7 +1861,7 @@ startseq
    if EditorMode() and empty(m_oMasterTable) then
       m_oMasterTable           := DBOpen(waDab010),
       m_oMasterTable.IndexName := 'DAB011',
-      DBSeek({'SCHRAUBE M5'}, m_oMasterTable),
+      DBSeek({'0096-0316-133-00'}, m_oMasterTable),                             // 0096-0316-133-00 |
 //      m_oMasterTable           := DBOpen(waDAB730),
 //      m_oMasterTable.IndexName := 'DAB731',
 //      DBSeek({'TS2320'}, m_oMasterTable),

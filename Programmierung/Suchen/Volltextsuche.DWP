@@ -1,7 +1,26 @@
-// Die Oberfläche für das package 'volltext-suche' liegt jetzt im
-//     package Ordner 'Suchen\volltext-suche\' -> 'gui'
+//##############################################################################
+//##############################################################################
 //
-// Hier erfolgt eine Umleitung, damit nach package-update alte Aufruf-Stellen weiterhin funktionieren
+// Beschreibung: generischer, modaler Dialog für eine Volltextsuche
+//               in einer (beliebigen) Tabelle
+//
+//    Parameter:   - Workarea
+//                 - Such-Feld (meist 'SUCHE' wie z.B. in Dab000, Dab100 etc.)
+//                 - Feld-Name für den gewünschten Rückgabe-Wert
+//                      z.B. 'REC_NO' oder 'ID'
+//                      hier sollte ein numerisches Feld angegeben werden
+//                 - Browser-ID
+//                 - PositionSaveID (definiert Fenster-Position und Größe)
+//
+//    Rückgabe:    - Feldwert des angegebenen 'm_cSelectField'
+//                 - -1 bei Abbruch des Dialogs
+//
+//    Hinweis:
+//       Der Aufruf sollte über die globalen Funktionen FTS_ShowSearchDlg*()
+//       im Programm 'Global\Volltextsuche' erfolgen (dort existiert weitere Logik)
+//
+//##############################################################################
+//##############################################################################
 
 |
    // Aufruf-Parameter
@@ -9,9 +28,293 @@
    m_cFTSField:P2       := 'SUCHE',
    m_cSelectField:P3    := 'ID',
    m_cBrowserID:P4      := 'CUS_FIN',
-   m_cPositionSaveId:P5 := '@FD001'
+   m_cPositionSaveId:P5 := '@FD001',
 
+   m_oMainTable,
+   m_bRecordSelectedByUser,
+   m_nSelectedValue,
+   m_cContainsFilter,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+  oForm, A_Close, A_Search, A_Select, Actions, btn_Close, btn_Search, btn_Select,
+  ds_Main, edt_SearchText, grd_Main, pnl_Bottom, pnl_Main, pnl_Top
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
 |
 
-Call('Suchen\volltext-suche\gui',
-     m_nWorkArea, m_cFTSField, m_cSelectField, m_cBrowserID, m_cPositionSaveId)
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Such-Tabelle ermitteln
+//   Hier wird je Workarea eine eigene, globale Instanz erstellt, da
+//   die Leserecht-Eigenschaften verändert werden und das darf sich nicht auf
+//   andere Verwender globaler Instanzen auswirken... (darum nicht aus Datenmodul oder Table-Cache)
+//   => kostet ca. 60 mSec extra beim ersten Öffnen
+// @Result: TBeRightsTable-Instanz
+//******************************************************************************
+function FindCachedOrOpenFtsDlgTable()
+| cObjectName |
+
+   cObjectName := 'INDI_FTSDLG_' + StrZero(mStandort, 3) + '_' + Str(m_nWorkArea),
+   Result      := FindObject(Application, cObjectName),
+   if empty(Result) or not ClassOf(Result, 'TBeRightsTable') then
+      Result                        := CreateObject('TBeRightsTable', cObjectName, Application, Application, true),
+      Result.Workarea               := m_nWorkArea,
+      Result.Active                 := true,
+      Result.UseOptimizedReadFilter := true,
+      Result.CheckReadAccess        := raFilter, // = raFilter => Leserechte berücksichtigen
+      Result.CheckUserRights        := true,     // Berechtigungen prüfen
+   endif,
+end,
+
+//******************************************************************************
+// Such-Tabelle öffnen
+//******************************************************************************
+function LoadTable()
+| aSW |
+   aSW := STW_START(),
+
+   m_oMainTable := FindCachedOrOpenFtsDlgTable(), // Such-Tabelle holen
+
+   STW_Lap(aSW),
+
+   grd_Main.ID              := m_cBrowserID,
+   grd_Main.RegisterDataSet := m_oMainTable,
+
+   ds_Main.DataSet          := m_oMainTable,
+   grd_Main.ReadWriteProps  := false,
+
+   STW_Lap(aSW),
+end,
+
+//******************************************************************************
+// Tabellen-Name für die GUI berechnen
+// @Result: string
+//******************************************************************************
+function CalcTableName()
+| oTableInfo |
+   Result := '?',
+   case m_nWorkArea
+      // Ausnamen möglich...
+   otherwise,
+      oTableInfo := GetTableInfo(m_nWorkArea),
+      if not empty(oTableInfo) then
+         Result := oTableInfo.TableLabel,
+      endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Refresh der Tabelle - dabei versuchen, die Record-Position zu "halten"
+//******************************************************************************
+function RefreshAndTryToKeepRecord()
+  DbRefresh(m_oMainTable), // TODO: leider funktioniert MyRefresh() nicht ordentlich, da der letzte Datensatz stehen "bleibt", selbst wenn er ausgefiltert wird...   
+end,
+
+//******************************************************************************
+// Filter setzen
+//******************************************************************************
+function RefreshFilter()
+  if not empty(m_oMainTable) and m_oMainTable.Active then
+     WriteLn('RefreshFilter() => ' + m_cContainsFilter),
+     if not empty(m_cContainsFilter) then
+        if m_oMainTable.Filter <> m_cContainsFilter then
+           m_oMainTable.Filter   := m_cContainsFilter,
+           m_oMainTable.Filtered := true,
+           RefreshAndTryToKeepRecord(),
+        endif,
+     else
+        if m_oMainTable.Filter <> '' then
+           m_oMainTable.Filter := '',
+           RefreshAndTryToKeepRecord(),
+        endif,
+     endif,
+  endif,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Key-Press im Browser
+//******************************************************************************
+function grd_MainKeyPress( Sender, aKey )
+   case Asc(aKey)
+     // Enter => Fenster mit Auswahl schließen
+     of 13 ::
+        m_bRecordSelectedByUser := true,
+        CloseForm(oForm),
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Doppelklick im Browser
+//******************************************************************************
+function grd_MainDblClick( Sender )
+  m_bRecordSelectedByUser := true,
+  CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender )
+| oField |
+  if m_bRecordSelectedByUser then
+     oField := DbField(m_cSelectField, m_oMainTable),
+     if not empty(oField) then
+        m_nSelectedValue := AsVariant(m_cSelectField, m_oMainTable),
+     else
+        SetError('Das Rückgabe-Feld ' + m_cSelectField + ' wurde nicht gefunden (Workarea ' + Str(m_nWorkArea) + ')'),
+     endif,
+  else
+     m_nSelectedValue := -1,
+  endif,
+end,
+
+//******************************************************************************
+// Event: Key-Press im Such-Eingabefeld
+//******************************************************************************
+function edt_SearchTextKeyPress( Sender, aKey )
+   case Asc(aKey)
+     // ESC   => Fenster schließen, wenn Suchtext leer (erstes Mal ESC drücken macht den Suchtext ggf. erst leer)
+     of 27 ::
+        if empty(edt_SearchText.Text) then
+           m_bRecordSelectedByUser := false,
+           CloseForm(oForm),
+        endif,
+   endcase,
+end,
+
+//******************************************************************************
+// Event: Beim Auslösen der Suche
+//******************************************************************************
+function edt_SearchTextSearchExecute( Sender )
+| cInputText |
+   cInputText := edt_SearchText.Text,
+   if empty(cInputText) then
+      m_cContainsFilter := '',
+   else
+      m_cContainsFilter := PrepareTextForFTSSearch( m_nWorkArea, m_cFTSField,
+                                                    cInputText,  '',
+                                                    false, true,
+                                                   'AND', True  ),
+   endif,
+   RefreshFilter(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Suche auslösen
+//******************************************************************************
+function A_SearchExecute( Sender )
+   edt_SearchTextSearchExecute(Sender),
+end,
+
+//******************************************************************************
+// Action: Fenster ohne Selektion schließen
+//******************************************************************************
+function A_CloseExecute( Sender )
+   m_bRecordSelectedByUser := false,
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Datenatz auswählen, Fenster schließen
+//******************************************************************************
+function A_SelectExecute( Sender )
+   m_bRecordSelectedByUser := true,
+   CloseForm(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden.
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   startseq
+      // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+      oForm          := LoadForm( "@FTSDLG", Application ),
+      A_Close        := FindObject( oForm, "A_Close" ),
+      A_Search       := FindObject( oForm, "A_Search" ),
+      A_Select       := FindObject( oForm, "A_Select" ),
+      Actions        := FindObject( oForm, "Actions" ),
+      btn_Close      := FindObject( oForm, "btn_Close" ),
+      btn_Search     := FindObject( oForm, "btn_Search" ),
+      btn_Select     := FindObject( oForm, "btn_Select" ),
+      ds_Main        := FindObject( oForm, "ds_Main" ),
+      edt_SearchText := FindObject( oForm, "edt_SearchText" ),
+      grd_Main       := FindObject( oForm, "grd_Main" ),
+      pnl_Bottom     := FindObject( oForm, "pnl_Bottom" ),
+      pnl_Main       := FindObject( oForm, "pnl_Main" ),
+      pnl_Top        := FindObject( oForm, "pnl_Top" ),
+      // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+      oForm.KeyPreview        := true, // damit ESC beim Form ankommt
+      edt_SearchText.Text     := '',
+      m_bRecordSelectedByUser := false, // zeigt an, ob das Fenster mit Auswahl geschlossen wurde
+      m_nSelectedValue        := -1,
+      m_cContainsFilter       := '',
+      oForm.ActiveControl     := edt_SearchText,
+
+      oForm.Width                 := 800,
+      oForm.Constraints.MinWidth  := 350,
+      oForm.Constraints.MinHeight := 300,
+      oForm.PositionSaveId        := m_cPositionSaveId,
+
+   onerror
+      DestroyObject(oForm),
+      SetError('Error loading gui' + crlf + GetErrorText()),
+   stopseq,
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   oForm.OrigCapt := 'Volltextsuche - ' + CalcTableName(),
+   ShowModal(oForm),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   LoadTable(),
+   ShowGUI(),
+onerror
+   MessageDlg('Fehler im Programm ' + ProgName() + crlf +
+               GetErrorText(), mtError),
+stopseq,
+
+m_nSelectedValue
+

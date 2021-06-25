@@ -61,7 +61,7 @@ function ExportIndiForms(cBasicPath, bCompleteExport, dChangesSince, bExportAsJS
                cFileExt := '.BEF',
 
                if bExportAsJSON then
-                  cData    := FormAsExportText(cData),
+                  cData    := Eval('| cData | FormAsExportText(cData)', cData),
                   cFileExt := '.BEFJ',
                endif,
 

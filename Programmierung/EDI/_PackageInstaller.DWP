@@ -184,8 +184,8 @@ end,
 //******************************************************************************
 function MMT_ProcessDirection_Create(oDM:O)
    MMT_CreateStatic_Internal(oDM, nMMTID_ProcessDirection, 'EDI: Prozessrichtung', {
-      {10, 100, 'Inbound',  BeSkinColor(clarGreen, clarAccent2)},
-      {20, 200, 'Outbound', BeSkinColor(clarBlue,  clarAccent2)} 
+      {10, 100, 'Inbound',  GetBeDesignColor(dcbGreen,     dcgLevel2)},
+      {20, 200, 'Outbound', GetBeDesignColor(dcbLightBlue, dcgLevel2)}
    }),
 end,
 
@@ -207,10 +207,10 @@ end,
 //******************************************************************************
 function MMT_ProcessStatus_Create(oDM:O)
    MMT_CreateStatic_Internal(oDM, nMMTID_ProcessStatus, 'EDI: Prozessstatus', {
-      {10, 100, 'Ok',                BeSkinColor(clarGreen,    clarAccent2 )},  // Font: clWhite
-      {20, 200, 'Warnung vorhanden', BeSkinColor(clarOrange,   clarAccent0 )},  // Font: clWhite
-      {30, 300, 'Fehler vorhanden',  BeSkinColor(clarRed,      clarAccent2 )},  // Font: clWhite
-      {40, 400, 'Beendet',           BeSkinColor(clarWarmGrey, clarAccent2 )}   // Font: clWhite
+      {10, 100, 'Ok',                GetBeDesignColor(dcbGreen,  dcgLevel2)},
+      {20, 200, 'Warnung vorhanden', GetBeDesignColor(dcbOrange, dcgLevel2)},
+      {30, 300, 'Fehler vorhanden',  GetBeDesignColor(dcbRed,    dcgLevel2)},
+      {40, 400, 'Beendet',           GetBeDesignColor(dcbWhite,  dcgLevel4)}
    }),
 end,
 
@@ -220,14 +220,14 @@ end,
 //******************************************************************************
 function MMT_EDIMSG_ProcessStep_Create(oDM:O)
    MMT_CreateStatic_Internal(oDM, nMMTID_EDIMSG_ProcessStep, 'EDI: Prozessschritt (EDIMSG)', {
-      {5,   50,   'initialisiert', BeSkinColor(clarYellow,    clarAccent7)},
-      {10,  100,  'eingelesen',    BeSkinColor(clarGreen,     clarAccent7)},
-      {20,  200,  'identifiziert', BeSkinColor(clarGreen,     clarAccent5)},
+      {5,   50,   'initialisiert', GetBeDesignColor(dcbOrange,    dcgLevel2)},
+      {10,  100,  'eingelesen',    GetBeDesignColor(dcbGreen,     dcgLevel1)},
+      {20,  200,  'identifiziert', GetBeDesignColor(dcbGreen,     dcgLevel2)},
       {30,  300,  'geparst / Inhouseformat erstellt',
-                                   BeSkinColor(clarGreen,     clarAccent3)},
-      {40,  400,  'importiert',    BeSkinColor(clarGreen,     clarAccent1)},    // Font: clWhite
-      {110, 1100, 'erstellt',      BeSkinColor(clarBlue,      clarAccent7)},
-      {120, 1200, 'versendet',     BeSkinColor(clarBlue,      clarAccent1)}     // Font: clWhite
+                                   GetBeDesignColor(dcbGreen,     dcgLevel3)},
+      {40,  400,  'importiert',    GetBeDesignColor(dcbGreen,     dcgLevel4)},
+      {110, 1100, 'erstellt',      GetBeDesignColor(dcbLightBlue, dcgLevel3)},
+      {120, 1200, 'versendet',     GetBeDesignColor(dcbLightBlue, dcgLevel4)}
    }),
 end,
 
@@ -325,10 +325,10 @@ end,
 //******************************************************************************
 function MMT_EDIDOCL_ProcessStep_Create(oDM:O)
    MMT_CreateStatic_Internal(oDM, nMMTID_EDIDOCL_ProcessStep, 'EDI: Prozessschritt (EDIDOCL)', {
-      {10, 100, 'Belegliste erstellt',    BeSkinColor(clarBlue, clarAccent7)},
-      {20, 200, 'Inhouseformat erstellt', BeSkinColor(clarBlue, clarAccent5)},
-      {30, 300, 'Nachricht erstellt',     BeSkinColor(clarBlue, clarAccent3)},  // Font: clWhite
-      {40, 400, 'Nachricht versendet',    BeSkinColor(clarBlue, clarAccent1)}   // Font: clWhite
+      {10, 100, 'Belegliste erstellt',    GetBeDesignColor(dcbLightBlue, dcgLevel1)},
+      {20, 200, 'Inhouseformat erstellt', GetBeDesignColor(dcbLightBlue, dcgLevel2)},
+      {30, 300, 'Nachricht erstellt',     GetBeDesignColor(dcbLightBlue, dcgLevel3)},
+      {40, 400, 'Nachricht versendet',    GetBeDesignColor(dcbLightBlue, dcgLevel4)}
    }),
 end,
 
@@ -338,9 +338,9 @@ end,
 //******************************************************************************
 function MMT_EDIDOC_ProcessStep_Create(oDM:O)
    MMT_CreateStatic_Internal(oDM, nMMTID_EDIDOC_ProcessStep, 'EDI: Prozessschritt (EDIDOC)', {
-      {10, 100, 'Beleg ausgewählt',         BeSkinColor(clarBlue, clarAccent7)},
-      {20, 200, 'Inhouseformat erstellt',   BeSkinColor(clarBlue, clarAccent5)},
-      {30, 300, 'In Nachricht aufgenommen', BeSkinColor(clarBlue, clarAccent3)} // Font: clWhite
+      {10, 100, 'Beleg ausgewählt',         GetBeDesignColor(dcbLightBlue, dcgLevel1)},
+      {20, 200, 'Inhouseformat erstellt',   GetBeDesignColor(dcbLightBlue, dcgLevel2)},
+      {30, 300, 'In Nachricht aufgenommen', GetBeDesignColor(dcbLightBlue, dcgLevel3)}
    }),
 end,
 

@@ -1,2 +1,710 @@
-// Das Programm ist umgezogen nach .admin-tools\codeblock-collector
-Call('.admin-tools\codeblock-collector\gui')
+//##############################################################################
+//##############################################################################
+// CodeblockCollector
+// Beschreibung: Programm zum Exportieren von allen in be verfügbaren
+//               Codeblöcken
+//##############################################################################
+//##############################################################################
+
+|
+   oForm, oBtnAbort, oBtnChangePath, oBtnDabPARPath, oBtnDDPath, oBtnExport,
+   oBtnSelectAll, oBtnDeselectAll, oCkBoxAttrTable, oCkBoxAttrDefault,
+   oCkBoxAttrUser, oCkBoxCodeblockProgram, oCkBoxColSize, oCkBoxCRMAction,
+   oCkBoxDocLayout, oCkBoxIndividualMenu, oCkBoxMaskDef, oCkBoxMemoView,
+   oCkBoxParameter, oCkBoxPrintManager, oCkBoxDefaultRights, oCkBoxUserRights,
+   oCkBoxScComm, oCkBoxClearPath, oCkBoxRights, oEdtBrowserDef,
+   oCkBoxShippingControl, oCkBoxTextModule, oCkBoxIndiDatTurn, oCkBoxRepGen,
+   oCkBoxIntrastatParam, oCkBoxInvFilter, oCkBoxFilterList, oCkBoxOtherWinPos,
+   oCkBoxParamFilter, oCkBoxReleaseByDate, oCkBoxFiBuParam, oCkBoxSqlSelect,
+   oCkBoxAgentArtFilter, oCkBoxSachkonten, oCkPaymentMethod, oEdtDabPARPath,
+   oEdtDataBasePath, oEdtExportPath, oGrpBoxDataBase, oGrpBoxExportPath,
+   oGrpBoxMainControl, oGrpBoxRegExpr, oLblDataBasePath, oLblDabPARPath,
+   oPanelBottom, oPanelDDBtnPath, oPanelDDEdtPath, oPanelLeftSide, oPanelOptions,
+   oPanelPathOptions, oPanelBrowserDef, oPanelRightSide, oPanelRights,
+   oPanelAttr, oCkBoxBrowserDef, oCkBoxBrowserDefDefault, oCkBoxArr,
+   oComboCkBoxBrowserDef, oPanelMainOptions, lCheckBoxClicked,
+   oEdtPathIncludeRegEx, oEdtPathExcludeRegEx, oEdtCodeIncludeRegEx,
+   oEdtCodeExcludeRegEx, oPanelPathIncludeRegEx, oPanelPathExcludeRegEx,
+   oPanelCodeIncludeRegEx, oPanelCodeExcludeRegEx, oLblPathIncludeRegEx,
+   oLblPathExcludeRegEx, oLblCodeIncludeRegEx, oLblCodeExcludeRegEx,
+   cErrorLog, oPanelExportPath, lShowInstantErrorMessage
+|
+
+// Diesen Wert auf True setzen um Fehler während der Laufzeit in der Console angezeigt zu bekommen
+// ACHTUNG! dies kann ser performancelastig sein
+lShowInstantErrorMessage := False,
+
+//******************************************************************************
+// Setzt den Pfad auf die selbe Ordnerstruktur wie die ausgewählte Datei
+//******************************************************************************
+function oBtnChangePathClick( Sender )
+| oDlgFolderPath, cPath |
+   Result := '',
+
+   if Sender = oBtnDDPath or Sender = oBtnDabPARPath then
+      oDlgFolderPath := OpenDlg('Export Pfad', 'DD/DabPAR|*.ADD; DABPAR.ADT; DABPAR.DBF', oEdtDataBasePath.Text,'a'),
+   else
+      oDlgFolderPath := OpenDlg('Export Pfad', 'DD/DabPAR|*.ADD; DABPAR.ADT; DABPAR.DBF', oEdtExportPath.Text,'a'),
+   endif,
+
+   StartSeq
+      oDlgFolderPath.Active := true,
+      if oDlgFolderPath.Selected then
+         cPath := SubStr(oDlgFolderPath.FileName, 0, RAt('\', oDlgFolderPath.FileName)),
+
+         if Sender = oBtnChangePath then
+            oEdtExportPath.Text := cPath,
+         endif,
+
+         if Sender = oBtnDDPath then
+            oEdtDataBasePath.Text := cPath,
+            if oEdtDataBasePath.Text <> mbedefault then
+               oComboCkBoxBrowserDef.Visible := False,
+               oEdtBrowserDef.Visible        := True,
+               oEdtBrowserDef.Align          := alBottom,
+               oEdtBrowserDef.Align          := alTop,
+            else
+               oComboCkBoxBrowserDef.Visible := True,
+               oEdtBrowserDef.Visible        := False,
+            endif,
+         endif,
+
+         if Sender = oBtnDabPARPath then
+            oEdtDabPARPath.Text := cPath,
+         endif,
+      endif,
+   Always
+      DestroyObject(oDlgFolderPath),
+   StopSeq,
+end,
+
+//******************************************************************************
+// Gibt anhand des Collector-Typen den Berreich in be den er represäntiert zurück
+//******************************************************************************
+function BeSectionFromCollectorType(nExportType)
+   Result := '',
+   case nExportType
+      of 0 ::  Result := 'Unbekannt',
+      of 1 ::  Result := 'Druckzuweisungen',
+      of 2 ::  Result := 'CRM-Aktionen',
+      of 3 ::  Result := 'Individual Menüs',
+      of 4 ::  Result := 'Browser Definitionen',
+      of 5 ::  Result := 'Masken Definitionen',
+      of 6 ::  Result := 'Merkmalstabellen',
+      of 7 ::  Result := 'Versand Steuerungen',
+      of 8 ::  Result := 'Beleg Layouts',
+      of 9 ::  Result := 'Text Bausteine',
+      of 10 :: Result := 'Tabellen- und Feld Rechte',
+      of 11 :: Result := 'Memo Ansichten',
+      of 12 :: Result := 'Allgemeine- und Lokale Parameter',
+      of 13 :: Result := 'Codeblock Programme',
+      of 14 :: Result := 'Außendienst Parameter',
+      of 15 :: Result := 'Größen und Farb Raster',
+      of 16 :: Result := 'Kum.Stat. Indiv.Betrachtungen',
+      of 17 :: Result := 'Reportgenerator',
+      of 18 :: Result := 'Intrastat Parameter',
+      of 19 :: Result := 'Inventur Filter',
+      of 20 :: Result := 'Filter Liste',
+      of 21 :: Result := 'Parameter Filter',
+      of 22 :: Result := 'Automatische Liefereinstellungen',
+      of 23 :: Result := 'FiBu Parameter',
+      of 24 :: Result := 'SQL-Selektion',
+      of 25 :: Result := 'Vertreterverwaltung Absatzplanung Artikelfilter',
+      of 26 :: Result := 'FiBu Sachkonten',
+      of 27 :: Result := 'FiBuZahlungsarten',
+      of 28 :: Result := 'Sonstige WinPositionen',
+   endcase,
+end,
+
+//******************************************************************************
+// Gibt die Export art zurück die eine Checkbox represäntiert
+//******************************************************************************
+function CheckBoxToExportType(oCkBox)
+   Result := 0,
+   case oCkBox
+      of oCkBoxPrintManager     :: Result := 1,   // Druckzuweisungen
+      of oCkBoxCRMAction        :: Result := 2,   // CRM-Aktionen
+      of oCkBoxIndividualMenu   :: Result := 3,   // Individual Menüs
+//      of oCkBoxBrowserDef       :: Result := 4,   // Browser Definitionen
+      of oCkBoxMaskDef          :: Result := 5,   // Masken Definitionen
+//      of oCkBoxAttrTable        :: Result := 6,   // Merkmalstabellen
+      of oCkBoxShippingControl  :: Result := 7,   // Versand Steuerungen
+      of oCkBoxDocLayout        :: Result := 8,   // Beleg Layouts
+      of oCkBoxTextModule       :: Result := 9,   // Text Bausteine
+//      of oCkBoxDefaultRights    :: Result := 10,  // Tabellen- und Feld Rechte
+      of oCkBoxMemoView         :: Result := 11,  // Memo Ansichten
+      of oCkBoxParameter        :: Result := 12,  // Allgemeine- und Lokale Parameter
+      of oCkBoxCodeblockProgram :: Result := 13,  // Codeblock Programme
+      of oCkBoxScComm           :: Result := 14,  // Außendienst Parameter
+      of oCkBoxColSize          :: Result := 15,  // Größen und Farb Raster
+      of oCkBoxIndiDatTurn      :: Result := 16,  // Kum.Stat. Indiv.Betrachtungen
+      of oCkBoxRepGen           :: Result := 17,  // Reportgenerator
+      of oCkBoxIntrastatParam   :: Result := 18,  // Intrastat Parameter
+      of oCkBoxInvFilter        :: Result := 19,  // Inventur Filter
+      of oCkBoxFilterList       :: Result := 20,  // Filter Liste
+      of oCkBoxParamFilter      :: Result := 21,  // Parameter Filter
+      of oCkBoxReleaseByDate    :: Result := 22,  // Automatische Liefereinstellungen
+      of oCkBoxFiBuParam        :: Result := 23,  // FiBu Parameter
+      of oCkBoxSqlSelect        :: Result := 24,  // SQL-Selektion
+      of oCkBoxAgentArtFilter   :: Result := 25,  // Vertreterverwaltung Absatzplanung Artikelfilter
+      of oCkBoxSachkonten       :: Result := 26,  // FiBu Sachkonten
+      of oCkPaymentMethod       :: Result := 27,  // FiBuZahlungsarten
+      of oCkBoxOtherWinPos      :: Result := 28,  // Sonstige WinPositionen
+   endcase,
+end,
+
+//******************************************************************************
+// Löscht alle Leeren Unterordner des übergebenen Pfades
+//******************************************************************************
+function myRemoveDir(cDir)
+|aDirArray, i|
+
+   if right(alltrim(cDir),1) <> '\' then
+       cDir += '\',
+   endif,
+
+   aDirArray := DirArray(cDir),
+   // Rekrusiver aufruf für jeden gefundenen Unterordner
+   for i:=3 to alen(aDirArray) do
+      myRemoveDir(cDir + aDirArray[i, 1]),
+      RemoveDir(cDir + aDirArray[i, 1]),
+   next,
+end,
+
+//******************************************************************************
+// Fehlerbehandlung für den CodeblockCollectors
+//******************************************************************************
+function DoError(Sender)
+| cErrorText |
+   // Fehlernachricht erstellen
+   Sender.CbRaiseError := False, // Fehler ignorieren, da ein Log geschriebenwird
+   cErrorText          := 'ErrorType:     ' + Str(Sender.CbErrorType) + ' (' + BeSectionFromCollectorType(Sender.CbErrorType) + ')' + crlf,
+   cErrorText          += 'InternalError: ' + iif(Sender.CbIsInternalError, 'True', 'False') + crlf,
+   cErrorText          += 'ErrorMessage:  ' + crlf + Sender.CbErrorMessage + crlf,
+   cErrorText          += '---------------------------------------------------' + crlf,
+   // Sofortnachricht in der Cb-Console ausgeben
+   if lShowInstantErrorMessage then
+      WriteLn(cErrorText),
+   endif,
+   ProcessMsg(),
+   // ErrorLog Schreiben
+   cErrorLog += cErrorText,
+end,
+
+//******************************************************************************
+// Führt die Exportierung für alle ausgewählten Checkboxen aus
+//******************************************************************************
+function oBtnExportClick( Sender )
+| oExporter, i, oElement, aDir, aDirArr |
+   Result := '',
+   SetCursor(crHourGlass),
+
+   oExporter := CreateObject('TBeCbCodeblockCollector'),
+
+   AssignEvent(oExporter, 'CbOnError', 'DoError'),
+   StartSeq
+      oExporter.CbFilePath := oEdtExportPath.Text,
+      // Alle selektierten Codeblöcke durchlaufen
+      foreach oElement in oCkBoxArr do
+         if oElement.Checked then
+            oExporter.CbAddExportType(CheckBoxToExportType(oElement)),
+         endif,
+      next,
+
+      // Browserdefinitionen mit Optionen hinzufügen
+      if oCkBoxBrowserDef.Checked then
+         if oComboCkBoxBrowserDef.Visible then
+            oExporter.CbAddExportTypeWithOptions(4, {oCkBoxBrowserDefDefault.Checked, oComboCkBoxBrowserDef.Text}),
+         else
+            oExporter.CbAddExportTypeWithOptions(4, {oCkBoxBrowserDefDefault.Checked, oEdtBrowserDef.Text}),
+         endif,
+      endif,
+
+      // Tabellen- und Feldrechte mit Optionen hinzufügen
+      if oCkBoxRights.Checked then
+         oExporter.CbAddExportTypeWithOptions(10, {oCkBoxDefaultRights.Checked, oCkBoxUserRights.Checked}),
+      endif,
+
+      // Merkmalstabellen mit Optionen hinzufügen
+      if oCkBoxAttrTable.Checked then
+         oExporter.CbAddExportTypeWithOptions(6, {oCkBoxAttrDefault.Checked, oCkBoxAttrUser.Checked}),
+      endif,
+
+      if oCkBoxClearPath.Checked then
+         StartSeq
+            // löscht alle .DWP (Codeblock) dateien im angegebenen Pfad und in den Unterordnern
+            aDir := PathSeek({'*.DWP'}, oEdtExportPath.Text),
+            aDirArr := DirArray(oEdtExportPath.Text),
+            for i := 1 to aLen(aDir) do
+               DeleteFile(aDir[i]),
+            next,
+            myRemoveDir(oEdtExportPath.Text),
+            RemoveDir(oEdtExportPath.Text),
+         OnError
+            // Fängt den Fehler ab der ensteht wenn der Ordner nicht existiert
+         StopSeq
+      endif,
+      // Übergabe des DD- und des DabPar Pfades
+      oExporter.CbDataBasePath := oEdtDataBasePath.Text,
+      oExporter.CbDabPARPath   := oEdtDabPARPath.Text,
+
+      // Übergabe der verschiedenen Regulären Ausdrücke
+      oExporter.CbPathIncludeRegEx := oEdtPathIncludeRegEx.Text,
+      oExporter.CbPathExcludeRegEx := oEdtPathExcludeRegEx.Text,
+      oExporter.CbCodeIncludeRegEx := oEdtCodeIncludeRegEx.Text,
+      oExporter.CbCodeExcludeRegEx := oEdtCodeExcludeRegEx.Text,
+
+      // ProgressBar aktivieren
+      oExporter.CbShowProgressBar := True,
+
+      // Export der Codeblöcke
+      WriteLn(now()),
+      oExporter.CbExportCodeblock(),
+   Always
+      DestroyObject(oExporter),
+      SetCursor(crDefault),
+
+      WriteLn(now()),
+      WriteLn('----------'),
+      // Falls vorhanden den ErrorLog anzeigen
+      if cErrorLog <> '' then
+         ShowErrorLog('TBeCbCodeblockCollector', cErrorLog),
+         cErrorLog := '',
+      else
+         ShowMessage('Export ohne Fehler abgeschlossen'),
+      endif,
+   StopSeq,
+end,
+
+//******************************************************************************
+// Schliest das Programm
+//******************************************************************************
+function oBtnCancelClick(Sender)
+   Result := '',
+   ModalResult(oForm, mrCancel),
+end,
+
+//******************************************************************************
+// Steuert die jeweiligen CheckBox Click Events
+//******************************************************************************
+function DoCheckBoxClicked(Sender)
+| oElement |
+   if not lCheckBoxClicked then
+      lCheckBoxClicked := True,
+
+      //************************************************************************
+      // Hauptcheckbox der Merkmalstabellen steuert die Checkboxen für Optionen
+      if Sender = oCkBoxAttrTable then
+         oCkBoxAttrDefault.Enabled := oCkBoxAttrTable.Checked,
+         oCkBoxAttrUser.Enabled    := oCkBoxAttrTable.Checked,
+      endif,
+
+      //************************************************************************
+      // Hauptcheckbox der Tabellenrechte steuert die Checkboxen für Optionen
+      if Sender = oCkBoxRights then
+         oCkBoxDefaultRights.Enabled := oCkBoxRights.Checked,
+         oCkBoxUserRights.Enabled    := oCkBoxRights.Checked,
+      endif,
+
+      //************************************************************************
+      // Hauptcheckbox der Browserdefinitionen
+      if Sender = oCkBoxBrowserDef then
+         oComboCkBoxBrowserDef.Enabled   := oCkBoxBrowserDef.Checked,
+         oEdtBrowserDef.Enabled          := oCkBoxBrowserDef.Checked,
+         oCkBoxBrowserDefDefault.Enabled := oCkBoxBrowserDef.Checked,
+      endif,
+
+      lCheckBoxClicked := False,
+   endif,
+end,
+
+//******************************************************************************
+// Steuert die Selektions-Buttons
+//******************************************************************************
+function DoSelektionButtonClicked(Sender)
+| lChecked, oElement |
+   // Wenn oBtnSelectAll gerdückt wird, alle selektieren sonst alle deselektieren
+   lChecked := Sender = oBtnSelectAll,
+
+   // CheckBoxClicked Flag setzen um keine event-sprünge zu verursachen
+   lCheckBoxClicked := True,
+
+   // Alle selektierten Codeblöcke durchlaufen
+   foreach oElement in oCkBoxArr do
+      oElement.Checked := lChecked,
+   next,
+
+   oCkBoxAttrDefault.Enabled := oCkBoxAttrTable.Checked,
+   oCkBoxAttrUser.Enabled    := oCkBoxAttrTable.Checked,
+
+   oCkBoxDefaultRights.Enabled := oCkBoxRights.Checked,
+   oCkBoxUserRights.Enabled    := oCkBoxRights.Checked,
+
+   oComboCkBoxBrowserDef.Enabled   := oCkBoxBrowserDef.Checked,
+   oEdtBrowserDef.Enabled          := oCkBoxBrowserDef.Checked,
+   oCkBoxBrowserDefDefault.Enabled := oCkBoxBrowserDef.Checked,
+
+
+   lCheckBoxClicked := False,
+
+   // Setzt den Filter für Browserdefinitionen auf Alle User
+   oEdtBrowserDef.Text := IIf(lChecked, '0', ''),
+   IIf(lChecked, oComboCkBoxBrowserDef.CBCheckAllItems, oComboCkBoxBrowserDef.CBUnCheckAllItems),
+end,
+
+//******************************************************************************
+// Setzt die Margins des Übergebenen Objects auf die Übergebenen werte
+//******************************************************************************
+function SetAlignMargins(oComponent, nAlignTyp, nBottom, nLeft, nRight, nTop)
+   oComponent.Align            := nAlignTyp,
+   oComponent.AlignWithMargins := true,
+   oComponent.Margins.Bottom   := nBottom,
+   oComponent.Margins.Left     := nLeft,
+   oComponent.Margins.Right    := nRight,
+   oComponent.Margins.Top      := nTop,
+end,
+
+//******************************************************************************
+// Erstellt eine Checkbox der Codeblock Arten
+//******************************************************************************
+function MyCreateObject(cClass, cName, cCaption, oParent, nTabOrder, nAlignType, nBottom, nLeft, nRight, nTop)
+   Result          := nil,
+   Result          := CreateObject(cClass, cName, oForm, oParent),
+   Result.Caption  := cCaption,
+   Result.TabOrder := nTabOrder,
+   SetAlignMargins(Result, nAlignType, nBottom, nLeft, nRight, nTop),
+end,
+
+//******************************************************************************
+// Setzt die Margins des Übergebenen Objects auf die Übergebenen werte
+//******************************************************************************
+function CreateForm()
+   // Formular
+   oForm           := CreateObject('TFormEx', 'FormtCodeblockExport'),
+   oForm.OrigCapt  := 'Codeblock Export',
+   oForm.Font.Name := 'Segoe UI',
+   oForm.Height    := 560,
+   oForm.Width     := 850,
+   oForm.Position  := poScreenCenter,
+
+   // Haupt-Panel zum halten aller Grundeinstellungen für den Export
+   oPanelMainOptions            := MyCreateObject('TPanel', 'PanelMainOptions', '', oForm, 0, alClient, 0, 0, 0, 0),
+   oPanelMainOptions.BevelOuter := bvNone,
+
+   //***************************************************************************
+   // GroupBox Export Pfad
+   oGrpBoxExportPath        := MyCreateObject('TGroupBox', 'GrpBoxExportPath', 'Pfad für den Export', oPanelMainOptions, 0, alClient, 3, 3, 3, 3),
+   oGrpBoxExportPath.Height := 187,
+
+   // Panel für die Pfadoptionen
+   oPanelPathOptions            := MyCreateObject('TPanel', 'PanelPathOptions', '', oGrpBoxExportPath, 1, alClient, 3, 3, 3, 0),
+   oPanelPathOptions.Height     := 131,
+   oPanelPathOptions.BevelOuter := bvNone,
+
+   //***************************************************************************
+   // GroupBox Reguläre ausdrücke
+   oGrpBoxRegExpr        := MyCreateObject('TGroupBox', 'GrpBoxRegExpr', 'Reguläre ausdrücke', oPanelPathOptions, 0, alClient, 3, 3, 3, 0),
+
+   //***************************************************************************
+   // Panel für den RegEx der Im Code nicht vorkommen darf
+   oPanelCodeExcludeRegEx            := MyCreateObject('TPanel', 'PanelCodeExcludeRegEx', '', oGrpBoxRegExpr., 4, alTop, 3, 3, 3, 0),
+   oPanelCodeExcludeRegEx.Height     := 70,
+   oPanelCodeExcludeRegEx.BevelOuter := bvNone,
+   // Label für den RegEx der Im Code nicht vorkommen darf
+   oLblCodeExcludeRegEx              := CreateObject('TLabel', 'LblCodeExcludeRegEx', oForm, oPanelCodeExcludeRegEx),
+   oLblCodeExcludeRegEx.Caption      := 'Ausdruck der im Code nicht vorkommen darf:',
+   SetAlignMargins(oLblCodeExcludeRegEx, alTop, 0, 3, 3, 3),
+   // Edit für den RegEx der Im Code nicht vorkommen darf
+   oEdtCodeExcludeRegEx              := CreateObject('TBeEdit', 'EdtCodeExcludeRegEx', oForm, oPanelCodeExcludeRegEx),
+   oEdtCodeExcludeRegEx.Text         := '',
+   oEdtCodeExcludeRegEx.WordWrap     := True,
+   SetAlignMargins(oEdtCodeExcludeRegEx, alClient, 0, 0, 0, 0),
+   //***************************************************************************
+   // Panel für den RegEx der Im Code vorkommen muss
+   oPanelCodeIncludeRegEx            := MyCreateObject('TPanel', 'PanelCodeIncludeRegEx', '', oGrpBoxRegExpr., 3, alTop, 3, 3, 3, 0),
+   oPanelCodeIncludeRegEx.Height     := 70,
+   oPanelCodeIncludeRegEx.BevelOuter := bvNone,
+   // Label für den RegEx der Im Code vorkommen muss
+   oLblCodeIncludeRegEx              := CreateObject('TLabel', 'LblCodeIncludeRegEx', oForm, oPanelCodeIncludeRegEx),
+   oLblCodeIncludeRegEx.Caption      := 'Ausdruck der im Code vorkommen muss:',
+   SetAlignMargins(oLblCodeIncludeRegEx, alTop, 0, 3, 3, 3),
+   // Edit für den RegEx der Im Code vorkommen muss
+   oEdtCodeIncludeRegEx              := CreateObject('TBeEdit', 'EdtCodeIncludeRegEx', oForm, oPanelCodeIncludeRegEx),
+   oEdtCodeIncludeRegEx.Text         := '',
+   oEdtCodeIncludeRegEx.WordWrap     := True,
+   SetAlignMargins(oEdtCodeIncludeRegEx, alClient, 0, 0, 0, 0),
+   //***************************************************************************
+   // Panel für den RegEx der Im Pfad nicht vorkommen darf
+   oPanelPathExcludeRegEx            := MyCreateObject('TPanel', 'PanelPathExcludeRegEx', '', oGrpBoxRegExpr., 2, alTop, 3, 3, 3, 0),
+   oPanelPathExcludeRegEx.Height     := 70,
+   oPanelPathExcludeRegEx.BevelOuter := bvNone,
+   // Label für den RegEx der Im Pfad nicht vorkommen darf
+   oLblPathExcludeRegEx              := CreateObject('TLabel', 'aLblPathExcludeRegEx', oForm, oPanelPathExcludeRegEx),
+   oLblPathExcludeRegEx.Caption      := 'Ausdruck der im Pfad nicht vorkommen darf:',
+   SetAlignMargins(oLblPathExcludeRegEx, alTop, 0, 3, 3, 3),
+   // Edit für den RegEx der Im Pfad nicht vorkommen darf
+   oEdtPathExcludeRegEx              := CreateObject('TBeEdit', 'EdtPathExcludeRegEx', oForm, oPanelPathExcludeRegEx),
+   oEdtPathExcludeRegEx.Text         := '',
+   oEdtPathExcludeRegEx.WordWrap     := True,
+   SetAlignMargins(oEdtPathExcludeRegEx, alClient, 0, 0, 0, 0),
+   //***************************************************************************
+   // Panel für den RegEx der Im Pfad vorkommen muss
+   oPanelPathIncludeRegEx            := MyCreateObject('TPanel', 'PanelPathIncludeRegEx', '', oGrpBoxRegExpr., 1, alTop, 3, 3, 3, 0),
+   oPanelPathIncludeRegEx.Height     := 70,
+   oPanelPathIncludeRegEx.BevelOuter := bvNone,
+   // Label für den RegEx der Im Pfad vorkommen muss
+   oLblPathIncludeRegEx              := CreateObject('TLabel', 'aLblPathIncludeRegEx', oForm, oPanelPathIncludeRegEx),
+   oLblPathIncludeRegEx.Caption      := 'Ausdruck der im Pfad vorkommen muss:',
+   SetAlignMargins(oLblPathIncludeRegEx, alTop, 0, 3, 3, 3),
+   // Edit für den RegEx der Im Pfad vorkommen muss
+   oEdtPathIncludeRegEx              := CreateObject('TBeEdit', 'EdtPathIncludeRegEx', oForm, oPanelPathIncludeRegEx),
+   oEdtPathIncludeRegEx.Text         := '',
+   oEdtPathIncludeRegEx.WordWrap     := True,
+   SetAlignMargins(oEdtPathIncludeRegEx, alClient, 0, 0, 0, 0),
+
+   // CheckBox zum leeren des zu Exportierenden Ordners
+   oCkBoxClearPath       := MyCreateObject('TCheckBox', 'CheckBoxClearPath', 'Export Ordner leeren', oPanelPathOptions, 0, alTop, 3, 3, 3, 0),
+   oCkBoxClearPath.Width := 130,
+
+   //***************************************************************************
+   // Panel für den Pfad indem die Codeblock hinein exportiert werden sollen
+   oPanelExportPath            := MyCreateObject('TPanel', 'PanelExportPath', '', oGrpBoxExportPath, 0, alTop, 0, 0, 0, 0),
+   oPanelExportPath.BevelOuter := bvNone,
+   oPanelExportPath.Height     := 29,
+
+   // Button Export Pfad über OpenDialog
+   oBtnChangePath       := MyCreateObject('TBeBitBtn', 'BtnChangeExportPath', '...', oPanelExportPath, 0, alRight, 3, 0, 3, 3),
+   oBtnChangePath.Width := 23,
+   AssignEvent(oBtnChangePath, 'OnClick', 'oBtnChangePathClick'),
+   // Edit Export Pfad
+   oEdtExportPath          := CreateObject('TBeEdit', 'EdtExportPath', oForm, oPanelExportPath),
+   oEdtExportPath.Text     := 'C:\be_Codeblock_Export\',
+   SetAlignMargins(oEdtExportPath, alClient, 3, 5, 3, 4),
+   oEdtExportPath.ReadOnly := true,
+
+   //***************************************************************************
+   // GroupBox Datenbestand und DabPAR Pfad
+   oGrpBoxDataBase        := MyCreateObject('TGroupBox', 'GrpBoxDataBase', 'Pfad des Datenbestandes', oPanelMainOptions, 1, alBottom, 3, 3, 3, 3),
+   oGrpBoxDataBase.Height := 101,
+
+   // Panel für die Buttons zum ändern der DD und DabPAR pfade
+   oPanelDDBtnPath            := MyCreateObject('TPanel', 'PanelDDBtnPath', '', oGrpBoxDataBase, 0, alRight, 0, 0, 0, 0),
+   oPanelDDBtnPath.Width      := 26,
+   oPanelDDBtnPath.BevelOuter := bvNone,
+
+   // Panel für den Pfad des DataDictionarys und der DabPAR
+   oPanelDDEdtPath            := MyCreateObject('TPanel', 'PanelDDEdtPath', '', oGrpBoxDataBase, 1, alClient, 0, 0, 0, 0),
+   oPanelDDEdtPath.BevelOuter := bvNone,
+
+   // Button Export Pfad über OpenDialog
+   oBtnDDPath        := MyCreateObject('TBeBitBtn', 'BtnDDPath', '...', oPanelDDBtnPath, 0, alTop, 10, 0, 3, 18),
+   oBtnDDPath.Height := 23,
+   AssignEvent(oBtnDDPath, 'OnClick', 'oBtnChangePathClick'),
+   // Button Export Pfad über OpenDialog
+   oBtnDabPARPath        := MyCreateObject('TBeBitBtn', 'BtnDabPARPath', '...', oPanelDDBtnPath, 1, alBottom, 3, 0, 3, 0),
+   oBtnDabPARPath.Height := 23,
+   AssignEvent(oBtnDabPARPath, 'OnClick', 'oBtnChangePathClick'),
+
+   oLblDataBasePath         := CreateObject('TLabel', 'LblDataBasePath', oForm, oPanelDDEdtPath),
+   oLblDataBasePath.Caption := 'DataDictionary Ordner:',
+   SetAlignMargins(oLblDataBasePath, alTop, 0, 3, 3, 3),
+
+   // Edit für das Datadictionary (Den Datenbestand)
+   oEdtDataBasePath          := CreateObject('TBeEdit', 'EdtDataBasePath', oForm, oPanelDDEdtPath),
+   oEdtDataBasePath.Text     := mbedefault,
+   SetAlignMargins(oEdtDataBasePath, alBottom, 3, 5, 3, 3),
+   oEdtDataBasePath.Align    := alTop,
+   oEdtDataBasePath.ReadOnly := true,
+
+   // Edit für die DabPAR
+   oEdtDabPARPath          := CreateObject('TBeEdit', 'EdtDabPARPath', oForm, oPanelDDEdtPath),
+   oEdtDabPARPath.Text     := '',
+   SetAlignMargins(oEdtDabPARPath, alBottom, 3, 5, 3, 0),
+   oEdtDabPARPath.ReadOnly := true,
+
+   oLblDabPARPath         := CreateObject('TLabel', 'LblDabPARPath', oForm, oPanelDDEdtPath),
+   oLblDabPARPath.Caption := 'DabPAR Ordner:',
+   SetAlignMargins(oLblDabPARPath, alBottom, 3, 3, 3, 0),
+
+   //***************************************************************************
+   // Panel für die Fußzeile
+   oPanelBottom            := MyCreateObject('TPanel', 'PanelBottom', '', oForm, 2, alBottom, 3, 3, 3, 0),
+   oPanelBottom.Height     := 25,
+   oPanelBottom.BevelOuter := bvNone,
+   // Button Export
+   oBtnExport                        := MyCreateObject('TBeBitBtn', 'BtnExport', '&Exportieren', oPanelBottom, 0, alRight, 0, 0, 3, 0),
+   oBtnExport.ImageIndex.IndexNormal := 49,
+   oBtnExport.Width                  := 90,
+   AssignEvent(oBtnExport, 'OnClick', 'oBtnExportClick'),
+   // Button Abbruch
+   oBtnAbort                        := MyCreateObject('TBeBitBtn', 'BtnAbort', 'A&bbrechen', oPanelBottom, 1, alRight, 0, 0, 3, 0),
+   oBtnAbort.ImageIndex.IndexNormal := 8,
+   oBtnAbort.Width                  := 90,
+   AssignEvent(oBtnAbort, 'OnClick', 'oBtnCancelClick'),
+   //***************************************************************************
+   // GroupBox für die Optionen die Export einstellungen
+   oGrpBoxMainControl       := MyCreateObject('TGroupBox', 'GrpBoxMainControl', 'Zu exportierende Codeblöcke', oForm, 1, alRight, 3, 3, 3, 3),
+   oGrpBoxMainControl.Width := 400,
+   //***************************************************************************
+   // Panel für zusätliche Optionen
+   oPanelOptions            := MyCreateObject('TPanel', 'PanelOptions', '', oGrpBoxMainControl, 1, alBottom, 3, 3, 3, 3),
+   oPanelOptions.Height     := 25,
+   oPanelOptions.BevelOuter := bvNone,
+   // Button zum selektieren aller Export-Bereiche
+   oBtnSelectAll                        := MyCreateObject('TBeBitBtn', 'BtnSelectAll', 'Alle selektieren', oPanelOptions, 1, alLeft, 0, 0, 3, 0),
+   oBtnSelectAll.ImageIndex.IndexNormal := 189,
+   oBtnSelectAll.Width                  := 116,
+   AssignEvent(oBtnSelectAll, 'OnClick', 'DoSelektionButtonClicked'),
+   // Button der alle Selektionen aufhebt
+   oBtnDeselectAll                        := MyCreateObject('TBeBitBtn', 'BtnDeselectAll', 'Alle aufheben', oPanelOptions, 2, alLeft, 0, 0, 3, 0),
+   oBtnDeselectAll.ImageIndex.IndexNormal := oBtnSelectAll.ImageIndex.IndexNormal + 1,
+   oBtnDeselectAll.Width                  := 116,
+   AssignEvent(oBtnDeselectAll, 'OnClick', 'DoSelektionButtonClicked'),
+   //***************************************************************************
+   // Panel linke Seite der Export Arten
+   oPanelLeftSide := MyCreateObject('TPanel', 'PanelLeftSide', '', oGrpBoxMainControl, 0, alLeft, 0, 3, 3, 3),
+   oPanelLeftSide.Width      := 150,
+   oPanelLeftSide.BevelOuter := bvNone,
+   // CheckBox Druckerzuweisungen
+   oCkBoxPrintManager     := MyCreateObject('TCheckBox', 'CkBoxPrintManager', 'Druckerzuweisungen', oPanelLeftSide, 0, alTop, 3, 3, 3, 3),
+   // CheckBox Individual Menüs
+   oCkBoxIndividualMenu   := MyCreateObject('TCheckBox', 'CkBoxIndividualMenu', 'Individual-Menüs', oPanelLeftSide, 1, alTop, 3, 3, 3, 0),
+   // CheckBox Maskendefinitionen
+   oCkBoxMaskDef          := MyCreateObject('TCheckBox', 'CkBoxMaskDef', 'Maskendefinitionen', oPanelLeftSide, 2, alTop, 3, 3, 3, 0),
+   // CheckBox Versandsteuerung
+   oCkBoxShippingControl  := MyCreateObject('TCheckBox', 'CkBoxShippingControl', 'Versandsteuerung', oPanelLeftSide, 3, alTop, 3, 3, 3, 0),
+   // CheckBox Textbausteine
+   oCkBoxTextModule       := MyCreateObject('TCheckBox', 'CkBoxTextModule', 'Textbausteine', oPanelLeftSide, 4, alTop, 3, 3, 3, 0),
+   // CheckBox Memo Ansichten
+   oCkBoxMemoView         := MyCreateObject('TCheckBox', 'CkBoxMemoView', 'Memo Ansichten', oPanelLeftSide, 5, alTop, 3, 3, 3, 0),
+   // CheckBox Codeblock Programme
+   oCkBoxCodeblockProgram := MyCreateObject('TCheckBox', 'CkBoxCodeblockProgram', 'Codeblock Programme', oPanelLeftSide, 6, alTop, 3, 3, 3, 0),
+   // CheckBox Größen- und Farbraster
+   oCkBoxColSize          := MyCreateObject('TCheckBox', 'CkBoxColSize', 'Größen- und Farbraster', oPanelLeftSide, 7, alTop, 3, 3, 3, 0),
+   // CheckBox Reportgenerator
+   oCkBoxRepGen           := MyCreateObject('TCheckBox', 'CkBoxRepGen', 'Reportgenerator', oPanelLeftSide, 8, alTop, 3, 3, 3, 0),
+   // CheckBox Reportgenerator
+   oCkBoxInvFilter        := MyCreateObject('TCheckBox', 'CkBoxInvFilter', 'Inventur Filter', oPanelLeftSide, 9, alTop, 3, 3, 3, 0),
+   // Automatische Liefereinstellungen
+   oCkBoxReleaseByDate    := MyCreateObject('TCheckBox', 'CkBoxReleaseByDate', 'Automatische Liefereinst.', oPanelLeftSide, 10, alTop, 3, 3, 3, 0),
+   // CheckBox SQL-Selektion
+   oCkBoxSqlSelect        := MyCreateObject('TCheckBox', 'CkBoxSqlSelect', 'SQL-Selektion', oPanelLeftSide, 11, alTop, 3, 3, 3, 0),
+   // CheckBox FiBu Sachkonten
+   oCkBoxSachkonten       := MyCreateObject('TCheckBox', 'CkBoxSachkonten', 'Sachkonten', oPanelLeftSide, 12, alTop, 3, 3, 3, 0),
+   // CheckBox FiBu Zahlungsarten
+   oCkPaymentMethod       := MyCreateObject('TCheckBox', 'CkPaymentMethod', 'Zahlungsarten', oPanelLeftSide, 13, alTop, 3, 3, 3, 0),
+
+   //***************************************************************************
+   // Panel rechte Seite der Export Arten
+   oPanelRightSide            := MyCreateObject('TPanel', 'PanelRightSide', '', oGrpBoxMainControl, 1, alRight, 0, 0, 3, 3),
+   oPanelRightSide.Width      := 200,
+   oPanelRightSide.BevelOuter := bvNone,
+   // CheckBox CRM-Aktionen
+   oCkBoxCRMAction := MyCreateObject('TCheckBox', 'CkBoxCRMAction', 'CRM-Aktionen', oPanelRightSide, 0, alTop, 3, 3, 3, 3),
+
+   //***************************************************************************
+   // Panel für die ComboCheckBox und das Label für die Browser Definitionen
+   oPanelBrowserDef            := MyCreateObject('TPanel', 'PanelBrowserDef', '', oPanelRightSide, 1, alTop, 0, 0, 0, 0),
+   oPanelBrowserDef.Height     := 67,
+   oPanelBrowserDef.BevelOuter := bvNone,
+
+   // Edit für den Userfilter auf anderen Datenbeständen
+   oEdtBrowserDef          := CreateObject('TEdit', 'EdtBrowserDef', oForm, oPanelBrowserDef),
+   oEdtBrowserDef.Text     := '',
+   oEdtBrowserDef.Visible  := False,
+   oEdtBrowserDef.TabOrder := 4,
+   oEdtBrowserDef.Enabled  := False,
+   SetAlignMargins(oEdtBrowserDef, alTop, 3, 18, 3, 0),
+
+   // ComboCheckBox für Browserdefinitionen erstellen
+   oComboCkBoxBrowserDef                := CreateObject('TBeAttribCheckCombo', 'ComboCkBoxBrowserDef', oForm, oPanelBrowserDef),
+   oComboCkBoxBrowserDef.TabOrder       := 4,
+   oComboCkBoxBrowserDef.ShowTextAsHint := True,
+   oComboCkBoxBrowserDef.BeAttributeID  := -13,
+   oComboCkBoxBrowserDef.Enabled        := False,
+   SetAlignMargins(oComboCkBoxBrowserDef, alTop, 3, 18, 3, 0),
+
+   // CheckBox für die Default Codeblöcke der Browserdefinitionen
+   oCkBoxBrowserDefDefault         := MyCreateObject('TCheckBox', 'CkBoxBrowserDefDefault', 'Default Browser', oPanelBrowserDef, 2, alTop, 3, 18, 3, 0),
+   oCkBoxBrowserDefDefault.Enabled := False,
+
+   // Allgemein CheckBox für die Browserdefinitionen
+   oCkBoxBrowserDef        := MyCreateObject('TCheckBox', 'CkBoxBrowserDef', 'Browserdefinitionen', oPanelBrowserDef, 3, alTop, 3, 3, 3, 0),
+   AssignEvent(oCkBoxBrowserDef, 'OnClick', 'DoCheckBoxClicked'),
+
+   //***************************************************************************
+   // Panel Tabellen- und Feldrechte
+   oPanelAttr            := MyCreateObject('TPanel', 'PanelAttr', '', oPanelRightSide, 4, alTop, 3, 3, 3, 0),
+   oPanelAttr.Height     := 60,
+   oPanelAttr.BevelOuter := bvNone,
+   // CheckBox Merkmalstabellen
+   oCkBoxAttrTable       := MyCreateObject('TCheckBox', 'CkBoxAttrTable', 'Merkmalstabellen', oPanelAttr, 2, alTop, 3, 0, 3, 0),
+   AssignEvent(oCkBoxAttrTable, 'OnClick', 'DoCheckBoxClicked'),
+   // CheckBox Default
+   oCkBoxAttrDefault         := MyCreateObject('TCheckBox', 'CkBoxAttrDefault', 'Default', oPanelAttr, 2, alTop, 3, 18, 3, 0),
+   oCkBoxAttrDefault.Enabled := False,
+   AssignEvent(oCkBoxAttrDefault, 'OnClick', 'DoCheckBoxClicked'),
+   // CheckBox Individual
+   oCkBoxAttrUser         := MyCreateObject('TCheckBox', 'CkBoxAttrUser', 'Individual', oPanelAttr, 2, alTop, 3, 18, 3, 0),
+   oCkBoxAttrUser.Enabled := False,
+   AssignEvent(oCkBoxAttrUser, 'OnClick', 'DoCheckBoxClicked'),
+
+   // CheckBox Beleg Layouts
+   oCkBoxDocLayout := MyCreateObject('TCheckBox', 'CkBoxDocLayout', 'Beleg Layouts', oPanelRightSide, 3, alTop, 3, 3, 3, 0),
+
+   //***************************************************************************
+   // Panel Tabellen- und Feldrechte
+   oPanelRights            := MyCreateObject('TPanel', 'PanelRights', '', oPanelRightSide, 4, alTop, 3, 3, 3, 0),
+   oPanelRights.Height     := 60,
+   oPanelRights.BevelOuter := bvNone,
+   // CheckBox Tabellen- und Feldrechte
+   oCkBoxRights            := MyCreateObject('TCheckBox', 'CkBoxRights', 'Tabellen- und Feldrechte', oPanelRights, 4, alTop, 3, 0, 3, 0),
+   AssignEvent(oCkBoxRights, 'OnClick', 'DoCheckBoxClicked'),
+   // CheckBox Default-Rechte
+   oCkBoxDefaultRights         := MyCreateObject('TCheckBox', 'CkBoxDefaultRights', 'Default Rechte', oPanelRights, 4, alTop, 3, 18, 3, 0),
+   oCkBoxDefaultRights.Enabled := False,
+   AssignEvent(oCkBoxDefaultRights, 'OnClick', 'DoCheckBoxClicked'),
+   // CheckBox User-Rechte
+   oCkBoxUserRights         := MyCreateObject('TCheckBox', 'CkBoxUserRights', 'User Rechte', oPanelRights, 4, alTop, 3, 18, 3, 0),
+   oCkBoxUserRights.Enabled := False,
+   AssignEvent(oCkBoxUserRights, 'OnClick', 'DoCheckBoxClicked'),
+
+   // CheckBox Allgemeine- und Lokale Parameter
+   oCkBoxParameter      := MyCreateObject('TCheckBox', 'CkBoxParameter', 'Allgemeine- und Lokale Parameter', oPanelRightSide, 5, alTop, 3, 3, 3, 0),
+   // CheckBox Außendienst Parameter
+   oCkBoxScComm         := MyCreateObject('TCheckBox', 'CkBoxScComm', 'Außendienst Parameter', oPanelRightSide, 6, alTop, 3, 3, 3, 0),
+   // CheckBox Individuelle Datenquelle für Umsätze
+   oCkBoxIndiDatTurn    := MyCreateObject('TCheckBox', 'CkBoxIndiDatTurn', 'Kum.Stat. Indiv.Betrachtungen', oPanelRightSide, 7, alTop, 3, 3, 3, 0),
+   // CheckBox Intrastat Parameter
+   oCkBoxIntrastatParam := MyCreateObject('TCheckBox', 'CkBoxIntrastatParam', 'Intrastat Parameter', oPanelRightSide, 8, alTop, 3, 3, 3, 0),
+   // CheckBox Filter Liste
+   oCkBoxFilterList     := MyCreateObject('TCheckBox', 'CkBoxFilterList', 'Filter Liste', oPanelRightSide, 9, alTop, 3, 3, 3, 0),
+   // CheckBox Parameter Filter
+   oCkBoxParamFilter    := MyCreateObject('TCheckBox', 'CkBoxParamFilter', 'Parameter Filter', oPanelRightSide, 10, alTop, 3, 3, 3, 0),
+   // CheckBox FiBu Parameter
+   oCkBoxFiBuParam      := MyCreateObject('TCheckBox', 'CkBoxFiBuParam', 'FiBu Parameter', oPanelRightSide, 11, alTop, 3, 3, 3, 0),
+   // CheckBox Vertreterverwaltung Absatzplanung Artikelfilter
+   oCkBoxAgentArtFilter := MyCreateObject('TCheckBox', 'CkBoxAgentArtFilter', 'Absatzplanung Artikelfilter', oPanelRightSide, 12, alTop, 3, 3, 3, 0),
+   // CheckBox Sonstige WinPosition Codeblöcke
+   oCkBoxOtherWinPos    := MyCreateObject('TCheckBox', 'CkBoxOtherWinPos', 'Sonstige WinPositionen', oPanelRightSide, 13, alTop, 3, 3, 3, 0),
+
+   // Array aus allen CheckBoxen die eine export Art represäntieren
+   oCkBoxArr := {oCkBoxPrintManager, oCkBoxCRMAction, oCkBoxIndividualMenu,
+                 oCkBoxMaskDef, oCkBoxAttrTable, oCkBoxAttrDefault,
+                 oCkBoxAttrUser, oCkBoxUserRights, oCkBoxDefaultRights,
+                 oCkBoxRights, oCkBoxShippingControl, oCkBoxDocLayout,
+                 oCkBoxTextModule, oCkBoxMemoView, oCkBoxParameter,
+                 oCkBoxCodeblockProgram, oCkBoxScComm, oCkBoxColSize,
+                 oCkBoxIndiDatTurn, oCkBoxRepGen, oCkBoxIntrastatParam,
+                 oCkBoxInvFilter, oCkBoxFilterList, oCkBoxOtherWinPos,
+                 oCkBoxParamFilter, oCkBoxReleaseByDate, oCkBoxFiBuParam,
+                 oCkBoxSqlSelect, oCkBoxAgentArtFilter, oCkBoxSachkonten,
+                 oCkPaymentMethod, oCkBoxBrowserDef, oCkBoxBrowserDefDefault},
+end,
+
+startseq
+   CreateForm(),
+   ShowModal(oForm),
+always
+   DestroyObject(oForm),
+stopseq,

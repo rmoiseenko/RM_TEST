@@ -97,26 +97,23 @@ end,
 // @Result: null
 //******************************************************************************
 function _TSKPL_WriteLog_Internal(oDM:O, nSchedulerId:N, nTaskId:N, nEventCode:N, cMessage:C)
-| oTSKPLLOG, bDataModuleAvailable, oTSKPLSCHED, nTaskStatus, bOldLockErrorState |
+| oTSKPLLOG, bDataModuleAvailable, oTSKPLSCHED |
    bDataModuleAvailable := not Empty(oDM) and ClassOf(oDM, 'TBeDbGet'),
    if bDataModuleAvailable then
       oTSKPLLOG := DbGetTable(oDM, waTSKPLLOG),
-      // muss mit Aliasnamen aufgerugen werden, weil Post im GUI gespert ist
-      oTSKPLSCHED := instanceTable(oDM, waTSKPLSCHED, 'TSKPLSCHED_LOG', nSchedulerId),
+      oTSKPLSCHED := instanceTable(oDM, waTSKPLSCHED, , nSchedulerId),
+
    else
       oTSKPLLOG := BeOpen(waTSKPLLOG),
+      oTSKPLSCHED := BeOpen( waTSKPLSCHED),
       cbs(oTSKPLLOG),
-
-      oTSKPLSCHED             := BeOpen(waTSKPLSCHED),
       myseek({ nSchedulerId}, oTSKPLSCHED),
-      bOldLockErrorState      := oTSKPLSCHED.ShowLockErr,
-      oTSKPLSCHED.ShowLockErr := true,
    endif,
 
    startseq
       if not (nEventCode = gl_TSKPL_EventCode_SchedulerDeleted) then
          myedit(oTSKPLSCHED),
-         oTSKPLSCHED:LAST_RESP := GetAdsServerTime(),
+         oTSKPLSCHED:LAST_RESP:=getadsservertime(),
          mypost(oTSKPLSCHED),
       endif,
 
@@ -131,12 +128,8 @@ function _TSKPL_WriteLog_Internal(oDM:O, nSchedulerId:N, nTaskId:N, nEventCode:N
       if (nTaskId > 0) and (nEventCode <> gl_TSKPL_EventCode_TaskDeleted) then
          oTSKPLLOG:SENDER     := gl_TSKPL_SenderIdentifier_Task,
          oTSKPLLOG:TASK_PARAM := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'Trim(STARTPARAM)', ''),
-         nTaskStatus          := TSKPL_GetTaskStatus(nTaskId),
-         oTSKPLLOG:TASK_ST    := nTaskStatus,
-         if (nEventCode = gl_TSKPL_EventCode_TaskFinished) and (nTaskStatus = gl_TSKPL_TaskStatus_Ready) then
-           nTaskStatus := gl_TSKPL_TaskStatus_Finished
-         endif,
-         oTSKPLLOG:TASK_ST_G  := TSKPL_GetTaskStatusGui(nTaskId, nTaskStatus),
+         oTSKPLLOG:TASK_ST    := TSKPL_GetTaskStatus(nTaskId),
+         oTSKPLLOG:TASK_ST_G  := TSKPL_GetTaskStatusGui(nTaskId, oTSKPLLOG:TASK_ST),
       else
          oTSKPLLOG:SENDER := gl_TSKPL_SenderIdentifier_Scheduler,
       endif,
@@ -146,8 +139,7 @@ function _TSKPL_WriteLog_Internal(oDM:O, nSchedulerId:N, nTaskId:N, nEventCode:N
    always
       if not bDataModuleAvailable then
          BeClose(oTSKPLLOG),
-         oTSKPLSCHED.ShowLockErr := bOldLockErrorState,
-         BeClose(oTSKPLSCHED),
+         beClose(oTSKPLSCHED),
       endif,
    stopseq,
 end,
@@ -179,16 +171,13 @@ function _TSKPL_WriteLog_Task(nTaskId:N, nEventCode:N, cMessage:C)
 end,
 
 //******************************************************************************
+//
 // @Result: null
 //******************************************************************************
 function _TSKPL_WriteLog_Task_DM(oDM:O, nTaskId:N, nEventCode:N, cMessage:C)
-| nSchedulerId, oTSKPLTASK |
-   // keinen Lookup, Transaktionen beaufsichtigen
-   oTSKPLTASK := DbGetTable(oDM, waTSKPLTASK, 'TSKPLTASK_LOOKUP_LOG'),
-   if oTSKPLTASK.CbFindKey({nTaskId}) then
-      nSchedulerId := oTSKPLTASK:SCHEDUL_ID,
-      TSKPL_WriteLog_Internal(oDM, nSchedulerId, nTaskId, nEventCode, cMessage),
-   endif,
+| nSchedulerId |
+   nSchedulerId := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'SCHEDUL_ID'),
+   TSKPL_WriteLog_Internal(oDM, nSchedulerId, nTaskId, nEventCode, cMessage),
 end,
 
 //******************************************************************************
@@ -221,16 +210,15 @@ end,
 //******************************************************************************
 function _TSKPL_Log(cMessage:C, cProgName:C:='')
 | aTaskInfo, nTaskID, nProgID |
-   nTaskID := 0,
+   cProgName := e2v(cProgName,Progname()),
+   nProgID   := LookUp(waDabPRG, 'BEZ', {{cProgname}}, "PROGNR",0),
    if IsBeDBVersion7() then
-      nTaskID := val(CbApplication.GetParam('TSKPL_ID')),                       // funktioniert nur bei Aufruf des Tasks in 'neuer be-Instanz', sonst Rückgabe empty()
-      if nTaskID = 0 then
-         nTaskID := gl_TSKPL_Log_TaskID,                                        // diese Variable wird gesetzt direkt vor dem Aufruf des Tasks in 'aktueller be-Instanz'
-      endif,
+      nTaskID := CbApplication.GetParam('TSKPL_ID'),
    else
-      cProgName := e2v(cProgName, Progname()),
-      nProgID   := LookUp(waDabPRG, 'BEZ', {{cProgname}}, "PROGNR",0),
-      nTaskID   := ToFloat(GetBeParam('TSKP' + Str(nProgID))),
+      if gl_TSKPL_Log_TaskID = -1 then
+         gl_TSKPL_Log_TaskID := GetBeParam('TSKP' + Str(nProgID)),
+      endif,
+      nTaskID := gl_TSKPL_Log_TaskID,
    endif,
    if not empty(nTaskID) then
       aTaskInfo := Lookup(waTSKPLTASK, 'ID', {{nTaskID}}, '{not Eof(), SCHEDUL_ID}', {False, 0}),

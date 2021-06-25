@@ -7,20 +7,15 @@
 // @Result: null
 //******************************************************************************
 function _TSKPL_SetSchedulerState(oTSKPLSCHED:O, nNewSchedulerState:N)
-| bOldLockErrorState |
    Result := False,
    // Wenn ein Datensatz bereits gesperrt ist -> Sperrdialog anzeigen
-   bOldLockErrorState      := oTSKPLSCHED.ShowLockErr,
    oTSKPLSCHED.ShowLockErr := True,
-   startseq
-      MyEdit(oTSKPLSCHED),
-      oTSKPLSCHED:STATUS    := nNewSchedulerState,
-      oTSKPLSCHED:LAST_RESP := GetAdsServerTime(),
-      MyPost(oTSKPLSCHED),
-      Result := True,
-   always
-      oTSKPLSCHED.ShowLockErr := bOldLockErrorState,
-   stopseq,
+
+   MyEdit(oTSKPLSCHED),
+   oTSKPLSCHED:STATUS    := nNewSchedulerState,
+   oTSKPLSCHED:LAST_RESP := GetAdsServerTime(),
+   MyPost(oTSKPLSCHED),
+   Result := True,
 end,
 
 //******************************************************************************

@@ -4,6 +4,8 @@
 // Programm, welches im Hintergrund zu einer be-client-Instanz läuft und
 //   periodisch prüft, ob Benachrichtigungen zu neuen Memos vorliegen
 //
+// Bestandteil des Packages 'Groupware Memo Notify'
+//
 //##############################################################################
 //##############################################################################
 
@@ -67,6 +69,7 @@ function CreateInfoPanel()
    oCloseButton.Width                  := 70,
    oCloseButton.Caption                := 'Schließen',
    oCloseButton.TransparentButton      := true,
+   oCloseButton.ImageIndex.IndexNormal := 343,
    AssignEvent(oCloseButton, 'OnClick', 'CreateCloseButtonClick'),
 end,
 
@@ -101,6 +104,7 @@ function ChangedInfoPanel()
    oCloseButton.Width                  := 70,
    oCloseButton.Caption                := 'Schließen',
    oCloseButton.TransparentButton      := true,
+   oCloseButton.ImageIndex.IndexNormal := 343,
    AssignEvent(oCloseButton, 'OnClick', 'ChangedCloseButtonClick'),
 end,
 
@@ -135,6 +139,7 @@ function ReminderInfoPanel()
    oCloseButton.Width                  := 70,
    oCloseButton.Caption                := 'Schließen',
    oCloseButton.TransparentButton      := true,
+   oCloseButton.ImageIndex.IndexNormal := 343,
    AssignEvent(oCloseButton, 'OnClick', 'ReminderCloseButtonClick'),
 end,
 
@@ -568,43 +573,28 @@ end,
 // Hauptprogramm
 //##############################################################################
 
-if not empty(FindObject(Application, 'MEMO_NOTIFY_REMINDER_TIMER')) then
-   MessageDlg('Konfigurations-Problem: Der "memo-notify" Hintergrund-Prozess wurde bereits gestartet.' + crlf + crlf +
-              'Prüfen Sie bitte, ob die Initialisierung aus dem Event "beim Start von be32" entfernt wurde. ' + crlf +
-              'Der Start erfolgt ab memo-notify version 2.0.0 direkt über den "_PackageLoader."',
-              mtError),
-else
-   // Hiermit wir das CB-Programm als "nach Ende nicht zerstören" markiert
-   if bCallMode = 'PERSIST' then
-      SetPersistent(True),
-   endif,
-
-   startseq
-      m_oInfoArea          := nil,
-      m_oChangedInfoPanel  := nil,
-      m_oReminderInfoPanel := nil,
-
-      m_oReminderTimer          := CreateObject('TTimer', 'MEMO_NOTIFY_REMINDER_TIMER', Application),
-      m_oReminderTimer.Interval := 25000,  // Milli-Sekunden (einmalig)
-
-      m_oChangedTimer           := CreateObject('TTimer', 'MEMO_NOTIFY_CHANGED_TIMER', Application),
-      m_oChangedTimer.Interval  := 30000,  // Milli-Sekunden (wiederkehrend)
-
-      // 1. Reminder-Timer starten
-      m_oReminderTimer.Enabled := false,
-      AssignEvent(m_oReminderTimer, 'OnTimer', 'ReminderOnTimer'),
-      m_oReminderTimer.Enabled := true,
-
-      // 2. Erstellt / geändert Timer starten
-      m_oChangedTimer.Enabled  := false,
-      AssignEvent(m_oChangedTimer, 'OnTimer', 'ChangedOnTimer'),
-      m_oChangedTimer.Enabled  := true,
-   always
-      if bCallMode <> 'PERSIST' then
-         DestroyObject(m_oReminderTimer),
-         DestroyObject(m_oChangedTimer),
-
-         WriteLn('Timer-Objekte wurden wieder zerstört, da der Aufruf-Modus nicht "PERSIST" ist.'),
-      endif,
-   stopseq,
+// Hiermit wir das CB-Programm als "nach Ende nicht zerstören" markiert
+if bCallMode = 'PERSIST' then
+   SetPersistent(True),
 endif,
+
+m_oInfoArea          := nil,
+m_oChangedInfoPanel  := nil,
+m_oReminderInfoPanel := nil,
+
+m_oReminderTimer          := CreateObject('TTimer', 'MEMO_NOTIFY_REMINDER_TIMER', Application),
+m_oReminderTimer.Interval := 5000,  // Milli-Sekunden (einmalig)
+
+m_oChangedTimer           := CreateObject('TTimer', 'MEMO_NOTIFY_CHANGED_TIMER', Application),
+m_oChangedTimer.Interval  := 20000, // Milli-Sekunden (wiederkehrend)
+
+// 1. Reminder-Timer starten
+m_oReminderTimer.Enabled := false,
+AssignEvent(m_oReminderTimer, 'OnTimer', 'ReminderOnTimer'),
+m_oReminderTimer.Enabled := true,
+
+// 2. Erstellt / geändert Timer starten
+m_oChangedTimer.Enabled  := false,
+AssignEvent(m_oChangedTimer, 'OnTimer', 'ChangedOnTimer'),
+m_oChangedTimer.Enabled  := true,
+

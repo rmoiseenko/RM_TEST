@@ -399,7 +399,6 @@ function ReplaceInvalidCharacters(cFileName)
    Result := StrTran(Result, '<', '##' + Str(ASC('<')) + '##' ),
    Result := StrTran(Result, '>', '##' + Str(ASC('>')) + '##' ),
    Result := StrTran(Result, '|', '##' + Str(ASC('|')) + '##' ),
-//   Result := StrTran(Result, ' ', '##' + Str(ASC(' ')) + '##' ),
 end,
 
 //******************************************************************************
@@ -455,7 +454,6 @@ function ExportProgram(cMainFolder, cSubFolder, cName, cUseProgOpt, bIgnoreReadO
       else
          // Exportieren
          if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cFileName, '.DWP', m_oDABPRG:PROGRAMM, bIgnoreReadOnly, cReadOnlyError) then
-
             // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
             if not empty(cReadOnlyError) then
                m_nErrorCount++,                                                                                                                            // Fehler zählen

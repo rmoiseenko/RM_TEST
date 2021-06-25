@@ -44,11 +44,10 @@ Call('Global\Dokumentenmanagement\_PackageLoader'),
 Call('Global\VatIdVerification\_PackageLoader'), // Qualifizierte USt.-Id-Prüfung
 Call('Global\CADInterface\_PackageLoader'),
 Call('Global\EDI\_PackageLoader'),
-Call('Suchen\volltext-suche\.globals\_PackageLoader'),
-Call('.admin-tools\uebersetzungen\.globals\_PackageLoader'),
 
 Call('Global\Allgemein'),
 Call('Global\Reports'),
+Call('Global\Volltextsuche'),
 Call('Global\Projektmanagement'),
 Call('Global\Projektmanagement_InitVars'),
 Call('Global\EinzelTerminrasterUtils'),
@@ -60,8 +59,6 @@ Call('Global\Produktion Verfuegbarkeitspruefung\_PackageLoader'),
 
 Call('Global\Ausnahmemeldungen\_PackageLoader'),
 Call('Disposition\Dispositionabteilungen\.globals\_PackageLoader'),
-Call('Groupware\memo-notify\.globals\_PackageLoader'),
-Call('mro\.globals\_PackageLoader'),
 
 //******************************************************************************
 // Individuelle Includes
@@ -70,6 +67,20 @@ Call('mro\.globals\_PackageLoader'),
 // Global verfügbares Datenmodul für den schnellen Zugriff auf "LookUp"-Tabellen
 if Empty(gl_oDM) then
   gl_oDM := CreateObject('TBeDBGet', 'gl_oDM', Application),
+endif,
+
+//******************************************************************************
+// Memo-Notify starten
+//******************************************************************************
+Call('Global\GroupwareMemoNotifyUtils'),
+Call('Global\GroupwareMemoNotifyUtils_InitVars'),
+if CBApplication.LoadedModule = belmMain then
+   startseq,
+      CallResident('Groupware\Memo-Notify\MemoWatcher', 'PERSIST'),
+   onerror,
+      MessageDlg('Fehler beim Initialisieren des Programms "Groupware\Memo-Notify\MemoWatcher"' + CRLF +
+                 GetErrorText(), mtWarning),
+   stopseq,
 endif,
 
 //##############################################################################
