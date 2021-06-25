@@ -1,0 +1,1044 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Durchführen / Dokumentieren von Aktionen an Ressourcen
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aCustomInfoArr:P4,
+
+   m_cFormID, m_cPositionSaveID, m_cBrowserID,
+   m_oDM, m_oMROTAT, m_oMROTATid, m_oDAB035, m_oDAB240, m_oDAB210, m_oDAB010,
+   m_oMROERG, m_oMRORES, m_oDAB020,
+   m_lSupervisor, m_bInInit, m_nPersNrUser, m_nMMT_Personal,
+   m_bProdAufPruefen, m_bFilterImmerAktiv, m_bShowUserFilter,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel, A_CloseAct, A_Delete, A_HelpContent, a_Hilfe, A_New,
+   A_Refresh, A_Save, actionList, attchkcmb_Filter_Bezeichnung,
+   attchkcmb_Filter_Prod_Abt, attchkcmb_Filter_Verantwort, bardock_Top,
+   barmngr_Main, bbtn_CloseAct, BeBarButton1, BeSplitter1, beToolbar_Main,
+   Bevel_akt_haupt_01, Bevel_akt_haupt_02, Bevel_AktionAbschliessen,
+   Bevel_durchfuehrung, bipnl_Headline, btn_akt_Prodauftrag_anlegen, btn_Cancel,
+   btn_Post, btn_Refresh, cmb_akt_Druchgef_MA, cmb_akt_interv_typ2,
+   cmb_akt_verantwor1, cmb_akt_verantwor2, ds_MainTable, dtp_akt_Zieldatum,
+   edt_akt_artnr, edt_akt_b_pos, edt_akt_b_pos_fld, edt_akt_BetriebstDurchgef,
+   edt_akt_Druchgef_TS, edt_akt_IstKostenExtern, edt_akt_IstKostenIntern,
+   edt_akt_kulanz, edt_akt_pflichterg, edt_akt_ProdaufStat, edt_akt_Verantw3,
+   edt_akt_Vorauf, edt_akt_warnung, edt_akt_ZielBetriebsstunden, edt_Bez1_erg,
+   edt_bez1_Masch, edt_erg_Intervall, edt_Memo, edt_Memo_Akt, edt_sollkosten,
+   edt_Standort, edt_Verantwortlicher_Statisch, grd_MainBrowser,
+   gtbtn_akt_artikel, gtbtn_akt_Prodauftrag, lbl_akt_BetriebsstDurchf,
+   lbl_akt_Durchgef_MA, lbl_akt_durchgef_TS, lbl_akt_haut_01, lbl_akt_haut_02,
+   lbl_akt_Intevall_typ, lbl_akt_istkosten, lbl_akt_Kulanz_Warn,
+   lbl_akt_ProdAufStatus, lbl_akt_Verantw3, lbl_akt_Verantwor1,
+   lbl_akt_verantwor2, lbl_akt_Zieldatum_BS, lbl_AktionAbschliessen,
+   lbl_bez1_erg, lbl_Bez1_MASCH, lbl_durchfuehrung, lbl_Filter_Bezeichnung,
+   lbl_Filter_Prod_Abt, lbl_Filter_Verantwort, lbl_pflicht_artnr,
+   lbl_Prod_Auftrag, lbl_sollkosten, lbl_Standort, pc_AktionsZusatz,
+   pnl_akt_haupt_02, pnl_AktionAbschliessen, pnl_Durchfuehrung,
+   pnl_erg_haupt_01, pnl_Main_Back, pnl_Main_Left, pnl_Main_Right, pnl_main_top,
+   ts_Memo_akt, ts_Memo_Notiz, ts_Zusatzinformationen
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormID           := '@FMROTBA', // ID der zugewiesenen F12-Maske
+m_cPositionSaveID   := '@PMROTBA', // ID zum Speichern der Fenster-Position/-Größe
+m_cBrowserID        := '@BMROTBA',    // ID des Browsers
+m_bShowUserFilter   := gl_MRO_bShowUserFilter,
+m_nPersNrUser       := lookup(waDAB262, 'DAB269', {{c_usr}}, 'PERSNR', 0, lm_lookup),     // Personalnummer des aktuelln Benutzers ermittlen
+m_bFilterImmerAktiv := gl_MRO_m_bFilterImmerAktiv,   // Wenn false -> der Namens- Verantworltichen Filter
+                                                     // geht erst wenn man eine Abteilung gewählt hat
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Überprüft ob der der Übergebene Artikel eine Stückliste hat und vom Typ
+//    Baugruppe ist
+// @Result: boolean
+//******************************************************************************
+function PruefeArtikel()                                                        prs('MRO_Bearb - PruefeArtikel()', 'START'),
+   Result := false,
+   if not Empty(alltrim(m_oMROTAT:ARTNR)) then
+      if m_oDAB010.CbFindKey({m_oMROTAT:ARTNR}) then
+         Result := m_oDAB010:ARTTYP == 'B'
+      endif,
+      Result := Result AND  m_oDAB210.CbFindKey({m_oMROTAT:ARTNR}),
+   endif,                                                                       prs('MRO_Bearb - PruefeArtikel()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Produktions-Auftragas-Status ermitteln, sonfer einer Verlinkt ist
+// @Result: String - Auftragsstatus in Textform
+//******************************************************************************
+function PuefeAufProdStat()
+| nProdAufStatus |                                                              prs('MRO_Bearb - PuefeAufProdStat()', 'START'),
+   Result := '',
+   nProdAufStatus := MRO_PuefeAufProdStat(m_oMROTAT:B_POS_LFD),
+
+   case nProdAufStatus
+      of -1 :: Result := ''
+      of  0 :: Result := 'Unbekannt'
+      of  1 :: Result := 'Angelegt'
+      of  2 :: Result := 'Kommissioniert'
+      of  3 :: Result := 'Abgeschlossen'
+   endcase,
+
+   if nProdAufStatus < 1 and not Empty(m_oMROTAT:B_POS_LFD) and
+      jn('Der verknüpfte Produktionsauftrag wurde nicht gefunden. Möchten Sie die Verküpfung entfernen?')  then
+
+      startseq
+         m_oMROTAT.CbDisableControls(),
+         m_oMROTAT.CbEdit(),
+         m_oMROTAT:B_POS_LFD := '',
+         if m_oMROTAT.CbPost() then
+            Result := '',
+         endif,
+      always
+         m_oMROTAT.CbEnableControls(),
+      stopseq,
+   endif,                                                                       prs('MRO_Bearb - PuefeAufProdStat()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+| bInEditMode, bMainTableIsEmpty, bCMBAbteilEmpty, utest |                                              prs('MRO_Bearb - ActionsEnabled()', 'START'),
+   bInEditMode                         := EditModes(m_oMROTAT),
+   bMainTableIsEmpty                   := m_oMROTAT.CbEoF and m_oMROTAT.CbEoF,
+   bCMBAbteilEmpty                     := ALen(attchkcmb_Filter_Prod_Abt.CheckedItems) = 0,
+
+   // Buttons in der Toolbar En-/Disablen bzw. ein-/ausbelden
+   A_New.Enabled                       := not bInEditMode,
+   A_Delete.Enabled                    := not bInEditMode and not bMainTableIsEmpty,
+   A_Save.Enabled                      := bInEditMode,
+   A_Cancel.Enabled                    := bInEditMode,
+   A_CloseAct.Enabled                  := not bInEditMode and not bMainTableIsEmpty,
+
+   btn_akt_Prodauftrag_anlegen.enabled := not bInEditMode and not bMainTableIsEmpty
+                                          and !Empty(m_oMROTAT:ARTNR) and PruefeArtikel() and Empty(m_oMROTAT:B_POS_LFD),
+   gtbtn_akt_Prodauftrag.enabled       := not bInEditMode and not bMainTableIsEmpty,
+   attchkcmb_Filter_Verantwort.Enabled := not bInEditMode,
+   attchkcmb_Filter_Prod_Abt.Enabled   := not bInEditMode,
+
+   lbl_akt_durchgef_TS.visible         := !m_oMROTAT:PFLICHT,
+   edt_akt_Druchgef_TS.visible         := !m_oMROTAT:PFLICHT,
+
+   //Inhalte der Combos löschem falls bCMBAbteilEmpty = true und nicht immer alle Filter aktiv sind
+   //     TBeAttribCheckCombo.CBCheckAllItems
+   if bCMBAbteilEmpty and not m_bFilterImmerAktiv then
+      attchkcmb_Filter_Verantwort.CheckedItems  := {},
+      attchkcmb_Filter_Bezeichnung.CheckedItems := {},
+   endif,
+
+   // Combos steuern
+   attchkcmb_Filter_Bezeichnung.Enabled  := not bCMBAbteilEmpty or m_bFilterImmerAktiv,
+   attchkcmb_Filter_Bezeichnung.ReadOnly := bCMBAbteilEmpty and not m_bFilterImmerAktiv,
+   attchkcmb_Filter_Verantwort.Enabled   := (not bCMBAbteilEmpty or m_bFilterImmerAktiv) and m_bShowUserFilter,
+   attchkcmb_Filter_Verantwort.ReadOnly  := (bCMBAbteilEmpty and not m_bFilterImmerAktiv) or not m_bShowUserFilter,
+
+   // Browser en-/disabeln
+   grd_MainBrowser.Enabled             := not bInEditMode,                      prs('MRO_Bearb - ActionsEnabled()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Alle Standard-Einstellungen setzen z. B. Dynamische Captions eines
+// Labels o. ä.
+//******************************************************************************
+function SetDefaults()
+   m_bInInit         := false,
+   m_bProdAufPruefen := true,
+   m_oMROTAT.CbFirst(),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()                                             prs('MRO_Bearb - OpenDataBaseAndLinkToGUI()', 'START'),
+   // Eigenes Datenmodul erstellen
+   m_oDM                := CreateObject('TBeDbGet', 'MASCHINENAKTDURCHF', oForm),
+
+   // Tabelle(n) öffnen
+   m_oMROTAT             := DBGetTable(m_oDM, waMROTAT),
+   m_oMROTAT.IndexName   := 'DURCHFUEHRUNG',                                    //Indexausdruck: ZIELDATUM; VERANTWOR1; VERANTWOR2; ID_MASCH; ID_ERG_   Indexbedingung: EMPTY(TS_ABGESCH)
+   m_oMROTATid           := DBGetTable(m_oDM, waMROTAT, 'MSAKTBEAID'),
+   m_oMROTATid.IndexName := 'ID',                                               //Indexausdruck: ID
+   m_oMROERG             := DBGetTable(m_oDM, waMROERG),
+   m_oMROERG.IndexName   := 'ID',
+   m_oMRORES             := DBGetTable(m_oDM, waMRORES),
+   m_oMRORES.IndexName   := 'ID',
+   m_oDAB035             := DBGetTable(m_oDM, waDAB035),
+   m_oDAB035.IndexName   := 'DAB03B',                                           //Indexausdruck: BESTPOSNR;LIEFNR;TERM_INDEX
+   m_oDAB240             := DBGetTable(m_oDM, waDAB240),
+   m_oDAB240.IndexName   := 'DAB241',                                           //Indexausdruck: B_POS_LFD
+   m_oDAB010             := DBGetTable(m_oDM, waDAB010),
+   m_oDAB210             := DBGetTable(m_oDM, waDAB210),
+   m_oDAB020             := DBGetTable(m_oDM, waDAB020),
+
+   ds_MainTable.DataSet := m_oMROTAT,
+
+   // Tabelle mit Browser verbinden
+   GU_LinkTableToGUI(m_oMROTAT, ds_MainTable, grd_MainBrowser, m_cBrowserID, false),
+   grd_MainBrowser.ReadWriteProps  := False,                                    prs('MRO_Bearb - OpenDataBaseAndLinkToGUI()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Erstellt ein Array mit den Selektierten Werten einer TBe(Attr)CheckChombo.
+// Diese Methode wird benoetigt, wenn die Combo manuell
+// (z.B. nicht durch eine MM-Tabelle) befüllt wurde.
+// @Result: Array mit den "CheckedValues"
+//******************************************************************************
+function GetCheckedValues(oChkCmb)
+| i, aCheckedItems |                                                            prs('MRO_Bearb - GetCheckedValues()', 'START'),
+   Result := {},
+   aCheckedItems := oChkCmb.CheckedItems,
+   for i := 1 to oChkCmb.CheckedCount do
+      AAdd(Result,StrToken(CollItem(oChkCmb.Items, aCheckedItems[i]), Chr(9), 2)),
+   next,                                                                        prs('MRO_Bearb - GetCheckedValues()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Errechnet die Items für die Combos Bezeichnung und Verantwortliche, nachdem
+// m_oMROTAT bereits durch die Abteilung gefiltert wurde.
+// @Result: null
+//******************************************************************************
+function GetItemsforBezAndVerantw()
+|aChkListUser, aChkListUser_tmp, aChkListBezeichnung, aChkListBezeichnung_tmp, i |
+   aChkListBezeichnung      := {},
+   aChkListBezeichnung_tmp  := {},
+   aChkListUser             := {},
+   aChkListUser_tmp         := {},
+
+   m_oMROTAT.CbDisableControls(),
+   startseq
+      m_oMROTAT.CbFirst(),
+      while !m_oMROTAT.CbEoF do
+         // Items der Comboboxen Bezeichnung und Verwantwortliche errechnen
+         if m_oMROTAT:VERANTWOR1 > 0 and SeekInArray(m_oMROTAT:VERANTWOR1, aChkListUser_tmp) < 0 then
+            AAdd(aChkListUser_tmp, m_oMROTAT:VERANTWOR1),
+         endif,
+         if m_oMROTAT:VERANTWOR2 > 0 and SeekInArray(m_oMROTAT:VERANTWOR2, aChkListUser_tmp) < 0 then
+            AAdd(aChkListUser_tmp, m_oMROTAT:VERANTWOR2),
+         endif,
+         if not Empty(m_oMROTAT:BEZ1_MASCH) and SeekInArray(m_oMROTAT:BEZ1_MASCH, aChkListBezeichnung_tmp) < 0 then
+            AAdd(aChkListBezeichnung_tmp, m_oMROTAT:BEZ1_MASCH),
+         endif,
+         m_oMROTAT.CbNext(),
+      end,
+   always
+      m_oMROTAT.CbEnableControls(),
+   stopseq,
+
+   //die zwei oben erstellten "tmp" Arrays übersetzen in Lesbare Arrays
+   for i:=1 to alen(aChkListUser_tmp) do
+      AAdd(aChkListUser, Trim(LookUp(waDab262, 'Dab263', {{aChkListUser_tmp[i]}}, 'NAME', '')) + chr(9) + str(aChkListUser_tmp[i])),
+   next,
+   for i:=1 to alen(aChkListBezeichnung_tmp) do
+      AAdd(aChkListBezeichnung, aChkListBezeichnung_tmp[i] + chr(9) + aChkListBezeichnung_tmp[i])
+   next,
+
+   aChkListUser        := MRO_MS_ArraySortieren(aChkListUser),
+   aChkListBezeichnung := MRO_MS_ArraySortieren(aChkListBezeichnung),
+
+   if m_bFilterImmerAktiv then
+      if aLen(attchkcmb_Filter_Verantwort.CheckedItems) = 0 then
+         attchkcmb_Filter_Verantwort.BeAttributeId     := 0,
+         attchkcmb_Filter_Verantwort.Items             := aChkListUser,
+      endif,
+      if aLen(attchkcmb_Filter_Bezeichnung.CheckedItems) = 0 then
+         attchkcmb_Filter_Bezeichnung.BeAttributeId    := 0,
+         attchkcmb_Filter_Bezeichnung.Items            := aChkListBezeichnung,
+      endif,
+   else
+      attchkcmb_Filter_Verantwort.BeAttributeId     := 0,
+      attchkcmb_Filter_Verantwort.Items             := aChkListUser,
+      attchkcmb_Filter_Bezeichnung.BeAttributeId    := 0,
+      attchkcmb_Filter_Bezeichnung.Items            := aChkListBezeichnung,
+   endif,
+end,
+
+//******************************************************************************
+// Filtert die MROTAT auf die in der combocheckbox ausgewählten Verantw. und
+// Abteilungen
+// @Result: null
+//******************************************************************************
+function Filter_MROTAT()
+| cFilter, i, aUser, cFilter_Verantwort, aProdAbt, cFilter_ProdAbt, aBezeich, cFilter_Bezeich |            prs('MRO_Bearb - Filter_MROTAT()', 'START'),
+   startseq
+      // Filterstring für Verantwortliche erstellen
+      cFilter_Verantwort := '',
+
+      if m_bShowUserFilter then
+         aUser              := GetCheckedValues(attchkcmb_Filter_Verantwort),
+         for i := 1 to ALen(aUser) do
+            if i > 1 then
+               cFilter_Verantwort += ' or ',
+            endif,
+            cFilter_Verantwort += "VERANTWOR1 = " + aUser[i] + " or VERANTWOR2 = " + aUser[i] ,
+         next,
+         Writeln('Variablerfilter: ' + cFilter_Verantwort),
+      else
+         cFilter_Verantwort += "VERANTWOR1 = " + str(m_nPersNrUser) + " or VERANTWOR2 = " + str(m_nPersNrUser) ,
+         Writeln('Fixerfilter: ' + cFilter_Verantwort),
+      endif,
+
+      // Filterstring für Produktionsabteilung erstellen
+      cFilter_ProdAbt := '',
+      aProdAbt        := GetCheckedValues(attchkcmb_Filter_Prod_Abt),
+      for i := 1 to ALen(aProdAbt) do
+         if i > 1 then
+            cFilter_ProdAbt += ' or ',
+         endif,
+         cFilter_ProdAbt += "PROD_ABT == '" + aProdAbt[i] + "'" ,
+      next,
+
+      // Filterstring für Bezeichnung erstellen
+      cFilter_Bezeich := '',
+      aBezeich := GetCheckedValues(attchkcmb_Filter_Bezeichnung),
+      for i := 1 to ALen(aBezeich) do
+         if i > 1 then
+            cFilter_Bezeich += ' or ',
+         endif,
+         cFilter_Bezeich += "BEZ1_MASCH == '" + aBezeich[i] + "'" ,
+      next,
+
+      // den Finalen Filterstring zusammensetzen
+      cFilter := '',
+      if !Empty(cFilter_Verantwort) then
+         cFilter := '( ' + cFilter_Verantwort + ' )',
+      endif,
+      if !Empty(cFilter_ProdAbt) then
+         if Empty(cFilter) then
+            cFilter := '( ' + cFilter_ProdAbt + ' )',
+         else
+            cFilter += ' and ( ' + cFilter_ProdAbt + ' )',
+         endif,
+      endif,
+      if !Empty(cFilter_Bezeich) then
+         if Empty(cFilter) then
+            cFilter := '( ' + cFilter_Bezeich + ' )',
+         else
+            cFilter += ' and ( ' + cFilter_Bezeich + ' )',
+         endif,
+      endif,
+
+      m_oMROTAT.CbFiltered := false,
+      m_oMROTAT.CbFilter   := cFilter,
+      m_oMROTAT.CbFiltered := true,
+
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+   stopseq,                                                                     prs('MRO_Bearb - Filter_MROTAT()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Aufgaben die bei der Initialisierung des Programms erledigt werden müssen
+// @Result: null
+//******************************************************************************
+function InitFunc()
+| aChkListUser, aChkListProdAbt, cVerantw1, cVerantw2, aChkListUser_tmp,
+  aChkListProdAbt_tmp, nMMT_ABT, i, aChkListBezeichnung, aChkListBezeichnung_tmp |                                            prs('MRO_Bearb - InitFunc()', 'START'),
+   startseq
+      // Füllt die Kombobox zum Filtern der Abteilungen und Verantwortlichen
+      aChkListProdAbt          := {},
+      aChkListProdAbt_tmp      := {},
+
+      m_nMMT_Personal := AttribTabID(waMROERG, 'VERANTWOR1'),
+      nMMT_ABT        := AttribTabID(waMROTAT, 'PROD_ABT'),
+
+      m_oMROTAT.CbDisableControls(),
+      startseq
+         m_oMROTAT.CbFirst(),
+         while !m_oMROTAT.CbEoF do
+            // Neue auswahl hinzufügen, wenn der User nicht leer ist und nicht bereits im Array Existiert
+            if !Empty(m_oMROTAT:PROD_ABT) and SeekInArray(m_oMROTAT:PROD_ABT, aChkListProdAbt_tmp) < 0 then
+               AAdd(aChkListProdAbt_tmp, m_oMROTAT:PROD_ABT),
+            endif,
+            m_oMROTAT.CbNext(),
+         end,
+
+         //das oben erstellten "tmp" Array übersetzen in ein lesbare Array
+         for i:=1 to alen(aChkListProdAbt_tmp) do
+            AAdd(aChkListProdAbt, AttribDispVal(nMMT_ABT, AllTrim(aChkListProdAbt_tmp[i])) + chr(9) + aChkListProdAbt_tmp[i]),
+         next,
+
+      always
+         m_oMROTAT.CbEnableControls(),
+      stopseq,
+      attchkcmb_Filter_Prod_Abt.BeAttributeId       := 0,
+      attchkcmb_Filter_Prod_Abt.Items               := aChkListProdAbt,
+
+      GetItemsforBezAndVerantw(),
+
+      edt_Verantwortlicher_Statisch.Visible := not m_bShowUserFilter,
+      edt_Verantwortlicher_Statisch.Text    := lookup(waDAB262, 'DAB269', {{c_usr}}, 'NAME', '', lm_lookup),,
+      attchkcmb_Filter_Verantwort.Visible   := m_bShowUserFilter,
+      if not m_bShowUserFilter then
+         lbl_Filter_Verantwort.Caption := 'Verantwortlicher',
+      endif,
+
+      Filter_MROTAT(),
+
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+   stopseq,                                                                     prs('MRO_Bearb - InitFunc()', 'ENDE'),
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function ProdAufMemoText(nMaschID)
+| nMMT_PERS |                                                                   prs('MRO_Bearb - ProdAufMemoText()', 'START'),
+   Result := '',
+   // die Merkmalstabellen-ID abfragen, welche mit dem Feld der Haupverantwortlichen verküpft ist
+   nMMT_PERS := AttribTabID(waMRORES, 'VERANTWOR1'),
+
+   if m_oMRORES.CbFindKey({nMaschID}) then
+      Result := "Verantwortlicher:" + chr(9)       + AttribDispVal(nMMT_PERS, Alltrim(m_oMRORES:VERANTWOR1)) + CRLF +
+                "Stellvertr. Verantw.:" + chr(9)   + AttribDispVal(nMMT_PERS, Alltrim(m_oMRORES:VERANTWOR2)) + CRLF +
+                "Name:" + chr(9) + chr(9) + chr(9) + Alltrim(m_oMRORES:BEZ1) + CRLF +
+                "Typenbezeichnung:" + chr(9)       + Alltrim(m_oMRORES:BEZ_TYP) + CRLF +
+                "Inbetriebnahme:" + chr(9)+ chr(9) + FormatDateTime('DD.MM.YYYY', m_oMRORES:DAT_INBETR) + CRLF +
+                "Aufstellort:" + chr(9) + chr(9)   + Alltrim(m_oMRORES:ORT_MASCH) + CRLF +
+                "Seriennummer:" + chr(9) + chr(9)  + Alltrim(m_oMRORES:KOMMISS) + CRLF,
+   endif,                                                                       prs('MRO_Bearb - ProdAufMemoText()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Legt einen Produktionsauftrag an
+// @Result: Array - { nAufNr, nAufPos }
+//******************************************************************************
+function ProdAuftragAnlegen()
+| cMemotext |                                                                   prs('MRO_Bearb - ProdAuftragAnlegen()', 'START'),
+   Result := {},
+   m_oDM.CbTransaction_Begin(),
+   startseq
+      grd_MainBrowser.Enabled := false,
+      BeginSuspend(m_oDab035),
+      Result                  := ProdAufNew(m_oDM),
+      m_oDab035:ARTNR         := m_oMROTAT:ARTNR,
+      m_oDab035:TERMIN        := FormatDateTime('DD.MM.YY', m_oMROTAT:ZIELDATUM),
+      m_oDab035:MENGE_EK      := 1,
+      m_oDab035:PROD_ABT      := m_oMROTAT:PROD_ABT,
+      ProdAufPost(m_oDM),
+      // bei Brunner wird bei der Neualage von DAB035 Positionen das Memo-Feld wieder geleert,
+      // daher muss es im Nachgang angepasst werden
+      ProdAufEdit(m_oDM, Result[1], 000),
+      m_oDab035:MEMO          := concatrtf(ProdAufMemoText(m_oMROTAT:ID_MASCH), m_oDab035:MEMO),
+      ProdAufPost(m_oDM),
+      // Die Variabele verhindert, dass im Onscollupdate nach dem Post (in der Transaction)
+      // die Verifizierung des Produktionsauftrags stattfindet, da diese sonst fehlschlagen würde
+      m_bProdAufPruefen := false,
+      m_oMROTAT.CbEdit(),
+      m_oMROTAT:B_POS_LFD := str(Result[1]) + '  000',
+      if m_oMROTAT.CbPost() then
+         edt_akt_ProdaufStat.text            := 'Angelegt',
+         edt_akt_b_pos.text                  := left(m_oMROTAT:B_POS_LFD,8),
+      endif,
+      m_oDM.CbTransaction_Commit(),
+   always
+      if m_oDM.CbTransaction_TryRollback() then
+         DbResetDM(m_oDM),
+      endif,
+      m_bProdAufPruefen := true,
+      EndSuspend(m_oDab035),
+      grd_MainBrowser.Enabled := true,
+   stopseq,                                                                     prs('MRO_Bearb - ProdAuftragAnlegen()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Überprüft die Aktion ob alle Kriterien für einen Abschluss erfüllt sind
+// @Result: boolean - true wenn das Ereignis abeschlossen werden kann
+//******************************************************************************
+function AktVorAbschlussPruefen()
+| cErrorText |                                                                  prs('MRO_Bearb - AktVorAbschlussPruefen()', 'START'),
+   Result     := true,
+   cErrorText := '',
+   // Auftrag Verknüpft und Abgeschlossen?
+   if m_oMROTAT:PFLICHT then
+      if Empty(m_oMROTAT:B_POS_LFD) then
+         Result := false,
+         cErrorText += '  - Kein Produktionsauftrag zu dieser Aktivität vorhanden ist' + CRLF,
+      else
+         // Nur wenn der DAB240 Eintrag existiert und der DAB035 nicht, dann ist
+         // der Auftrag angelegt und Abschlossen. Existiert der DAB240 Eintrag
+         // nicht, so wurde der Auftrag vermutlich gelöscht.
+         if m_oDAB240.CbFindKey({m_oMROTAT:B_POS_LFD}) then
+            if m_oDAB035.CbFindKey({left(m_oMROTAT:B_POS_LFD, 6)}) then
+               Result := false,
+               cErrorText += '  - Der Produktionsauftrag nicht abgschlossen ist' + CRLF,
+            endif,
+         else
+            Result := false,
+            cErrorText += '  - Der Produktionsauftrag wurde nicht gefunden' + CRLF,
+            m_oMROTAT.CbEdit(),
+            m_oMROTAT:B_POS_LFD := '',
+            m_oMROTAT.CbPost(),
+            MessageDlg('Der Vernüpfte Produktionsauftrag wurde nicht gefunden und daher aus der Aktion entfernt.', mtInformation),
+         endif,
+      endif,
+   else
+      if not Empty(m_oMROTAT:B_POS_LFD) then
+         if m_oDAB240.CbFindKey({m_oMROTAT:B_POS_LFD}) then
+            if m_oDAB035.CbFindKey({left(m_oMROTAT:B_POS_LFD, 6)}) then
+               Result := false,
+               cErrorText += '  - Der Produktionsauftrag nicht abgschlossen ist' + CRLF,
+            endif,
+         else
+            Result := false,
+            m_oMROTAT.CbEdit(),
+            m_oMROTAT:B_POS_LFD := '',
+            m_oMROTAT.CbPost(),
+            MessageDlg('Der Vernüpfte Produktionsauftrag wurde nicht gefunden und daher aus der Aktion entfernt.' + CRLF +
+                       "Um die Aktion ohne Produktionsauftrag abzuschließen bitte erneut auf 'Abschließen' klicken." , mtInformation),
+         endif,
+      endif,
+   endif,
+
+   // Falls es ein Ereignis mit einem Betriebsstunden Intervall ist muss diese gefüllt sein
+   if m_oMROTAT:INTERV_TYP == 'BST' and Empty(m_oMROTAT:BS_DURCHGE) then
+      Result := false,
+      cErrorText += '  - Die Betriebsstunden zum Zeitpunkt der Durchführung gefüllt sein müssen' + CRLF,
+   endif,
+
+   if not Empty(cErrorText) then
+      MessageDlg('Die Aktion kann nicht abgschlossen werden, da:' + CRLF + cErrorText, mtError),
+   endif,                                                                       prs('MRO_Bearb - AktVorAbschlussPruefen()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Bei nicht-Pflichteraktionen müssen die Daten zum Aktionsabschluss abgefragt
+// werden - die MROTAT muss beim start im Editmode sein
+// nAuswahl: 1 = nur Datum; 2 = nur User; 3 = Datum und User
+// @Result: Boolean - Abfrage erfolgreich gefüllt?
+//******************************************************************************
+function AktionsAbschlussDatumUserAbfragen(nAuswahl)
+| aDialogResult |                                                               prs('MRO_Bearb - AktionsAbschlussDatumUserAbfragen()', 'START'),
+   Result := false,
+   case nAuswahl
+      of 1 ::  aDialogResult :=  DU_InputDialog(  'Wann wurde diese Aktion druchgeführt?', '',
+                                                  {  DU_InputDialog_CreateInputControlDefinition('DATE',  'Datum',   gl_DU_InputControlType_Date,    '',                 0, date(), True)
+                                                  },
+                                                  { mrOk, mrCancel }, {}
+                                               ),
+      of 2 ::  aDialogResult :=  DU_InputDialog(  'Wer hat diese Aktion druchgeführt?', '',
+                                                  {  DU_InputDialog_CreateInputControlDefinition('USER', 'Benutzer', gl_DU_InputControlType_Attribute, '', m_nMMT_Personal,    '', True)
+                                                  },
+                                                  { mrOk, mrCancel }, {}
+                                               ),
+      of 3 ::  aDialogResult :=  DU_InputDialog(  'Wer hat diese Aktion wann druchgeführt?', '',
+                                                  {  DU_InputDialog_CreateInputControlDefinition('DATE',  'Datum',   gl_DU_InputControlType_Date,    '',                 0, date(), True),
+                                                     DU_InputDialog_CreateInputControlDefinition('USER', 'Benutzer', gl_DU_InputControlType_Attribute, '', m_nMMT_Personal,     '', True)
+                                                  },
+                                                  { mrOk, mrCancel }, {}
+                                               ),
+      otherwise
+   endcase,
+
+   // Nur wenn auf 'OK' geklickt wird werden die Daten geschrieben
+   if DU_InputDialogResult_GetModalResult(aDialogResult) = 1 then
+      Result := true,
+      case nAuswahl
+         of 1 :: m_oMROTAT:TS_DURCHGE := DU_InputDialogResult_GetInputValue(aDialogResult, 'DATE'),
+         of 2 :: m_oMROTAT:MA_DURCHGE := DU_InputDialogResult_GetInputValue(aDialogResult, 'USER'),
+         of 3 :: m_oMROTAT:TS_DURCHGE := DU_InputDialogResult_GetInputValue(aDialogResult, 'DATE'),
+                 m_oMROTAT:MA_DURCHGE := DU_InputDialogResult_GetInputValue(aDialogResult, 'USER'),
+         otherwise
+      endcase,
+   endif,                                                                       prs('MRO_Bearb - AktionsAbschlussDatumUserAbfragen()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Nicht vergebene Daten zum Aktionsabschluss erfragen
+// @Result: boolean - false wenn die Abfrage abgebrochen wurde
+//******************************************************************************
+function AbschlussFehlendeDatenErfragen()                                       prs('MRO_Bearb - AbschlussFehlendeDatenErfragen()', 'START'),
+// Prüfen ob das Ereignis abgeschlossen werden darf
+// Nicht vergebene Daten zum Aktionsabschluss erfragen
+   Result := true,
+   if Empty(m_oMROTAT:TS_DURCHGE) and Empty(m_oMROTAT:MA_DURCHGE) then
+      Result := AktionsAbschlussDatumUserAbfragen(3),
+   else
+      if Empty(m_oMROTAT:MA_DURCHGE) then
+         Result := AktionsAbschlussDatumUserAbfragen(2),
+      endif,
+      if Empty(m_oMROTAT:TS_DURCHGE) then
+         Result := AktionsAbschlussDatumUserAbfragen(1),
+      endif,
+   endif,                                                                       prs('MRO_Bearb - AbschlussFehlendeDatenErfragen()', 'ENDE'),
+end,
+
+
+//******************************************************************************
+// Die Istkosten werden zurückgesetzt, und die Kosten aus dem
+// Produkionsauftrag werden übernommen  - die MROTAT muss beim start im Editmode
+// sein
+// @Result: null
+//******************************************************************************
+function BerchneProdAufKosten()                                                 prs('MRO_Bearb - BerchneProdAufKosten()', 'START'),
+   m_oMROTAT:ISTKOST_IN := 0,
+   m_oMROTAT:ISTKOST_EX := 0,
+   m_oDAB240.CbSetRange({left(m_oMROTAT:B_POS_LFD,8) + '001'},{left(m_oMROTAT:B_POS_LFD,8) + '999'}),
+   m_oDAB240.CbFirst(),
+   While !m_oDAB240.CbEoF do
+      prs('m_oDAB240:IST' + str(m_oDAB240:IST) + '; '
+          + 'm_oDAB240:IST_AUSSCH' + str(m_oDAB240:IST_AUSSCH) + '; '
+          + 'm_oDAB240:PE_E' + str(m_oDAB240:PE_E) + '; '
+          + 'm_oDAB240:EKP_E' + str(m_oDAB240:EKP_E), '(' + m_oMROTAT:B_POS_LFD + ') ' + m_oDAB240:B_POS_LFD ),
+      if m_oDAB240:ARTTYP = 'E' then
+         m_oMROTAT:ISTKOST_EX += ( (m_oDAB240:IST + m_oDAB240:IST_AUSSCH) / m_oDAB240:PE_E ) * m_oDAB240:EKP_E ,
+         prs('Extern: ' + str(m_oMROTAT:ISTKOST_EX), '(' + m_oMROTAT:B_POS_LFD + ') ' + m_oDAB240:B_POS_LFD ),
+      else
+         m_oMROTAT:ISTKOST_IN += ( (m_oDAB240:IST + m_oDAB240:IST_AUSSCH) / m_oDAB240:PE_E ) * m_oDAB240:EKP_E ,
+         prs('Intern: ' + str(m_oMROTAT:ISTKOST_IN), '(' + m_oMROTAT:B_POS_LFD + ') ' + m_oDAB240:B_POS_LFD ),
+      endif,
+      m_oDAB240.CbNext(),
+   end,
+   m_oDAB240.CbCancelRange(),                                                   prs('MRO_Bearb - BerchneProdAufKosten()', 'ENDE'),
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Errechnet die Items für Bezeichnung und Verantwortliche
+//******************************************************************************
+function attchkcmb_Filter_Prod_AbtExit( Sender )
+   GetItemsforBezAndVerantw(),
+end,
+
+//******************************************************************************
+// Aktualisiert den Filter, wenn sich die Auswahl bei "Bezeichnung" ändert
+//******************************************************************************
+function attchkcmb_Filter_BezeichnungClickCheck( Sender )
+   Filter_MROTAT(),
+   if m_bFilterImmerAktiv then
+      GetItemsforBezAndVerantw(),
+   endif,
+end,
+
+//******************************************************************************
+// Prüft, bevor die Picturemask (z.B. *5[#];,*2[#] ) sich beschwert ob ein Wert
+// ein Komma enthält und fügt ggf. eins hinzu
+//******************************************************************************
+function NumCheck_OnExit( Sender )
+   if TokenCount(Sender.text, ',') = 1 then
+      Sender.text := Sender.text + ',0',
+   endif,
+end,
+
+//******************************************************************************
+// Aktualisiert den Filter, wenn sich die Auswahl bei "Verantwortliche" ändert
+//******************************************************************************
+function attchkcmb_Filter_VerantwortClickCheck( Sender )
+   Filter_MROTAT(),
+   if m_bFilterImmerAktiv then
+      GetItemsforBezAndVerantw(),
+   endif,
+end,
+
+//******************************************************************************
+// Aktualisiert den Filter, wenn sich die Auswahl bei "Abteilungen" ändert
+//******************************************************************************
+function attchkcmb_Filter_Prod_AbtClickCheck( Sender )
+   ActionsEnabled(),
+   Filter_MROTAT(),
+end,
+
+//******************************************************************************
+// Legt einen Produktionsauftrag an
+//******************************************************************************
+function btn_akt_Prodauftrag_anlegenClick( Sender )
+| aProdAuf, oAKA |                                                              prs('MRO_Bearb - btn_akt_Prodauftrag_anlegenClick()', 'START'),
+   startseq
+      aProdAuf := ProdAuftragAnlegen(),
+//      if MessageDlg('Der Produktionsauftrag wurde efolgreich angelegt.' + CRLF+
+//                    'Möchten sie die Auftragskarte drucken? (ohne Materialbuchung)', mtConfirmation, mbYes + mbNo) = 6 then
+//         startseq
+//            oAKA     := CreateObject('TPd_ProdFileCard', 'MSAKTDFPRODCARD', m_oDM),
+//            ProdAKADruck(oAKA, aProdAuf[1], aProdAuf[2], false),
+//         always
+//            DestroyObject(oAKA),
+//         stopseq,
+//      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+   stopseq,                                                                     prs('MRO_Bearb - btn_akt_Prodauftrag_anlegenClick()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Beim Wechsel des Datensatzes im Browser
+//******************************************************************************
+function ds_MainTableScroll_Update( Sender )                                    prs('MRO_Bearb - ds_MainTableScroll_Update()', 'START' + str(m_oMROTAT:ID) ),
+   if !m_bInInit and m_bProdAufPruefen then
+      startseq
+         edt_akt_ProdaufStat.text            := PuefeAufProdStat(),
+         edt_akt_b_pos.text                  := left(m_oMROTAT:B_POS_LFD,8),
+         ActionsEnabled(),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Speichern', GetErrorObj()),
+      stopseq,
+   endif,                                                                       prs('MRO_Bearb - ds_MainTableScroll_Update()', 'ENDE'),
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MainTableStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen prüfen, ob die Haupttabelle noch in Bearbeitung ist
+//        und ggf. rückfragen.
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+| bCancelEdit |
+   if EditModes(m_oMROTAT) then
+      bCancelEdit := JN('Ein Datensatz befindet sich noch in Bearbeitung.' + crlf +
+         'Möchten Sie die Bearbeitung abbrechen und das Fenster schließen?'),
+   endif,
+   if bCancelEdit then
+      m_oMROTAT.CbCancel(),
+   endif,
+
+   bCanClose := not EditModes(m_oMROTAT) or bCancelEdit,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree, // = Form zerstören
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey), // MDI-Child aus Form-Ref-Array austragen
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_RefreshExecute( Sender )
+| nOldCursor |
+   startseq
+      nOldCursor := SetCursor(crHourGlass),
+      startseq
+         m_oMROTAT.CbRefresh(),
+         MessageDlg('Datenmenge wurde aktualisiert.', MtInformation),
+      always
+         SetCursor(nOldCursor),
+      stopseq,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Aktualisieren!', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function a_HilfeExecute( Sender )
+   IOHU_ShowOnlineHelpGUI("BETREFF LIKE 'MRO - Tätigkeiten bearbeiten%'")
+end,
+
+//******************************************************************************
+// Action: Aktion Abschließen
+//******************************************************************************
+function A_CloseAct_OnExecute( Sender )
+| bPostErlaubt |
+   startseq
+      // Prüfen ob das Ereignis abgeschlossen werden darf und soll
+      if AktVorAbschlussPruefen() and JN('Möchten Sie die Aktion Abschließen?')  then
+         // Die Ereignistabelle korrekt positionieren
+         if !m_oMROERG.CbFindKey({m_oMROTAT:ID_ERG}) then
+            MessageDlg("Der Ereignisdatensatz '" + alltrim(m_oMROTAT:BEZ1_ERG) + ' (' + str(m_oMROTAT:ID_ERG) + ")' konnte nicht gefunden werden." + CRLF +
+                       'Die Aktion wurde nicht abgeschlossen', mterror),
+            exit,
+         endif,
+
+         m_oMROTAT.CbEdit(),
+         if m_oMROTAT:PFLICHT then
+            // Bei einem Pflichtereignis werden Prüfungen durchgeführt und die
+            // nötigen Informationen gesammelt
+            m_oDAB240.CbFindKey({m_oMROTAT:B_POS_LFD}),
+            m_oMROTAT:TS_DURCHGE := m_oDAB240:P_DATUM,
+            bPostErlaubt         := AbschlussFehlendeDatenErfragen(),
+            m_oMROTAT:TERMINTREU := MRO_TermintreueBerechnen(m_oMROTAT:INTERV_TYP, m_oMROTAT:INTERV,
+                                                             m_oMROTAT:BS_DURCHGE, m_oMROERG:BS_LZTAKT,
+                                                             m_oMROERG:DAT_LZTAKT, m_oMROTAT:TS_DURCHGE),
+            //BerchneProdAufKosten(),
+         else
+            // Wenn es kein Pflichereignis ist, und kein Produktionsauftrag hinter-
+            // legt ist, dann werden Abschlussdatum und User abgefragt, sonst nur
+            // der User der den Auftrag durchgeführt hat
+            if Empty(m_oMROTAT:B_POS_LFD) then
+               bPostErlaubt      := AbschlussFehlendeDatenErfragen(),
+               if bPostErlaubt then
+                  m_oMROTAT:TERMINTREU := MRO_TermintreueBerechnen(m_oMROTAT:INTERV_TYP, m_oMROTAT:INTERV,
+                                                                   m_oMROTAT:BS_DURCHGE, m_oMROERG:BS_LZTAKT,
+                                                                   m_oMROERG:DAT_LZTAKT, m_oMROTAT:TS_DURCHGE),
+               endif,
+            else
+               m_oDAB240.CbFindKey({m_oMROTAT:B_POS_LFD}),
+               m_oMROTAT:TS_DURCHGE := m_oDAB240:P_DATUM,
+               bPostErlaubt         := AbschlussFehlendeDatenErfragen(),
+               m_oMROTAT:TERMINTREU := MRO_TermintreueBerechnen(m_oMROTAT:INTERV_TYP, m_oMROTAT:INTERV,
+                                                                m_oMROTAT:BS_DURCHGE, m_oMROERG:BS_LZTAKT,
+                                                                m_oMROERG:DAT_LZTAKT, m_oMROTAT:TS_DURCHGE),
+               BerchneProdAufKosten(),
+            endif,
+         endif,
+         m_oMROTAT:TS_ABGESCH := now(),
+         m_oMROTAT:MA_ABGESCH := c_usr,
+
+         // wenn nicht beim Abfragen der Informationen auf Abbrechen geklickt wurde
+         if bPostErlaubt then
+            // wenn der Post der Aktionstabelle klappt, dann die Ereignistabelle auch
+            // aktualisieren
+            m_oMROERG.CbEdit(),
+            m_oMROERG:DAT_LZTAKT := m_oMROTAT:TS_DURCHGE,
+            m_oMROERG:BS_LZTAKT  := m_oMROTAT:BS_DURCHGE,
+            m_oMROERG.CbPost(),
+            m_oMROTAT.CbPost(),
+         else
+            m_oMROTAT.CbCancel(),
+            MessageDlg('Die Aktion wurde nicht abgeschlossen', mtInformation),
+            exit,
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Abschluss der Aktion', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen
+//******************************************************************************
+function A_DeleteExecute( Sender )
+   startseq
+      m_oMROTAT.CbDelete(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Löschen der Aktion', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung speichern
+//******************************************************************************
+function A_SaveExecute( Sender )
+   startseq
+      if m_oMROTAT:PFLICHT then
+         if not PruefeArtikel() then
+            MessageDlg("Bei einem Pflichtereignis muss ein Artikel vom Typ 'Bauart' mit einer Stückliste verwendet werden.", mtError),
+            exit,
+         endif,
+      endif,
+      m_oMROTAT.CbPost(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen
+//******************************************************************************
+function A_CancelExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      m_oMROTAT.CbCancel(),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   m_bInInit := true,
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.ImageIndex     := 815,  // Image-Index für den Window-Navigator setzen
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel                      := FindObject(oForm, "A_Cancel"),
+   A_CloseAct                    := FindObject(oForm, "A_CloseAct"),
+   A_Delete                      := FindObject(oForm, "A_Delete"),
+   A_HelpContent                 := FindObject(oForm, "A_HelpContent"),
+   a_Hilfe                       := FindObject(oForm, "a_Hilfe"),
+   A_New                         := FindObject(oForm, "A_New"),
+   A_Refresh                     := FindObject(oForm, "A_Refresh"),
+   A_Save                        := FindObject(oForm, "A_Save"),
+   actionList                    := FindObject(oForm, "actionList"),
+   attchkcmb_Filter_Bezeichnung  := FindObject(oForm, "attchkcmb_Filter_Bezeichnung"),
+   attchkcmb_Filter_Prod_Abt     := FindObject(oForm, "attchkcmb_Filter_Prod_Abt"),
+   attchkcmb_Filter_Verantwort   := FindObject(oForm, "attchkcmb_Filter_Verantwort"),
+   bardock_Top                   := FindObject(oForm, "bardock_Top"),
+   barmngr_Main                  := FindObject(oForm, "barmngr_Main"),
+   bbtn_CloseAct                 := FindObject(oForm, "bbtn_CloseAct"),
+   BeBarButton1                  := FindObject(oForm, "BeBarButton1"),
+   BeSplitter1                   := FindObject(oForm, "BeSplitter1"),
+   beToolbar_Main                := FindObject(oForm, "beToolbar_Main"),
+   Bevel_akt_haupt_01            := FindObject(oForm, "Bevel_akt_haupt_01"),
+   Bevel_akt_haupt_02            := FindObject(oForm, "Bevel_akt_haupt_02"),
+   Bevel_AktionAbschliessen      := FindObject(oForm, "Bevel_AktionAbschliessen"),
+   Bevel_durchfuehrung           := FindObject(oForm, "Bevel_durchfuehrung"),
+   bipnl_Headline                := FindObject(oForm, "bipnl_Headline"),
+   btn_akt_Prodauftrag_anlegen   := FindObject(oForm, "btn_akt_Prodauftrag_anlegen"),
+   btn_Cancel                    := FindObject(oForm, "btn_Cancel"),
+   btn_Post                      := FindObject(oForm, "btn_Post"),
+   btn_Refresh                   := FindObject(oForm, "btn_Refresh"),
+   cmb_akt_Druchgef_MA           := FindObject(oForm, "cmb_akt_Druchgef_MA"),
+   cmb_akt_interv_typ2           := FindObject(oForm, "cmb_akt_interv_typ2"),
+   cmb_akt_verantwor1            := FindObject(oForm, "cmb_akt_verantwor1"),
+   cmb_akt_verantwor2            := FindObject(oForm, "cmb_akt_verantwor2"),
+   ds_MainTable                  := FindObject(oForm, "ds_MainTable"),
+   dtp_akt_Zieldatum             := FindObject(oForm, "dtp_akt_Zieldatum"),
+   edt_akt_artnr                 := FindObject(oForm, "edt_akt_artnr"),
+   edt_akt_b_pos                 := FindObject(oForm, "edt_akt_b_pos"),
+   edt_akt_b_pos_fld             := FindObject(oForm, "edt_akt_b_pos_fld"),
+   edt_akt_BetriebstDurchgef     := FindObject(oForm, "edt_akt_BetriebstDurchgef"),
+   edt_akt_Druchgef_TS           := FindObject(oForm, "edt_akt_Druchgef_TS"),
+   edt_akt_IstKostenExtern       := FindObject(oForm, "edt_akt_IstKostenExtern"),
+   edt_akt_IstKostenIntern       := FindObject(oForm, "edt_akt_IstKostenIntern"),
+   edt_akt_kulanz                := FindObject(oForm, "edt_akt_kulanz"),
+   edt_akt_pflichterg            := FindObject(oForm, "edt_akt_pflichterg"),
+   edt_akt_ProdaufStat           := FindObject(oForm, "edt_akt_ProdaufStat"),
+   edt_akt_Verantw3              := FindObject(oForm, "edt_akt_Verantw3"),
+   edt_akt_Vorauf                := FindObject(oForm, "edt_akt_Vorauf"),
+   edt_akt_warnung               := FindObject(oForm, "edt_akt_warnung"),
+   edt_akt_ZielBetriebsstunden   := FindObject(oForm, "edt_akt_ZielBetriebsstunden"),
+   edt_Bez1_erg                  := FindObject(oForm, "edt_Bez1_erg"),
+   edt_bez1_Masch                := FindObject(oForm, "edt_bez1_Masch"),
+   edt_erg_Intervall             := FindObject(oForm, "edt_erg_Intervall"),
+   edt_Memo                      := FindObject(oForm, "edt_Memo"),
+   edt_Memo_Akt                  := FindObject(oForm, "edt_Memo_Akt"),
+   edt_sollkosten                := FindObject(oForm, "edt_sollkosten"),
+   edt_Standort                  := FindObject(oForm, "edt_Standort"),
+   edt_Verantwortlicher_Statisch := FindObject(oForm, "edt_Verantwortlicher_Statisch"),
+   grd_MainBrowser               := FindObject(oForm, "grd_MainBrowser"),
+   gtbtn_akt_artikel             := FindObject(oForm, "gtbtn_akt_artikel"),
+   gtbtn_akt_Prodauftrag         := FindObject(oForm, "gtbtn_akt_Prodauftrag"),
+   lbl_akt_BetriebsstDurchf      := FindObject(oForm, "lbl_akt_BetriebsstDurchf"),
+   lbl_akt_Durchgef_MA           := FindObject(oForm, "lbl_akt_Durchgef_MA"),
+   lbl_akt_durchgef_TS           := FindObject(oForm, "lbl_akt_durchgef_TS"),
+   lbl_akt_haut_01               := FindObject(oForm, "lbl_akt_haut_01"),
+   lbl_akt_haut_02               := FindObject(oForm, "lbl_akt_haut_02"),
+   lbl_akt_Intevall_typ          := FindObject(oForm, "lbl_akt_Intevall_typ"),
+   lbl_akt_istkosten             := FindObject(oForm, "lbl_akt_istkosten"),
+   lbl_akt_Kulanz_Warn           := FindObject(oForm, "lbl_akt_Kulanz_Warn"),
+   lbl_akt_ProdAufStatus         := FindObject(oForm, "lbl_akt_ProdAufStatus"),
+   lbl_akt_Verantw3              := FindObject(oForm, "lbl_akt_Verantw3"),
+   lbl_akt_Verantwor1            := FindObject(oForm, "lbl_akt_Verantwor1"),
+   lbl_akt_verantwor2            := FindObject(oForm, "lbl_akt_verantwor2"),
+   lbl_akt_Zieldatum_BS          := FindObject(oForm, "lbl_akt_Zieldatum_BS"),
+   lbl_AktionAbschliessen        := FindObject(oForm, "lbl_AktionAbschliessen"),
+   lbl_bez1_erg                  := FindObject(oForm, "lbl_bez1_erg"),
+   lbl_Bez1_MASCH                := FindObject(oForm, "lbl_Bez1_MASCH"),
+   lbl_durchfuehrung             := FindObject(oForm, "lbl_durchfuehrung"),
+   lbl_Filter_Bezeichnung        := FindObject(oForm, "lbl_Filter_Bezeichnung"),
+   lbl_Filter_Prod_Abt           := FindObject(oForm, "lbl_Filter_Prod_Abt"),
+   lbl_Filter_Verantwort         := FindObject(oForm, "lbl_Filter_Verantwort"),
+   lbl_pflicht_artnr             := FindObject(oForm, "lbl_pflicht_artnr"),
+   lbl_Prod_Auftrag              := FindObject(oForm, "lbl_Prod_Auftrag"),
+   lbl_sollkosten                := FindObject(oForm, "lbl_sollkosten"),
+   lbl_Standort                  := FindObject(oForm, "lbl_Standort"),
+   pc_AktionsZusatz              := FindObject(oForm, "pc_AktionsZusatz"),
+   pnl_akt_haupt_02              := FindObject(oForm, "pnl_akt_haupt_02"),
+   pnl_AktionAbschliessen        := FindObject(oForm, "pnl_AktionAbschliessen"),
+   pnl_Durchfuehrung             := FindObject(oForm, "pnl_Durchfuehrung"),
+   pnl_erg_haupt_01              := FindObject(oForm, "pnl_erg_haupt_01"),
+   pnl_Main_Back                 := FindObject(oForm, "pnl_Main_Back"),
+   pnl_Main_Left                 := FindObject(oForm, "pnl_Main_Left"),
+   pnl_Main_Right                := FindObject(oForm, "pnl_Main_Right"),
+   pnl_main_top                  := FindObject(oForm, "pnl_main_top"),
+   ts_Memo_akt                   := FindObject(oForm, "ts_Memo_akt"),
+   ts_Memo_Notiz                 := FindObject(oForm, "ts_Memo_Notiz"),
+   ts_Zusatzinformationen        := FindObject(oForm, "ts_Zusatzinformationen"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI() zeigt das GUI an, das vorher mit LoadGUI() geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if Empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   m_bInInit := true,
+   InitForm(),
+   LoadGUI(),
+   OpenDataBaseAndLinkToGUI(),
+   InitFunc(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm - ' + Progname(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+oForm

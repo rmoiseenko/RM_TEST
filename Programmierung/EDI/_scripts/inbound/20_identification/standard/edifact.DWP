@@ -140,14 +140,17 @@ function IdentifyEdifactMessage(oEDIMessage:R, oProgressCallback:O)
          "   EDIPART.GLN_PART = '"  + cSenderBusinessGLN + "'",
       endif,
 
-prs(ProgName() + '::Identification_Edifact', 'SQL => [' + cSqlText + ']'),
+      prs(ProgName() + '::Identification_Edifact', 'SQL => [' + cSqlText + ']'),
 
       oQueryProfiles.SQL    := cSqlText,
       oQueryProfiles.Active := true,
 
       case true
          of bEachMessageHasMatchingBusinessGLNs and oQueryProfiles.CbRecordCount = 0 ::
-            SetError('Could not find matching partner configuration or profile'),
+            SetError('Could not find matching partner configuration or profile for ' +
+                     'sender envelope GLN "' + cSenderEnvelopeGLN +'",  recipient envelope GLN "' + cRecipientEnvelopeGLN + '"'
+                     // + crlf + 'sql: ' + crlf + cSqlText
+                     ),
 
          of not bEachMessageHasMatchingBusinessGLNs and oQueryProfiles.CbRecordCount = 0 ::
             SetError('Could not find matching profile'),

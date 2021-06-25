@@ -1,0 +1,1460 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//    Administrationsprogramm zum Verwalten von Ressourcen und deren Ereignissen
+//    Es können auch die durchgeführten Aktionen je Ressourcen-Ereignis betrachtet werden
+//##############################################################################
+//##############################################################################
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+   m_aCustomInfoArr:P4,
+
+   m_cFormID, m_cPositionSaveID, m_cBrowserID, m_cBrowserID2, m_cBrowserID3,
+   m_oDM, m_oMRORES, m_oMRORES_Search,
+   m_oMROERG, m_oMROERG_Search, m_oMROERG_Auswert, m_oMROERG_Auswert2,
+   m_oMROTAT, m_oMROTAT_Search, m_oMROTAT_Auswert,
+   m_oDAB010, m_oDAB210, m_oDAB240, m_oDAB035,
+   m_cFilter_MS_Status, m_cFilter_MS_ProdAbt, m_nMRORES_LastRecNo, m_nMROERG_LastRecNo,
+   m_bInit,
+   m_aObjectNamesMS, m_aObjectNamesERG, m_aObjectNamesTAT,
+   ts_masch_DMS, ts_erg_DMS, bipnl_masch_DMS, bipnl_erg_DMS, m_oIndiMenu,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Cancel_E, A_Cancel_M, A_Cancel_T, A_Copy_E, A_Copy_M, A_Delete_E,
+   A_Delete_M, A_HelpContent, a_Hilfe_ERG, a_Hilfe_Res, a_Hilfe_Tat,
+   A_IndiMenueEditor, A_New_E, A_New_M, A_Refresh_M, A_Save_E, A_Save_M,
+   A_Save_T, A_Suche_M, acmb_masch_Filter_ProdAbt, acmb_masch_Filter_Status,
+   actionList_M, bardock_Ereignisse, bardock_Ressourcen, BarDock_Taetigkeiten,
+   barmngr_Ereignisse, barmngr_Main, barmngr_MainBar1, barmngr_MainBar2,
+   bbtn_Cancel_E, bbtn_Cancel_T, bbtn_Copy_E, bbtn_Delete_E, bbtn_Hilfe_erg,
+   bbtn_Hilfe_res, bbtn_Hilfe_tat, bbtn_new_E, bbtn_Save_E, bbtn_Save_T,
+   BeBarButton1, BeBarButton2, beBarButton3, BeSplitter1, BeSplitter2,
+   BeSplitter3, BeSplitter4, BeSplitter5, beToolbar_Ressourcen,
+   Bevel_erg_haupt_01, Bevel_erg_haupt_02, Bevel_masch_haupt_01,
+   Bevel_masch_hautp_02, Bevel_masch_hautp_03, Bevel_masch_zusatz_01,
+   Bevel_masch_zusatzdaten01, Bevel_tat_01, bipnl_AktionenHeader,
+   bipnl_EreignisseHeader, bipnl_Info_Sperre_DMS, bipnl_MainHeader,
+   btn_Cancel_M, btn_Copy_M, btn_Delete_M, btn_New_M, btn_Post_M,
+   cmb_erg_interv_typ, cmb_erg_Produktionsabteilung, cmb_erg_status,
+   cmb_erg_verantwor1, cmb_erg_verantwor2, cmb_masch_dbs_je, cmb_Masch_Status,
+   cmb_masch_verantwor1, cmb_masch_verantwor2, ds_MROERG, ds_MRORES, ds_MROTAT,
+   dtp_erg_LetzteDurchfuerung, dtp_masch_entsorungsdat, dtp_masch_Garantieende,
+   dtp_masch_Inbetriebnahmedat, dtp_masch_kaufdatum, dtp_masch_Stilllegung,
+   dtp_masch_Verkaufsdat, edit_tat_Memo_ERG, edt_erg_Aktionstext, edt_erg_artnr,
+   edt_erg_bez1, edt_erg_inaktivam, edt_erg_Intervall, edt_erg_kulanz,
+   edt_erg_Memo, edt_erg_pflichterg, edt_erg_sollkosten, edt_erg_Verantw3,
+   edt_erg_Vorauf, edt_erg_warnung, edt_masch_bez1, edt_masch_dbs,
+   edt_masch_echeck, edt_masch_fachabt, edt_masch_fachabt_bez,
+   edt_masch_hersteller, edt_masch_Inventarnummer, edt_masch_kostenstelle,
+   edt_masch_leasingnr, edt_Masch_Memo, edt_Masch_ort, edt_masch_Seriennummer,
+   edt_masch_typenbez, edt_masch_Veranw3, edt_masch_Wartungsabteilung,
+   edt_tat_istKostenExt, edt_tat_istKostenInt, edt_tat_memo, grd_MROERG,
+   grd_MRORES, grd_MROTAT, gtbtn_erg_artikel, lbl_erg_artnr, lbl_erg_Bez1,
+   lbl_erg_haut_01, lbl_erg_haut_02, lbl_erg_Intevall_typ, lbl_erg_Kulanz_Warn,
+   lbl_erg_letzeDurchfuehrung_inaktiv, lbl_erg_sollkosten, lbl_erg_status,
+   lbl_erg_Verantw3, lbl_erg_Verantwor1, lbl_erg_verantwor2,
+   lbl_erg_vorlaufzeit, lbl_masch_bez1, lbl_masch_dbs_debje,
+   lbl_Masch_echeck_Status, lbl_masch_Fachabt, lbl_masch_Fachabteilung_Bez,
+   lbl_Masch_Filter_ProdAbt, lbl_Masch_Filter_Status,
+   lbl_masch_Garantieende_Entsorgungsdat, lbl_masch_haupt_01,
+   lbl_masch_haupt_03, lbl_masch_haut_02, lbl_masch_hersteller,
+   lbl_masch_Inbetriebnahme_Stilllegung, lbl_masch_Inventarnummer,
+   lbl_masch_Kauf_Inbetr, lbl_masch_Kostenstelle, lbl_masch_LeasingNr,
+   lbl_Masch_Ort, lbl_masch_Seriennummer, lbl_masch_Typenbezeichnung,
+   lbl_masch_verantw3, lbl_masch_verantwor2, lbl_masch_verantwort1,
+   lbl_masch_Wartungsabteilung, lbl_masch_zusatz_01, lbl_masch_Zusatzdaten01,
+   lbl_tat_Daten1, lbl_tat_IstKostenIntExt, pc_Ereignisse, pc_Maschinendaten,
+   pc_taetigkeiten, pc_tat_aktMemo, pc_tat_Daten, pnl_Ereignisse_Links,
+   pnl_Ereignisse_Main, pnl_Ereignisse_Rechts, pnl_Ereignisse_Top,
+   pnl_erg_haupt_01, pnl_erg_haupt_02, pnl_Main_Left, pnl_Main_Right,
+   pnl_Main_Top, pnl_masch_haupt_01, pnl_masch_Haupt_02, pnl_masch_Haupt_03,
+   pnl_masch_zusatz_01, pnl_masch_zusatzdaten01, pnl_Maschine_Main,
+   pnl_Taetigkeiten_Main, pnl_Taetigkeiten_right, pnl_tat_Daten_01,
+   ts_Ereigniss_01, ts_Ereigniss_Memo_erg, ts_erg_memo_akt, ts_MaschMemo,
+   ts_MaschStamm, ts_MaschZusatz, ts_tat_ergMemo
+  // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+m_cFormID         := '@FMROVER', // ID der zugewiesenen F12-Maske
+m_cPositionSaveID := '@PMROVER', // ID zum Speichern der Fenster-Position/-Größe
+m_cBrowserID      := '@BMROMAS', // ID des Browsers
+m_cBrowserID2     := '@BMROERG',
+m_cBrowserID3     := '@BMROTAT',
+
+//############################################################################################################################################################
+//############################################################################################################################################################
+// Funktionen
+//############################################################################################################################################################
+//############################################################################################################################################################
+
+//******************************************************************************
+// Erstellt zwei Arrays, das erste mit den Controls der Maske im Bereich Maschine
+// und das zweite mit Controls der Maske im Bereich Ereignis
+// @Result: null
+//******************************************************************************
+function InitialJobs()
+| i, oItem, aChkListProdAbt, nMMT_ABT, cMessageText |                                                   prs('MRO - InitialJobs()','START'),
+   m_aObjectNamesMS  := {},
+   m_aObjectNamesERG := {},
+   m_aObjectNamesTAT := {},
+   for i := 0 to ComponentCount(oForm) - 1 do
+      oItem := Components(oForm, i),
+      if Lower(Left(oItem.name,7)) = 'edt_mas' or Lower(Left(oItem.name,7)) = 'cmb_mas' or Lower(Left(oItem.name,7)) = 'dtp_mas' then
+         aadd(m_aObjectNamesMS, oItem.name}
+      endif,
+      if lower(left(oItem.name,7)) = 'edt_erg' or lower(left(oItem.name,7)) = 'cmb_erg' or lower(left(oItem.name,7)) = 'dtp_erg' then
+         aadd(m_aObjectNamesERG, oItem.name}
+      endif,
+      if lower(left(oItem.name,7)) = 'edt_tat' or lower(left(oItem.name,7)) = 'cmb_tat' or lower(left(oItem.name,7)) = 'dtp_tat' then
+         aadd(m_aObjectNamesTAT, oItem.name}
+      endif,
+   next,
+
+   nMMT_ABT := AttribTabID(waMRORES, 'PROD_ABT'),
+
+   startseq
+      m_oMRORES.CbDisableControls(),
+      m_oMROERG.CbDisableControls(),
+      // Füllt die Kombobox zum Filtern der Abteilungen 
+      aChkListProdAbt := {},
+      m_oMRORES.CbFirst(),
+      while !m_oMRORES.CbEoF do
+         // Neue auswahl hinzufügen
+         if !Empty(m_oMRORES:PROD_ABT) and SeekInArray(AttribDispVal(nMMT_ABT, m_oMRORES:PROD_ABT) + chr(9) + m_oMRORES:PROD_ABT, aChkListProdAbt) < 0 then
+            AAdd(aChkListProdAbt, AttribDispVal(nMMT_ABT, m_oMRORES:PROD_ABT) + chr(9) + m_oMRORES:PROD_ABT),
+         endif,
+         m_oMRORES.CbNext(),
+      end,
+      // Setzt den Wartungsstatus für alle Maschinen und Ereignisse neu
+      cMessageText := MRO_MS_WartungszustandBerechnen(nil, nil),
+      if not Empty(cMessageText) then
+         MessageDlg('Folgende Maschinen - Ereignisse konnten nicht Akualisiert werden:' + cMessageText, mtInformation),
+      endif,
+   always
+      m_oMRORES.CbEnableControls(),
+      m_oMROERG.CbEnableControls(),
+   stopseq,
+   acmb_masch_Filter_ProdAbt.BeAttributeId := 0,
+   acmb_masch_Filter_ProdAbt.Items         := aChkListProdAbt,                  prs('MRO - InitialJobs()','ENDE'),
+end,
+
+//******************************************************************************
+// Setzt alle controls auf im Bereich der Maschinendaten und im Bereich der
+// Ereignissedaten auf "nicht editierbar"
+// @Result: null
+//******************************************************************************
+function ReadOnly_MS_edts(bReadOnly)
+| i, oItem |                                                                    prs('MRO - ReadOnly_MS_edts()','START'),
+   for i := 1 to ALen(m_aObjectNamesMS) do
+      oItem := FindObject(oForm, m_aObjectNamesMS[i]),
+      if oItem.ReadOnly <> bReadOnly then
+         oItem.ReadOnly := bReadOnly
+      endif,
+   next,
+   if !m_bInit then
+      // Status der Maschine nicht änderbar wenn:
+      //      - ein Ereignis oder ein Tätigkeit bearbeitet wird oder
+      //      - wenn eine der Tabellen im "noRecordMove" status ist
+      cmb_Masch_Status.ReadOnly := ((EditModes(m_oMROERG) or EditModes(m_oMROTAT)) and bReadOnly)
+                                   or m_oMRORES.CbIsNoRecordMove()
+                                   or m_oMROERG.CbIsNoRecordMove()
+                                   or m_oMROTAT.CbIsNoRecordMove(),
+   endif,                                                                       prs('MRO - ReadOnly_MS_edts()','ENDE'),
+end,
+
+//******************************************************************************
+// Setzt alle controls auf im Bereich der Ereignisdaten auf "nicht editierbar"
+// @Result: null
+//******************************************************************************
+function ReadOnly_ERG_edts(bReadOnly)
+| i, oItem |                                                                    prs('MRO - ReadOnly_ERG_edts()','START'),
+   for i := 1 to ALen(m_aObjectNamesERG) do
+      oItem := FindObject(oForm,m_aObjectNamesERG[i]),
+      if oItem.ReadOnly <> bReadOnly then
+         oItem.ReadOnly := bReadOnly
+      endif,
+   next,
+   if !m_bInit then
+      // Status des Ereignisses nicht änderbar wenn ein Maschine:
+      //    - nicht aktiv ist oder
+      //    - die Maschine bearbeitet wird oder
+      //    - kein Ereignis zur Maschine vorhanden ist oder
+      //    - wenn eine der Tabellen im "noRecordMove" status ist
+      cmb_erg_Status.ReadOnly := EditModes(m_oMRORES)
+                                  or EditModes(m_oMROTAT)
+                                  or m_oMRORES:STATUS <> 'AKT'
+                                  or NoDS(m_oMROERG)
+                                  or m_oMRORES.CbIsNoRecordMove()
+                                  or m_oMROERG.CbIsNoRecordMove()
+                                  or m_oMROTAT.CbIsNoRecordMove(),
+
+      // Wenn bereits Aktionen Angelegt sind oder eine Tabelle im "noRecordMove"
+      // status ist , darf der Intervalltyp nicht mehr geändert werden.
+      cmb_erg_interv_typ.ReadOnly := m_oMROTAT.CbDataAvailable
+                                     or m_oMRORES.CbIsNoRecordMove()
+                                     or m_oMROERG.CbIsNoRecordMove()
+                                     or m_oMROTAT.CbIsNoRecordMove(),
+   endif,                                                                       prs('MRO - ReadOnly_ERG_edts()','ENDE'),
+end,
+
+//******************************************************************************
+// Setzt alle controls auf im Bereich der Tätigkeitsdaten auf "nicht editierbar"
+// @Result: null
+//******************************************************************************
+function ReadOnly_TAT_edts(bReadOnly)
+| i, oItem |                                                                    prs('MRO - ReadOnly_TAT_edts()','START'),
+   for i := 1 to ALen(m_aObjectNamesTAT) do
+      oItem := FindObject(oForm,m_aObjectNamesTAT[i]),
+      if oItem.ReadOnly <> bReadOnly then
+         oItem.ReadOnly := bReadOnly
+      endif,
+   next,                                                                      prs('MRO - ReadOnly_TAT_edts()','ENDE'),
+end,
+
+//******************************************************************************
+// Zentrale Steuerung des "Enabled-Zustand" aller Actions
+//******************************************************************************
+function ActionsEnabled()
+|
+  bMRORESInEditMode, bMROERGInEditMode, bMROTATInEditMode,
+  bMRORESIsEmpty, bMROERGIsEmpty,bMROTATIsEmpty,
+  bMRORESIsNoRecordMove, bMROERGIsNoRecordMove, bMROTATIsNoRecordMove,
+  bNoTableInEditMode
+|                                                                               prs('MRO - ActionsEnabled()','START'),
+
+   // es wird überprüft ob die beiden Tabellen leer  oder
+   // im "IsNoRecordMove" zustand sind  dieser wird vom DMS-Docking gesetzt wenn
+   // im Docking ein Datensatz bearbeitet, eingefügt wird.
+   if !m_bInit then
+      bMROERGIsEmpty        := m_oMROERG.CbNoDataAvailable,
+      bMRORESIsEmpty        := m_oMRORES.CbNoDataAvailable,
+      bMROTATIsEmpty        := m_oMROTAT.CbNoDataAvailable,
+      bMRORESIsNoRecordMove := m_oMRORES.CbIsNoRecordMove(),
+      bMROERGIsNoRecordMove := m_oMROERG.CbIsNoRecordMove(),
+      bMROTATIsNoRecordMove := m_oMROTAT.CbIsNoRecordMove(),
+      if gl_MRO_bUseDMS then
+         // En- und Disabled die DMS-Dockings, und blendet einen InfoPanel ein, falls
+         // diese gesperrt sind
+         ts_erg_DMS.enabled            := !EditModes(m_oMRORES) and !bMRORESIsNoRecordMove and !EditModes(m_oMROTAT )and !bMROTATIsNoRecordMove,
+         ts_masch_DMS.enabled          := !EditModes(m_oMROERG) and !bMROERGIsNoRecordMove and !EditModes(m_oMROTAT )and !bMROTATIsNoRecordMove,
+         bipnl_erg_DMS.visible         := !ts_erg_DMS.enabled,
+         bipnl_masch_DMS.visible       := !ts_masch_DMS.enabled,
+      endif,
+   else
+      bMROERGIsEmpty        := false,
+      bMRORESIsEmpty        := false,
+      bMRORESIsNoRecordMove := false,
+      bMROERGIsNoRecordMove := false,
+      bMROTATIsNoRecordMove := false
+   endif,
+
+   bMRORESInEditMode  := EditModes(m_oMRORES) or bMRORESIsNoRecordMove or bMROERGIsNoRecordMove or bMROTATIsNoRecordMove,
+   bMROERGInEditMode  := EditModes(m_oMROERG) or bMRORESIsNoRecordMove or bMROERGIsNoRecordMove or bMROTATIsNoRecordMove,
+   bMROTATInEditMode  := EditModes(m_oMROTAT) or bMRORESIsNoRecordMove or bMROERGIsNoRecordMove or bMROTATIsNoRecordMove,
+   bNoTableInEditMode := not bMRORESInEditMode and not bMROERGInEditMode and not bMROTATInEditMode,
+
+   // eingegabe im zweiten bereich der Maske sperren
+   ReadOnly_MS_edts(bMROERGInEditMode or bMROTATInEditMode),
+   ReadOnly_ERG_edts(bMRORESInEditMode or bMROTATInEditMode),
+   ReadOnly_TAT_edts(bMRORESInEditMode or bMROERGInEditMode),
+
+   // Buttons in der Toolbar En-/Disablen
+   acmb_masch_Filter_Status.Enabled  := bNoTableInEditMode,
+   acmb_masch_Filter_ProdAbt.Enabled := bNoTableInEditMode,
+   A_Suche_M.Enabled                 := bNoTableInEditMode,
+   A_Refresh_M.Enabled               := bNoTableInEditMode,
+
+   A_New_M.Enabled                   := bNoTableInEditMode,
+   A_Delete_M.Enabled                := bNoTableInEditMode and not bMRORESIsEmpty,
+   A_Save_M.Enabled                  := bMRORESInEditMode and not bMROERGInEditMode and not bMROTATInEditMode and not bMRORESIsNoRecordMove,
+   A_Cancel_M.Enabled                := bMRORESInEditMode and not bMROERGInEditMode and not bMROTATInEditMode  and not bMRORESIsNoRecordMove,
+   A_Copy_M.Enabled                  := bNoTableInEditMode,
+   A_IndiMenueEditor.Enabled         := mBeSuperVisor and gl_MRO_IndiMenueRessourcenStamm > 0,
+   A_IndiMenueEditor.Visible         := A_IndiMenueEditor.Enabled,
+
+   A_New_E.Enabled                   := bNoTableInEditMode and m_oMRORES:STATUS == 'AKT',
+   A_Delete_E.Enabled                := bNoTableInEditMode and not bMROERGIsEmpty,
+   A_Save_E.Enabled                  := bMROERGInEditMode and not bMRORESInEditMode and not bMROERGIsNoRecordMove,
+   A_Cancel_E.Enabled                := bMROERGInEditMode and not bMRORESInEditMode and not bMROERGIsNoRecordMove,
+   A_Copy_E.Enabled                  := bNoTableInEditMode and m_oMRORES:STATUS == 'AKT',
+
+   A_Save_T.Enabled                  := bMROTATInEditMode and not bMROERGInEditMode and not bMRORESInEditMode and not bMROTATIsNoRecordMove,
+   A_Cancel_T.Enabled                := bMROTATInEditMode and not bMROERGInEditMode and not bMRORESInEditMode and not bMROTATIsNoRecordMove,
+
+   // Grids En-/Disablen
+   // wenn der State "insert" ist, kommt es zu einem Timing problem, daher wird
+   // das Grid dann in den Actions (A_New_...) disabled
+   if DbState(m_oMRORES) <> dsInsert and DbState(m_oMROERG) <> dsInsert  and DbState(m_oMROTAT) <> dsInsert then
+      grd_MRORES.Enabled      := bNoTableInEditMode,
+      grd_MROERG.Enabled      := bNoTableInEditMode,
+      grd_MROTAT.Enabled      := bNoTableInEditMode,
+   endif,
+
+   //Position der Tabelle merken um beim klick auf Abbrechen oder Speichern wieder korrekt Positionieren zu können
+   if DbState(m_oMROERG) == dsEdit then
+      m_nMROERG_LastRecNo := m_oMROERG.CbRecNo,
+      m_nMRORES_LastRecNo := m_oMRORES.CbRecNo,
+   endif,
+   if DbState(m_oMRORES) == dsEdit then
+      m_nMRORES_LastRecNo := m_oMRORES.CbRecNo,
+      m_nMROERG_LastRecNo := m_oMROERG.CbRecNo,
+   endif,                                                                       prs('MRO - ActionsEnabled()','ENDE'),
+end,
+
+//******************************************************************************
+// Dokumentenmanagement direkt an Maschinenstamm docken
+//******************************************************************************
+function OpenAndDockDMS(oPageControl:O, oMasterTable:O, cNameSuffix:C, bShowForm:L:=false)
+| aResultForm, oDockingForm, aDockingForms |                                    prs('MRO - OpenAndDockDMS()','START'),
+
+   result        := nil,
+   aDockingForms := {},
+   aResultForm   := GFU_ShowForm(
+      aDockingForms,
+      'MRO_' + cNameSuffix,
+      oForm,
+      oMasterTable,
+      'Dokumentenmanagement\Docking\GUI'
+   ),
+   oDockingForm  := aResultForm[1],
+   aDockingForms := aResultForm[2],
+   oDockingForm.CbHelper.CbManualDock(oPageControl),
+   result := oDockingForm,
+   if bShowForm then
+      show(oDockingForm),
+   endif,                                                                       prs('MRO - OpenAndDockDMS()','ENDE'),
+end,
+
+//******************************************************************************
+// Alle Standard-Einstellungen setzen z. B. Dynamische Captions eines
+// Labels o. ä.
+//******************************************************************************
+function SetDefaults()
+| oDock_MS_DMS, oDock_ERG_DMS |                                                 
+
+   if gl_MRO_bUseDMS then
+      // Dokumentenmangement-Dockings erstellen, andocken, erzeugten Tabsheets
+      // on Exit Events zuweisen
+      oDock_MS_DMS  := OpenAndDockDMS(pc_Maschinendaten, m_oMRORES, 'RESSOURCEN'),
+      oDock_ERG_DMS := OpenAndDockDMS(pc_Ereignisse,     m_oMROERG, 'EREIGNISSE'),
+      ts_masch_DMS  := getparent(oDock_MS_DMS),
+      ts_erg_DMS    := getparent(oDock_ERG_DMS),
+
+      // InfoPanels  auf den DMS-Dockings erstellen, die bei einer Bearbeitungssperre
+      // den Grund anzeigen können - MY DMS Funktioniert dann nicht mehr
+      bipnl_masch_DMS                   := CreateObject('TBeInfoPanel', 'bipnl_masch_DMS', oForm, oDock_MS_DMS),
+      bipnl_masch_DMS.Caption           := 'Es sind nicht gespeicherte änderungen an Maschinen, Ereignissen oder im Ereignis-DMS vorhanden.',
+      bipnl_masch_DMS.Align             := alTop,
+      bipnl_masch_DMS.ShowHint          := true,
+      bipnl_masch_DMS.VerticalAlignment := true,
+      bipnl_masch_DMS.ColorMode         := ipcmError,
+      bipnl_masch_DMS.Font.Size         := 10,
+      bipnl_masch_DMS.visible           := false,
+
+      bipnl_erg_DMS                     := CreateObject('TBeInfoPanel', 'bipnl_erg_DMS', oForm, oDock_ERG_DMS),
+      bipnl_erg_DMS.Caption             := 'Es sind nicht gespeicherte änderungen an Maschinen, Ereignissen oder im Maschinen-DMS vorhanden.',
+      bipnl_erg_DMS.Align               := alTop,
+      bipnl_erg_DMS.ShowHint            := true,
+      bipnl_erg_DMS.VerticalAlignment   := true,
+      bipnl_erg_DMS.ColorMode           := ipcmError,
+      bipnl_erg_DMS.Font.Size           := 10,
+      bipnl_erg_DMS.visible             := false,
+   endif,
+
+   // Initial angezeigte Tabkarten setzen
+   pc_Maschinendaten.ActivePage := ts_MaschStamm,
+   pc_Ereignisse.ActivePage     := ts_Ereigniss_01,
+
+   // Die Panels so Konfigurieren, dass beim Ausklappen das DMS-Docking
+   // bedienbar ist und beim Einklappen die Optik wieder passt
+   pnl_Maschine_Main.Height           := 650,
+   pnl_Maschine_Main.BeSplitterState  := ssClosed,
+   pnl_Ereignisse_Top.Height          := 540,
+   pnl_Ereignisse_Top.BeSplitterState := ssClosed,
+
+   // hiermit ist die Initialisierung abgeschlossen
+   m_bInit := false,                                                            prs('MRO - SetDefaults()','ENDE'),
+   m_oMRORES.CbFirst(),    
+end,
+
+//******************************************************************************
+// Erstellt das Individualmenü
+// @Result: null
+//******************************************************************************
+function CreateIndiMenu()
+   m_oIndiMenu := nil,
+   // Indi-Menu initialisieren und anzeigen
+   if gl_MRO_IndiMenueRessourcenStamm > 0 then
+      m_oIndiMenu                           := CreateObject("TBeCustomMenuPanel", "CustomMenuPanel", oForm, oForm),
+      m_oIndiMenu.ID                        := gl_MRO_IndiMenueRessourcenStamm,
+      m_oIndiMenu.InsertInBeBar             := true,
+      m_oIndiMenu.InsertInBeBarName         := 'beToolbar_Ressourcen',
+      m_oIndiMenu.InsertBeBarBeginSeparator := true,
+      m_oIndiMenu.BeBarItemShowCaption      := true,
+      m_oIndiMenu.DataSource                := ds_MRORES, // Durch Setzen des DataSource wird im Menü-Codeblock die MAINTABLE registriert und das Menü auch automatisch in die Toolbar integriert
+   endif,
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()                                             prs('MRO - OpenDataBaseAndLinkToGUI()','START'),
+   // Eigenes Datenmodul erstellen
+   m_oDM := CreateObject('TBeDbGet', 'MASCHVERW', oForm),
+
+   // Tabelle(n) öffnen
+   m_oMRORES                    := DBGetTable(m_oDM, waMRORES),
+   m_oMRORES.Indexname          := 'BEZ1',                                      // Indexausdruck: BEZ1; ID
+   ds_MRORES.DataSet            := m_oMRORES,
+   m_oMRORES_Search             := DBGetTable(m_oDM, waMRORES, 'MASCHDATS'),
+   m_oMRORES_Search.Indexname   := 'BEZ1',
+
+   m_oMROERG                   := DBGetTable(m_oDM, waMROERG),
+   m_oMROERG.IndexName         := 'ID_MASCH',                                   //Indexausdruck: ID_MASCH; BEZ1; ID
+   ds_MROERG.DataSet           := m_oMROERG,
+   m_oMROERG_Search            := DBGetTable(m_oDM, waMROERG, 'EREIGNDATS'),
+   m_oMROERG_Search.IndexName  := 'ID_MASCH',
+   m_oMROERG_Auswert           := DBGetTable(m_oDM, waMROERG, 'ERGAUSWERT'),
+   m_oMROERG_Auswert.IndexName := 'AUSWERTUNG',
+
+   m_oMROTAT                   := DBGetTable(m_oDM, waMROTAT),
+   m_oMROTAT.IndexName         := 'ID_MASCH',                                   //Indexausdruck: ID_MASCH; ID_ERG; TS_ABGESCH; ZIELDATUM
+   ds_MROTAT.DataSet           := m_oMROTAT,
+   m_oMROTAT_Search            := DBGetTable(m_oDM, waMROTAT, 'AKTIONSDATP'),
+   m_oMROTAT_Search.IndexName  := 'ID_MASCH',
+   m_oMROTAT_Auswert           := DBGetTable(m_oDM, waMROTAT, 'AKTAUSWERT'),
+   m_oMROTAT_Auswert.IndexName := 'AUSWERTUNG',
+
+   m_oDAB010                   := DBGetTable(m_oDM, waDAB010, 'MSVDAB010'),
+   m_oDAB210                   := DBGetTable(m_oDM, waDAB210, 'MSVDAB210'),
+   m_oDAB035                   := DBGetTable(m_oDM, waDAB035, 'MSVDAB035'),
+   m_oDAB035.IndexName         := 'DAB03B',
+   m_oDAB240                   := DBGetTable(m_oDM, waDAB240, 'MSVDAB240'),
+   m_oDAB240.IndexName         := 'DAB241',
+
+   // Tabelle mit Browser verbinden
+   grd_MRORES.DataSource        := ds_MRORES, // DataSource zuweisen
+   grd_MRORES.RegisterDataSet   := m_oMRORES, // DataSet im Browser registrieren
+   grd_MRORES.RegisterDataSet   := m_oMROTAT_Auswert,
+   grd_MRORES.RegisterDataSet   := m_oMROERG_Auswert,
+   grd_MRORES.ID                := m_cBrowserID, // Browser-ID zuweisen
+   grd_MRORES.ReadWriteProps    := False,
+   grd_MROERG.DataSource       := ds_MROERG,
+   grd_MROERG.RegisterDataSet  := m_oMROERG,
+   grd_MROERG.RegisterDataSet  := m_oMROTAT_Auswert,
+   grd_MROERG.ID               := m_cBrowserID2,
+   grd_MROERG.ReadWriteProps   := False,
+   grd_MROTAT.DataSource       := ds_MROTAT,
+   grd_MROTAT.RegisterDataSet  := m_oMROTAT,
+   grd_MROTAT.RegisterDataSet  := m_oDAB035,
+   grd_MROTAT.RegisterDataSet  := m_oDAB240,
+   grd_MROTAT.ID               := m_cBrowserID3,
+   grd_MROTAT.ReadWriteProps   := False,
+
+
+//   // Tabelle mit Browser verbinden
+//   GU_LinkTableToGUI(m_oMRORES, ds_MRORES, grd_MRORES, m_cBrowserID, false),
+//   grd_MRORES.RegisterDataSet   := m_oMROTAT_Auswert,
+//   grd_MRORES.RegisterDataSet   := m_oMROERG_Auswert,
+//   grd_MRORES.ReadWriteProps    := False,
+
+//   GU_LinkTableToGUI(m_oMROERG, ds_MROERG, grd_MROERG, m_cBrowserID2, false),
+//   grd_MROERG.RegisterDataSet  := m_oMROTAT_Auswert,
+//   grd_MROERG.ReadWriteProps   := False,
+
+//   GU_LinkTableToGUI(m_oMROTAT, ds_MROTAT, grd_MROTAT, m_cBrowserID3, false),
+//   grd_MROTAT.RegisterDataSet  := m_oDAB035,
+//   grd_MROTAT.RegisterDataSet  := m_oDAB240,
+//   grd_MROTAT.ReadWriteProps   := False,
+
+   // Events Verknüpfen um auf das Bearbeiten im DMS zu reagieren
+   Assignevent(m_oMRORES, 'NoRecordMoveChanged', 'm_oMRORES_NoRecordMoveChanged '),
+   Assignevent(m_oMROERG, 'NoRecordMoveChanged', 'm_oMROERG_NoRecordMoveChanged'),
+                                                                                prs('MRO - OpenDataBaseAndLinkToGUI()','ENDE'),
+end,
+
+//******************************************************************************
+// Initialdatum Abfragen
+// @Result: keines
+//******************************************************************************
+function InitialdatumAbfragen(cAusgangsStatus)
+| aDialogResult |                                                               prs('MRO - InitialdatumAbfragen()','START'),
+   if m_oMROERG:DAT_LZTAKT <> 0 then
+      if jn('Neues Initialdatum für das Ereignis vergeben?', true) then
+         aDialogResult := DU_InputDialog('Datum der ersten Durchführung setzen',
+                                         'Dieses Datum wird zur Berechnung der nächsten fälligen Ereignisse verwendt.',
+                                         {  DU_InputDialog_CreateInputControlDefinition('DATE',  'Datum',   gl_DU_InputControlType_Date,    '',     0, date(), True) },
+                                         { mrOk, mrCancel }, {}
+                                        ),
+         // wenn im Dialog auf "Cancel" geklickt wurde die Statusänderung nicht übernehmen
+         if DU_InputDialogResult_GetModalResult(aDialogResult) = 2  then
+            cmb_erg_status.value := cAusgangsStatus,
+         else
+            m_oMROERG:DAT_LZTAKT := DU_InputDialogResult_GetInputValue(aDialogResult, 'DATE'),
+         endif,
+      endif,
+   else
+      aDialogResult := DU_InputDialog('Datum der ersten Durchführung setzen',
+                                      'Dieses Datum wird zur Berechnung der nächsten fälligen Ereignisse verwendt.',
+                                      { DU_InputDialog_CreateInputControlDefinition('DATE',  'Datum',   gl_DU_InputControlType_Date,    '',     0, date(), True) },
+                                      { mrOk, mrCancel }, {}
+                                     ),
+      // wenn im Dialog auf "Cancel" geklickt wurde die Statusänderung nicht übernehmen
+      if DU_InputDialogResult_GetModalResult(aDialogResult) = 2  then
+         cmb_erg_status.value := cAusgangsStatus,
+      else
+         m_oMROERG:DAT_LZTAKT := DU_InputDialogResult_GetInputValue(aDialogResult, 'DATE'),
+      endif,
+   endif,                                                                       prs('MRO - InitialdatumAbfragen()','ENDE'),
+end,
+
+//******************************************************************************
+// Überprüft ob der der Übergebene Artikel eine Stückliste hat und vom Typ Baugruppe ist
+// @Result: boolean
+//******************************************************************************
+function PruefeArtikel()
+   Result := false,                                                             prs('MRO - PruefeArtikel()','START'),
+   if m_oDAB010.CbFindKey({edt_erg_ArtNr.Text}) then
+      Result := m_oDAB010:ARTTYP == 'B'
+   endif,
+   Result := Result AND  m_oDAB210.CbFindKey({m_oMROERG:ARTNR}),                prs('MRO - PruefeArtikel()','ENDE'),
+end,
+
+//******************************************************************************
+// Filtert die MRORES Datenbank gemäß aller aktiver Filter
+// @Result: null
+//******************************************************************************
+function FilterMRORES()
+| cFilter, nRecNo |                                                             prs('MRO - FilterMRORES()','START'),
+   cFilter := '',
+   // Fügt den Filterblock hinten an, wenn der Filter schon gesetzt ist
+   if m_cFilter_MS_Status <> '' then
+      if cFilter <> '' then
+         cFilter += ' and (' + m_cFilter_MS_Status + ')',
+      else
+         cFilter := '(' + m_cFilter_MS_Status + ')',
+      endif,
+   endif,
+
+   // Fügt den Filterblock hinten an, wenn der Filter schon gesetzt ist
+   if m_cFilter_MS_ProdAbt <> '' then
+      if cFilter <> '' then
+         cFilter += ' and (' + m_cFilter_MS_ProdAbt + ')',
+      else
+         cFilter := '(' + m_cFilter_MS_ProdAbt + ')',
+      endif,
+   endif,
+   // ggf. weiter Filterfelder dem "CFilter" hinzufügen
+   writeln(cFilter),
+
+   // Den Filter ausführen, sofern der filter leer ist, die Tabelle ungefiltert anzeigen
+   nRecNo := m_oMRORES.CbRecNo,
+   m_oMRORES.CbDisableControls(),
+   if cFilter <> '' then
+      m_oMRORES.CbFiltered := false,
+      m_oMRORES.CbFilter   := cFilter,
+      m_oMRORES.CbFiltered := true,
+      // ist der aktuelle Datensatz nicht mehr enthalten, so wird der erste Datensatz genommen
+      if not m_oMRORES.CbGoTo(nRecNo) then
+         m_oMRORES.CbFirst(),
+      endif,
+   else
+      m_oMRORES.CbFiltered := false,
+      m_oMRORES.CbGoTo(nRecNo),
+   endif,
+   m_oMRORES.CbEnableControls(),                                                prs('MRO - FilterMRORES()','ENDE'),
+end,
+
+//******************************************************************************
+// Prüft ob alle Aktionen eines Ereignisses abgeschlossen sind
+// @Result: boolean - false, falls noch Ereignisse nicht abgeschlossen sind
+//******************************************************************************
+function ErgAlleAktionenAbgeschlossen(nMasch_ID, nErg_ID)
+   Result := true,                                                              prs('MRO - ErgAlleAktionenAbgeschlossen()','START'),
+   m_oMROTAT_Search.CbSetRangeEx({nMasch_ID, nErg_ID}),
+   if not(m_oMROTAT_Search.CbBoF and m_oMROTAT_Search.CbEoF) then
+      while not m_oMROTAT_Search.CbEoF do
+         Result := Result and !Empty(m_oMROTAT_Search:TS_ABGESCH),
+         m_oMROTAT_Search.CbNext(),
+      end,
+   endif,
+   m_oMROTAT_Search.CbCancelRange(),
+
+   if not Result then
+      cmb_erg_status.value := 'AKT',
+      MessageDlg("Das Ereignis kann nicht auf 'Inaktiv' oder 'Geplant' gesetzt werden," + CRLF +
+                 "bevor nicht alle Aktionen abgeschlossen sind." + CRLF +  CRLF +
+                 "Sie können das Datum 'gepl. Inaktivierung' setzen, um zu verhindern," +CRLF +
+                 "dass neue Aktionen nach diesem Datum gestartet werden.", mtError ),
+   endif,                                                                                prs('MRO - ErgAlleAktionenAbgeschlossen()','ENDE'),
+end,
+
+//******************************************************************************
+// Erstellt ein Array mit den Selektierten Werten einer TBe(Attr)CheckChombo.
+// Diese Methode wird benoetigt, wenn die Combo manuell
+// (z.B. nicht durch eine MM-Tabelle) befüllt wurde.
+// @Result: Array mit den "CheckedValues"
+//******************************************************************************
+function GetCheckedValues(oChkCmb)
+| i, aCheckedItems |                                                            prs('MRO - GetCheckedValues()','START'),
+   Result := {},
+   aCheckedItems := oChkCmb.CheckedItems,
+   for i := 1 to oChkCmb.CheckedCount do
+      AAdd(Result,StrToken(CollItem(oChkCmb.Items, aCheckedItems[i]), Chr(9), 2)),
+   next,                                                                        prs('MRO - GetCheckedValues()','ENDE'),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+
+
+//******************************************************************************
+// Event: Nach dem Wechsel des Supervisor-Modus
+//******************************************************************************
+function FormExAfterAdminModeChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Wenn das Angedockte DMS den NoRecordMove der oMRORES Status ändert
+//******************************************************************************
+function m_oMRORES_NoRecordMoveChanged()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Wenn das Angedockte DMS den NoRecordMove der oMRORES Status ändert
+//******************************************************************************
+function m_oMROERG_NoRecordMoveChanged()
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Prüft, bevor die Picturemask (z.B. *5[#];,*2[#] ) sich beschwert ob ein Wert
+//        ein Komma enthält und fügt ggf. eins hinzu
+//******************************************************************************
+function NumCheck_OnExit( Sender )                                              prs('MRO - NumCheck_OnExit()','START'),
+   if TokenCount(Sender.text, ',') = 1 then
+      Sender.text := Sender.text + ',0',
+   endif,                                                                       prs('MRO - NumCheck_OnExit()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Erstellt einen filterstring für die Produktionsabteilung, wenn der
+//        Statusfilter geändert wird
+//******************************************************************************
+function masch_Filter_Status_onClickCheck( Sender )
+| i, aStatus |                                                                  prs('MRO - masch_Filter_Status_onClickCheck()','START'),
+   startseq
+      m_cFilter_MS_Status := '',
+      aStatus := acmb_masch_Filter_Status.CheckedItems,
+      for i := 1 to acmb_masch_Filter_Status.CheckedCount  do
+         if i > 1 then
+            m_cFilter_MS_Status += ' or ',
+         endif,
+         // Übersetzt die Auswahl aus der Combobox in einen Status
+         case aStatus[i]
+            of 1 :: m_cFilter_MS_Status += "STATUS == 'GEP'"
+            of 2 :: m_cFilter_MS_Status += "STATUS == 'AKT'"
+            of 3 :: m_cFilter_MS_Status += "STATUS == 'STI'"
+            of 4 :: m_cFilter_MS_Status += "STATUS == 'VER'"
+            of 5 :: m_cFilter_MS_Status += "STATUS == 'ENT'"
+            otherwise
+         endcase,
+      next,
+      FilterMRORES(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Filtern der Maschinen', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - masch_Filter_Status_onClickCheck()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Erstellt einen filterstring für den Status, wenn der Statusfilter geändert wird
+//******************************************************************************
+function masch_Filter_ProdAbt_onClickCheck( Sender )
+| i, aProdAbt |                                                                 prs('MRO - masch_Filter_ProdAbt_onClickCheck()','START'),
+   startseq
+      m_cFilter_MS_ProdAbt := '',
+      aProdAbt             := GetCheckedValues(acmb_masch_Filter_ProdAbt),
+      for i := 1 to ALen(aProdAbt) do
+         if i > 1 then
+            m_cFilter_MS_ProdAbt += ' or ',
+         endif,
+         m_cFilter_MS_ProdAbt += "PROD_ABT == '" + aProdAbt[i] + "'" ,
+      next,
+      FilterMRORES(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Filtern der Maschinen', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - masch_Filter_ProdAbt_onClickCheck()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Übernimmt bei Bestätigung den DURCHSCHEK aus dem Arikelstamm
+//******************************************************************************
+function edt_erg_artnr_OnValidateValue( Sender )                                prs('MRO - edt_erg_artnr_OnValidateValue()','START'),
+   if jn('Soll der Durchschnitts EKP in die Sollkostenübernommen werden?', true) then
+      m_oDAB010.CbFindKey({edt_erg_Artnr.Text}),
+      m_oMROERG:SOLLKOSTEN := m_oDAB010:DURCHSCHEK,
+   endif,                                                                       prs('MRO - edt_erg_artnr_OnValidateValue()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Überprüft ob alle Anforderungen zur Anderung des Status erfüllt sind
+//******************************************************************************
+function cmb_Masch_StatusChange( Sender )
+| cErrorText, bErgAbgschl |                                                     prs('MRO - cmb_Masch_StatusChange()','START'),
+   startseq
+      if m_oMRORES:STATUS = 'AKT' and cmb_masch_status.value <> 'AKT' and !m_bInit then
+         cErrorText  := '',
+         bErgAbgschl := true,
+         m_oMROERG_Search.CbSetRangeEx({m_oMRORES:ID}),
+         m_oMROERG_Search.CbFirst(),
+         // Wenn nochmindestens ein Ereignis auf "Aktiv" steht, darf der Status der
+         // Maschine nicht geändert werden
+         While !m_oMROERG_Search.CbEoF do
+            if m_oMROERG_Search:STATUS = 'AKT' then
+               bErgAbgschl := false,
+               cErrorText += '  - ' + alltrim(m_oMROERG_Search:BEZ1) + CRLF,
+            endif,
+            m_oMROERG_Search.CbNext(),
+         end,
+         m_oMROERG_Search.CbCancelRange(),
+         if !bErgAbgschl then
+            cmb_masch_status.value := 'AKT',
+            MessageDlg("Die nachfolgenden Ereignisse sind noch Aktiv:" + CRLF + cErrorText , mtError)
+         endif,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - cmb_Masch_StatusChange()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Überprüft ob alle Anforderungen zur Anderung des Status erfüllt sind
+//******************************************************************************
+function cmb_erg_status_OnChange( Sender )
+| aDialogResult |                                                               prs('MRO - cmb_erg_status_OnChange()','START'),
+   startseq
+      case m_oMROERG:STATUS
+         // Wenn der Status von 'Geplant' geändert wird auf ...
+         of 'GEP' :: case cmb_erg_status.value
+                        // Wenn der Status von 'Geplant' geändert wird auf Aktiv
+                        of 'AKT' :: InitialdatumAbfragen('GEP')
+                        of 'INA' :: writeln('GEP -> INA')
+                        otherwise
+                     endcase,
+         // Wenn der Status von 'Aktiv' geändert wird auf ...
+         of 'AKT' :: case cmb_erg_status.value
+                        of 'GEP' :: ErgAlleAktionenAbgeschlossen(m_oMROERG:ID_MASCH, m_oMROERG:ID)
+                        of 'INA' :: ErgAlleAktionenAbgeschlossen(m_oMROERG:ID_MASCH, m_oMROERG:ID)
+                        otherwise
+                     endcase,
+         // Wenn der Status von 'Inaktiv' geändert wird auf ...
+         of 'INA' :: case cmb_erg_status.value
+                        of 'GEP' :: writeln('INA -> GEP')
+                        of 'AKT' :: InitialdatumAbfragen('INA')
+                        otherwise
+                     endcase,
+         otherwise
+      endcase,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - cmb_erg_status_OnChange()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Untertabelle - KNDERG auf das aktuell gewählte ereignis eingrenzen
+//******************************************************************************
+function ds_MRORESScroll_Update( Sender )
+| bMROERG_Empty |                                                               prs('MRO - ds_MRORESScroll_Update()','START'),
+   startseq
+      if !m_bInit and !Editmodes(m_oMRORES) then
+         startseq
+            m_oMROERG.CbDisableControls(),
+            m_oMROTAT.CbDisableControls(),
+            m_oMROERG.CbCancelRange(),
+            m_oMROERG.CbSetRangeEx({m_oMRORES:ID}),
+            bMROERG_Empty := m_oMROERG.CbBoF and m_oMROERG.CbEoF,
+            if m_oMRORES:STATUS == 'AKT' or m_oMRORES:STATUS == 'GEP' then
+               ReadOnly_MS_edts(false),
+               ReadOnly_ERG_edts(false),
+            else
+               ReadOnly_MS_edts(true),
+               ReadOnly_ERG_edts(true),
+            endif,
+         always
+            m_oMROERG.CbEnableControls(),
+            m_oMROTAT.CbEnableControls(),
+         stopseq,
+         m_oMROERG.CbFirst(),
+      endif,
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - ds_MRORESScroll_Update()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: Untertabelle - KNDAKT auf das aktuell gewählte ereignis eingrenzen
+//******************************************************************************
+function ds_MROERGScroll_Update( Sender )                                       prs('MRO - ds_MROERGScroll_Update()','START'),
+   startseq
+      if !m_bInit and !Editmodes(m_oMRORES) and !Editmodes(m_oMROERG) then
+         startseq
+            m_oMROTAT.CbDisableControls(),
+            m_oMROTAT.CbCancelRange(),
+            m_oMROTAT.CbSetRangeEx({m_oMRORES:ID, m_oMROERG:ID}),
+            m_oMROTAT.CbFirst(),
+            if m_oMRORES:STATUS == 'AKT' or m_oMRORES:STATUS == 'GEP' then
+               if m_oMROERG:STATUS == 'INA' then
+                  ReadOnly_ERG_edts(true),
+               else
+                  ReadOnly_ERG_edts(false),
+               endif,
+            endif,
+         always
+            m_oMROTAT.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Speichern der Aktion', GetErrorObj()),
+   stopseq,                                                                     prs('MRO - ds_MROERGScroll_Update()','ENDE'),
+end,
+
+//******************************************************************************
+// Event: State-Change des DataSource => z.b. bei Eintritt in den Edit-Mode
+//******************************************************************************
+function ds_MRORESStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+function ds_MROERGStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+function ds_MROTATStateChange( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Vor dem Schließen prüfen, ob die Haupttabelle noch in Bearbeitung ist
+//        und ggf. rückfragen.
+//******************************************************************************
+function FormExCloseQuery( Sender, bCanClose )
+  bCanClose := not EditModes(m_oMRORES) or
+               not EditModes(m_oMROERG) or
+               not EditModes(m_oMROTAT) or
+               JN('Ein Datensatz befindet sich noch in Bearbeitung.' + crlf +
+                  'Möchten Sie die Bearbeitung abbrechen und das Fenster schließen?'),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   startseq
+      GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),                                // MDI-Child aus Form-Ref-Array austragen
+   onerror
+      MessageDlg('Fehler beim Zerstören des Formulars' + crlf + GetErrorText(), mtError),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Individual-Menü Editor öffnen (dort ist dann der Menüpunkt mit registrierter MAINTABLE definierbar / testbar)
+//******************************************************************************
+function A_IndiMenueEditorExecute( Sender )
+  if gl_MRO_IndiMenueRessourcenStamm > 0 and not empty(m_oIndiMenu) then
+     m_oIndiMenu.ShowMenuEditor,
+     MessageDlg('Änderungen am Menüpunkt-Codeblock werden erst beim nächsten Laden der Maske wirksam.', mtWarning),
+  endif,
+end,
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function a_Hilfe_TatExecute( Sender )
+   IOHU_ShowOnlineHelpGUI(gl_MRO_OnlineHilfeFilter),
+end,
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function a_Hilfe_ERGExecute( Sender )
+   IOHU_ShowOnlineHelpGUI(gl_MRO_OnlineHilfeFilter),
+end,
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function a_Hilfe_ResExecute( Sender )
+   IOHU_ShowOnlineHelpGUI(gl_MRO_OnlineHilfeFilter),
+end,
+
+//******************************************************************************
+// Action: Volltextsuche für die Ressourcen/Maschinen
+//******************************************************************************
+function A_Suche_MExecute( Sender )
+| nResID, cResBez1 |                                                                       
+   nResID   := FTS_ShowSearchDlg_Manually(waMRORES, 'SUCHE', 'ID', '@BMROMAS', '@PMROSEA'),
+   cResBez1 := lookup(waMRORES, 'ID', {{nResID}}, 'BEZ1', '', lm_lookup),
+   m_oMRORES.CbFindKey({cResBez1, nResID}),
+end,
+
+//******************************************************************************
+// Action: Aktualisiert alle Farblichen Markierungen in denbeiden Brwosersn (MS und ERG)
+//******************************************************************************
+function A_Refresh_MExecute( Sender )
+| cMessageText |                                                                prs('MRO - GetCheckedValues()','START'),
+   cMessageText := MRO_MS_WartungszustandBerechnen(nil, nil),
+   if not Empty(cMessageText) then
+      MessageDlg('Folgende Maschinen - Ereignisse konnten nicht Akualisiert werden:' + cMessageText, mtInformation),
+   endif,
+   m_oMROERG.CbRefresh(),
+   m_oMRORES.CbRefresh(),
+   MessageDlg('Die Anzeige wurde Aktualisiert.', mtInformation),                prs('MRO - GetCheckedValues()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Neuen Datensatz anlegen für Maschinen
+//******************************************************************************
+function A_New_MExecute( Sender )
+   startseq                                                                     prs('MRO - A_New_MExecute()','START'),
+      // Datensatz merken, wenn abgebrochen wird, dann wieder auf dort positionieren
+      m_nMRORES_LastRecNo  := m_oMRORES.CbRecNo,
+      m_nMROERG_LastRecNo := m_oMROERG.CbRecNo,
+      MyAppend(m_oMRORES),
+      m_oMROERG.CbSetRangeEx({m_oMRORES:ID}),
+      m_oMROTAT.CbSetRangeEx({m_oMRORES:ID}),
+      grd_MRORES.Enabled  := false,
+      grd_MROERG.Enabled  := false,
+      m_oMRORES:STATUS    := 'GEP',
+      m_oMRORES:E_CHECK   := false,
+   onerror
+      MessageDlg('Fehler bei der Neuanlage' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_New_MExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Neuen Datensatz anlegen für Ereignisse
+//******************************************************************************
+function A_New_EExecute( Sender )
+   startseq                                                                     prs('MRO - A_New_EExecute()','START'),
+      // Datensatz merken, wenn abgebrochen wird, dann wieder auf dort positionieren
+      m_nMROERG_LastRecNo    := m_oMROERG.CbRecNo,
+      MyAppend(m_oMROERG),
+      m_oMROTAT.CbSetRangeEx({m_oMRORES:ID, m_oMROERG:ID}),
+      grd_MRORES.Enabled    := false,
+      grd_MROERG.Enabled   := false,
+      m_oMROERG:ID_MASCH   := m_oMRORES:ID,
+      m_oMROERG:STATUS     := 'GEP',
+      m_oMROERG:KULANZ     := 5,
+      m_oMROERG:WARNUNG    := 25,
+      m_oMROERG:PROD_ABT   := m_oMRORES:PROD_ABT,
+      m_oMROERG:PFLICHT    := false,
+      m_oMROERG:VERANTWOR1 := m_oMRORES:VERANTWOR1,
+      m_oMROERG:VERANTWOR2 := m_oMRORES:VERANTWOR2,
+      m_oMROERG:VERANTWOR3 := m_oMRORES:VERANTWOR3,
+      m_oMROERG:INTERV_TYP := 'TAG',
+   onerror
+      MessageDlg('Fehler bei der Neuanlage' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_New_EExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Kopiert aktuellen Datensatz der Maschinen
+//******************************************************************************
+function A_Copy_MExecute( Sender )
+   MessageDlg('Diese Funktion ist noch nicht implementiert', mtInformation),
+end,
+
+//******************************************************************************
+// Action: Kopiert aktuellen Datensatz des Ereignisses
+//******************************************************************************
+function A_Copy_EExecute( Sender )
+   MessageDlg('Diese Funktion ist noch nicht implementiert', mtInformation),
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen (Maschine)
+//******************************************************************************
+function A_Delete_MExecute( Sender )
+   startseq                                                                     prs('MRO - A_Delete_MExecute()','START'),
+      if jn('Möchten Sie die Maschine löschen?', true) and !m_oMROERG_Search.CbFindKey({m_oMRORES:ID}) then
+         MyDelete(m_oMRORES),
+      else
+         MessageDlg('Die Maschine kann nicht gelöscht werden, da noch Ereignisse vorhanden sind.', mterror),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Löschen' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_Delete_MExecute()','START'),
+end,
+
+//******************************************************************************
+// Action: Datensatz löschen (Ereignis)
+//******************************************************************************
+function A_Delete_EExecute( Sender )
+   startseq                                                                     prs('MRO - A_Delete_EExecute()','START'),
+      if !m_oMROTAT_Search.CbFindKey({m_oMRORES:ID, m_oMROERG:ID}) then
+         MyDelete(m_oMROERG),
+      else
+         MessageDlg('Das Ereignis kann nicht gelöscht werden, da bereits Aktionen vorhanden sind.', mterror),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Löschen' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_Delete_EExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Änderung speichern (Maschine)
+//******************************************************************************
+function A_Save_MExecute( Sender )
+| bNameEindeutig, cMaschName, cBezERG, nID_Masch, nID_ERG, cMessageText |       prs('MRO - A_Save_MExecute()','START'),
+   startseq
+      // Prüfen ob der Eingegebene Name eindeutig ist
+      m_oMRORES_Search.CbSetRangeEx({alltrim(edt_masch_bez1.text)}),
+      bNameEindeutig := true,
+      if not (m_oMRORES_Search.CbBoF and m_oMRORES_Search.CbEoF) then
+         m_oMRORES_Search.CbFirst(),
+         While not m_oMRORES_Search.CbEoF do
+            bNameEindeutig := bNameEindeutig and (m_oMRORES_Search:ID = m_oMRORES:ID),
+            m_oMRORES_Search.CbNext(),
+         end,
+      endif,
+      m_oMRORES_Search.CbCancelRange(),
+      if not bNameEindeutig then
+         MessageDlg('Sie können nicht speichern, die Bezeichnung muss eindeutig sein', mterror),
+      else
+         // Nach dem post wieder auf dem gleichen datensatz positionieren wie zuvor
+         nID_Masch  := m_oMROERG:ID_MASCH,
+         cBezERG    := m_oMROERG:BEZ1,
+         nID_ERG    := m_oMROERG:ID,
+         cMaschName := edt_masch_bez1.text,
+         startseq
+            m_oMROERG.CbDisableControls(),
+            m_oMRORES.CbPost(),
+            m_oMRORES.CbDisableControls(),
+            m_oMRORES.CbFindKey({cMaschName}),
+         always
+            m_oMRORES.CbEnableControls(),
+            m_oMROERG.CbEnableControls(),
+         stopseq,
+         // Zeilenfarbe nach dem Speichern wieder aktualisieren
+         cMessageText := MRO_MS_WartungszustandBerechnen(nID_Masch, nil),
+         if not Empty(cMessageText) then
+            MessageDlg('Folgende Maschinen - Ereignisse konnten nicht Akualisiert werden:' + cMessageText, mtInformation),
+         endif,
+         m_oMROERG.CbRefresh(),
+         m_oMRORES.CbRefresh(),
+         m_oMROERG.CbFindKey({nID_Masch, cBezERG, nID_ERG}),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_Save_MExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Änderung speichern (Ereignis)
+//******************************************************************************
+function A_Save_EExecute( Sender )
+| nID_Masch, cBez1, nID_ERG, cMessageText |                                     prs('MRO - A_Save_EExecute()','START'),
+
+   function AnsichtAktualisieren()
+      cMessageText := MRO_MS_WartungszustandBerechnen(nID_Masch, nID_ERG),
+      if not Empty(cMessageText) then
+         MessageDlg('Folgende Maschinen - Ereignisse konnten nicht Akualisiert werden:' + cMessageText, mtInformation),
+      endif,
+   end,
+
+   startseq
+      if Empty(alltrim(edt_erg_Intervall.text)) or Empty(cmb_erg_interv_typ.value) then
+         MessageDlg('Es muss ein Intervall mit Intervall-Typ eingetragen sein um ein Ereignis speichern zu können.', mtError),
+         exit,
+      endif,
+      nID_Masch := m_oMROERG:ID_MASCH,
+      cBez1     := edt_erg_bez1.text,
+      nID_ERG   := m_oMROERG:ID,
+      if m_oMROERG:PFLICHT then
+         // Prüfen ob bei einem Pflichtereignis der Eingetragne Artikel alle Anforderungen erfüllt
+         if PruefeArtikel() then
+            m_oMROERG.CbPost(),
+            AnsichtAktualisieren(),
+         else
+            MessageDlg('Bei einem Pflichereignis muss ein Artikel vom Typ "Baugruppe" mit einer Stückliste hinterlegt sein.',mterror),
+            MyFocusControl(oForm, edt_erg_artnr),
+         endif,
+      else
+         m_oMROERG.CbPost(),
+         AnsichtAktualisieren(),
+      endif,
+
+      if DbState(m_oMROERG) = dsBrowse then
+         m_oMROERG.CbRefresh(),
+         m_oMRORES.CbRefresh(),
+         m_oMROERG.CbFindKey({nID_Masch, cBez1, nID_ERG}),
+      endif,
+   onerror
+      MessageDlg('Fehler beim Speichern' + crlf + GetErrorText() + crlf + crlf + DebugArr(GetErrorStack(true)), mtError),
+   stopseq,                                                                     prs('MRO - A_Save_EExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Änderung speichern (Tätigkeit)
+//******************************************************************************
+function A_Save_TExecute( Sender )
+   m_oMROTAT.CbPost(),
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen (Maschine)
+//******************************************************************************
+function A_Cancel_MExecute( Sender )                                            prs('MRO - A_Cancel_MExecute()','START'),
+   if JN('Änderungen verwerfen?') then
+      startseq
+         m_oMRORES.CbDisableControls(),
+         m_oMROERG.CbDisableControls(),
+         m_oMRORES.CbCancel(),
+         if not Empty(m_nMRORES_LastRecNo) then
+            m_oMRORES.CbGoTo(m_nMRORES_LastRecNo),
+         endif,
+      always
+         m_oMRORES.CbEnableControls(),
+         if not Empty(m_nMROERG_LastRecNo) then
+            m_oMROERG.CbGoTo(m_nMROERG_LastRecNo),
+         endif,
+         m_oMROERG.CbEnableControls(),
+      stopseq,
+   endif,                                                                       prs('MRO - A_Cancel_MExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen (Ereignis)
+//******************************************************************************
+function A_Cancel_EExecute( Sender )                                            prs('MRO - A_Cancel_EExecute()','START'),
+   if JN('Änderungen verwerfen?') then
+      startseq
+         m_oMROERG.CbDisableControls(),
+         m_oMROERG.CbCancel(),
+         if m_nMRORES_LastRecNo > -1 then
+            m_oMRORES.CbGoTo(m_nMRORES_LastRecNo),
+         endif,
+         if m_nMROERG_LastRecNo > -1 then
+            m_oMROERG.CbGoTo(m_nMROERG_LastRecNo),
+         endif,
+      always
+         m_oMROERG.CbEnableControls(),
+      stopseq,
+   endif,                                                                       prs('MRO - A_Cancel_EExecute()','ENDE'),
+end,
+
+//******************************************************************************
+// Action: Änderung abbrechen (Tätigkeit)
+//******************************************************************************
+function A_Cancel_TExecute( Sender )
+   if JN('Änderungen verwerfen?') then
+      startseq
+         m_oMROTAT.CbDisableControls(),
+         m_oMROTAT.CbCancel(),
+      always
+         m_oMROTAT.CbEnableControls(),
+      stopseq,
+   endif,
+   ActionsEnabled(),
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   // Beginn der Initialisierung dse Programms
+   m_bInit := true,
+
+   if empty(m_oOwner) then
+      oForm             := LoadForm(m_cFormID, Application),
+   else
+      oForm             := LoadForm(m_cFormID, m_oOwner),
+      oForm.FormStyle   := fsMdiChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveID := m_cPositionSaveID,
+   oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
+   oForm.ImageIndex     := 432,  // Image-Index für den Window-Navigator setzen
+   oForm.KeyPreview     := True, // Sorgt dafür, dass z.B. die ESC-Taste beim
+                                 // Fenster ankommt und ein Schließen auslöst.
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Cancel_E                            := FindObject(oForm, "A_Cancel_E"),
+   A_Cancel_M                            := FindObject(oForm, "A_Cancel_M"),
+   A_Cancel_T                            := FindObject(oForm, "A_Cancel_T"),
+   A_Copy_E                              := FindObject(oForm, "A_Copy_E"),
+   A_Copy_M                              := FindObject(oForm, "A_Copy_M"),
+   A_Delete_E                            := FindObject(oForm, "A_Delete_E"),
+   A_Delete_M                            := FindObject(oForm, "A_Delete_M"),
+   A_HelpContent                         := FindObject(oForm, "A_HelpContent"),
+   a_Hilfe_ERG                           := FindObject(oForm, "a_Hilfe_ERG"),
+   a_Hilfe_Res                           := FindObject(oForm, "a_Hilfe_Res"),
+   a_Hilfe_Tat                           := FindObject(oForm, "a_Hilfe_Tat"),
+   A_IndiMenueEditor                     := FindObject(oForm, "A_IndiMenueEditor"),
+   A_New_E                               := FindObject(oForm, "A_New_E"),
+   A_New_M                               := FindObject(oForm, "A_New_M"),
+   A_Refresh_M                           := FindObject(oForm, "A_Refresh_M"),
+   A_Save_E                              := FindObject(oForm, "A_Save_E"),
+   A_Save_M                              := FindObject(oForm, "A_Save_M"),
+   A_Save_T                              := FindObject(oForm, "A_Save_T"),
+   A_Suche_M                             := FindObject(oForm, "A_Suche_M"),
+   acmb_masch_Filter_ProdAbt             := FindObject(oForm, "acmb_masch_Filter_ProdAbt"),
+   acmb_masch_Filter_Status              := FindObject(oForm, "acmb_masch_Filter_Status"),
+   actionList_M                          := FindObject(oForm, "actionList_M"),
+   bardock_Ereignisse                    := FindObject(oForm, "bardock_Ereignisse"),
+   bardock_Ressourcen                    := FindObject(oForm, "bardock_Ressourcen"),
+   BarDock_Taetigkeiten                  := FindObject(oForm, "BarDock_Taetigkeiten"),
+   barmngr_Ereignisse                    := FindObject(oForm, "barmngr_Ereignisse"),
+   barmngr_Main                          := FindObject(oForm, "barmngr_Main"),
+   barmngr_MainBar1                      := FindObject(oForm, "barmngr_MainBar1"),
+   barmngr_MainBar2                      := FindObject(oForm, "barmngr_MainBar2"),
+   bbtn_Cancel_E                         := FindObject(oForm, "bbtn_Cancel_E"),
+   bbtn_Cancel_T                         := FindObject(oForm, "bbtn_Cancel_T"),
+   bbtn_Copy_E                           := FindObject(oForm, "bbtn_Copy_E"),
+   bbtn_Delete_E                         := FindObject(oForm, "bbtn_Delete_E"),
+   bbtn_Hilfe_erg                        := FindObject(oForm, "bbtn_Hilfe_erg"),
+   bbtn_Hilfe_res                        := FindObject(oForm, "bbtn_Hilfe_res"),
+   bbtn_Hilfe_tat                        := FindObject(oForm, "bbtn_Hilfe_tat"),
+   bbtn_new_E                            := FindObject(oForm, "bbtn_new_E"),
+   bbtn_Save_E                           := FindObject(oForm, "bbtn_Save_E"),
+   bbtn_Save_T                           := FindObject(oForm, "bbtn_Save_T"),
+   BeBarButton1                          := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2                          := FindObject(oForm, "BeBarButton2"),
+   beBarButton3                          := FindObject(oForm, "beBarButton3"),
+   BeSplitter1                           := FindObject(oForm, "BeSplitter1"),
+   BeSplitter2                           := FindObject(oForm, "BeSplitter2"),
+   BeSplitter3                           := FindObject(oForm, "BeSplitter3"),
+   BeSplitter4                           := FindObject(oForm, "BeSplitter4"),
+   BeSplitter5                           := FindObject(oForm, "BeSplitter5"),
+   beToolbar_Ressourcen                  := FindObject(oForm, "beToolbar_Ressourcen"),
+   Bevel_erg_haupt_01                    := FindObject(oForm, "Bevel_erg_haupt_01"),
+   Bevel_erg_haupt_02                    := FindObject(oForm, "Bevel_erg_haupt_02"),
+   Bevel_masch_haupt_01                  := FindObject(oForm, "Bevel_masch_haupt_01"),
+   Bevel_masch_hautp_02                  := FindObject(oForm, "Bevel_masch_hautp_02"),
+   Bevel_masch_hautp_03                  := FindObject(oForm, "Bevel_masch_hautp_03"),
+   Bevel_masch_zusatz_01                 := FindObject(oForm, "Bevel_masch_zusatz_01"),
+   Bevel_masch_zusatzdaten01             := FindObject(oForm, "Bevel_masch_zusatzdaten01"),
+   Bevel_tat_01                          := FindObject(oForm, "Bevel_tat_01"),
+   bipnl_AktionenHeader                  := FindObject(oForm, "bipnl_AktionenHeader"),
+   bipnl_EreignisseHeader                := FindObject(oForm, "bipnl_EreignisseHeader"),
+   bipnl_Info_Sperre_DMS                 := FindObject(oForm, "bipnl_Info_Sperre_DMS"),
+   bipnl_MainHeader                      := FindObject(oForm, "bipnl_MainHeader"),
+   btn_Cancel_M                          := FindObject(oForm, "btn_Cancel_M"),
+   btn_Copy_M                            := FindObject(oForm, "btn_Copy_M"),
+   btn_Delete_M                          := FindObject(oForm, "btn_Delete_M"),
+   btn_New_M                             := FindObject(oForm, "btn_New_M"),
+   btn_Post_M                            := FindObject(oForm, "btn_Post_M"),
+   cmb_erg_interv_typ                    := FindObject(oForm, "cmb_erg_interv_typ"),
+   cmb_erg_Produktionsabteilung          := FindObject(oForm, "cmb_erg_Produktionsabteilung"),
+   cmb_erg_status                        := FindObject(oForm, "cmb_erg_status"),
+   cmb_erg_verantwor1                    := FindObject(oForm, "cmb_erg_verantwor1"),
+   cmb_erg_verantwor2                    := FindObject(oForm, "cmb_erg_verantwor2"),
+   cmb_masch_dbs_je                      := FindObject(oForm, "cmb_masch_dbs_je"),
+   cmb_Masch_Status                      := FindObject(oForm, "cmb_Masch_Status"),
+   cmb_masch_verantwor1                  := FindObject(oForm, "cmb_masch_verantwor1"),
+   cmb_masch_verantwor2                  := FindObject(oForm, "cmb_masch_verantwor2"),
+   ds_MROERG                             := FindObject(oForm, "ds_MROERG"),
+   ds_MRORES                             := FindObject(oForm, "ds_MRORES"),
+   ds_MROTAT                             := FindObject(oForm, "ds_MROTAT"),
+   dtp_erg_LetzteDurchfuerung            := FindObject(oForm, "dtp_erg_LetzteDurchfuerung"),
+   dtp_masch_entsorungsdat               := FindObject(oForm, "dtp_masch_entsorungsdat"),
+   dtp_masch_Garantieende                := FindObject(oForm, "dtp_masch_Garantieende"),
+   dtp_masch_Inbetriebnahmedat           := FindObject(oForm, "dtp_masch_Inbetriebnahmedat"),
+   dtp_masch_kaufdatum                   := FindObject(oForm, "dtp_masch_kaufdatum"),
+   dtp_masch_Stilllegung                 := FindObject(oForm, "dtp_masch_Stilllegung"),
+   dtp_masch_Verkaufsdat                 := FindObject(oForm, "dtp_masch_Verkaufsdat"),
+   edit_tat_Memo_ERG                     := FindObject(oForm, "edit_tat_Memo_ERG"),
+   edt_erg_Aktionstext                   := FindObject(oForm, "edt_erg_Aktionstext"),
+   edt_erg_artnr                         := FindObject(oForm, "edt_erg_artnr"),
+   edt_erg_bez1                          := FindObject(oForm, "edt_erg_bez1"),
+   edt_erg_inaktivam                     := FindObject(oForm, "edt_erg_inaktivam"),
+   edt_erg_Intervall                     := FindObject(oForm, "edt_erg_Intervall"),
+   edt_erg_kulanz                        := FindObject(oForm, "edt_erg_kulanz"),
+   edt_erg_Memo                          := FindObject(oForm, "edt_erg_Memo"),
+   edt_erg_pflichterg                    := FindObject(oForm, "edt_erg_pflichterg"),
+   edt_erg_sollkosten                    := FindObject(oForm, "edt_erg_sollkosten"),
+   edt_erg_Verantw3                      := FindObject(oForm, "edt_erg_Verantw3"),
+   edt_erg_Vorauf                        := FindObject(oForm, "edt_erg_Vorauf"),
+   edt_erg_warnung                       := FindObject(oForm, "edt_erg_warnung"),
+   edt_masch_bez1                        := FindObject(oForm, "edt_masch_bez1"),
+   edt_masch_dbs                         := FindObject(oForm, "edt_masch_dbs"),
+   edt_masch_echeck                      := FindObject(oForm, "edt_masch_echeck"),
+   edt_masch_fachabt                     := FindObject(oForm, "edt_masch_fachabt"),
+   edt_masch_fachabt_bez                 := FindObject(oForm, "edt_masch_fachabt_bez"),
+   edt_masch_hersteller                  := FindObject(oForm, "edt_masch_hersteller"),
+   edt_masch_Inventarnummer              := FindObject(oForm, "edt_masch_Inventarnummer"),
+   edt_masch_kostenstelle                := FindObject(oForm, "edt_masch_kostenstelle"),
+   edt_masch_leasingnr                   := FindObject(oForm, "edt_masch_leasingnr"),
+   edt_Masch_Memo                        := FindObject(oForm, "edt_Masch_Memo"),
+   edt_Masch_ort                         := FindObject(oForm, "edt_Masch_ort"),
+   edt_masch_Seriennummer                := FindObject(oForm, "edt_masch_Seriennummer"),
+   edt_masch_typenbez                    := FindObject(oForm, "edt_masch_typenbez"),
+   edt_masch_Veranw3                     := FindObject(oForm, "edt_masch_Veranw3"),
+   edt_masch_Wartungsabteilung           := FindObject(oForm, "edt_masch_Wartungsabteilung"),
+   edt_tat_istKostenExt                  := FindObject(oForm, "edt_tat_istKostenExt"),
+   edt_tat_istKostenInt                  := FindObject(oForm, "edt_tat_istKostenInt"),
+   edt_tat_memo                          := FindObject(oForm, "edt_tat_memo"),
+   grd_MROERG                            := FindObject(oForm, "grd_MROERG"),
+   grd_MRORES                            := FindObject(oForm, "grd_MRORES"),
+   grd_MROTAT                            := FindObject(oForm, "grd_MROTAT"),
+   gtbtn_erg_artikel                     := FindObject(oForm, "gtbtn_erg_artikel"),
+   lbl_erg_artnr                         := FindObject(oForm, "lbl_erg_artnr"),
+   lbl_erg_Bez1                          := FindObject(oForm, "lbl_erg_Bez1"),
+   lbl_erg_haut_01                       := FindObject(oForm, "lbl_erg_haut_01"),
+   lbl_erg_haut_02                       := FindObject(oForm, "lbl_erg_haut_02"),
+   lbl_erg_Intevall_typ                  := FindObject(oForm, "lbl_erg_Intevall_typ"),
+   lbl_erg_Kulanz_Warn                   := FindObject(oForm, "lbl_erg_Kulanz_Warn"),
+   lbl_erg_letzeDurchfuehrung_inaktiv    := FindObject(oForm, "lbl_erg_letzeDurchfuehrung_inaktiv"),
+   lbl_erg_sollkosten                    := FindObject(oForm, "lbl_erg_sollkosten"),
+   lbl_erg_status                        := FindObject(oForm, "lbl_erg_status"),
+   lbl_erg_Verantw3                      := FindObject(oForm, "lbl_erg_Verantw3"),
+   lbl_erg_Verantwor1                    := FindObject(oForm, "lbl_erg_Verantwor1"),
+   lbl_erg_verantwor2                    := FindObject(oForm, "lbl_erg_verantwor2"),
+   lbl_erg_vorlaufzeit                   := FindObject(oForm, "lbl_erg_vorlaufzeit"),
+   lbl_masch_bez1                        := FindObject(oForm, "lbl_masch_bez1"),
+   lbl_masch_dbs_debje                   := FindObject(oForm, "lbl_masch_dbs_debje"),
+   lbl_Masch_echeck_Status               := FindObject(oForm, "lbl_Masch_echeck_Status"),
+   lbl_masch_Fachabt                     := FindObject(oForm, "lbl_masch_Fachabt"),
+   lbl_masch_Fachabteilung_Bez           := FindObject(oForm, "lbl_masch_Fachabteilung_Bez"),
+   lbl_Masch_Filter_ProdAbt              := FindObject(oForm, "lbl_Masch_Filter_ProdAbt"),
+   lbl_Masch_Filter_Status               := FindObject(oForm, "lbl_Masch_Filter_Status"),
+   lbl_masch_Garantieende_Entsorgungsdat := FindObject(oForm, "lbl_masch_Garantieende_Entsorgungsdat"),
+   lbl_masch_haupt_01                    := FindObject(oForm, "lbl_masch_haupt_01"),
+   lbl_masch_haupt_03                    := FindObject(oForm, "lbl_masch_haupt_03"),
+   lbl_masch_haut_02                     := FindObject(oForm, "lbl_masch_haut_02"),
+   lbl_masch_hersteller                  := FindObject(oForm, "lbl_masch_hersteller"),
+   lbl_masch_Inbetriebnahme_Stilllegung  := FindObject(oForm, "lbl_masch_Inbetriebnahme_Stilllegung"),
+   lbl_masch_Inventarnummer              := FindObject(oForm, "lbl_masch_Inventarnummer"),
+   lbl_masch_Kauf_Inbetr                 := FindObject(oForm, "lbl_masch_Kauf_Inbetr"),
+   lbl_masch_Kostenstelle                := FindObject(oForm, "lbl_masch_Kostenstelle"),
+   lbl_masch_LeasingNr                   := FindObject(oForm, "lbl_masch_LeasingNr"),
+   lbl_Masch_Ort                         := FindObject(oForm, "lbl_Masch_Ort"),
+   lbl_masch_Seriennummer                := FindObject(oForm, "lbl_masch_Seriennummer"),
+   lbl_masch_Typenbezeichnung            := FindObject(oForm, "lbl_masch_Typenbezeichnung"),
+   lbl_masch_verantw3                    := FindObject(oForm, "lbl_masch_verantw3"),
+   lbl_masch_verantwor2                  := FindObject(oForm, "lbl_masch_verantwor2"),
+   lbl_masch_verantwort1                 := FindObject(oForm, "lbl_masch_verantwort1"),
+   lbl_masch_Wartungsabteilung           := FindObject(oForm, "lbl_masch_Wartungsabteilung"),
+   lbl_masch_zusatz_01                   := FindObject(oForm, "lbl_masch_zusatz_01"),
+   lbl_masch_Zusatzdaten01               := FindObject(oForm, "lbl_masch_Zusatzdaten01"),
+   lbl_tat_Daten1                        := FindObject(oForm, "lbl_tat_Daten1"),
+   lbl_tat_IstKostenIntExt               := FindObject(oForm, "lbl_tat_IstKostenIntExt"),
+   pc_Ereignisse                         := FindObject(oForm, "pc_Ereignisse"),
+   pc_Maschinendaten                     := FindObject(oForm, "pc_Maschinendaten"),
+   pc_taetigkeiten                       := FindObject(oForm, "pc_taetigkeiten"),
+   pc_tat_aktMemo                        := FindObject(oForm, "pc_tat_aktMemo"),
+   pc_tat_Daten                          := FindObject(oForm, "pc_tat_Daten"),
+   pnl_Ereignisse_Links                  := FindObject(oForm, "pnl_Ereignisse_Links"),
+   pnl_Ereignisse_Main                   := FindObject(oForm, "pnl_Ereignisse_Main"),
+   pnl_Ereignisse_Rechts                 := FindObject(oForm, "pnl_Ereignisse_Rechts"),
+   pnl_Ereignisse_Top                    := FindObject(oForm, "pnl_Ereignisse_Top"),
+   pnl_erg_haupt_01                      := FindObject(oForm, "pnl_erg_haupt_01"),
+   pnl_erg_haupt_02                      := FindObject(oForm, "pnl_erg_haupt_02"),
+   pnl_Main_Left                         := FindObject(oForm, "pnl_Main_Left"),
+   pnl_Main_Right                        := FindObject(oForm, "pnl_Main_Right"),
+   pnl_Main_Top                          := FindObject(oForm, "pnl_Main_Top"),
+   pnl_masch_haupt_01                    := FindObject(oForm, "pnl_masch_haupt_01"),
+   pnl_masch_Haupt_02                    := FindObject(oForm, "pnl_masch_Haupt_02"),
+   pnl_masch_Haupt_03                    := FindObject(oForm, "pnl_masch_Haupt_03"),
+   pnl_masch_zusatz_01                   := FindObject(oForm, "pnl_masch_zusatz_01"),
+   pnl_masch_zusatzdaten01               := FindObject(oForm, "pnl_masch_zusatzdaten01"),
+   pnl_Maschine_Main                     := FindObject(oForm, "pnl_Maschine_Main"),
+   pnl_Taetigkeiten_Main                 := FindObject(oForm, "pnl_Taetigkeiten_Main"),
+   pnl_Taetigkeiten_right                := FindObject(oForm, "pnl_Taetigkeiten_right"),
+   pnl_tat_Daten_01                      := FindObject(oForm, "pnl_tat_Daten_01"),
+   ts_Ereigniss_01                       := FindObject(oForm, "ts_Ereigniss_01"),
+   ts_Ereigniss_Memo_erg                 := FindObject(oForm, "ts_Ereigniss_Memo_erg"),
+   ts_erg_memo_akt                       := FindObject(oForm, "ts_erg_memo_akt"),
+   ts_MaschMemo                          := FindObject(oForm, "ts_MaschMemo"),
+   ts_MaschStamm                         := FindObject(oForm, "ts_MaschStamm"),
+   ts_MaschZusatz                        := FindObject(oForm, "ts_MaschZusatz"),
+   ts_tat_ergMemo                        := FindObject(oForm, "ts_tat_ergMemo"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LockDesktop('Wartung und Instandhaltung wird geöffnet'),
+   startseq
+      InitForm(),
+      LoadGUI(),
+      OpenDataBaseAndLinkToGUI(),
+      LockDesktopUpdate('Berechnen von Ressourcen- und Ereignisstatus'),
+      InitialJobs(),
+      LockDesktopUpdate('Laden von Dockings'),
+      SetDefaults(),
+      CreateIndiMenu(),
+   always
+      UnlockDesktop(),
+   stopseq,
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+stopseq,
+
+oForm

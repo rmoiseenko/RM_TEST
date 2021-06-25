@@ -1,23 +1,21 @@
-1
-  TextFont.Name = 'Segoe UI'
-  TextFont.Style = []
-  FieldCtrlType = fctNone
-  SumField = False
-  Band = 0
-  BandSize = 1
-  BandWidth = 134
-  Template = 'TdagBeMemo'
-  Expanded = False
+object GridProp: TCalcDBGridProp
+  NewColumns = True
+  DeleteDefColumns = True
+  AvailDataSets.Strings = (
+    'TBeDBGet.')
+  SelComplLines = True
+  ShowSelAlways = True
+  AutoRefreshTime = 60
+  TopBottomRowLinesOnly = True
+  UseStandardFont = True
 end
- 'iif(MEMTABLE:FieldUserRightDefined, 360, -1)'
-  ImageAlignH = ialhCenter
-  Band = 0
-  BandSize = 1
-  BandWidth = 30
-  Template = 'TdagBeMemo'
-  Expanded = False
-end
-mpty(ID), '#39#39', ColumnResult)'
+object Col_1: TBeAttr
+  Caption = 'ID'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taCenter
+  Freezed = False
+  FuncBlock = 'iif(Empty(ID), '#39#39', ColumnResult)'
   ColResultBlock = 'ID'
   CanEditFunc = True
   CanEditMask = True
@@ -35,13 +33,13 @@ mpty(ID), '#39#39', ColumnResult)'
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -77,13 +75,13 @@ object Col_0: TBeAttr
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -119,13 +117,13 @@ object Col_4: TBeAttr
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -166,13 +164,13 @@ object Col_5: TBeAttr
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -213,13 +211,13 @@ object Col_3: TBeAttr
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -255,13 +253,13 @@ object Col_2: TBeAttr
   CanEditField = True
   CanEditHide = True
   UserDefined = True
-  CaptionFont.Charset = DEFAULT_CHARSET
-  CaptionFont.Color = clWindowText
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
   CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
-  TextFont.Charset = DEFAULT_CHARSET
-  TextFont.Color = clWindowText
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
   TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
@@ -270,6 +268,56 @@ object Col_2: TBeAttr
   Band = 0
   BandSize = 1
   BandWidth = 350
+  Template = 'TdagBeMemo'
+  Expanded = False
+end
+object Col_6: TBeAttr
+  Caption = 'Log-Status'
+  Width = 10
+  DisplayWidth = 10
+  Alignment = taLeftJustify
+  Freezed = False
+  FuncBlock = 
+    'AttribDispVal(gl_TSKPL_Config_AttributeTableID_LogType, Str(Colu' +
+    'mnResult))'
+  ColResultBlock = 'LASTSTATUS'
+  CanEditFunc = True
+  CanEditMask = True
+  AllowEdit = False
+  DbServer = 'TSKPLTASK'
+  ForeColor = 536870911
+  BackColor = 536870911
+  ForeColorBlock = 
+    'iif(((ColumnResult = 280) or (ColumnResult = 310)), clWhite, clB' +
+    'lack)'
+  BackColorBlock = 
+    'iif(((ColumnResult = 280) or (ColumnResult = 310)), RGB(201,33,0' +
+    '), clWhite)'
+  CanMoveCol = True
+  CanResizeCol = True
+  FieldName = 'LASTSTATUS'
+  DbReadRights = False
+  DbEditRights = False
+  DbDelRights = False
+  CanEditServer = True
+  CanEditField = True
+  CanEditHide = True
+  UserDefined = True
+  CaptionFont.Charset = ANSI_CHARSET
+  CaptionFont.Color = clBlack
+  CaptionFont.Height = -13
+  CaptionFont.Name = 'Segoe UI'
+  CaptionFont.Style = []
+  TextFont.Charset = ANSI_CHARSET
+  TextFont.Color = clBlack
+  TextFont.Height = -13
+  TextFont.Name = 'Segoe UI'
+  TextFont.Style = []
+  FieldCtrlType = fctNone
+  SumField = False
+  Band = 0
+  BandSize = 1
+  BandWidth = 122
   Template = 'TdagBeMemo'
   Expanded = False
 end

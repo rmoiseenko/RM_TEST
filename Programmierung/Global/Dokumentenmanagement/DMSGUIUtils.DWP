@@ -40,7 +40,7 @@ end,
 //
 //  TODO: Diese Funktion interessiert sich aktuell nicht für den Versions-Strang eines
 //        Dokuments, wenn es also z.B. eine zweite Version eines Artikelbildes gibt, wird
-//        dennoch die erste angezeigt 
+//        dennoch die erste angezeigt
 //
 // @Result: "internes Artikelbild" vorhanden ja/nein
 //******************************************************************************
@@ -55,7 +55,7 @@ function _DMSU_GUI_Integration_FindInternalPictureForArticle(oDmsVer, oDmsBsp, b
       DbScope({waDab010, nArticleId}, {waDab010, nArticleId}, oDmsVer),
       DbGoTop(oDmsVer),
       while not EoF(oDmsVer) and not bFound do
-         if '/' + Str(gl_DMSU_DokumentenVerwendung_ArtikelbildIntern) + '/' $ ('/' + oDmsVer:VERWENDUNG + '/') then // Dokument finden, welches als "internes Artikelbild" klassifiziert wurde
+         if '/' + Str(gl_DMSU_DokumentenVerwendung_ArtikelbildIntern) + '/' $ ('/' + oDmsVer:VERWENDUNG + '/') and empty(oDMSVER:LOESCH_USR) then // Dokument finden, welches als "internes Artikelbild" klassifiziert wurde
             if ('/' + AllTrim(oDmsVer:FILE_TYPE) + '/') $ DMSU_GetGraphicFileTypes() then // ist das Dokument ein Bild?
                if oDmsVer:ART = gl_DMSU_DokumentenArt_File then
                   // Im Falle einer Datei muß die DmsBsp positioniert werden
@@ -82,7 +82,7 @@ end,
 //    designbaren Maske das "Interne Artikelbild" anzuzeigen.
 // @Result: null
 //******************************************************************************
-function _DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update(oCodeblockPanel, oDataSource, bUseThumbNail)
+function _DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update(oCodeblockPanel, oDataSource, bUseThumbNail, cArtnrFieldName:_C:='')
 | oMainTable, cMasterArtnr, pnl_DebugInfo, oDbBlockImage,
   oDmsVer, oDmsVerDataSource, oDmsBsp, oDmsBspDataSource, bInternalArticlePictureFound |
                                                                                 // prs('DMSU_GUI_ArticlePictureOnMask_HandleCodeblockPanel_OnScroll_Update', 'START'),
@@ -142,7 +142,9 @@ function _DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_
          of waDab315 :: cMasterArtnr := oMainTable:ARTNR,
          of waDab035 :: cMasterArtnr := oMainTable:ARTNR,
          of waDab240 :: cMasterArtnr := oMainTable:ARTNR_E,
-         otherwise   :: cMasterArtnr := '',
+         otherwise
+              SetErrorIf(empty(cArtnrFieldName), 'Fehler in DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_Update - unbekannte Tabelle und fehlender Feldname'),
+              cMasterArtnr := AsString(cArtnrFieldName, oMainTable),
       endcase,
 
       pnl_DebugInfo.Caption          := 'Art.Nr.: ' + cMasterArtnr,
@@ -183,9 +185,6 @@ function _DMSU_GUI_Integration_MaskArticlePicture_HandleCodeblockPanel_OnScroll_
       always
          DbEnableControls(oDmsVer),
       stopseq,
-
-   endif,
-                                                                                // prs('DMSU_GUI_ArticlePictureOnMask_HandleCodeblockPanel_OnScroll_Update', 'END'),
+   endif,                                                                                       // prs('DMSU_GUI_ArticlePictureOnMask_HandleCodeblockPanel_OnScroll_Update', 'END'),
 end,
 
-  

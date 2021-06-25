@@ -3,7 +3,6 @@
 // Beschreibung: Benutzeroberfläche für Taskplaner
 //##############################################################################
 //##############################################################################
-
 |
    m_oOwner:P1,
    m_cFormRefKey:P2,
@@ -34,49 +33,46 @@
    m_bDoNotEditMode,
 
    // @VDB@ der nachfolgende Teil wird automatisch gepflegt
-   oForm, A_Cancel, A_ChooseFilterProgram, A_ChooseProgram, A_CreateTask,
-   A_Delete, A_FilterExecute, A_ResetFilter, A_Save, A_SchedulerDelete,
-   A_SchedulerEdit, A_ScheduleRefresh, A_SchedulerHasToRun, A_SchedulerLock,
-   A_SchedulerNew, A_SchedulerRelease, A_Settings, A_TaskActivate,
-   A_TaskDeactivate, A_TaskExecute, A_TaskRefresh, Actions, bar_Scheduler,
-   bar_TaskEdit, bardock_logs, bardock_Scheduler, bardock_Task, barmgr_Main,
-   barmgr_MainBar1, bbtn_Cancel, bbtn_CreateTask, bbtn_Delete,
-   bbtn_LogsResetFilter, bbtn_LogsShowFilter, bbtn_ManuelExecute, bbtn_Save,
-   bbtn_SchedulerDelete, bbtn_SchedulerEdit, bbtn_SchedulerNew,
+   oForm, A_CalcNextExecutions, A_Cancel, A_ChooseFilterProgram,
+   A_ChooseProgram, A_CreateTask, A_Delete, A_FilterExecute, A_HelpContent,
+   A_ResetFilter, A_Save, A_SchedulerDelete, A_SchedulerEdit, A_ScheduleRefresh,
+   A_SchedulerHasToRun, A_SchedulerLock, A_SchedulerNew, A_SchedulerRelease,
+   A_Settings, A_TaskActivate, A_TaskDeactivate, A_TaskExecute, A_TaskRefresh,
+   Actions, bar_Scheduler, bar_TaskEdit, bardock_logs, bardock_Scheduler,
+   bardock_Task, barmgr_Main, barmgr_MainBar1, bbtn_Cancel, bbtn_CreateTask,
+   bbtn_Delete, bbtn_LogsResetFilter, bbtn_LogsShowFilter, bbtn_ManuelExecute,
+   bbtn_Save, bbtn_SchedulerDelete, bbtn_SchedulerEdit, bbtn_SchedulerNew,
    bbtn_TaskActivate, bbtn_TaskDeactivate, BeBarButton1, BeBarButton2,
-   btn_EtChooseProgram, btn_LogsChooseProgram, btn_RefreshSchedule,
-   btn_RefreshTask, chk_PeBlockInner, chk_WeEvery, chkl_DaDays, chkl_PeDays,
-   cmb_EtDepartment, cmb_EtLocation, cmb_EtProgramm, cmb_EtScheduler,
-   cmb_EtStartKind, cmb_EtStartType, cmb_EtUser, cmb_LogsDepartment,
-   cmb_LogsLocation, cmb_LogsProgram, cmb_LogsSchedulers, cmb_LogsStartKind,
-   cmb_LogsTasks, cmb_LogsType, cmb_LogsUser, cmb_MoWhen, cmb_PeBlockInner,
-   cmb_PeTime, cmb_ToleranceUnit, cmb_WeDays, cmb_YeDays, cmb_YeMonths,
-   ds_ALLLOGS, ds_SqlSchedule, ds_SqlTask, ds_SqlTaskLog, ds_TSKPLLOG,
-   ds_TSKPLSCHED, ds_TSKPLTASK, dtp_DaAt, dtp_EtStartsAt, dtp_EtStopsAt,
-   dtp_LogsFromDate, dtp_LogsFromTime, dtp_LogsToDate, dtp_LogsToTime, dtp_MoUm,
-   dtp_OnAm, dtp_OnUm, dtp_PeTo, dtp_PeUp, dtp_StartPeriodic, dtp_WeUm,
-   dtp_YeAt, edt_EtInformation, edt_EtParameter, edt_EtTaskName,
-   edt_MaxDuration, edt_MoSpecialDay, edt_PeEvery, edt_ToleranceAmount,
-   edt_WeWeeks, grd_AllLogs, grd_Logs, grd_Schedulers, grd_Tasks, ipnl_AllLogs,
-   ipnl_Scheduler, ipnl_Task, lbl_DaAm, lbl_DaAt, lbl_EndDate, lbl_EtDepartment,
-   lbl_EtInformation, lbl_EtLocation, lbl_EtParameter, lbl_EtProgramm,
-   lbl_EtScheduler, lbl_EtStartKind, lbl_EtTaskName, lbl_EtTimetable,
-   lbl_EtUser, lbl_LogsDepartment, lbl_LogsFrom, lbl_LogsFromTime,
-   lbl_logsLocation, lbl_LogsProgramm, lbl_LogsSchedulers, lbl_LogsStartKind,
-   lbl_LogsTasks, lbl_LogsTo, lbl_LogsType, lbl_LogsUser, lbl_MaxDuration,
-   lbl_MoAm, lbl_MoDays, lbl_MoUm, lbl_OnAm, lbl_OnUm, lbl_PeAm, lbl_PeEvery,
-   lbl_PeriodStartTime, lbl_StartDate, lbl_StartKindDescription,
-   lbl_TimePlanInfo, lbl_TimePlanInfoCaption, lbl_Tolerance, lbl_WeAm, lbl_WeUm,
-   lbl_WeWeeks, lbl_YeAt, lbl_YeOnDay, lbl_YeOnMonth, pc_Main, pc_Task,
-   pnl_AtMonthly, pnl_ContainerTimePlanInfo, pnl_Cycle, pnl_EveryXWeeks,
-   pnl_LogsFilterCenter, pnl_LogsFilterLeft, pnl_LogsFilterRight, pnl_LogsFrom,
-   pnl_LogsProgram, pnl_LogsTo, pnl_LogsTop, pnl_Main, pnl_Name,
-   pnl_PeriodLimitTime, pnl_Program, pnl_Scheduler, pnl_TaskDetails,
-   pnl_TaskDetailsLeft, pnl_TaskDetailsRight, pnl_Tasks, pnl_TasksGrid,
-   pnl_TimePlanAnnualy, pnl_TimePlanBasics, pnl_TimePlanDaily,
-   pnl_TimePlanHeader, pnl_TimePlanMonthly, pnl_TimePlanOnce,
-   pnl_TimePlanPeriodic, pnl_TimePlanWeekly, pnl_Tolerance,
-   pnl_ToleranceOptions, pnl_Top, rbtn_MoErsten, rbtn_MoLetzten, rbtn_MoSpecial,
+   beBtn_CalcNextExecutions, BeSplitter1, BeSplitter2, btn_EtChooseProgram,
+   btn_LogsChooseProgram, btn_RefreshSchedule, btn_RefreshTask,
+   chk_PeBlockInner, chk_WeEvery, chkl_DaDays, chkl_PeDays, cmb_EtDepartment,
+   cmb_EtLocation, cmb_EtProgramm, cmb_EtScheduler, cmb_EtStartKind,
+   cmb_EtStartType, cmb_EtUser, cmb_LogsDepartment, cmb_LogsLocation,
+   cmb_LogsProgram, cmb_LogsSchedulers, cmb_LogsStartKind, cmb_LogsTasks,
+   cmb_LogsType, cmb_LogsUser, cmb_MoWhen, cmb_PeBlockInner, cmb_PeTime,
+   cmb_ToleranceUnit, cmb_WeDays, cmb_YeDays, cmb_YeMonths, ds_ALLLOGS,
+   ds_SqlSchedule, ds_SqlTask, ds_SqlTaskLog, ds_TSKPLLOG, ds_TSKPLSCHED,
+   ds_TSKPLTASK, dtp_DaAt, dtp_EtStartsAt, dtp_EtStopsAt, dtp_LogsFromDate,
+   dtp_LogsFromTime, dtp_LogsToDate, dtp_LogsToTime, dtp_MoUm, dtp_OnAm,
+   dtp_OnUm, dtp_PeTo, dtp_PeUp, dtp_StartPeriodic, dtp_WeUm, dtp_YeAt,
+   edt_EtInformation, edt_EtParameter, edt_EtTaskName, edt_MaxDuration,
+   edt_MoSpecialDay, edt_PeEvery, edt_ToleranceAmount, edt_WeWeeks, grd_AllLogs,
+   grd_Logs, grd_Schedulers, grd_Tasks, ipnl_AllLogs, ipnl_Scheduler, ipnl_Task,
+   lbl_DaAm, lbl_DaAt, lbl_EndDate, lbl_EtDepartment, lbl_EtInformation,
+   lbl_EtLocation, lbl_EtParameter, lbl_EtProgramm, lbl_EtScheduler,
+   lbl_EtStartKind, lbl_EtTaskName, lbl_EtTimetable, lbl_EtUser,
+   lbl_LogsDepartment, lbl_LogsFrom, lbl_logsLocation, lbl_LogsProgramm,
+   lbl_LogsSchedulers, lbl_LogsStartKind, lbl_LogsTasks, lbl_LogsTo,
+   lbl_LogsType, lbl_LogsUser, lbl_MaxDuration, lbl_MoAm, lbl_MoDays, lbl_MoUm,
+   lbl_OnAm, lbl_OnUm, lbl_PeAm, lbl_PeEvery, lbl_PeriodStartTime,
+   lbl_StartDate, lbl_StartKindDescription, lbl_TimePlanInfo, lbl_Tolerance,
+   lbl_WeAm, lbl_WeUm, lbl_WeWeeks, lbl_YeAt, lbl_YeOnDay, lbl_YeOnMonth,
+   pc_Main, pc_Task, pnl_4, pnl_5, pnl_6, pnl_ContainerTimePlanInfo,
+   pnl_LogsFilterCenter, pnl_LogsFilterLeft, pnl_LogsFilterRight, pnl_LogsTop,
+   pnl_Main, pnl_Scheduler, pnl_TaskDetails, pnl_TaskDetailsLeft, pnl_Tasks,
+   pnl_TasksGrid, pnl_TimePlanAnnualy, pnl_TimePlanBasics, pnl_TimePlanDaily,
+   pnl_TimePlanMonthly, pnl_TimePlanOnce, pnl_TimePlanPeriodic,
+   pnl_TimePlanWeekly, pnl_Top, rbtn_MoErsten, rbtn_MoLetzten, rbtn_MoSpecial,
    t_SchedulerRefreshTimer, tm_NextExecutions, ts_LogsAll, ts_LogsTask,
    ts_Overview, ts_TaskDefinition, ts_TaskTimeSettings
    // @VDE@ der vorangehende Teil wird automatisch gepflegt
@@ -115,7 +111,7 @@ function ControlIndexToDayIndex(aCheckedDays:A)
       aCheckedDays[i] := nTemp,
    next,
    Result := aCheckedDays,
-end,                                                                                     
+end,
 
 //******************************************************************************
 // Validierung der Kontrolen vor der Speicherung
@@ -123,7 +119,7 @@ end,
 //******************************************************************************
 function ValidateControls(cErrorText:R)
 |
-  oFocusControl 
+  oFocusControl
 |
    Result := true,
    case Val(cmb_EtStartType.Value)
@@ -150,39 +146,39 @@ function ValidateControls(cErrorText:R)
             cErrorText   := 'Tag "am" muss gesetzt sein!',
             oFocusControl := chkl_PeDays,
          endif,
-         if Result and chk_WeEvery.Checked 
-            and Empty(edt_WeWeeks.Text) 
+         if Result and chk_WeEvery.Checked
+            and Empty(edt_WeWeeks.Text)
             then
             Result        := false,
             cErrorText    := 'Anzalh der Wochen muss gesetzt sein!',
             oFocusControl := chk_WeEvery,
          endif,
       of gl_TSKPL_StartType_Monthly  ::
-         if rbtn_MoSpecial.Checked 
-            and Empty(edt_MoSpecialDay.Text) 
+         if rbtn_MoSpecial.Checked
+            and Empty(edt_MoSpecialDay.Text)
             then
             Result        := false,
             cErrorText    := 'Tag des Monats "am" muss gesetzt sein!',
             oFocusControl := edt_MoSpecialDay,
-         endif,  
-         if Result and rbtn_MoSpecial.Checked 
+         endif,
+         if Result and rbtn_MoSpecial.Checked
             and ( Val(edt_MoSpecialDay.Text) > 20
                or Val(edt_MoSpecialDay.Text) < 0)
             then
             Result        := false,
             cErrorText    := 'Tag des Monats muss zwischen <0;20> sein!',
             oFocusControl := edt_MoSpecialDay,
-         endif,  
+         endif,
          if Result and rbtn_MoSpecial.Checked
             and cmb_MoWhen.ItemIndex = -1
             then
             Result        := false,
             cErrorText    := 'Grenze des Monats muss gesetzt sein!',
             oFocusControl := cmb_MoWhen,
-         endif,                            
+         endif,
       of gl_TSKPL_StartType_Yearly   ::
          if cmb_YeMonths.ItemIndex = -1 then
-            Result        := cmb_YeMonths.ItemIndex > -1,         
+            Result        := cmb_YeMonths.ItemIndex > -1,
             cErrorText    := 'Monat "im" muss gesetzt sein!',
             oFocusControl := cmb_YeMonths,
          endif,
@@ -192,7 +188,7 @@ function ValidateControls(cErrorText:R)
             cErrorText    := 'Wert "alle" muss gesetzt sein!',
             oFocusControl := edt_PeEvery,
          endif,
-         if Result and (Val(edt_PeEvery.Text) > 60 
+         if Result and (Val(edt_PeEvery.Text) > 60
             or Val(edt_PeEvery.Text) < 0)
             then
             Result        := false,
@@ -214,7 +210,7 @@ function ValidateControls(cErrorText:R)
          if Result and ALen(chkl_PeDays.CheckedItems) = 0 then
             Result        := false,
             cErrorText    := 'Tage "am" müssen gesetzt sein!',
-            oFocusControl := chkl_PeDays,           
+            oFocusControl := chkl_PeDays,
          endif,
       otherwise
          Result        := false,
@@ -222,7 +218,7 @@ function ValidateControls(cErrorText:R)
          oFocusControl := cmb_EtStartType,
    endcase,
 
-   if not Result and oForm.Visible and oFocusControl <> nil then    
+   if not Result and oForm.Visible and oFocusControl <> nil then
       MyFocusControl(oForm, oFocusControl),
    endif,
 end,
@@ -372,7 +368,12 @@ function SetStartOptions_Periodic()
 end,
 
 //******************************************************************************
-function SetTimePlanSettings(bSave := false)
+// Validiert die notwendigen Daten für einen Zeitplan. Wenn alles
+// passt (und der Datensatz im Edit-Mode ist), wird der erste Ausführungs-Zeitpunkt
+// des Tasks in die Datenbank geschrieben (TskPlTask:STARTFIRST)
+// Rückgabe: Boolean, true wenn Validierung der Zeitplan-Optionen erfolgreich
+//******************************************************************************
+function SetTimePlanSettings(bSave:L:=false)
 |
    aStartOptions, cErrorText, aCalcStartOptions, dtCalcNextStart, i, dtNow,
    aYear, aMonth, aDay, aHour, aMin, aSec, aMSec, dtStartFirst, aLastStart,
@@ -380,7 +381,7 @@ function SetTimePlanSettings(bSave := false)
 |
    Result := false,
    if not InsertMode(m_oTSKPLTASK) or bSave then
-      cErrorText := '',
+      cErrorText    := '',
       aStartOptions := {},
       if ValidateControls(cErrorText) then
          case Val(cmb_EtStartType.Value)
@@ -437,7 +438,7 @@ function SetTimePlanSettings(bSave := false)
          endif,
 
          m_oTSKPLTASK:START_OPT   := ArrToStr(aStartOptions),
-         aStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
+         aStartOptions            := StrToArr(m_oTSKPLTASK:START_OPT),
          m_oTSKPLTASK:STARTFIRST  := Int(dtp_EtStartsAt.Date),
          case Val(cmb_EtStartType.Value)
             of gl_TSKPL_StartType_Once     :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_OnUm.Time),
@@ -448,10 +449,10 @@ function SetTimePlanSettings(bSave := false)
             of gl_TSKPL_StartType_Periodic :: m_oTSKPLTASK:STARTFIRST += Frac(dtp_StartPeriodic.Time),
             otherwise
               MessageDlg('Fehler beim Rechnen:' + CRLF + 'Unbekannter Zeitplan', mtError),
-              MyFocusControl(oForm, cmb_EtStartType),       
+              MyFocusControl(oForm, cmb_EtStartType),
          endcase,
       endif,
-   endif,
+   endif,                                                                       // WriteLn('SetTimePlanSettings', Result),
 end,
 
 //******************************************************************************
@@ -474,7 +475,7 @@ end,
 //******************************************************************************
 function LoadTaskTimePlanDefaults()
 | aDays, aDaysWithValues, aMonths, i, aDayValues, aStartOptionsArray |
-   
+
    m_bDoNotEditMode := true,
 
    aDayValues := {2, 3, 4, 5, 6, 7, 1},
@@ -897,6 +898,7 @@ function SetDefaults()
    m_bToTimeFilterEdited           := False,
 
    pc_Main.ActivePage            := ts_Overview,
+   pc_Task.ActivePage            := ts_TaskDefinition,
    btn_EtChooseProgram.Caption   := '',
    btn_LogsChooseProgram.Caption := '',
 
@@ -1018,10 +1020,10 @@ function SetSchedulerName(oTable:O, bNewFlag:L)
             MessageDlg('Scheduler mit dem Namen <' +  cName + '> existiert bereits!', mtError),
             DbCancel(oTable),
          else
-            oTable:NAME := cName,  
+            oTable:NAME := cName,
             nId         := oTable:ID,
             if DbPost(oTable) then
-               if bInsertState then                  
+               if bInsertState then
                   TSKPL_WriteLog_Scheduler(oTable:ID, gl_TSKPL_EventCode_SchedulerCreated, 'Der Scheduler <' + Trim(oTable:NAME) + '> wurde erfolgreich erstellt.'),
                   m_SqlSchedule.CbRefresh(),
                   oTable.CbFindKey({nID}),
@@ -1227,64 +1229,110 @@ function CalculateNextTenExecutions(dtNextStart, aCalcStartOptions)
    i, dtTaskStop, nExecType,
    dtPrevExecution, aLastStart, aStartFirst
 |
-   if tm_NextExecutions.Enabled then
-      nExecType := KVU_Get(aCalcStartOptions, 'execution.Type', 0),
-      if nExecType = gl_TSKPL_StartType_Once then
-         lbl_TimePlanInfoCaption.Caption := 'Nächste Ausführung',
-      else
-         lbl_TimePlanInfoCaption.Caption := 'Nächste Ausführungen',
-      endif,
-      lbl_TimePlanInfo.Caption := '',
+   lbl_TimePlanInfo.Visible          := true,
+   tm_NextExecutions.Enabled         := true,
 
-      dtTaskStop := dtp_EtStopsAt.Date,
-      // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
-      // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
-      if (dtTaskStop = 0) then
-         dtTaskStop := GetDayEnd(GetAdsServerTime() + (365 * 12)),
-      else
-         dtTaskStop := GetDayEnd(dtTaskStop),
-      endif,
+   nExecType := KVU_Get(aCalcStartOptions, 'execution.Type', 0),
+   if nExecType = gl_TSKPL_StartType_Once then
+      pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführung',
+   else
+      pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführungen',
+   endif,
+   lbl_TimePlanInfo.Caption := '',
 
-      aLastStart := KVU_Get(aCalcStartOptions, 'execution.LastStart', ConvertDateTimeToArray(dtNextStart)),
-      KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
-      if Empty(KVU_Get(aCalcStartOptions, 'execution.StartFirst', nil)) then
-         KVU_Set(aCalcStartOptions, 'execution.StartFirst', dtp_EtStartsAt.Date),
-      endif,
-      dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
-      dtPrevExecution := dtNextStart,
-      aStartFirst     := KVU_Get(result, 'execution.StartFirst', dtNextStart),
+   dtTaskStop := dtp_EtStopsAt.Date,
+   // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+   // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
+   if (dtTaskStop = 0) then
+      dtTaskStop := GetDayEnd(GetAdsServerTime() + (365 * 12)),
+   else
+      dtTaskStop := GetDayEnd(dtTaskStop),
+   endif,
 
-      for i := 1 to 10 do
-         if (dtNextStart < dtTaskStop) then
-            if (aStartFirst <= dtNextStart) then
-               lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + FormatDateTime('dd.MM.yyyy HH:mm:ss', dtNextStart)
-                                           + ' ('+ ShortDayNames(DoW(dtNextStart)) + ')' + crlf,
-            else
-               // dtCalcNextStart ist wahrsheinlich 0
-               lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
-               break,
-            endif,
+   aLastStart := KVU_Get(aCalcStartOptions, 'execution.LastStart', ConvertDateTimeToArray(dtNextStart)),
+   KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
+   if Empty(KVU_Get(aCalcStartOptions, 'execution.StartFirst', nil)) then
+      KVU_Set(aCalcStartOptions, 'execution.StartFirst', dtp_EtStartsAt.Date),
+   endif,
+   dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
+   dtPrevExecution := dtNextStart,
+   aStartFirst     := KVU_Get(result, 'execution.StartFirst', dtNextStart),
+
+   for i := 1 to 10 do
+      if (dtNextStart < dtTaskStop) then
+         if (aStartFirst <= dtNextStart) then
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + FormatDateTime('dd.MM.yyyy HH:mm:ss', dtNextStart)
+                                        + ' ('+ ShortDayNames(DoW(dtNextStart)) + ')' + crlf,
          else
-            if (aStartFirst <= dtNextStart) then
-               lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Letzte Ausführung wäre am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtPrevExecution),
-            else
-               // dtCalcNextStart ist wahrsheinlich 0
-               lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
-            endif,
+            // dtCalcNextStart ist wahrsheinlich 0
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
             break,
          endif,
+      else
+         if (aStartFirst <= dtNextStart) then
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Finale Ausführung wäre am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtPrevExecution),
+         else
+            // dtCalcNextStart ist wahrsheinlich 0
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'abgelaufen',
+         endif,
+         break,
+      endif,
 
-         if nExecType = gl_TSKPL_StartType_Once then
-            break,
+      if nExecType = gl_TSKPL_StartType_Once then
+         break,
+      endif,
+
+      dtPrevExecution := dtNextStart,
+      dtNextStart := dtNextStart + EncodeTime(0, 0, 0, 1),
+      aLastStart := ConvertDateTimeToArray(dtNextStart),
+      KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
+      KVU_SET(aCalcStartOptions, 'execution.CalcBase', dtNextStart),
+      dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
+   end,
+
+end,
+
+//******************************************************************************
+// Berechnet die "nächsten Ausführungen" (Informativ) für den User in der GUI
+// @Result: keine Rückgabe
+//******************************************************************************
+function RefreshNextTenExecutionsInfo()
+| aTempStartOptions, dtNextStart, dtTaskStop, dtNow |
+
+   dtNow      := GetAdsServerTime(),
+   dtTaskStop := dtp_EtStopsAt.Date,
+   // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
+   // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
+   if (dtTaskStop = 0) then
+      dtTaskStop := dtNow + (365 * 12),
+   endif,
+
+   lbl_TimePlanInfo.Caption := '',
+   if (m_SqlTask.CbDataAvailable) then
+
+      // SetTimePlanSettings() -> Hier: Validiert nur, ob die Zeitplan-Einstellungen stimmig sind, ändert nichts, weil nicht in EditModes()
+      if SetTimePlanSettings() then
+
+         // nächsten Ausführungszeitpunkt für Task initial berechnen
+         aTempStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
+         KVU_Set(aTempStartOptions, 'execution.Type',       cmb_EtStartType.Value),
+         KVU_Set(aTempStartOptions, 'execution.RunUntil',   dtp_EtStopsAt.Date),
+
+         if dtTaskStop > dtNow then
+            case Val(cmb_EtStartType.Value)
+               of {gl_TSKPL_StartType_Periodic, gl_TSKPL_StartType_Weekly,
+                  gl_TSKPL_StartType_Daily, gl_TSKPL_StartType_Monthly} ::
+                  dtNextStart := m_oTSKPLTASK:START_NEXT,
+               otherwise
+                  dtNextStart := dtNow,
+            endcase,
+
+            CalculateNextTenExecutions(dtNextStart, aTempStartOptions),
+         else
+            lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Letzte Ausführung war am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtTaskStop),
          endif,
 
-         dtPrevExecution := dtNextStart,
-         dtNextStart := dtNextStart + EncodeTime(0, 0, 0, 1),
-         aLastStart := ConvertDateTimeToArray(dtNextStart),
-         KVU_Set(aCalcStartOptions, 'execution.LastStart', aLastStart),
-         KVU_SET(aCalcStartOptions, 'execution.CalcBase', dtNextStart),
-         dtNextStart := TSKPL_CalculateStart(aCalcStartOptions, dtNextStart),
-      end,
+      endif,
    endif,
 end,
 
@@ -1295,12 +1343,11 @@ end,
 //##############################################################################
 
 //******************************************************************************
-//
+// Event: Timer 'nächste Ausführungen' -> blendet die Liste der nächsten Ausführungen aus, sobald eine gewisse Zeit vergangen ist
 //******************************************************************************
 function tm_NextExecutionsTimer( Sender )
-   tm_NextExecutions.Enabled := false,
-   lbl_TimePlanInfoCaption.Visible := false,
-   lbl_TimePlanInfo.Visible        := false,
+   tm_NextExecutions.Enabled         := false,
+   lbl_TimePlanInfo.Visible          := false,
 end,
 
 //******************************************************************************
@@ -1404,7 +1451,7 @@ function t_SchedulerRefreshTimerTimer( Sender )
    if EditModes(m_oTSKPLTASK) then
       exit,
    endif,
-   
+
    startseq
       // Timer ausschalten bis alles erledigt ist
       t_SchedulerRefreshTimer.Enabled := False,
@@ -1500,8 +1547,8 @@ end,
 // Event: Beim Zeitplan Combobox Änderung
 //******************************************************************************
 function cmb_EtStartTypeChange( Sender )
+| oZeitplanPanel |
    lbl_TimePlanInfo.Caption := '',
-   lbl_TimePlanInfoCaption.Caption := 'Nächste Ausführungen',
 
    pnl_TimeplanDaily.Visible    := false,
    pnl_TimeplanWeekly.Visible   := false,
@@ -1511,26 +1558,26 @@ function cmb_EtStartTypeChange( Sender )
    pnl_TimeplanPeriodic.Visible := false,
 
    case Val(cmb_EtStartType.Value)
-      of gl_TSKPL_StartType_Once     ::
-         pnl_TimeplanOnce.Visible        := true,
-         pnl_TimeplanOnce.Left           := 0,
-         lbl_TimePlanInfoCaption.Caption := 'Nächste Ausführung',
-      of gl_TSKPL_StartType_Daily    ::
-         pnl_TimeplanDaily.Visible       := true,
-         pnl_TimeplanDaily.Left          := 0,
-      of gl_TSKPL_StartType_Weekly   ::
-         pnl_TimeplanWeekly.Visible      := true,
-         pnl_TimeplanWeekly.Left         := 0,
-      of gl_TSKPL_StartType_Monthly  ::
-         pnl_TimeplanMonthly.Visible     := true,
-         pnl_TimeplanMonthly.Left        := 0,
-      of gl_TSKPL_StartType_Yearly   ::
-         pnl_TimeplanAnnualy.Visible     := true,
-         pnl_TimeplanAnnualy.Left        := 0,
-      of gl_TSKPL_StartType_Periodic ::
-         pnl_TimeplanPeriodic.Visible    := true,
-         pnl_TimeplanPeriodic.Left       := 0,
+      of gl_TSKPL_StartType_Once     :: pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführung',
+      otherwise                         pnl_ContainerTimePlanInfo.Caption := 'Nächste Ausführungen',
    endcase,
+
+   case Val(cmb_EtStartType.Value)
+      of gl_TSKPL_StartType_Once     :: oZeitplanPanel                 := pnl_TimeplanOnce,
+      of gl_TSKPL_StartType_Daily    :: oZeitplanPanel                 := pnl_TimeplanDaily,
+      of gl_TSKPL_StartType_Weekly   :: oZeitplanPanel                 := pnl_TimeplanWeekly,
+      of gl_TSKPL_StartType_Monthly  :: oZeitplanPanel                 := pnl_TimeplanMonthly,
+      of gl_TSKPL_StartType_Yearly   :: oZeitplanPanel                 := pnl_TimeplanAnnualy,
+      of gl_TSKPL_StartType_Periodic :: oZeitplanPanel                 := pnl_TimeplanPeriodic,
+      otherwise                         oZeitplanPanel := nil,
+   endcase,
+
+   if not empty(oZeitplanPanel) then
+      oZeitplanPanel.Left    := 15,
+      oZeitplanPanel.Top     := 195,
+      oZeitplanPanel.Caption := cmb_EtStartType.Text,
+      oZeitplanPanel.Visible := true,
+   endif,
 
    if not m_bStartTypeManualChange then
       if Val(cmb_EtStartType.Value) = gl_TSKPL_StartType_Once then
@@ -1568,9 +1615,7 @@ end,
 // @Result: null
 //******************************************************************************
 function ds_TSKPLTASKScroll_Update(Sender)
-|
-  dtNextStart, aTempStartOptions, dtTaskStop, aTimeBound, bHasNoTimeBound, dtNow
-|
+
    if not EditModes(m_oMainTable) and not EditModes(m_oTSKPLTASK) then
       m_SqlTaskLog.Active := False,
       m_SqlTaskLog.Sql := 'Select * From "TSKPLLOG.ADT" WHERE TASK_ID = ' + Str(m_SqlTask:ID) +
@@ -1581,48 +1626,7 @@ function ds_TSKPLTASKScroll_Update(Sender)
       SynchronizeLogs(),
       ActionsEnabled(),
       RefreshControls(),
-      dtNow := GetAdsServerTime(),
-
-      dtTaskStop := dtp_EtStopsAt.Date,
-      // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
-      // "Jetzt + 12 Jahre" ermitteln (Wenn der typ Jährlich ist brauchen wir mehr als 10 jahre)
-      if (dtTaskStop = 0) then
-         dtTaskStop := dtNow + (365 * 12),
-      endif,
-
-      lbl_TimePlanInfo.Caption := '',
-      if (m_SqlTask.CbDataAvailable) then
-         // Setz noetige Einstellungen in m_oTSKPLTASK:START_OPT
-         if SetTimePlanSettings() then
-            // nächsten Ausführungszeitpunkt für Task initial berechnen
-            aTempStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
-            KVU_Set(aTempStartOptions, 'execution.Type',       cmb_EtStartType.Value),
-            //KVU_Set(aTempStartOptions, 'execution.StartFirst', dtp_EtStartsAt.Date),
-            KVU_Set(aTempStartOptions, 'execution.RunUntil',   dtp_EtStopsAt.Date),
-            //KVU_Set(aTempStartOptions, 'execution.LastStart',  ConvertDateTimeToArray(m_oTSKPLTASK:START_NEXT)),
-            aTimeBound      := KVU_GET(aTempStartOptions, 'execution.TimeBound', {}),
-            bHasNoTimeBound := (ALen(aTimeBound) = 0),
-            if dtTaskStop > dtNow then
-               case Val(cmb_EtStartType.Value)
-                  of {gl_TSKPL_StartType_Periodic, gl_TSKPL_StartType_Weekly,
-                     gl_TSKPL_StartType_Daily, gl_TSKPL_StartType_Monthly} ::
-                     dtNextStart := m_oTSKPLTASK:START_NEXT,
-
-                     //if (Int(dtp_EtStartsAt.Date) + Frac(dtp_DaAt.Time)) <= dtNow then
-                     //    KVU_Set(result, 'execution.StartFirst', Int(dtNow) + Frac(dtNow)),
-                     //else
-                     //    KVU_Set(result, 'execution.StartFirst', Int(dtp_EtStartsAt.Date) + Frac(dtp_DaAt.Time)),
-                     //endif,
-                  otherwise
-                     dtNextStart := dtNow,
-               endcase,
-
-               CalculateNextTenExecutions(dtNextStart, aTempStartOptions),
-            else
-               lbl_TimePlanInfo.Caption := lbl_TimePlanInfo.Caption + 'Letzte Ausführung war am' + CRLF + FormatDateTime('dd.mm.yyyy HH:mm:ss', dtTaskStop),
-            endif,
-         endif,
-      endif,
+      RefreshNextTenExecutionsInfo(),
       grd_Logs.GridOrder := 'ERSTELLT DESC',
    else
       Abort(true),
@@ -1688,6 +1692,13 @@ end,
 // Actionhandler
 //##############################################################################
 //##############################################################################
+
+//******************************************************************************
+// Action: Nächste Ausführungen berechnen (Informativ)
+//******************************************************************************
+function A_CalcNextExecutionsExecute( Sender )
+  RefreshNextTenExecutionsInfo(),
+end,
 
 //******************************************************************************
 // Action: Task Refresh
@@ -1978,7 +1989,7 @@ function A_CancelExecute( Sender )
       t_SchedulerRefreshTimer.Enabled := true,
       m_SqlTaskLog.Active             := true,
       grd_Logs.Enabled                := true,
-      
+
       m_oTSKPLTASK.CbCancel(),
       RefreshControls(),
       LoadTaskTimePlanDefaults(),
@@ -2010,13 +2021,13 @@ function A_SaveExecute( Sender )
       nCurrentSchedulerID      := m_oTSKPLTASK:SCHEDUL_ID,
       bTaskTransfered          := nCurrentSchedulerID <> nNewSchedulerID,
       bInsertMode              := InsertMode(m_oTSKPLTASK),
-      // Setz noetige Einstellungen in m_oTSKPLTASK:START_OPT
+
+      // Setzt noetige Einstellungen in m_'TSKPLTASK:START_OPT' und schreibt den den ersten Startzeitpunkt in 'TSKPLTASK:STARTFIRST'
       if SetTimePlanSettings(true) then
-         startseq      
+         startseq
             // nächsten Ausführungszeitpunkt für Task initial berechnen
             aTempStartOptions := StrToArr(m_oTSKPLTASK:START_OPT),
             KVU_Set(aTempStartOptions, 'execution.Type',       cmb_EtStartType.Value),
-            //KVU_Set(aTempStartOptions, 'execution.StartFirst', Int(dtp_EtStartsAt.Date)),
 
             dtTaskStop := dtp_EtStopsAt.Date,
             // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
@@ -2028,11 +2039,9 @@ function A_SaveExecute( Sender )
 
             if dtTaskStop > GetAdsServerTime() then
                KVU_Set(aTempStartOptions, 'execution.RunUntil', dtp_EtStopsAt.Date),
-               dtNextStart                     := TSKPL_CalculateStart(aTempStartOptions, GetAdsServerTime()),
-               bAlgorithmError                 := not((ValType(dtNextStart) = 'N') or (ValType(dtNextStart) = 'D')),
-               lbl_TimePlanInfoCaption.Visible := true,
-               lbl_TimePlanInfo.Visible        := true,
-               tm_NextExecutions.Enabled       := true,
+               dtNextStart                       := TSKPL_CalculateStart(aTempStartOptions, GetAdsServerTime()),
+               bAlgorithmError                   := not((ValType(dtNextStart) = 'N') or (ValType(dtNextStart) = 'D')),
+
                CalculateNextTenExecutions(dtNextStart, aTempStartOptions),
             else
                KVU_Set(aTempStartOptions, 'execution.RunUntil', 0),
@@ -2050,7 +2059,7 @@ function A_SaveExecute( Sender )
                if bInsertMode then
                   m_oMainTable.CbFindKey({nNewSchedulerID}),
                   m_SqlSchedule.CbGoTo(m_oMainTable.CbRecNo),
-                  m_oTSKPLTASK.CbCancelRange(), 
+                  m_oTSKPLTASK.CbCancelRange(),
                   m_oTSKPLTASK.CbFindKey({nNewSchedulerID,nTaskID}),
                   m_SqlTask.CbGoTo(m_oTSKPLTASK.CbRecNo),
                endif,
@@ -2091,7 +2100,6 @@ function A_SaveExecute( Sender )
       MyFocusControl(oForm, cmb_EtStartType),
    endif,
 end,
-
 //******************************************************************************
 // Aktion: Neue Task erstellen
 //******************************************************************************
@@ -2206,7 +2214,6 @@ function InitForm()
 
    oForm.PositionSaveID := m_cPositionSaveID,
    oForm.Name           := GFU_CalcFormularName('', oForm, m_oOwner),
-   oForm.OrigCapt       := ProgName(),
 end,
 
 //******************************************************************************
@@ -2215,12 +2222,14 @@ end,
 //******************************************************************************
 function LoadGUI()
    // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_CalcNextExecutions      := FindObject(oForm, "A_CalcNextExecutions"),
    A_Cancel                  := FindObject(oForm, "A_Cancel"),
    A_ChooseFilterProgram     := FindObject(oForm, "A_ChooseFilterProgram"),
    A_ChooseProgram           := FindObject(oForm, "A_ChooseProgram"),
    A_CreateTask              := FindObject(oForm, "A_CreateTask"),
    A_Delete                  := FindObject(oForm, "A_Delete"),
    A_FilterExecute           := FindObject(oForm, "A_FilterExecute"),
+   A_HelpContent             := FindObject(oForm, "A_HelpContent"),
    A_ResetFilter             := FindObject(oForm, "A_ResetFilter"),
    A_Save                    := FindObject(oForm, "A_Save"),
    A_SchedulerDelete         := FindObject(oForm, "A_SchedulerDelete"),
@@ -2257,6 +2266,9 @@ function LoadGUI()
    bbtn_TaskDeactivate       := FindObject(oForm, "bbtn_TaskDeactivate"),
    BeBarButton1              := FindObject(oForm, "BeBarButton1"),
    BeBarButton2              := FindObject(oForm, "BeBarButton2"),
+   beBtn_CalcNextExecutions  := FindObject(oForm, "beBtn_CalcNextExecutions"),
+   BeSplitter1               := FindObject(oForm, "BeSplitter1"),
+   BeSplitter2               := FindObject(oForm, "BeSplitter2"),
    btn_EtChooseProgram       := FindObject(oForm, "btn_EtChooseProgram"),
    btn_LogsChooseProgram     := FindObject(oForm, "btn_LogsChooseProgram"),
    btn_RefreshSchedule       := FindObject(oForm, "btn_RefreshSchedule"),
@@ -2339,7 +2351,6 @@ function LoadGUI()
    lbl_EtUser                := FindObject(oForm, "lbl_EtUser"),
    lbl_LogsDepartment        := FindObject(oForm, "lbl_LogsDepartment"),
    lbl_LogsFrom              := FindObject(oForm, "lbl_LogsFrom"),
-   lbl_LogsFromTime          := FindObject(oForm, "lbl_LogsFromTime"),
    lbl_logsLocation          := FindObject(oForm, "lbl_logsLocation"),
    lbl_LogsProgramm          := FindObject(oForm, "lbl_LogsProgramm"),
    lbl_LogsSchedulers        := FindObject(oForm, "lbl_LogsSchedulers"),
@@ -2360,7 +2371,6 @@ function LoadGUI()
    lbl_StartDate             := FindObject(oForm, "lbl_StartDate"),
    lbl_StartKindDescription  := FindObject(oForm, "lbl_StartKindDescription"),
    lbl_TimePlanInfo          := FindObject(oForm, "lbl_TimePlanInfo"),
-   lbl_TimePlanInfoCaption   := FindObject(oForm, "lbl_TimePlanInfoCaption"),
    lbl_Tolerance             := FindObject(oForm, "lbl_Tolerance"),
    lbl_WeAm                  := FindObject(oForm, "lbl_WeAm"),
    lbl_WeUm                  := FindObject(oForm, "lbl_WeUm"),
@@ -2370,37 +2380,27 @@ function LoadGUI()
    lbl_YeOnMonth             := FindObject(oForm, "lbl_YeOnMonth"),
    pc_Main                   := FindObject(oForm, "pc_Main"),
    pc_Task                   := FindObject(oForm, "pc_Task"),
-   pnl_AtMonthly             := FindObject(oForm, "pnl_AtMonthly"),
+   pnl_4                     := FindObject(oForm, "pnl_4"),
+   pnl_5                     := FindObject(oForm, "pnl_5"),
+   pnl_6                     := FindObject(oForm, "pnl_6"),
    pnl_ContainerTimePlanInfo := FindObject(oForm, "pnl_ContainerTimePlanInfo"),
-   pnl_Cycle                 := FindObject(oForm, "pnl_Cycle"),
-   pnl_EveryXWeeks           := FindObject(oForm, "pnl_EveryXWeeks"),
    pnl_LogsFilterCenter      := FindObject(oForm, "pnl_LogsFilterCenter"),
    pnl_LogsFilterLeft        := FindObject(oForm, "pnl_LogsFilterLeft"),
    pnl_LogsFilterRight       := FindObject(oForm, "pnl_LogsFilterRight"),
-   pnl_LogsFrom              := FindObject(oForm, "pnl_LogsFrom"),
-   pnl_LogsProgram           := FindObject(oForm, "pnl_LogsProgram"),
-   pnl_LogsTo                := FindObject(oForm, "pnl_LogsTo"),
    pnl_LogsTop               := FindObject(oForm, "pnl_LogsTop"),
    pnl_Main                  := FindObject(oForm, "pnl_Main"),
-   pnl_Name                  := FindObject(oForm, "pnl_Name"),
-   pnl_PeriodLimitTime       := FindObject(oForm, "pnl_PeriodLimitTime"),
-   pnl_Program               := FindObject(oForm, "pnl_Program"),
    pnl_Scheduler             := FindObject(oForm, "pnl_Scheduler"),
    pnl_TaskDetails           := FindObject(oForm, "pnl_TaskDetails"),
    pnl_TaskDetailsLeft       := FindObject(oForm, "pnl_TaskDetailsLeft"),
-   pnl_TaskDetailsRight      := FindObject(oForm, "pnl_TaskDetailsRight"),
    pnl_Tasks                 := FindObject(oForm, "pnl_Tasks"),
    pnl_TasksGrid             := FindObject(oForm, "pnl_TasksGrid"),
    pnl_TimePlanAnnualy       := FindObject(oForm, "pnl_TimePlanAnnualy"),
    pnl_TimePlanBasics        := FindObject(oForm, "pnl_TimePlanBasics"),
    pnl_TimePlanDaily         := FindObject(oForm, "pnl_TimePlanDaily"),
-   pnl_TimePlanHeader        := FindObject(oForm, "pnl_TimePlanHeader"),
    pnl_TimePlanMonthly       := FindObject(oForm, "pnl_TimePlanMonthly"),
    pnl_TimePlanOnce          := FindObject(oForm, "pnl_TimePlanOnce"),
    pnl_TimePlanPeriodic      := FindObject(oForm, "pnl_TimePlanPeriodic"),
    pnl_TimePlanWeekly        := FindObject(oForm, "pnl_TimePlanWeekly"),
-   pnl_Tolerance             := FindObject(oForm, "pnl_Tolerance"),
-   pnl_ToleranceOptions      := FindObject(oForm, "pnl_ToleranceOptions"),
    pnl_Top                   := FindObject(oForm, "pnl_Top"),
    rbtn_MoErsten             := FindObject(oForm, "rbtn_MoErsten"),
    rbtn_MoLetzten            := FindObject(oForm, "rbtn_MoLetzten"),
@@ -2413,6 +2413,17 @@ function LoadGUI()
    ts_TaskDefinition         := FindObject(oForm, "ts_TaskDefinition"),
    ts_TaskTimeSettings       := FindObject(oForm, "ts_TaskTimeSettings"),
    // @VZE@ der vorangehende Teil wird automatisch gepflegt
+
+
+   // Benutzereinstellungen für Speichern/Abbrechen Buttons setzen
+   A_Save.tag                      := 32165479,
+   A_Cancel.tag                    := 32165478,
+
+   beBtn_CalcNextExecutions.Caption  := '',
+   beBtn_CalcNextExecutions.ShowHint := true,
+
+   pnl_ContainerTimePlanInfo.Top   := 195,
+   tm_NextExecutions.Interval      := 30000, // So lange wird die Info "nächste Ausführungen" angezeigt und danach ausgeblendet
 end,
 
 //******************************************************************************

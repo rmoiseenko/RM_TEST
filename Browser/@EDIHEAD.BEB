@@ -3,7 +3,6 @@ object GridProp: TCalcDBGridProp
   DeleteDefColumns = True
   AvailDataSets.Strings = (
     'TBeDBGet.')
-  SelComplLines = True
   ShowSelAlways = True
   TopBottomRowLinesOnly = True
 end
@@ -171,7 +170,7 @@ object Col_3: TBeAttr
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 145
+  BandWidth = 114
   Template = 'TdagBeMemo'
   Expanded = False
 end
@@ -179,7 +178,7 @@ object Col_4: TBeAttr
   Caption = 'Status'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'iif(not Empty(ID), ColumnResult, '#39#39')'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(STATUS))'
@@ -189,6 +188,7 @@ object Col_4: TBeAttr
   DbServer = 'EDIHEAD'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 'clWhite'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, STATUS)'
   CanMoveCol = True
   CanResizeCol = True

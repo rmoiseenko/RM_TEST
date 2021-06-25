@@ -3,7 +3,6 @@ object GridProp: TCalcDBGridProp
   DeleteDefColumns = True
   AvailDataSets.Strings = (
     'TBeDBGet.')
-  SelComplLines = True
   ShowSelAlways = True
   TopBottomRowLinesOnly = True
 end
@@ -48,12 +47,11 @@ object Col_6: TBeAttr
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 216
+  BandWidth = 218
   Template = 'TdagBeMemo'
   Expanded = False
 end
 object Col_4: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -65,7 +63,7 @@ object Col_4: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -77,19 +75,19 @@ object Col_4: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 8
+  BandWidth = 6
   Template = 'TdagBeMemo'
   Expanded = False
 end
@@ -136,7 +134,6 @@ object Col_1: TBeAttr
   Expanded = False
 end
 object Col_5: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -148,7 +145,7 @@ object Col_5: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -160,12 +157,12 @@ object Col_5: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
@@ -219,7 +216,6 @@ object Col_16: TBeAttr
   Expanded = False
 end
 object Col_7: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -231,7 +227,7 @@ object Col_7: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -243,12 +239,12 @@ object Col_7: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
@@ -386,7 +382,6 @@ object Col_12: TBeAttr
   Expanded = False
 end
 object Col_8: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -398,7 +393,7 @@ object Col_8: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -410,12 +405,12 @@ object Col_8: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
@@ -430,7 +425,7 @@ object Col_20: TBeAttr
   Caption = 'Prozessschritt'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult '
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(PROC_STEP)) '
@@ -440,6 +435,11 @@ object Col_20: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 
+    '// Da es noch keine Funktion zur automtischen Berechnung der Fon' +
+    't-Color gibt - hier manuell gemacht'#13#10'iif(PROC_STEP = gl_EDI_Proc' +
+    'essStep_EDIMSG_Inbound_Imported or'#13#10'    PROC_STEP = gl_EDI_Proce' +
+    'ssStep_EDIMSG_Outbound_Sent,'#13#10'    clWhite,'#13#10'    clNone)'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, PROC_STEP)'
   CanMoveCol = True
   CanResizeCol = True
@@ -471,7 +471,6 @@ object Col_20: TBeAttr
   Expanded = False
 end
 object Col_13: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -483,7 +482,7 @@ object Col_13: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -495,12 +494,12 @@ object Col_13: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
@@ -515,7 +514,7 @@ object Col_23: TBeAttr
   Caption = 'Status'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'iif(empty(ID), '#39#39', ColumnResult) '
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(STATUS))'
@@ -525,6 +524,7 @@ object Col_23: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 'clWhite'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, STATUS)'
   CanMoveCol = True
   CanResizeCol = True
@@ -550,11 +550,6 @@ object Col_23: TBeAttr
   FieldCtrlType = fctNone
   SumField = False
   ImageList = 'ImageListMain'
-  ImageIndex = 
-    '| nResult |'#13#10#13#10'case STATUS'#13#10'   of gl_EDI_ProcessStatus_Error :: ' +
-    '  nResult := 605,'#13#10'   of gl_EDI_ProcessStatus_Warning :: nResult' +
-    ' := 604,'#13#10'   otherwise'#13#10'      nResult := -1,'#13#10'endcase,'#13#10#13#10'nResul' +
-    't'
   ImageAlignV = ialvCenter
   Band = 0
   BandSize = 1
@@ -566,7 +561,7 @@ object Col_0: TBeAttr
   Caption = 'Automat. Verarbeitung'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'iif(empty(ID), '#39#39', ColumnResult)'
   ColResultBlock = 'PROCESS'
@@ -658,7 +653,7 @@ object Col_9: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -670,12 +665,12 @@ object Col_9: TBeAttr
   UserDefined = True
   CaptionFont.Charset = DEFAULT_CHARSET
   CaptionFont.Color = clWindowText
-  CaptionFont.Height = -15
+  CaptionFont.Height = -13
   CaptionFont.Name = 'Segoe UI'
   CaptionFont.Style = []
   TextFont.Charset = DEFAULT_CHARSET
   TextFont.Color = clWindowText
-  TextFont.Height = -15
+  TextFont.Height = -13
   TextFont.Name = 'Segoe UI'
   TextFont.Style = []
   FieldCtrlType = fctNone
@@ -690,7 +685,7 @@ object Col_3: TBeAttr
   Caption = 'Testnachricht'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult'
   ColResultBlock = 'TEST'
@@ -724,7 +719,7 @@ object Col_3: TBeAttr
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 85
+  BandWidth = 89
   Template = 'TdagBeBoolean'
   Expanded = False
 end

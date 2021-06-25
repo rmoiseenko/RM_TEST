@@ -33,6 +33,7 @@
    // Task Status
    gl_TSKPL_TaskStatus_Ready:_N   := 10,
    gl_TSKPL_TaskStatus_Running:_N := 20,
+   gl_TSKPL_TaskStatus_Finished:_N:= 30, // gleich wie *gl_TSKPL_TaskStatus_Ready* aber kann niemals *gl_TSKPL_TaskStatusGui_Missed* sein
 
    // Task Status Gui
    gl_TSKPL_TaskStatusGui_Inactive_SchedulerDeactivated:_N := 10,
@@ -414,9 +415,15 @@ end,
 //******************************************************************************
 function _TSKPL_GetTaskStatusGUI(nTaskId:N, nTaskStatus:N)
 |
-   bTaskActive, dtTaskStartNext,
+   bTaskActive, dtTaskStartNext, bTaskFinised,
    nSchedulerId, nSchedulerStatus, nSchedulerStatusGUI
 |
+   if nTaskStatus = gl_TSKPL_TaskStatus_Finished then
+     bTaskFinised := true,
+     nTaskStatus := gl_TSKPL_TaskStatus_Ready,
+   else
+     bTaskFinised := false,
+   endif,
 
    bTaskActive         := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'ACTIVE'),
    dtTaskStartNext     := Lookup(waTSKPLTASK, 'ID', {{nTaskId}}, 'START_NEXT'),
@@ -430,7 +437,7 @@ function _TSKPL_GetTaskStatusGUI(nTaskId:N, nTaskStatus:N)
          if bTaskActive then
            case nSchedulerStatusGUI
               of gl_TSKPL_SchedulerStatusGUI_OK_Running ::
-                    if (dtTaskStartNext <> 0) and (dtTaskStartNext < GetAdsServerTime()) then
+                    if (not bTaskFinised) and (dtTaskStartNext <> 0) and (dtTaskStartNext < GetAdsServerTime()) then
                        Result := gl_TSKPL_TaskStatusGUI_Missed,
                     else
                        Result := gl_TSKPL_TaskStatusGUI_Ready,

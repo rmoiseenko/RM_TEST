@@ -62,6 +62,12 @@ end,
 
 startseq
    m_oDM := CreateObject('TbeDbGet', 'DMS_ARTNR'),
-   sta//##############################################################################
-// Alle einzelnen globalen Include Dateien für das Projekt-Management
-//######################################################
+   startseq
+      OpenDataBase(m_oDM),
+      ArtNr_Reorg(),
+   always
+      DestroyObject(m_oDM),
+   stopseq,
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj())
+stopseq,

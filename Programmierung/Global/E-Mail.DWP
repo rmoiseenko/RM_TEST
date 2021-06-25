@@ -73,7 +73,7 @@ function EMailFunc(oBatchMail)
    function DetermineOrderNo(nReceiptType:N, nReceiptNo:N)
    | oDM, oDab020, oDab600 |
 
-      result := '',
+      result := -1,
       oDM    := DbGetDataModuleFromPool('DM_EMailFunc_OrdNo'),
       startseq
          case nReceiptType

@@ -1,0 +1,13 @@
+// Im Hintergrund laufendens Überwachungs-Programm starten, dass die
+// Hinweis-Panels ein- / ausblendet bzw. aktualisiert
+if CBApplication.LoadedModule = belmMain then
+   // memo-notify für den User aktiv?
+   if empty(gl_GMNU_ActiveForRoleKey) or CbUserHasRole(gl_GMNU_ActiveForRoleKey) then
+      startseq,
+         CallResident('Groupware\memo-notify\MemoWatcher', 'PERSIST'),
+      onerror
+         GU_ShowStdErrorMessage('Fehler beim Initialisieren des Programms "Groupware\memo-notify\MemoWatcher"',
+                                GetErrorObj()),
+      stopseq,
+   endif,
+endif,

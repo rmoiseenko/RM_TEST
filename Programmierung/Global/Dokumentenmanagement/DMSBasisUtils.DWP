@@ -296,7 +296,7 @@ function _DMSU_AppendNewDocument(oDM, oDmsVer, nDocType, nDocNo, nVersNo, cVersB
       oDmsVer:VERS_NR    := nVersNo,
       oDmsVer:ART        := nDocType,
       if nMasterWorkarea = waDab010 then
-         oDmsVer:ARTNR   := lookup(waDab010, 'DAB01G', {{nMasterID}}, 'ARTNR', ''),
+         oDmsVer:ARTNR   := lookup(waDab010, 'DAB01G', {{nMasterID}}, 'ARTNR', '', , , iif(gl_DMSU_ShowAllDocsForArtNr, -2, -1)), //Falls Dokumente Standortübergreifend sein sollen, Standortlogik ausschalten
       endif,
 
    always
@@ -381,7 +381,7 @@ function _DMSU_PostDocument(oDM, oDmsVer, bCommit)
    SetErrorIf(not oDM.CbTransaction_Active(), 'Datemodul muss sich in Transaktion befinden'),
 
    nDocNo := oDmsVer:DOC_NR,
-   oDmsVer:SUCHE := PrepareTextForFts(waDMSVER, 'SUCHE', oDmsVer:NAME + crlf + RtfToText(oDmsVer:MEMO) + crlf + oDmsVer:VERS_BEZ + crlf + oDmsVer:FILE_TYPE + crlf + oDmsVer:LINKS),
+   //oDmsVer:SUCHE := PrepareTextForFts(waDMSVER, 'SUCHE', oDmsVer:NAME + crlf + RtfToText(oDmsVer:MEMO) + crlf + oDmsVer:VERS_BEZ + crlf + oDmsVer:FILE_TYPE + crlf + oDmsVer:LINKS),
    if DbPost(oDmsVer) then
       if bCommit then
          DbCommit(oDM.ADSConnection),

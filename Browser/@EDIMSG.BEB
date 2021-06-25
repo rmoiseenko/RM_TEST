@@ -11,7 +11,7 @@ object Col_5: TBeAttr
   Caption = 'Autom. Verarbeiten'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult'
   ColResultBlock = 'PROCESS'
@@ -106,7 +106,7 @@ object Col_13: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -189,7 +189,7 @@ object Col_14: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -272,7 +272,7 @@ object Col_15: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -441,7 +441,7 @@ object Col_16: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -473,7 +473,7 @@ object Col_7: TBeAttr
   Caption = 'Prozessrichtung'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(DIRECTION))'
@@ -483,6 +483,7 @@ object Col_7: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 'clWhite'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, DIRECTION)'
   CanMoveCol = True
   CanResizeCol = True
@@ -526,7 +527,7 @@ object Col_17: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -558,7 +559,7 @@ object Col_4: TBeAttr
   Caption = 'Prozessschritt'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(PROC_STEP))'
@@ -568,6 +569,11 @@ object Col_4: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 
+    '// Da es noch keine Funktion zur automtischen Berechnung der Fon' +
+    't-Color gibt - hier manuell gemacht'#13#10'iif(PROC_STEP = gl_EDI_Proc' +
+    'essStep_EDIMSG_Inbound_Imported or'#13#10'    PROC_STEP = gl_EDI_Proce' +
+    'ssStep_EDIMSG_Outbound_Sent,'#13#10'    clWhite,'#13#10'    clNone)'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, PROC_STEP)'
   CanMoveCol = True
   CanResizeCol = True
@@ -599,7 +605,6 @@ object Col_4: TBeAttr
   Expanded = False
 end
 object Col_20: TBeAttr
-  Caption = '<Neue Spalte>'
   Width = 10
   DisplayWidth = 10
   Alignment = taLeftJustify
@@ -611,7 +616,7 @@ object Col_20: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False
@@ -643,7 +648,7 @@ object Col_11: TBeAttr
   Caption = 'Status'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'iif(empty(ID), '#39#39', ColumnResult)'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(STATUS))'
@@ -653,6 +658,7 @@ object Col_11: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 'clWhite'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, STATUS)'
   CanMoveCol = True
   CanResizeCol = True
@@ -678,14 +684,9 @@ object Col_11: TBeAttr
   FieldCtrlType = fctNone
   SumField = False
   ImageList = 'ImageListMain'
-  ImageIndex = 
-    '| nResult |'#13#10#13#10'case STATUS'#13#10'   of gl_EDI_ProcessStatus_Error :: ' +
-    '  nResult := 605,'#13#10'   of gl_EDI_ProcessStatus_Warning :: nResult' +
-    ' := 604,'#13#10'   otherwise'#13#10'      nResult := -1,'#13#10'endcase,'#13#10#13#10'nResul' +
-    't'
   Band = 0
   BandSize = 1
-  BandWidth = 74
+  BandWidth = 120
   Template = 'TdagBeMemo'
   Expanded = False
 end
@@ -727,7 +728,7 @@ object Col_6: TBeAttr
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 149
+  BandWidth = 103
   Template = 'TdagBeBoolean'
   Expanded = False
 end
@@ -786,7 +787,7 @@ object Col_18: TBeAttr
   AllowEdit = False
   DbServer = '<BROWSER>'
   ForeColor = 536870911
-  BackColor = 15921906
+  BackColor = 536870911
   CanMoveCol = True
   CanResizeCol = True
   DbReadRights = False

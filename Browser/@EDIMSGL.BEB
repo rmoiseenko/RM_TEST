@@ -261,7 +261,7 @@ object Col_6: TBeAttr
   Caption = 'Prozessschritt'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'ColumnResult'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(PROC_STEP))'
@@ -271,6 +271,11 @@ object Col_6: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 
+    '// Da es noch keine Funktion zur automtischen Berechnung der Fon' +
+    't-Color gibt - hier manuell gemacht'#13#10'iif(PROC_STEP = gl_EDI_Proc' +
+    'essStep_EDIMSG_Inbound_Imported or'#13#10'    PROC_STEP = gl_EDI_Proce' +
+    'ssStep_EDIMSG_Outbound_Sent,'#13#10'    clWhite,'#13#10'    clNone)'
   BackColorBlock = 'AttribColor(Self.BeAttr.AttribID, PROC_STEP)'
   CanMoveCol = True
   CanResizeCol = True
@@ -297,7 +302,7 @@ object Col_6: TBeAttr
   SumField = False
   Band = 0
   BandSize = 1
-  BandWidth = 94
+  BandWidth = 126
   Template = 'TdagBeMemo'
   Expanded = False
 end
@@ -305,7 +310,7 @@ object Col_8: TBeAttr
   Caption = 'Status'
   Width = 10
   DisplayWidth = 10
-  Alignment = taLeftJustify
+  Alignment = taCenter
   Freezed = False
   FuncBlock = 'iif(empty(ID), '#39#39', ColumnResult)'
   ColResultBlock = 'AttribDispVal(Self.BeAttr.AttribID, Str(STATUS))'
@@ -315,6 +320,7 @@ object Col_8: TBeAttr
   DbServer = 'EDIMSG'
   ForeColor = 536870911
   BackColor = 536870911
+  ForeColorBlock = 'clWhite'
   BackColorBlock = 
     'iif(empty(ID), clNone, AttribColor(Self.BeAttr.AttribID, str(STA' +
     'TUS)))'
@@ -341,11 +347,10 @@ object Col_8: TBeAttr
   TextFont.Style = []
   FieldCtrlType = fctNone
   SumField = False
-  ImageIndex = 'AttribImageInfo(Self.BeAttr.AttribID, Str(STATUS))'
   ImageAlignV = ialvCenter
   Band = 0
   BandSize = 1
-  BandWidth = 108
+  BandWidth = 110
   Template = 'TdagBeMemo'
   Expanded = False
 end

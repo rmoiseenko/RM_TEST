@@ -29,6 +29,7 @@
 
    aDMSBSP_WertFelder,
    aDMSVER_WertFelder,
+   cDMSVer_FTS_UpdateCodeblock,
    cFeldBez,
    cFeldPraefix,
 
@@ -60,8 +61,10 @@ nMMVerantwortlich   := 7009,
 //##############################################################################
 //##############################################################################
 
-oTableDef_DMSVER := PCKGU_TableDefinition_Create('DMSVER', nWorkarea_DMSVER, 'Dokumentenversion' ,         '', True, False), // TODO: SUCHE-Feld fehlt noch, geht aktuell nicht mit den Package Utils
-oTableDef_DMSBSP := PCKGU_TableDefinition_Create('DMSBSP', nWorkarea_DMSBSP, 'Dokumentenspeicher',         '', True, False),
+cDMSVer_FTS_UpdateCodeblock := "PrepareTextForFts(waDMSVER, 'SUCHE', NAME + crlf + RtfToText(MEMO) + crlf + " + crlf +
+                               "VERS_BEZ + crlf + FILE_TYPE + crlf + LINKS)",
+oTableDef_DMSVER            := PCKGU_TableDefinition_Create('DMSVER', nWorkarea_DMSVER, 'Dokumentenversion' ,         '', True, True, cDMSVer_FTS_UpdateCodeblock),
+oTableDef_DMSBSP            := PCKGU_TableDefinition_Create('DMSBSP', nWorkarea_DMSBSP, 'Dokumentenspeicher',         '', True, False),
 
 //##############################################################################
 //##############################################################################
@@ -81,16 +84,18 @@ PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'VERS_NR'   ,    0, 0, ftIntege
                                                                                                                                    0, 0, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', 'false', '', '', '', ''),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'VERS_BEZ'  ,   50, 0, ftString,               'Versions-Bezeichnung'         , 'Frei vergebbare Bezeichnung zu einer Dokumenten-Version',
                                                                                                                                    0, 0, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
+PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'ARTNR'     ,   mbeArtNoLen, 0, ftString,      'Artikelnummer zum Dokument'   , '',
+                                                                                                                                   1, 0, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'ART'       ,    0, 0, gl_PCKGU_ftShort,       'Dokumenten-Art'               , 'Zeigt an, ob es sich um eine Datei, einen Datei-Link oder einen Hyperlink handelt',
                                                                                                                                    0, 1, 'TBeCombo'       , '', nMMDokumentenart   , True, False, False, False, False, False, '', False, 0, 0, '', '// Die Dokumentenart wird durch den Weg der Neuanlage bestimmt'+crlf+'false', '', '', '', ''),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'NAME'      ,  255, 0, ftString,               'Dokumenten-Name'              , 'Der Dokumenten-Name entspricht meist dem Datei-Namen, kann aber ggf. auch geändert werden.',
                                                                                                                                    0, 0, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
-PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'STATUS'    ,    0, 0, gl_PCKGU_ftShort,       'Status'                       , '', 0, 1, 'TBeCombo'       , '', nMMStatus          , True, False, False, False, False, False, '', False, 0, 0, '', 'false', '', '', '',
+PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'STATUS'    ,    0, 0, gl_PCKGU_ftShort,       'Status'                       , '', 0, 1, 'TBeCombo'       , '', nMMStatus          , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '',
                                                                                                                                  '// Default = in Bearbeitung' + crlf + 'gl_DMSU_DokumentenStatus_inBearbeitung'),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'AKT_TS'    ,    0, 0, ftDateTime,             'akt. Version: gesetzt am / um', 'Zeitpunkt (am / um), an dem der Status auf "aktuelle Version" gesetzt wurde',
-                                                                                                                                   0, 1, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', 'false', '', '', '', ''),
+                                                                                                                                   0, 1, ''               , '', 0                  , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'AKT_USR'   ,    3, 0, ftString,               'akt. Version: gesetzt durch'  , 'Benutzer, der den Status auf "aktuelle Version" gesetzt hat',
-                                                                                                                                   0, 1, 'TBeCombo'       , '', -11                , True, False, False, False, False, False, '', False, 0, 0, '', 'false', '', '', '', ''),
+                                                                                                                                   0, 1, 'TBeCombo'       , '', -11                , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'STATUS_FGB',    0, 0, gl_PCKGU_ftShort,       'Freigabe-Status'              , '', 0, 1, 'TBeCombo'       , '', nMMFreigabestatus  , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '',
                                                                                                                                  '// Default = keine Freigabe' + crlf + 'gl_DMSU_DokumentenStatusFGB_keineFreigabe'),
 PCKGU_TableDefinition_AddField(oTableDef_DMSVER, 'VERWENDUNG',    0, 0, ftMemo,                 'Verwendung'                   , '', 0, 0, 'TBeCheckListBox', '', nMMVerwendung      , True, False, False, False, False, False, '', False, 0, 0, '', '', '', '', '', ''),
@@ -131,8 +136,9 @@ PCKGU_TableDefinition_AddField(oTableDef_DMSBSP, 'DATA'      ,    0, 0, ftBlob  
 //##############################################################################
 
 // Index-Definitionen für Tabelle DMSVER
-PCKGU_TableDefinition_AddIndex(oTableDef_DMSVER, 'WORKAREA',     {'WORKAREA','DS_ID','DOC_NR','VERS_NR'},           '', '', False, False, False, 512),
-PCKGU_TableDefinition_AddIndex(oTableDef_DMSVER, 'DOC_NR'  ,     {'DOC_NR','VERS_NR'},                              '', '', True , False, False, 512),
+PCKGU_TableDefinition_AddIndex(oTableDef_DMSVER, 'WORKAREA',       {'WORKAREA','DS_ID','DOC_NR','VERS_NR'},           '', '', False, False, False, 512),
+PCKGU_TableDefinition_AddIndex(oTableDef_DMSVER, 'DOC_NR'  ,       {'DOC_NR','VERS_NR'},                              '', '', True , False, False, 512),
+PCKGU_TableDefinition_AddIndex(oTableDef_DMSVER, 'WORKAREA_ARTNR', {'WORKAREA','ARTNR'},                              '', '', False, False, False, 512),
 
 // Index-Definitionen für Tabelle DMSBSP
 PCKGU_TableDefinition_AddIndex(oTableDef_DMSBSP, 'GUID_STR',     {'GUID_STR'},                                      '', '', False, False, False, 512),
@@ -165,13 +171,15 @@ startseq
 
             // HINWEIS: Um eine bestehende Installation der Tabellen zu löschen
             //          müssen die folgenden Zeilen einkommentiert werden:
-          //   PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_DMSVER, 'DMSVER', cUsername, cPassword),
-          //   PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_DMSBSP, 'DMSBSP', cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_DMSVER, 'DMSVER', cUsername, cPassword),
+            // PCKGU_RemoveTableAndMetaInfo(oDM, nWorkarea_DMSBSP, 'DMSBSP', cUsername, cPassword),
 
-              PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DMSVER, cUsername, cPassword),
-              PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DMSBSP, cUsername, cPassword), 
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DMSVER, cUsername, cPassword),
+            PCKGU_AddTableAndMetaInfo(oDM, oTableDef_DMSBSP, cUsername, cPassword),
 
             oDM.CbTransaction_Commit(),
+
+            PCKGU_DeleteAllRightsBerCacheFiles(),
          always
             oDM.CbTransaction_TryRollback(),
          stopseq,

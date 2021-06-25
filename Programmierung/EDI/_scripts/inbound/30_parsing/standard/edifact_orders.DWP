@@ -44,7 +44,7 @@ function ParseEdifactMessage_Internal(oDM:O, nEDIMSGId:N, oAST:O)
    nEDIPARTId,
    cOwnGLN, cPartnerGLN,
    aHeaders, aPositions, aHeadData, aPositionData, n, i,
-   oUNB, oSGMSG, oUNH, aSG02, oLIN, oQTY, oNAD
+   oUNB, oSGMSG, oUNH, aSG02, oLIN, oQTY, oNAD, nKdnr
 |
 
    oEDIHEAD := MyGetTable(oDM, waEDIHEAD, ''),
@@ -120,7 +120,6 @@ function ParseEdifactMessage_Internal(oDM:O, nEDIMSGId:N, oAST:O)
       oEDIHEAD.CbAppend(),
       oEDIHEAD:EDIMSG_ID  := nEDIMSGId,
       oEDIHEAD:DIRECTION  := gl_EDI_ProcessDirection_Inbound,
-      oEDIHEAD:DATA       := ArrToStr(aHeadData),
 
       // Redundante EDIPART-Felder nur setzen, sofern Partnerkonfiguration für
       // aktuelle Nachricht verfügbar ist.
@@ -128,8 +127,14 @@ function ParseEdifactMessage_Internal(oDM:O, nEDIMSGId:N, oAST:O)
          oEDIHEAD:EDIPART_ID := oEDIPART:ID,
          oEDIHEAD:EDIPART_WA := oEDIPART:WORKAREA,
          oEDIHEAD:EDIPART_RI := oEDIPART:RECORD_ID,
+
+         if oEDIHEAD:EDIPART_WA = waDab000 then
+            nKdnr := LookUp(waDab000, 5, {{oEDIPART:RECORD_ID}}, 'KDNR', 0),
+            EDI_InhouseFormat_Set(aHeadData, 'DAB050.KDNR', nKdnr),
+         endif,
       endif,
 
+      oEDIHEAD:DATA       := ArrToStr(aHeadData),            
       oEDIHEAD.CbPost(),
 
       //------------------------------------------------------------------------

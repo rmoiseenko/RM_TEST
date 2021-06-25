@@ -1,0 +1,149 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Mit Hilfe dieses Fenster kann ein Lieferant ausgewählt werden
+//##############################################################################
+//##############################################################################
+
+|
+   m_cARTNR:P1:='E_PULVER_BESCHICHTEN', m_nLINR:P2:=164022,
+   m_cPositionSaveID, m_cBrowserID,
+   m_oDM, m_oDAB510,
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, a_Cancel, a_Save, al_Main, bipnl_Main, btn_Cancel, btn_Save,
+   ds_DAB510, grd_DAB510, pnl_Main, tbar_DockControl, tbar_Main, tbar_Manager
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveID := '@STBS_LIEF',
+m_cBrowserID      := '@STBS_LIEF',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   oForm.PositionSaveID := m_cPositionSaveID,
+   bipnl_Main.Caption   := 'Lieferanten auswählen',
+   oForm.OrigCapt       := ProgName(),
+end,
+
+//******************************************************************************
+// Tabellen Init
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+| cFilter |
+   // DM & Tabelle öffnen
+   m_oDM        := Createobject("TbeDbGet","STBS_LIEF",oForm,oForm),
+   m_oDAB510    := MyGetTable(m_oDM, waDAB510, 'DAB510_STBS'),
+   m_oDAB510.IndexName := 'DAB511',
+
+   cFilter := EVS_Beistell_Status_Dab510_GueltigFilterString(m_cARTNR, mStandort, date(), false),
+   DbFilter(cFilter, m_oDAB510),
+
+   // Tabelle mit GUI verlinken
+   GU_LinkTableToGUI(m_oDAB510, ds_DAB510, grd_DAB510, m_cBrowserID, false),
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Löst den Button a_Save aus (Lieferant übernehmen und schließen)
+//******************************************************************************
+function grd_DAB510DblClick( Sender )
+   ActionExecute(a_Save),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   Action  := caFree, // = Form zerstören
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Abbrechen und Fenster schließen
+//******************************************************************************
+function a_CancelExecute( Sender, Action )
+   CloseForm(oForm),
+end,
+
+//******************************************************************************
+// Action: Lieferant übernehmen
+//******************************************************************************
+function a_SaveExecute( Sender, Action )
+   if EKU_Dab510_IsGueltig(m_oDab510, Today()) then
+      m_nLINR := m_oDAB510:LINR,
+      CloseForm(oForm),
+   else
+      MessageDlg('Die hinterlegten Konditionen des Lieferants sind nicht mehr gütlig.', MtError),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm            := LoadForm("@STBS_LIEF", Application),
+   a_Cancel         := FindObject(oForm, "a_Cancel"),
+   a_Save           := FindObject(oForm, "a_Save"),
+   al_Main          := FindObject(oForm, "al_Main"),
+   bipnl_Main       := FindObject(oForm, "bipnl_Main"),
+   btn_Cancel       := FindObject(oForm, "btn_Cancel"),
+   btn_Save         := FindObject(oForm, "btn_Save"),
+   ds_DAB510        := FindObject(oForm, "ds_DAB510"),
+   grd_DAB510       := FindObject(oForm, "grd_DAB510"),
+   pnl_Main         := FindObject(oForm, "pnl_Main"),
+   tbar_DockControl := FindObject(oForm, "tbar_DockControl"),
+   tbar_Main        := FindObject(oForm, "tbar_Main"),
+   tbar_Manager     := FindObject(oForm, "tbar_Manager"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   LoadGUI(),
+   SetDefaults(),
+   OpenDataBaseAndLinkToGUI(),
+   ShowModal(oForm),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+stopseq,
+
+m_nLINR
+

@@ -75,11 +75,14 @@ function RefreshControls()
    endif,
 end,
 
+//******************************************************************************
+// @Result: null
+//******************************************************************************
 function OpenDataBaseAndLinkToGUI()
    // Datenmodul auf Formular erzeugen, damit es nicht explizit zerstört werden
    // muss
    if empty(m_oDM) then
-      m_oDM := CreateObject('TBeDbGet', 'DM_TSKPL_Scheduler', oForm),
+      m_oDM := CreateObject('TBeDbGet', 'DM_TSKPL_SchedulerDelete', oForm),
    endif,
 
    // Haupttabelle aus Datenmodul holen und mit der GUI verbinden
@@ -98,38 +101,27 @@ end,
 function DeleteTasks(nCurrentSchedulerId:N)
 | oDM, oTSKPLTASK, aTaskID |
    result := true,
-   meld('0'),
    oDM := CreateObject('TBeDbGet'),
-   meld('10'),
 
    oTSKPLTASK           := DbGetTable(oDM, waTSKPLTASK, 'TSKPLTASK_DELETE'),
-    meld('11'),
    oTSKPLTASK.IndexName := 'SCHEDUL_ID_ID',
-    meld('12'),
 
    oTSKPLTASK.CbSetRangeEx({nCurrentSchedulerId}),
-    meld('13'),
    oTSKPLTASK.CbFirst(),
-    meld('14'), 
    startseq
       while not oTSKPLTASK.CbEof do
-         meld('1'),
          oDM.CbTransaction_Begin(),
          startseq
-            meld('2'),
             aTaskID := oTSKPLTASK:ID,
             if oTSKPLTASK.CbDelete() then
                oDM.CbTransaction_Commit(),
-               meld('3'),
                TSKPL_WriteLog_Internal(oDM, nCurrentSchedulerId, aTaskID, gl_TSKPL_EventCode_TaskDeleted, 'Der Task <' + Trim(oTSKPLTASK:NAME) + '> wurde gelöscht.'),
             else
-               meld('4'),
                MessageDlg('Task <' + Trim(oTSKPLTASK:NAME) + '> konnte nicht gelöscht werden!', mtError),
                oTSKPLTASK.CbNext(),
                result := false,
             endif,
          onerror
-            meld('5'),
             result := false,
             if oDM.CbTransaction_TryRollback() then
                DbResetDM(oDM),
@@ -156,7 +148,8 @@ function TransferTasks(nCurrentSchedulerId:N, nNewSchedulerId:N)
       MyEdit(oTSKPLTASK),
       oTSKPLTASK:SCHEDUL_ID := nNewSchedulerId,
       MyPost(oTSKPLTASK),
-      TSKPL_WriteLog_Task(oTSKPLTASK:ID, gl_TSKPL_EventCode_TaskTransferred,
+      // DataModule muss uebergeben werden, um Transaktion zu beaufsichtigen
+      TSKPL_WriteLog_Task_DM(m_oDM, oTSKPLTASK:ID, gl_TSKPL_EventCode_TaskTransferred,
          'Der Task: <' + Trim(oTSKPLTASK:NAME) + '> wurde von <' +
          Trim(Lookup(waTSKPLSCHED, 'ID', {{nCurrentSchedulerId}}, 'NAME')) +
          '> unter dem Scheduler <' +
@@ -166,7 +159,7 @@ end,
 
 //******************************************************************************
 // Setzen der Standardeinstellungen
-//
+// @Result: null
 //******************************************************************************
 function SetDefaults()
    oForm.OrigCapt := 'Scheduler löschen',

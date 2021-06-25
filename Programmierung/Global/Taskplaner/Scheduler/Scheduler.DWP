@@ -100,7 +100,10 @@ function _TSKPL_TaskDefinition_Execute(aTaskDefinition:A)
    nTaskLauncherProgramID :=
       TSKPL_CreateOrReUseTaskLauncherProgram(0, nTaskID, nTaskProgramID, cTaskName, {}),
 
-   SetBeparam('TSKP' + Str(nTaskProgramID), nTaskID),
+   // Variablen / Parameter notwendig für die Ermittlung des aktuell laufenden Tasks für das Schreiben von logs
+   // siehe _TSKPL_Log()
+   SetBeparam('TSKP' + Str(nTaskProgramID), nTaskID),                           // alte Konstruktion für 6.5
+   gl_TSKPL_Log_TaskID := nTaskID,                                              // ab 7.1
 
    startseq
       case nExecutionKind
@@ -255,13 +258,15 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
          while not m_oTSKPLTASK.CbEof do
             nStartType    := m_oTSKPLTASK:START_TYPE,
             cStartOptions := m_oTSKPLTASK:START_OPT,
-            dtTaskStop    := GetDayEnd(m_oTSKPLTASK:START_LAST),
+            dtTaskStop    := m_oTSKPLTASK:START_LAST,
             dtTaskNext    := m_oTSKPLTASK:START_NEXT,
 
             // Wenn kein Ende-Zeitpunkt definiert ist, Ende-Zeitpunkt immer als
             // "Jetzt + 1 Jahr" ermitteln
             if (dtTaskStop = '00:00:00') then
                dtTaskStop := GetAdsServerTime() + 365,
+            else
+               dtTaskStop := GetDayEnd(dtTaskStop),
             endif,
 
             aTask := TSKPL_TaskDefinition_Create(
@@ -303,10 +308,10 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
    end,
 
    //***************************************************************************
-   function IsDateTimeInTolerance(dtStartNext, nTaskID, aTaskOptions)
+   function GetTolerance(dtStartNext, nTaskID, aTaskOptions)
    | cToleranceUnit, nToleranceAmount , dtTolerance |
 
-      result := true,
+      result := AddMonth(dtStartNext,1000*12),
       nToleranceAmount := KVU_Get(aTaskOptions, 'execution.ToleranceAmount', '0'),
       if empty(nToleranceAmount) then
          nToleranceAmount := 0,
@@ -325,7 +330,7 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
             otherwise
                TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_AlgorithmError, 'Ungültige Toleranz-Einheit!'),
           endcase,
-          result :=  (dtTolerance >= GetAdsServerTime()),
+          result := dtTolerance,
       endif,
 
    end,
@@ -339,7 +344,8 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
    function CheckIfItsTimeToExecuteTasks(aTaskList:R)
    |
       aTaskList_Local, i, aTask, dtNewStartDateTime,
-      nTaskId, dtStartNext, dtStartFirst, dtStartLast, nTaskType, aTaskOptions
+      nTaskId, dtStartNext, dtStartTolerance,
+      dtStartFirst, dtStartLast, nTaskType, aTaskOptions
    |
       aTaskList_Local := aTaskList,
 
@@ -366,8 +372,10 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
             KVU_Set(aTaskOptions, 'execution.LastStart', ConvertDateTimeToArray(GetAdsServerTime())),
             KVU_Set(aTaskOptions, 'execution.StartFirst', dtStartFirst),
 
+            dtStartTolerance  := GetTolerance(dtStartNext, nTaskId, aTaskOptions),
+
             // Prüfen, ob der Task überhaupt schon ausgeführt werden soll
-            if (dtStartNext <= GetAdsServerTime()) and (IsDateTimeInTolerance(dtStartNext, nTaskId, aTaskOptions)) and
+            if (dtStartNext <= GetAdsServerTime()) and (GetAdsServerTime() <= dtStartTolerance) and
                // Prüfen, ob wir uns aktuell noch im Ausführungszeitraum des Tasks
                // befinden
                IsCurrentAdsServerTimeWithinRange(dtStartFirst, dtStartLast) then
@@ -416,7 +424,9 @@ function _TSKPL_ExecuteScheduler(nSchedulerID:N)
                   // Status verpasst sich merken, sodass es nicht immer wieder im Log
                   // als verpasst geschrieben wird, obwohl es schon wieder bereit ist.
                   if not KVU_Get(aTask, 'task.Missed', false) then
-                     TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted, 'Task <' + KVU_Get(aTask, 'task.Name', '') + '> wurde verpasst.'),
+                     TSKPL_WriteLog_Task(nTaskID, gl_TSKPL_EventCode_TaskNotExecuted, 'Task <' + KVU_Get(aTask, 'task.Name', '') + '> wurde verpasst. ' +
+                       '(Toleranz war bis ' + DateTimeToStr(dtStartTolerance) +
+                       ', Start erlaubt zwischen ' + DateTimeToStr(dtStartFirst) + ' und ' +  DateTimeToStr(dtStartLast) + ')'),
                      KVU_Set(aTask, 'task.Missed', true),
                   endif,
                   if nTaskType <> gl_TSKPL_StartType_Once then
