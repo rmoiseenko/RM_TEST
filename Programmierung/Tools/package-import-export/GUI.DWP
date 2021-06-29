@@ -27,9 +27,9 @@
    m_nErrorCount,
    m_bIsProcessing, m_bCommandLineMode_IsActive, m_bCommandLineMode_IsExport,
    m_bCommandLineMode_Result, m_cOption_ExportDefaultBrowser, m_cOption_AlwaysExportShortName,
-   m_cOption_ReplaceInvalidCharacter,
+   m_cOption_ReplaceInvalidCharacter, m_cOption_MaskNameAsFileName,
    m_cRepositoryType,
-   m_aPrograms, m_aBrowser, m_aMasks, m_aOptions,
+   m_aPrograms, m_aBrowser, m_aMasks, m_aOptions, m_aCbPanels,
 
    m_cPredefinedRepoBasePath, m_cPredefinedRepoPath,
    m_cDefaultRepoBasePath, m_cDefaultPackagePath, m_cDefaultSVNPath,
@@ -72,6 +72,7 @@ m_nInfo    := 3,
 m_cOption_ExportDefaultBrowser    := 'EXPORT_DEFAULT_BROWSER',
 m_cOption_AlwaysExportShortName   := 'EXPORT_PROGRAM_SHORT_NAME',
 m_cOption_ReplaceInvalidCharacter := 'REPLACE_INVALID_CHARACTERS',
+m_cOption_MaskNameAsFileName      := 'MASK_NAME_AS_FILENAME',
 
 //##############################################################################
 //##############################################################################
@@ -399,7 +400,6 @@ function ReplaceInvalidCharacters(cFileName)
    Result := StrTran(Result, '<', '##' + Str(ASC('<')) + '##' ),
    Result := StrTran(Result, '>', '##' + Str(ASC('>')) + '##' ),
    Result := StrTran(Result, '|', '##' + Str(ASC('|')) + '##' ),
-//   Result := StrTran(Result, ' ', '##' + Str(ASC(' ')) + '##' ),
 end,
 
 //******************************************************************************
@@ -455,7 +455,6 @@ function ExportProgram(cMainFolder, cSubFolder, cName, cUseProgOpt, bIgnoreReadO
       else
          // Exportieren
          if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cFileName, '.DWP', m_oDABPRG:PROGRAMM, bIgnoreReadOnly, cReadOnlyError) then
-
             // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
             if not empty(cReadOnlyError) then
                m_nErrorCount++,                                                                                                                            // Fehler zählen
@@ -741,28 +740,32 @@ function ExportMask(cMainFolder, cSubFolder, cName, bAsJson, bIgnoreReadOnly)
       if CanHandleF12JsonFormat(bAsJson, cName, cExtension) then
          m_oDABFIL.IndexName := 'DABFIL',
          DBFilter("DATEI = 520 and FELD = '" + cName + "'", m_oDABFIL),
-         if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
-            SetError('Die angegebene F12 Maske konnte nicht gefunden werden.'),
-         else
-            oField := DBField('WIN_DATA', m_oDABFIL),
-            cName  := StrTran(cName, '@'),
+         startseq
+            if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
+               SetError('Die angegebene F12 Maske konnte nicht gefunden werden.'),
+            else
+               oField := DBField('WIN_DATA', m_oDABFIL),
+               cName  := StrTran(cName, '@'),
 
-            if bAsJson then
-               cJSON             := m_oDABFIL:WIN_DATA,
-               cJSON             := Call('Tools\package-import-export\f12_utils_converter', 'BIN_ARR_TO_JSON', cJSON), // Umwandlung per Call(), weil die dafür notwendige Funktion 'FormAsExportText' erst ab 7.2 zur Verfügung steht -> in 6.5 gäbe es einen Compile-Fehler
-               bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, cJSON,  bIgnoreReadOnly, cReadOnlyError),
-            else
-               bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, oField, bIgnoreReadOnly, cReadOnlyError),
-            endif,
-            if bExportSuccessful then
-               WriteToLog(m_nMessage, 'F12 Maske: "' + cName + cExtension + '" erfolgreich exportiert.', False),
-            else
-               if not empty(cReadOnlyError) then // Schreibschutz gesetzt und das Entfernen nicht aktiviert? -> orangene Meldung!
-                  m_nErrorCount++,
-                  WriteToLog(m_nWarning, 'F12 Maske: "' + cName + cExtension + '" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               if bAsJson then
+                  cJSON             := m_oDABFIL:WIN_DATA,
+                  cJSON             := Call('Tools\package-import-export\f12_utils_converter', 'BIN_ARR_TO_JSON', cJSON), // Umwandlung per Call(), weil die dafür notwendige Funktion 'FormAsExportText' erst ab 7.2 zur Verfügung steht -> in 6.5 gäbe es einen Compile-Fehler
+                  bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, cJSON,  bIgnoreReadOnly, cReadOnlyError),
+               else
+                  bExportSuccessful := ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cName, cExtension, oField, bIgnoreReadOnly, cReadOnlyError),
                endif,
-            endif,
-         endif,                                                                    prs('MaskenExport', cName),
+               if bExportSuccessful then
+                  WriteToLog(m_nMessage, 'F12 Maske: "' + cName + cExtension + '" erfolgreich exportiert.', False),
+               else
+                  if not empty(cReadOnlyError) then // Schreibschutz gesetzt und das Entfernen nicht aktiviert? -> orangene Meldung!
+                     m_nErrorCount++,
+                     WriteToLog(m_nWarning, 'F12 Maske: "' + cName + cExtension + '" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+                  endif,
+               endif,
+            endif,                                                                    prs('MaskenExport', cName),
+         always
+            DBFilter('', m_oDABFIL),
+         stopseq,
       endif,
    onerror
       m_nErrorCount++,
@@ -929,20 +932,24 @@ function ExportMenue(cMainFolder, cSubFolder, cID, bIgnoreReadOnly)
    startseq
       m_oDABFIL.IndexName := 'DABFIL',  //Index:STRZERO(DATEI,3)+FELD+STRZERO(IF((DATEI=0),RECNO(),0),5)
       DBFilter("DATEI = 523 and FELD = '" + cID + "'", m_oDABFIL),
-      if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
-         SetError('Die angegebene Menü-Nr konnte nicht gefunden werden.'),
-      else
-         // Exportieren
-         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.BIM', m_oDABFIL:MSK_INHALT, bIgnoreReadOnly, cReadOnlyError) then
-            // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
-            if not empty(cReadOnlyError) then
-               m_nErrorCount++, // Fehler zählen
-               WriteToLog(2, 'Menü: "' + cID + '.BIM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
-            endif,
+      startseq
+         if (EOF(m_oDABFIL) and BOF(m_oDABFIL)) then
+            SetError('Die angegebene Menü-Nr konnte nicht gefunden werden.'),
          else
-            WriteToLog(0, 'Menü: "' + cID + '.BIM" erfolgreich exportiert.', False),
-         endif,                                                                    prs('MenüExport', cID),
-      endif,
+            // Exportieren
+            if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.BIM', m_oDABFIL:MSK_INHALT, bIgnoreReadOnly, cReadOnlyError) then
+               // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+               if not empty(cReadOnlyError) then
+                  m_nErrorCount++, // Fehler zählen
+                  WriteToLog(2, 'Menü: "' + cID + '.BIM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               endif,
+            else
+               WriteToLog(0, 'Menü: "' + cID + '.BIM" erfolgreich exportiert.', False),
+            endif,                                                                    prs('MenüExport', cID),
+         endif,
+      always
+         DBFilter('', m_oDABFIL),
+      stopseq,
    onerror
       m_nErrorCount++, // Fehler zählen
       WriteToLog(1, 'Menü: "' + cID + '.BIM" konnte nicht exportiert werden. ' + GetErrorText(), False),
@@ -1112,27 +1119,31 @@ end,
 // @Result: null
 //******************************************************************************
 function ExportStdMasks(cMainFolder, cSubFolder, cName, cID, bIgnoreReadOnly)
-| cMASKID, oField, cReadOnlyError |
+| cMASKID, oField, cReadOnlyError, cFileName |
    startseq
       m_oDABFRM.IndexName := 'MASK_ID',  //Index:MASK_ID
       DBFilter("MASK_ID = '" + cID + "'", m_oDABFRM),
       if (EOF(m_oDABFRM) and BOF(m_oDABFRM)) then
          SetError('Die angegebene Standard-Maske konnte nicht gefunden werden.'),
       else
+         cFileName := cID,
+         if KVU_GET(m_aOptions, m_cOption_MaskNameAsFileName, false) then
+            cFileName := cName + ' (' + cID + ')',
+         endif,
          // Exportieren
-         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.BEM', m_oDABFRM:DATA, bIgnoreReadOnly, cReadOnlyError) then
+         if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cFileName, '.BEM', m_oDABFRM:DATA, bIgnoreReadOnly, cReadOnlyError) then
             // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
             if not empty(cReadOnlyError) then
                m_nErrorCount++, // Fehler zählen
-               WriteToLog(2, 'Standard-Maske: "' + cID + '.BEM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               WriteToLog(2, 'Standard-Maske: "' + cFileName + '.BEM" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
             endif,
          else
-            WriteToLog(0, 'Standard-Maske: "' + cID + '.BEM" erfolgreich exportiert.', False),
+            WriteToLog(0, 'Standard-Maske: "' + cFileName + '.BEM" erfolgreich exportiert.', False),
          endif,                                                                    prs('Standard-MaskenExport', cID),
       endif,
    onerror
       m_nErrorCount++, // Fehler zählen
-      WriteToLog(1, 'Standard-Maske: "' + cID + '.BEM" konnte nicht exportiert werden. ' + GetErrorText(), False),
+      WriteToLog(1, 'Standard-Maske: "' + cFileName + '.BEM" konnte nicht exportiert werden. ' + GetErrorText(), False),
    stopseq,
 end,
 
@@ -1143,12 +1154,15 @@ end,
 function ImportStdMasks(cMainFolder, cSubFolder, cName, cID)
 |
    cFullFileName, oFile, cMenueData, bIsUpdate,
-   cCopyID, cCopyNewID, cCopyName, cCopyMenueData, cCopyBookDate, cCopyHistory
+   cCopyID, cCopyNewID, cCopyName, cCopyMenueData, cCopyBookDate, cCopyHistory, cFileName
 |
-
    startseq
-      cFullFileName := cMainFolder + cSubFolder + cID + '.BEM',
-                                                                                prs('Standard-MaskenImport', cName),
+      cFileName := cID,
+      if KVU_GET(m_aOptions, m_cOption_MaskNameAsFileName, false) then
+         cFileName := cName + ' (' + cID + ')',
+      endif,
+      cFullFileName := cMainFolder + cSubFolder + cFileName + '.BEM',
+      prs('Standard-MaskenImport', cName),
       if not File(cFullFileName) then
          SetError('Die Standard-Maske konnte im Angegebenen Verzeichnis nicht gefunden werden.'),
       endif,
@@ -1201,12 +1215,78 @@ function ImportStdMasks(cMainFolder, cSubFolder, cName, cID)
       always
          EndSuspend(m_oDABFRM),
       stopseq,
-
-      WriteToLog(0, 'Standard-Maske : "' + cID + '.BEM" erfolgreich ' +
-                    iif(bIsUpdate, 'aktualisiert und überschriebene Maske mit heutigem Datum als Backup angelegt.', 'importiert.'), False),
+      WriteToLog(0, 'Standard-Maske : "' + cFileName + '.BEM" erfolgreich ' +
+         iif(bIsUpdate, 'aktualisiert und überschriebene Maske mit heutigem Datum als Backup angelegt.', 'importiert.'), False),
    onerror
       m_nErrorCount++, // Fehler zählen
-      WriteToLog(1, 'Standard-Maske : "' + cID + '.BEM" konnte nicht importiert werden.' + GetErrorText(), False),
+      WriteToLog(1, 'Standard-Maske : "' + cFileName + '.BEM" konnte nicht importiert werden.' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+function ExportCbPanel(cMainFolder, cSubFolder, cID, bIgnoreReadOnly)
+   | cReadOnlyError, cSavedIndex |
+   startseq
+      cSavedIndex := m_oDABFIL.CbIndexName,
+      m_oDABFIL.CbIndexName := 'DABFIL',
+      startseq
+         if m_oDABFIL.CbFindKey({524, cID}) then
+            if not ExportFile(m_cBaseSourceOrDestinationPath + cSubFolder, cID, '.DWP', m_oDABFIL:MSK_INHALT, bIgnoreReadOnly, cReadOnlyError) then
+         // Schreibschutz gesetzt und das entfernen nicht aktiviert? -> Orangene Meldung!
+               if not empty(cReadOnlyError) then
+                  m_nErrorCount++, // Fehler zählen
+                  WriteToLog(2, 'Cb-Panel: "' + cID + '.DWP" konnte nicht exportiert werden. ' + crlf + cReadOnlyError, False),
+               endif,
+            else
+               WriteToLog(0, 'Cb-Panel: "' + cID + '.DWP" erfolgreich exportiert.', False),
+            endif,
+         else
+            SetError('Das angegebene Cb-Panel konnte nicht gefunden werden.'),
+         endif,
+      always
+         m_oDABFIL.CbIndexName := cSavedIndex,
+      stopseq,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Cb-Panel: "' + cID + '.DWP" konnte nicht exportiert werden. ' + GetErrorText(), False),
+   stopseq,
+end,
+
+//******************************************************************************
+function ImportCbPanel(cMainFolder, cSubFolder, cID)
+   | cFullFileName, cCbPanelData, bIsUpdate, cSavedIndex |
+   startseq
+      cFullFileName := cMainFolder + cSubFolder + cID + '.DWP',
+      if not File(cFullFileName) then
+         SetError('Das Cb-Panel konnte im angegebenen Verzeichnis nicht gefunden werden.'),
+      endif,
+
+      cCbPanelData := ReadFileFromDisc(cFullFileName),
+      if empty(cCbPanelData) then
+         SetError('Das Cb-Panel konnte nicht geladen werden oder der Inhalt der Datei ist leer.'),
+      endif,
+
+      cSavedIndex := m_oDABFIL.CbIndexName,
+      m_oDABFIL.CbIndexName := 'DABFIL',
+      startseq
+         if m_oDABFIL.CbFindKey({524, cID}) then
+            m_oDABFIL.CbEdit(),
+            bIsUpdate := True,
+         else
+            m_oDABFIL.CbAppend(),
+            bIsUpdate := False, // Menü existiert noch nicht -> keine aktualisierung
+         endif,
+         m_oDABFIL:DATEI      := 524,
+         m_oDABFIL:FELD       := cID,
+         m_oDABFIL:MSK_INHALT := cCbPanelData,
+         m_oDABFIL.CbPost(),
+         WriteToLog(0, 'Cb-Panel: "' + cID + '.DWP" erfolgreich ' + iif(bIsUpdate, 'aktualisiert.', 'importiert.'), False),
+      always
+         m_oDABFIL.CbIndexName := cSavedIndex,
+      stopseq,
+   onerror
+      m_nErrorCount++, // Fehler zählen
+      WriteToLog(1, 'Cb-Panel: "' + cID + '.DWP" konnte nicht importiert werden.' + GetErrorText(), False),
    stopseq,
 end,
 
@@ -1231,6 +1311,7 @@ function InitModel()
       m_aBeleg              := {}, // Belege                                                                          // Erweiterung: Neue Arrays zurücksetzen
       m_aCustomizingObjects := {},
       m_aOptions            := {},
+      m_aCbPanels           := {},
    onerror
       SetError('Fehler beim Initialisieren' + crlf + GetErrorText()),
    stopseq,
@@ -1324,9 +1405,13 @@ function TextFileToModel(bWritePackageInfo)
 
          // Validieren der Daten:
          if not empty(cType) then
-            if cType <> 'MENUE' then                                                                                         // Erweiterung: Abfrage - Indi.Menüs haben keinen "Namen" der übergeben wird
+            if cType <> 'MENUE' and cType <> 'CBPANEL' then                                                                                         // Erweiterung: Abfrage - Indi.Menüs haben keinen "Namen" der übergeben wird
                if empty(cName) and empty(cBez) and empty(cOption) then                                                                                          //----> Note: Beim Import des Individualmenüs ist die Bezeichnung im Browser leer (Indi-M. Editor)
                   SetError('Es wurde weder "NAME" ,"BEZ" oder "OPTION" angegeben'),                                                               //            Einmal in den Editmodus und den Datensatz speichern behebt das Problem
+               endif,
+            else
+               if empty(cID) then                                                                                        
+                  SetError('Es wurde keine "ID" angegeben'),                                                              
                endif,
             endif,
 
@@ -1354,7 +1439,8 @@ function TextFileToModel(bWritePackageInfo)
                of 'LAYOUT'  :: AAdd(m_aLayouts,  {cSaveFolder, cBez,  cReport_ID, cReport_Nr, cReport_Typ}),                  // Layouts
                of 'BELEG'   :: AAdd(m_aBeleg,    {cSaveFolder, cBez,  cReport_PR, cBeleg_Art, cArchiv, cDialog, cArchivTyp}), // Beleg
                of 'CUSTOMIZING-OBJECTS' :: AAdd(m_aCustomizingObjects, {cSaveFolder, cName}),
-               of 'OPTIONS' ::  KVU_SET(m_aOptions, cOption, true),
+               of 'OPTIONS' :: KVU_SET(m_aOptions, cOption, true),
+               of 'CBPANEL' :: AAdd(m_aCbPanels, {cSaveFolder, cID}),
             endcase,
          endif,
       next,
@@ -1428,13 +1514,17 @@ function ValidateModel(bWritePackageInfo)
    for i := 1 to ALen(m_aLayouts) do
       m_aLayouts[i, 1] := ValidDirPath(m_aLayouts[i, 1]),
    next,
-   // ...und Belege.
+   // ...Belege...
    for i := 1 to ALen(m_aBeleg) do
       m_aBeleg[i, 1] := ValidDirPath(m_aBeleg[i, 1]),
    next,
-   // ...und Customizing-Objects.
+   // ...Customizing-Objects...
    for i := 1 to ALen(m_aCustomizingObjects) do
       m_aCustomizingObjects[i, 1] := ValidDirPath(m_aCustomizingObjects[i, 1]),
+   next,
+   // ... und Cb-Panels.
+   for i := 1 to ALen(m_aCbPanels) do
+      m_aCbPanels[i, 1] := ValidDirPath(m_aCbPanels[i, 1]),
    next,
    // Erweiterungen
 
@@ -1449,8 +1539,9 @@ function ValidateModel(bWritePackageInfo)
                  Str(ALen(m_aIndMenue)) + ' Menüs, ' +
                  Str(ALen(m_aStdMasks)) + ' Standard-Masken, ' +
                  Str(ALen(m_aLayouts))  + ' Layouts, ' +
-                 Str(ALen(m_aBeleg))    + ' Belege und ' +
-                 Str(ALen(m_aCustomizingObjects)) + ' customizing-objects Dateien ' +
+                 Str(ALen(m_aBeleg))    + ' Belege, ' +
+                 Str(ALen(m_aCustomizingObjects)) + ' customizing-objects Dateien und ' +
+                 Str(ALen(m_aCbPanels)) + ' Cb-Panels ' +
                  // Erweiterungen
 
                  'in der Package-Info-Datei gefunden', False),
@@ -1549,6 +1640,17 @@ function ProcessModel(bIsExport, bIgnoreReadOnly)
                   ExportMenue(m_cBaseSourceOrDestinationPath, m_aIndMenue[i, 1], m_aIndMenue[i, 2], bIgnoreReadOnly),
                else                                       // FOLDER              ID
                   ImportMenue(m_cBaseSourceOrDestinationPath, m_aIndMenue[i, 1], m_aIndMenue[i, 2]),
+               endif,
+            next,
+         endif,
+
+         if ALen(m_aCbPanels) > 0 then
+            WriteToLog(0, iif(bIsExport, 'Export ', 'Import ') + 'der Cb-Panels', True),
+            for i := 1 to ALen(m_aCbPanels) do
+               if bIsExport then
+                  ExportCbPanel(m_cBaseSourceOrDestinationPath, m_aCbPanels[i, 1], m_aCbPanels[i, 2], bIgnoreReadOnly),
+               else
+                  ImportCbPanel(m_cBaseSourceOrDestinationPath, m_aCbPanels[i, 1], m_aCbPanels[i, 2]),
                endif,
             next,
          endif,

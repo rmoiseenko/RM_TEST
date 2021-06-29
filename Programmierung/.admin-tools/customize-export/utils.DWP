@@ -768,6 +768,37 @@ function GetIndiMenuPackageString(bCompleteExport, dChangesSince)
    stopseq,
 end,
 
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetCbPanelsPackageString(bCompleteExport, dChangesSince)
+   | oDabFIL, i |
+   i      := 0,
+   Result := '',
+
+   ProgressBarShow('Export', 'Export der Individualmenüs', true),
+   startseq
+      oDabFIL := BeOpen(waDabFIL),
+      startseq
+         oDabFIL.CbSetRangeEx({524}),
+         oDabFIL.CbFirst(),
+         while not oDabFIL.CbEoF do
+            i++,
+            ProgressBarUpdate(0, Trim(oDabFIL:FELD), true),
+            if bCompleteExport or oDabFIL:GEAENDERT > dChangesSince then
+               Result += 'TYPE=CBPANEL;FOLDER=CodeblockPanels;ID=' + Trim(oDabFIL:FELD) + crlf,
+            endif,
+            oDabFIL.CbNext(),
+         end,
+      always
+         beClose(oDabFIL),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
 
 //******************************************************************************
 //
@@ -797,6 +828,7 @@ function ExportWithPackage(aExportSettings)
    cContent += '//################################################################################' + crlf,
    cContent += 'TYPE=OPTIONS;OPTION=EXPORT_PROGRAM_SHORT_NAME' + crlf,
    cContent += 'TYPE=OPTIONS;OPTION=REPLACE_INVALID_CHARACTERS' + crlf,
+   cContent += 'TYPE=OPTIONS;OPTION=MASK_NAME_AS_FILENAME' + crlf,
 
    if empty(nExportBroAsUsr) then
       cContent += 'TYPE=OPTIONS;OPTION=EXPORT_DEFAULT_BROWSER' + crlf,
@@ -851,7 +883,10 @@ function ExportWithPackage(aExportSettings)
    endif,
 
    if KVU_Get(aExportSettings, 'EXPORT_CB_PANELS',  false) then
-      ExportCodeBlockPanels(cBasicPath, bCompleteExport, dChangesSince),
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Cb-Panels' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetCbPanelsPackageString(bCompleteExport, dChangesSince) + crlf,
    endif,
 
    if KVU_Get(aExportSettings, 'EXPORT_TABLEDEF', false) then

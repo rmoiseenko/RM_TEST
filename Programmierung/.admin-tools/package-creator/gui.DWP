@@ -1,0 +1,1105 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwnerForm:P1, m_cFormRefKey:P2, m_oMasterTable:P3, m_aParams:P4,
+
+   m_cFormClassID, m_cWinPosSaveId, m_cProgramBrowserID, m_cSelectedProgramBrowserID,
+   m_cMaskBrowserID, m_cSelectedMaskBrowserID, m_cIndiMenuBrowserID, m_cSelectedIndiMenuBrowserID,
+   m_cLayoutBrowserID, m_cSelectedLayoutBrowserID,
+   m_cBackUpLayoutFilter, m_cBrowserBrowserID, m_cSelectedBrowserBrowserID,
+
+   m_oDabPRG, m_oSelectPrograms,
+   m_oDabFRM, m_oSelectMasks,
+   m_oIndiMenuDabFIL, m_oSelectIndiMenu,
+   m_oDabR10, m_oSelectLayout,
+   m_oDabBRO, m_oSelectBrowser,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_GenerateAndExportPackage, A_GenerateAndSavePackage, A_HelpContent,
+   AL_Actions, bar_Bar, bar_DockControl, bar_MainBar, bar_MainManager,
+   bbtn_GenerateAndExportPackage, bbtn_GeneratePackage, beBarButton1,
+   BeSplitter1, BeSplitter2, BeSplitter3, BeSplitter4, BeSplitter5, BeSplitter6,
+   cmb_BrowserUser, ds_DabBRO, ds_DabFRM, ds_DabPRG, ds_DabR10,
+   ds_IndiMenuDabFIL, ds_SelectedBrowser, ds_SelectedIndiMenu,
+   ds_SelectedLayout, ds_SelectedMasks, ds_SelectedPrograms, edt_Filename,
+   edt_PackagePath, edt_Result, edt_SearchBrowser, edt_SearchIndiMenu,
+   edt_SearchLayout, edt_SearchMask, edt_SearchProgram, gpnl_BrowserFilter,
+   grd_DabBRO, grd_DabFRM, grd_DabPRG, grd_DabR10, grd_IndiMenuDabFIL,
+   grd_SelectedBrowser, grd_SelectedIndiMenu, grd_SelectedLayout,
+   grd_SelectedMasks, grd_SelectedPrograms, ipnl_Main, lbl_BackUpLayoutFilter,
+   lbl_BrowserUserFilter, lbl_Filename, lbl_PackagePath, pc_Main, pnl_Browser,
+   pnl_DabBRO, pnl_DabFRM, pnl_DabPRG, pnl_DabR10, pnl_ExportDetails,
+   pnl_IndiMenuesDabFIL, pnl_Input, pnl_Layout, pnl_LayoutFilter, pnl_Main,
+   pnl_Mask, pnl_Program, pnl_Result, pnl_SelectedContent, pnlIndiMenues,
+   tab_Browser, tab_CodeblockProgram, tab_IndiMenu, tab_Layout, tab_Mask,
+   tgs_BackUpLayoutFilter, tgs_DefaultBrowser
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cFormClassID      := '@PKG_CREA',
+m_cWinPosSaveId     := '@PKG_CREA',
+m_cProgramBrowserID         := 'PKGCREAP1',
+m_cSelectedProgramBrowserID := 'PKGCREAP2',
+m_cMaskBrowserID            := 'PKGCREAM1',
+m_cSelectedMaskBrowserID    := 'PKGCREAM2',
+m_cIndiMenuBrowserID         := 'PKGCREAI1',
+m_cSelectedIndiMenuBrowserID := 'PKGCREAI2',
+m_cLayoutBrowserID         := 'PKGCREAL1',
+m_cSelectedLayoutBrowserID := 'PKGCREAL2',
+m_cBrowserBrowserID         := 'PKGCREAB1',
+m_cSelectedBrowserBrowserID := 'PKGCREAB2',
+
+m_cBackUpLayoutFilter := 'not CONTAINS(REPORT_ID, ''BACKUP_*'')',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshBrowserUser()
+   if not empty(m_oDabBRO) then
+      m_oDabBRO.CbRemovePermFilter(),
+      if tgs_DefaultBrowser.Checked then
+         m_oDabBRO.CbAddPermFilter('USER = 0'),
+      else
+         m_oDabBRO.CbAddPermFilter('USER = ' + Str(val(cmb_BrowserUser.Value))),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FocusToCorrectSearch()
+   case pc_Main.ActivePage
+      of tab_CodeblockProgram ::
+         MyFocusControl(oForm, edt_SearchProgram),
+      of tab_Mask ::
+         MyFocusControl(oForm, edt_SearchMask),
+      of tab_IndiMenu ::
+         MyFocusControl(oForm, edt_SearchIndiMenu),
+      of tab_Layout ::
+         MyFocusControl(oForm, edt_SearchLayout),
+      of tab_Browser ::
+         MyFocusControl(oForm, edt_SearchBrowser),
+      otherwise
+         MessageDlg(' Focus für den Tabsheet wurde noch nicht eingebaut.', mtInformation),
+   endcase,
+end,
+
+//******************************************************************************
+// Enabled/Disbaled die Actions
+// @Result: null
+//******************************************************************************
+function ActionsEnabled()
+end,
+
+//******************************************************************************
+// setzt funkstionsübergreifende Variabeln
+// @Result: null
+//******************************************************************************
+function SetDefaults()
+   pc_Main.ActivePage := tab_CodeblockProgram,
+   cmb_BrowserUser.Value := c_usr,
+   FocusToCorrectSearch(),
+end,
+
+//******************************************************************************
+// Eigenes Datenmodul erstellen, benötigte Tabellen öffnen und mit GUI verbinden
+//******************************************************************************
+function OpenDataBaseAndLinkToGUI()
+
+   m_oDabPRG           := beOpen(waDabPRG),
+   m_oDabPRG.IndexName := 'AKTPROGNR',
+
+   m_oSelectPrograms := CreateObject('TbeMemTable', 'SELECTED_PROGRAMS_MEMTABLE', oForm),
+   m_oSelectPrograms.AliasName := 'MEMTABLE_DABPRG',
+   m_oSelectPrograms.CbBorrowFromDataSet(m_oDabPRG),
+   m_oSelectPrograms.Active := true,
+
+   GU_LinkTableToGUI(m_oDabPRG, ds_DabPRG, grd_DabPRG, m_cProgramBrowserID, False),
+   GU_LinkTableToGUI(m_oSelectPrograms, ds_SelectedPrograms, grd_SelectedPrograms, m_cSelectedProgramBrowserID, False),
+
+   m_oDabFRM            := beOpen(waDabFRM),
+   m_oDabFRM.CbFilter   := 'not DEFAULT',
+   m_oDabFRM.CbFiltered := true,
+
+   m_oSelectMasks := CreateObject('TbeMemTable', 'SELECTED_MASKS_MEMTABLE', oForm),
+   m_oSelectMasks.AliasName := 'MEMTABLE_DABFRM',
+   m_oSelectMasks.CbBorrowFromDataSet(m_oDabFRM),
+   m_oSelectMasks.Active := true,
+
+   GU_LinkTableToGUI(m_oDabFRM, ds_DabFRM, grd_DabFRM, m_cMaskBrowserID, False),
+   GU_LinkTableToGUI(m_oSelectMasks, ds_SelectedMasks, grd_SelectedMasks, m_cSelectedMaskBrowserID, False),
+
+   m_oIndiMenuDabFIL := beOpen(waDabFIL),
+   m_oIndiMenuDabFIL.CbSetRangeEx({523}),
+
+   m_oSelectIndiMenu := CreateObject('TbeMemTable', 'SELECTED_INDI_MENU_MEMTABLE', oForm),
+   m_oSelectIndiMenu.AliasName := 'MEMTABLE_INDI_MENU_DABFIL',
+   m_oSelectIndiMenu.CbBorrowFromDataSet(m_oIndiMenuDabFIL),
+   m_oSelectIndiMenu.Active := true,
+
+   GU_LinkTableToGUI(m_oIndiMenuDabFIL, ds_IndiMenuDabFIL, grd_IndiMenuDabFIL, m_cIndiMenuBrowserID, False),
+   GU_LinkTableToGUI(m_oSelectIndiMenu, ds_SelectedIndiMenu, grd_SelectedIndiMenu, m_cSelectedIndiMenuBrowserID, False),
+
+   m_oDabR10 := beOpen(waDabR10),
+   m_oDabR10.CbAddPermFilter(m_cBackUpLayoutFilter),
+   m_oDabR10.CbFiltered := true,
+
+   m_oSelectLayout := CreateObject('TbeMemTable', 'SELECTED_LAYOUT_MEMTABLE', oForm),
+   m_oSelectLayout.AliasName := 'MEMTABLE_LAYOUT',
+   m_oSelectLayout.CbBorrowFromDataSet(m_oDabR10),
+   m_oSelectLayout.Active := true,
+
+   GU_LinkTableToGUI(m_oDabR10, ds_DabR10, grd_DabR10, m_cLayoutBrowserID, False),
+   GU_LinkTableToGUI(m_oSelectLayout, ds_SelectedLayout, grd_SelectedLayout, m_cSelectedLayoutBrowserID, False),
+
+   m_oDabBRO := beOpen(waDabBRO),
+   RefreshBrowserUser(),
+
+   m_oSelectBrowser := CreateObject('TbeMemTable', 'SELECTED_BROWSER_MEMTABLE', oForm),
+   m_oSelectBrowser.AliasName := 'MEMTABLE_BROWSER',
+   m_oSelectBrowser.CbBorrowFromDataSet(m_oDabBRO),
+   m_oSelectBrowser.Active := true,
+
+   GU_LinkTableToGUI(m_oDabBRO, ds_DabBRO, grd_DabBRO, m_cBrowserBrowserID, False),
+   GU_LinkTableToGUI(m_oSelectBrowser, ds_SelectedBrowser, grd_SelectedBrowser, m_cSelectedBrowserBrowserID, False),
+
+   // Events zuweisen
+   // - Wird hier per Code gemacht, damit man es beim Kopieren der Vorlage nicht
+   //   per Designer vergisst.
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// Ermittelt die Browser ID aus dem String bzw aus dem Programm
+// @Result: string
+//******************************************************************************
+function GetBrowserID(cMatch:C, cProgramContent:C)
+   | oRegExBrowserID |
+   Result := '',
+   cMatch := AllTrim(cMatch),
+
+   if SubStr(cMatch, 1, 1) = '"' or SubStr(cMatch, 1, 1) = '''' then
+      Result := STrTran(cMatch, '''', ''),
+      Result := STrTran(Result, '"', ''),
+   else
+      oRegExBrowserID := CreateObject('TBeCBRegExpr'),
+      startseq
+         oRegExBrowserID.SearchExpression := cMatch + '( *):=(.*)(' + '''' + '|")(.*)(' + '''' + '|"),',
+         oRegExBrowserID.SearchText       := cProgramContent,
+         if oRegExBrowserID.ExecSearch then
+            Result := AllTrim(oRegExBrowserID.Matches[5]),
+         endif,
+      always
+         DestroyObject(oRegExBrowserID),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function FindAndGetBrowserIDFromProgram(cPath:C, cProgramContent:C)
+   | oRegEx, cBrowserLines |
+
+   //***************************************************************************
+   function AddBrowserLine()
+      | cBrowserID |
+      cBrowserID := GetBrowserID(oRegEx.Matches[5], cProgramContent),
+      if not empty(cBrowserID) then
+         cBrowserLines += crlf + 'TYPE=BROW;FOLDER=' + cPath + ';NAME=' + cBrowserID +';COPYTOALL=J;COPYTOZERO=J',
+      endif,
+   end,
+
+   cBrowserLines := '',
+
+   oRegEx := CreateObject('TBeCBRegExpr', 'FIND_BROWSER_IDS'),
+   startseq
+      oRegEx.SearchExpression := 'GU_LinkTableToGUI\((.*),(.*),(.*),(.*),(.*)\),',
+      oRegEx.SearchText       := cProgramContent,
+      if oRegEx.ExecSearch then
+
+         AddBrowserLine(),
+
+         while oRegEx.ExecSearchNext do
+            AddBrowserLine(),
+         end,
+      endif,
+   always
+      DestroyObject(oRegEx),
+   stopseq,
+
+   Result := cBrowserLines,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetProgramsPackageString()
+   | cPath |
+   Result := '',
+
+   m_oSelectPrograms.CbFirst(),
+   while not m_oSelectPrograms.CbEoF do
+      cPath := Trim(SubStr(m_oSelectPrograms:BEZ, 1, RAt('\', m_oSelectPrograms:BEZ) - 1)),
+      Result += 'TYPE=PROG;FOLDER=' + cPath + ';NAME=' + Trim(m_oSelectPrograms:BEZ),
+
+      if not empty(m_oSelectPrograms:OPTIONS) then
+         Result += ';USE_POPT=J',
+      else
+         if not empty(m_oSelectPrograms:MASK_ID) then
+            Result += ';USE_MASK=' + m_oSelectPrograms:MASK_ID + crlf,
+            Result += 'TYPE=MASK;FOLDER=' + cPath + ';NAME=' + m_oSelectPrograms:MASK_ID,
+
+            Result += FindAndGetBrowserIDFromProgram(cPath, m_oSelectPrograms:PROGRAMM),
+         endif,
+      endif,
+      Result += crlf,
+      m_oSelectPrograms.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetMaskPackageString()
+   Result := '',
+
+   m_oSelectMasks.CbFirst(),
+   while not m_oSelectMasks.CbEoF do
+      Result += 'TYPE=STDMASK;FOLDER=STDMASKEN;NAME=' + Trim(m_oSelectMasks:BEZ) + ';ID=' + m_oSelectMasks:MASK_ID + crlf,
+      m_oSelectMasks.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetIndiMenuPackageString()
+   Result := '',
+
+   m_oSelectIndiMenu.CbFirst(),
+   while not m_oSelectIndiMenu.CbEoF do
+      Result += 'TYPE=MENUE;FOLDER=INDIMENU;ID=' + Trim(m_oSelectIndiMenu:FELD) + crlf,
+      m_oSelectIndiMenu.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetLayoutPackageString()
+   Result := '',
+
+   m_oSelectLayout.CbFirst(),
+   while not m_oSelectLayout.CbEoF do
+      Result += 'TYPE=LAYOUT;FOLDER=Layout',
+      Result += ';BEZ=' + Trim(m_oSelectLayout:BEZ),
+      Result += ';REPORT_ID=' + Trim(m_oSelectLayout:REPORT_ID),
+      Result += ';REPORT_NR=' + Str(m_oSelectLayout:REPORT_NR),
+      Result += ';REPORT_TYP=' + m_oSelectLayout:REPORT_TYP,
+      Result += crlf,
+      m_oSelectLayout.CbNext(),
+   end,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GetBrowserPackageString()
+   Result := '',
+
+   m_oSelectBrowser.CbFirst(),
+   while not m_oSelectBrowser.CbEoF do
+      Result += 'TYPE=BROW;FOLDER=Browser;NAME=' + Trim(m_oSelectBrowser:BROWSER_ID) + ';COPYTOALL=J;COPYTOZERO=J' + crlf,
+      m_oSelectBrowser.CbNext(),
+   end,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshProgramFilter()
+   | uBookMark |
+
+   m_oSelectPrograms.CbDisableControls(),
+   startseq
+      m_oDabPRG.CbRemovePermFilter(),
+
+      uBookMark := m_oSelectPrograms.CbBookMark,
+      startseq
+         m_oSelectPrograms.CbFirst(),
+         while not m_oSelectPrograms.CbEoF do
+            m_oDabPRG.CbAddPermFilter('PROGNR <> ' + str(m_oSelectPrograms:PROGNR)),
+            m_oSelectPrograms.CbNext(),
+         end,
+      always
+         m_oSelectPrograms.CbBookMark := uBookMark,
+      stopseq,
+   always
+      m_oSelectPrograms.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshMaskFilter()
+   | uBookMark |
+
+   m_oSelectMasks.CbDisableControls(),
+   startseq
+      m_oDabFRM.CbRemovePermFilter(),
+
+      uBookMark := m_oSelectMasks.CbBookMark,
+      startseq
+         m_oSelectMasks.CbFirst(),
+         while not m_oSelectMasks.CbEoF do
+            m_oDabFRM.CbAddPermFilter('MASK_ID <> ''' + Trim(m_oSelectMasks:MASK_ID) + ''''),
+            m_oSelectMasks.CbNext(),
+         end,
+      always
+         m_oSelectMasks.CbBookMark := uBookMark,
+      stopseq,
+   always
+      m_oSelectMasks.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshIndiMenuFilter()
+   | uBookMark |
+
+   m_oSelectIndiMenu.CbDisableControls(),
+   startseq
+      m_oIndiMenuDabFIL.CbRemovePermFilter(),
+
+      uBookMark := m_oSelectIndiMenu.CbBookMark,
+      startseq
+         m_oSelectIndiMenu.CbFirst(),
+         while not m_oSelectIndiMenu.CbEoF do
+            m_oIndiMenuDabFIL.CbAddPermFilter('ID <> ' + str(m_oSelectIndiMenu:ID)),
+            m_oSelectIndiMenu.CbNext(),
+         end,
+      always
+         m_oSelectIndiMenu.CbBookMark := uBookMark,
+      stopseq,
+   always
+      m_oSelectIndiMenu.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshLayoutFilter()
+   | uBookMark |
+
+   m_oSelectLayout.CbDisableControls(),
+   startseq
+      m_oDabR10.CbRemovePermFilter(),
+
+      uBookMark := m_oSelectLayout.CbBookMark,
+      startseq
+         m_oSelectLayout.CbFirst(),
+         while not m_oSelectLayout.CbEoF do
+            m_oDabR10.CbAddPermFilter('ID <> ' + str(m_oSelectLayout:ID)),
+            m_oSelectLayout.CbNext(),
+         end,
+      always
+         m_oSelectLayout.CbBookMark := uBookMark,
+      stopseq,
+   always
+      m_oSelectLayout.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function RefreshBrowserFilter()
+   | uBookMark |
+
+   m_oSelectBrowser.CbDisableControls(),
+   startseq
+      m_oDabBRO.CbRemovePermFilter(),
+
+      uBookMark := m_oSelectBrowser.CbBookMark,
+      startseq
+         m_oSelectBrowser.CbFirst(),
+         while not m_oSelectBrowser.CbEoF do
+            m_oDabBRO.CbAddPermFilter('ID <> ' + str(m_oSelectBrowser:ID)),
+            m_oSelectBrowser.CbNext(),
+         end,
+      always
+         m_oSelectBrowser.CbBookMark := uBookMark,
+      stopseq,
+   always
+      m_oSelectBrowser.CbEnableControls(),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GeneratePackageString()
+   | cContent |
+   cContent := '',
+
+   if m_oSelectPrograms.CbDataAvailable then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Programme/F12-Formulare/Events' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetProgramsPackageString() + crlf,
+   endif,
+
+   if m_oSelectMasks.CbDataAvailable then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Masken' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetMaskPackageString() + crlf,
+   endif,
+
+   if m_oSelectIndiMenu.CbDataAvailable then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Individualmenues' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetIndiMenuPackageString() + crlf,
+   endif,
+
+   if m_oSelectLayout.CbDataAvailable then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Layout' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetLayoutPackageString() + crlf,
+   endif,
+
+   if m_oSelectBrowser.CbDataAvailable then
+      cContent += '//################################################################################' + crlf,
+      cContent += '// Browser' + crlf,
+      cContent += '//################################################################################' + crlf,
+      cContent += GetBrowserPackageString() + crlf,
+   endif,
+
+   Result := AnsiToUtf8(cContent),
+   edt_Result.Text := Result,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function GenerateAndSavePackage()
+   | cContent, cFilePath |
+   cContent := '',
+   Result   := '',
+
+   if empty(edt_PackagePath.Text) or not DirectoryExists(edt_PackagePath.Text)  then
+      MessageDlg('Bitte geben Sie einen gültigen Pfad an.', mtError),
+   else
+      cContent := GeneratePackageString(),
+      if empty(edt_Filename.Text) then
+         cFilePath := edt_PackagePath.Text + '\Package.bcp',
+      else
+         cFilePath := edt_PackagePath.Text + '\' + Trim(edt_Filename.Text) + '.bcp',
+      endif,
+      SaveFile(cContent, cFilePath),
+
+      Result := cFilePath,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function cmb_BrowserUserChange( Sender )
+   RefreshBrowserUser(),
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function tgs_DefaultBrowserClick( Sender )
+   RefreshBrowserUser(),
+   cmb_BrowserUser.Enabled := not tgs_DefaultBrowser.Checked,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function pc_MainChange( Sender )
+   FocusToCorrectSearch()
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_SelectedBrowserDblClick( Sender )
+   startseq
+      if m_oSelectBrowser.CbDataAvailable then
+         m_oSelectBrowser.CbDisableControls(),
+         startseq
+            m_oSelectBrowser.CbDelete(),
+            RefreshBrowserFilter(),
+            GeneratePackageString(),
+         always
+            m_oSelectBrowser.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_DabBRODblClick( Sender )
+   | uBookMark |
+
+   startseq
+      if m_oDabBRO.CbDataAvailable then
+         m_oDabBRO.CbDisableControls(),
+         startseq
+            m_oSelectBrowser.CbAppend(),
+            m_oSelectBrowser.CbCopyRecFromDataset(m_oDabBRO),
+            m_oSelectBrowser.CbPost(),
+
+            RefreshBrowserFilter(),
+            GeneratePackageString(),
+         always
+            m_oDabBRO.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function tgs_BackUpLayoutFilterClick( Sender )
+
+   if tgs_BackUpLayoutFilter.Checked then
+      m_oDabR10.CbRemovePermFilter(),
+   else
+      m_oDabR10.CbAddPermFilter(m_cBackUpLayoutFilter),
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_SelectedLayoutDblClick( Sender )
+   startseq
+      if m_oSelectLayout.CbDataAvailable then
+         m_oSelectLayout.CbDisableControls(),
+         startseq
+            m_oSelectLayout.CbDelete(),
+            RefreshLayoutFilter(),
+            GeneratePackageString(),
+         always
+            m_oSelectLayout.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_DabR10DblClick( Sender )
+   | uBookMark |
+
+   startseq
+      if m_oDabR10.CbDataAvailable then
+         m_oDabR10.CbDisableControls(),
+         startseq
+            m_oSelectLayout.CbAppend(),
+            m_oSelectLayout.CbCopyRecFromDataset(m_oDabR10),
+            m_oSelectLayout.CbPost(),
+
+            RefreshLayoutFilter(),
+            GeneratePackageString(),
+         always
+            m_oDabR10.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_SelectedIndiMenuDblClick( Sender )
+   startseq
+      if m_oSelectIndiMenu.CbDataAvailable then
+         m_oSelectIndiMenu.CbDisableControls(),
+         startseq
+            m_oSelectIndiMenu.CbDelete(),
+            RefreshIndiMenuFilter(),
+            GeneratePackageString(),
+         always
+            m_oSelectIndiMenu.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_IndiMenuDabFILDblClick( Sender )
+   | uBookMark |
+
+   startseq
+      if m_oIndiMenuDabFIL.CbDataAvailable then
+         m_oIndiMenuDabFIL.CbDisableControls(),
+         startseq
+            m_oSelectIndiMenu.CbAppend(),
+            m_oSelectIndiMenu.CbCopyRecFromDataset(m_oIndiMenuDabFIL),
+            m_oSelectIndiMenu.CbPost(),
+
+            RefreshIndiMenuFilter(),
+            GeneratePackageString(),
+         always
+            m_oIndiMenuDabFIL.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_PackagePathBtnClick( Sender )
+   | oDialog |
+
+   oDialog := OpenDlg('Export Pfad', 'Ordner|*.', '','a'),
+   startseq
+      oDialog.Active := true,
+      if oDialog.Selected then
+         edt_PackagePath.Text := ExtractFilePath(oDialog.FileName),
+      endif,
+   always
+      DestroyObject(oDialog),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_SelectedMasksDblClick( Sender )
+   startseq
+      if m_oSelectMasks.CbDataAvailable then
+         m_oSelectMasks.CbDisableControls(),
+         startseq
+            m_oSelectMasks.CbDelete(),
+            RefreshMaskFilter(),
+            GeneratePackageString(),
+         always
+            m_oSelectMasks.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_DabFRMDblClick( Sender )
+   | uBookMark |
+
+   startseq
+      if m_oDabFRM.CbDataAvailable then
+         m_oDabFRM.CbDisableControls(),
+         startseq
+            m_oSelectMasks.CbAppend(),
+            m_oSelectMasks.CbCopyRecFromDataset(m_oDabFRM),
+            m_oSelectMasks.CbPost(),
+
+            RefreshMaskFilter(),
+            GeneratePackageString(),
+         always
+            m_oDabFRM.CbEnableControls()
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_SelectedProgramsDblClick( Sender )
+   startseq
+      if m_oSelectPrograms.CbDataAvailable then
+         m_oSelectPrograms.CbDisableControls(),
+         startseq
+            m_oSelectPrograms.CbDelete(),
+            RefreshProgramFilter(),
+            GeneratePackageString(),
+         always
+            m_oSelectMasks.CbEnableControls(),
+         stopseq,
+      endif,
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function grd_DabPRGDblClick( Sender )
+   | uBookMark |
+
+   startseq
+
+      if m_oDabPRG.CbDataAvailable then
+         m_oDabPRG.CbDisableControls(),
+         startseq
+            m_oSelectPrograms.CbAppend(),
+            m_oSelectPrograms.CbCopyRecFromDataset(m_oDabPRG),
+            m_oSelectPrograms.CbPost(),
+
+            RefreshProgramFilter(),
+            GeneratePackageString(),
+         always
+            m_oDabPRG.CbEnableControls(),
+         stopseq,
+      endif,
+
+
+   onerror
+      GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose( Sender, Action )
+   | bCanClose |
+
+   m_oDabR10.CbRemovePermFilter(),
+   beClose(m_oDabR10),
+
+   m_oIndiMenuDabFIL.CbRemovePermFilter(),
+   beClose(m_oIndiMenuDabFIL),
+
+   m_oDabFRM.CbRemovePermFilter(),
+   beClose(m_oDabFRM),
+
+   m_oDabPRG.CbRemovePermFilter(),
+   beClose(m_oDabPRG),
+
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   GFU_DockingForm_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_SearchBrowserSearchExecute( Sender )
+   m_oDabBRO.CbFiltered := false,
+   if empty(edt_SearchBrowser.Text) then
+      m_oDabBRO.CbFilter := '',
+   else
+      m_oDabBRO.CbFilter := 'CONTAINS(BROWSER_ID, ''*' + edt_SearchBrowser.Text + '*'')',
+   endif,
+   m_oDabBRO.CbFiltered := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_SearchLayoutSearchExecute( Sender )
+   m_oDabR10.CbFiltered := false,
+   if empty(edt_SearchLayout.Text) then
+      m_oDabR10.CbFilter := '',
+   else
+      m_oDabR10.CbFilter := 'CONTAINS(BEZ, ''*' + edt_SearchLayout.Text + '*'') OR CONTAINS(REPORT_ID, ''*' + edt_SearchLayout.Text + '*'')',
+   endif,
+   m_oDabR10.CbFiltered := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_SearchIndiMenuSearchExecute( Sender )
+   m_oIndiMenuDabFIL.CbFiltered := false,
+   if empty(edt_SearchIndiMenu.Text) then
+      m_oIndiMenuDabFIL.CbFilter := '',
+   else
+      m_oIndiMenuDabFIL.CbFilter := 'CONTAINS(NAME, ''*' + edt_SearchIndiMenu.Text + '*'')',
+   endif,
+   m_oIndiMenuDabFIL.CbFiltered := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_SearchProgramSearchExecute( Sender )
+   m_oDabPRG.CbFiltered := false,
+   if empty(edt_SearchProgram.Text) then
+      m_oDabPRG.CbFilter := '',
+   else
+      m_oDabPRG.CbFilter := 'CONTAINS(BEZ, ''*' + edt_SearchProgram.Text + '*'')',
+   endif,
+   m_oDabPRG.CbFiltered := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function edt_SearchMaskSearchExecute( Sender )
+   m_oDabFRM.CbFiltered := false,
+   m_oDabFRM.CbFilter := 'not DEFAULT',
+   if not empty(edt_SearchMask.Text) then
+      m_oDabFRM.CbFilter := m_oDabFRM.CbFilter + ' and CONTAINS(BEZ, ''*' + edt_SearchMask.Text + '*'')',
+   endif,
+   m_oDabFRM.CbFiltered := true,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_GenerateAndExportPackageExecute( Sender )
+   | aParam, cFilePath |
+   cFilePath := GenerateAndSavePackage(),
+
+   if not empty(cFilePath) then
+      aParam := {},
+      KVU_Set(aParam, 'packageImportExport.packageFilePath', cFilePath),
+      KVU_Set(aParam, 'packageImportExport.operation', 'export'),
+
+      if Call('Tools\package-import-export\GUI', nil, nil, nil, aParam) then
+         MessageDlg('Erstellung und Export von Package war erfolgreich.', mtInformation),
+      endif,
+   endif,
+end,
+
+//******************************************************************************
+//
+//******************************************************************************
+function A_GenerateAndSavePackageExecute( Sender )
+   if not empty(GenerateAndSavePackage()) then
+      MessageDlg('Erstellung von Package war erfolgreich.', mtInformation),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @Result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwnerForm) then
+      oForm             := LoadForm(m_cFormClassID, Application),
+      oForm.FormStyle   := fsNormal,
+   else
+      oForm             := LoadForm(m_cFormClassID, m_oOwnerForm),
+      oForm.FormStyle   := fsNormal,
+      oForm.BorderStyle := bsSizeToolWin, // notwendig für Dockbarkeit
+   endif,
+
+   oForm.PositionSaveID := m_cWinPosSaveId,
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwnerForm), // Eindeutiger Formular-Name für Docking-Logik
+   oForm.Keypreview     := true,
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten die für die Oberfläche benötigt werden
+// @Result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_GenerateAndExportPackage    := FindObject(oForm, "A_GenerateAndExportPackage"),
+   A_GenerateAndSavePackage      := FindObject(oForm, "A_GenerateAndSavePackage"),
+   A_HelpContent                 := FindObject(oForm, "A_HelpContent"),
+   AL_Actions                    := FindObject(oForm, "AL_Actions"),
+   bar_Bar                       := FindObject(oForm, "bar_Bar"),
+   bar_DockControl               := FindObject(oForm, "bar_DockControl"),
+   bar_MainBar                   := FindObject(oForm, "bar_MainBar"),
+   bar_MainManager               := FindObject(oForm, "bar_MainManager"),
+   bbtn_GenerateAndExportPackage := FindObject(oForm, "bbtn_GenerateAndExportPackage"),
+   bbtn_GeneratePackage          := FindObject(oForm, "bbtn_GeneratePackage"),
+   beBarButton1                  := FindObject(oForm, "beBarButton1"),
+   BeSplitter1                   := FindObject(oForm, "BeSplitter1"),
+   BeSplitter2                   := FindObject(oForm, "BeSplitter2"),
+   BeSplitter3                   := FindObject(oForm, "BeSplitter3"),
+   BeSplitter4                   := FindObject(oForm, "BeSplitter4"),
+   BeSplitter5                   := FindObject(oForm, "BeSplitter5"),
+   BeSplitter6                   := FindObject(oForm, "BeSplitter6"),
+   cmb_BrowserUser               := FindObject(oForm, "cmb_BrowserUser"),
+   ds_DabBRO                     := FindObject(oForm, "ds_DabBRO"),
+   ds_DabFRM                     := FindObject(oForm, "ds_DabFRM"),
+   ds_DabPRG                     := FindObject(oForm, "ds_DabPRG"),
+   ds_DabR10                     := FindObject(oForm, "ds_DabR10"),
+   ds_IndiMenuDabFIL             := FindObject(oForm, "ds_IndiMenuDabFIL"),
+   ds_SelectedBrowser            := FindObject(oForm, "ds_SelectedBrowser"),
+   ds_SelectedIndiMenu           := FindObject(oForm, "ds_SelectedIndiMenu"),
+   ds_SelectedLayout             := FindObject(oForm, "ds_SelectedLayout"),
+   ds_SelectedMasks              := FindObject(oForm, "ds_SelectedMasks"),
+   ds_SelectedPrograms           := FindObject(oForm, "ds_SelectedPrograms"),
+   edt_Filename                  := FindObject(oForm, "edt_Filename"),
+   edt_PackagePath               := FindObject(oForm, "edt_PackagePath"),
+   edt_Result                    := FindObject(oForm, "edt_Result"),
+   edt_SearchBrowser             := FindObject(oForm, "edt_SearchBrowser"),
+   edt_SearchIndiMenu            := FindObject(oForm, "edt_SearchIndiMenu"),
+   edt_SearchLayout              := FindObject(oForm, "edt_SearchLayout"),
+   edt_SearchMask                := FindObject(oForm, "edt_SearchMask"),
+   edt_SearchProgram             := FindObject(oForm, "edt_SearchProgram"),
+   gpnl_BrowserFilter            := FindObject(oForm, "gpnl_BrowserFilter"),
+   grd_DabBRO                    := FindObject(oForm, "grd_DabBRO"),
+   grd_DabFRM                    := FindObject(oForm, "grd_DabFRM"),
+   grd_DabPRG                    := FindObject(oForm, "grd_DabPRG"),
+   grd_DabR10                    := FindObject(oForm, "grd_DabR10"),
+   grd_IndiMenuDabFIL            := FindObject(oForm, "grd_IndiMenuDabFIL"),
+   grd_SelectedBrowser           := FindObject(oForm, "grd_SelectedBrowser"),
+   grd_SelectedIndiMenu          := FindObject(oForm, "grd_SelectedIndiMenu"),
+   grd_SelectedLayout            := FindObject(oForm, "grd_SelectedLayout"),
+   grd_SelectedMasks             := FindObject(oForm, "grd_SelectedMasks"),
+   grd_SelectedPrograms          := FindObject(oForm, "grd_SelectedPrograms"),
+   ipnl_Main                     := FindObject(oForm, "ipnl_Main"),
+   lbl_BackUpLayoutFilter        := FindObject(oForm, "lbl_BackUpLayoutFilter"),
+   lbl_BrowserUserFilter         := FindObject(oForm, "lbl_BrowserUserFilter"),
+   lbl_Filename                  := FindObject(oForm, "lbl_Filename"),
+   lbl_PackagePath               := FindObject(oForm, "lbl_PackagePath"),
+   pc_Main                       := FindObject(oForm, "pc_Main"),
+   pnl_Browser                   := FindObject(oForm, "pnl_Browser"),
+   pnl_DabBRO                    := FindObject(oForm, "pnl_DabBRO"),
+   pnl_DabFRM                    := FindObject(oForm, "pnl_DabFRM"),
+   pnl_DabPRG                    := FindObject(oForm, "pnl_DabPRG"),
+   pnl_DabR10                    := FindObject(oForm, "pnl_DabR10"),
+   pnl_ExportDetails             := FindObject(oForm, "pnl_ExportDetails"),
+   pnl_IndiMenuesDabFIL          := FindObject(oForm, "pnl_IndiMenuesDabFIL"),
+   pnl_Input                     := FindObject(oForm, "pnl_Input"),
+   pnl_Layout                    := FindObject(oForm, "pnl_Layout"),
+   pnl_LayoutFilter              := FindObject(oForm, "pnl_LayoutFilter"),
+   pnl_Main                      := FindObject(oForm, "pnl_Main"),
+   pnl_Mask                      := FindObject(oForm, "pnl_Mask"),
+   pnl_Program                   := FindObject(oForm, "pnl_Program"),
+   pnl_Result                    := FindObject(oForm, "pnl_Result"),
+   pnl_SelectedContent           := FindObject(oForm, "pnl_SelectedContent"),
+   pnlIndiMenues                 := FindObject(oForm, "pnlIndiMenues"),
+   tab_Browser                   := FindObject(oForm, "tab_Browser"),
+   tab_CodeblockProgram          := FindObject(oForm, "tab_CodeblockProgram"),
+   tab_IndiMenu                  := FindObject(oForm, "tab_IndiMenu"),
+   tab_Layout                    := FindObject(oForm, "tab_Layout"),
+   tab_Mask                      := FindObject(oForm, "tab_Mask"),
+   tgs_BackUpLayoutFilter        := FindObject(oForm, "tgs_BackUpLayoutFilter"),
+   tgs_DefaultBrowser            := FindObject(oForm, "tgs_DefaultBrowser"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @Result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwnerForm) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+startseq
+   InitForm(),
+   LoadGUI(),
+   SetDefaults(),
+   OpenDataBaseAndLinkToGUI(),
+   ActionsEnabled(),
+   ShowGUI(),
+onerror
+   if not empty(oForm) then
+      DestroyObject(oForm),
+   endif,
+   GU_SHOWSTDERRORMESSAGE(GetErrortext(), GetErrorobj()),
+stopseq,
+
+// Programm gibt die Formular-Instanz zurück => wichtig z.B. bei Aufruf per 'Call()'
+oForm
+
+
+
+
+
