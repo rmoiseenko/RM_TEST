@@ -1,0 +1,19 @@
+// Alle Masken des Masken-Designers, die Rollen-Zuweisungen haben und keine
+//   Standard-Maske sind
+// => potentielle ReDesign-Aufgabe
+
+// Achtung: Script wird auch von package "migbe7-erstelle-jira-tickets" genutzt
+
+SELECT
+     DABFRM.MASK_ID,
+     iif(CAST(DABFRM.MASK_ID as SQL_NUMERIC) >= 700000, 'x', '') AS INDI,   // Maske für eine Individual-Tabelle => am besten durch F12 ablösen
+     DABFRM.BEZ,
+     SUM(1) AS ROL_ANZ                                                          // wie vielen Rollen ist diese Maske zugeordnet?
+     @USE_GROUP_CONCAT@ , GROUP_CONCAT( Trim(Left(DABRRO.ROLLENNAME, 18)) + iif(Len(Trim(DABRRO.ROLLENNAME)) > 18, '...', '') SEPARATOR ', ' MAX_LENGTH 3200 ) AS ROLLEN
+  FROM "DABFRM.ADT" DABFRM
+  INNER JOIN "DABROB.ADT" DABROB ON (CAST(DABFRM.MASK_ID as SQL_NUMERIC) = DABROB.MASKEN_ID)  // Berechtigungs-Objekt zur Maske joinen
+  INNER JOIN "DABRER.ADT" DABRER ON (DABRER.O_GUID_STR = DABROB.GUID_STR)                     // Berechtigung(en) zum Berechtigungs-Objekt
+  INNER JOIN "DABRRO.ADT" DABRRO ON DABRRO.GUID_STR = DABRER.R_GUID_STR                       // Rolle zur Berechtigungs-Zuordnung
+
+  WHERE not DABFRM."DEFAULT"           // keine Default-Masken, diese werden vom Update automatisch erneuert
+  GROUP BY DABFRM.MASK_ID, DABFRM.BEZ  // Jede Maske nur einmal im Ergebnis aufführen

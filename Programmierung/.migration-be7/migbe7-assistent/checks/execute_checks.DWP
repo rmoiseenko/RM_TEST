@@ -1,0 +1,43 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| oUpdateChecker |
+
+   oUpdateChecker := CreateObject('TbeUpdate7Checker'),
+   startseq
+      oUpdateChecker.ExecuteChecks(),
+      if oUpdateChecker.HasErrors() then
+         KVU_Set(m_aResult, 'RESULT', 'ERROR'),
+         KVU_Set(m_aResult, 'RESULT_MSG', oUpdateChecker.GetErrorsAsText()),    // TODO: Maximale ausgabe auf 20 Zeilen beschränken wg. teilweise seitenlangen fehlertexten
+      else
+         KVU_Set(m_aResult, 'RESULT', 'OK'),
+         KVU_Set(m_aResult, 'RESULT_MSG', 'Es wurden keine Fehler gefunden.'),
+      endif,
+   always
+      DestroyObject(oUpdateChecker),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := (m_cModus <> 'CHECK') and not EditorMode(),
+                                    
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Strukturelle Voraussetzungen'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Voraussetzungen für das Update sind, dass ' +
+                                'eine einheitliche Verzeichnisstruktur vorhanden ist, ' +
+                                'alle Tabellen im jeweils richtigen Verzeichnis liegen und ' +
+                                'volle Zugriffsrechte auf alle be-Verzeichnisse vorhanden sind.'),
+
+m_aResult

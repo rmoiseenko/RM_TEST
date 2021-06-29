@@ -1,0 +1,33 @@
+| cSQL:C:='', oDAB075 |
+// Positionierung von vorheriger Ansicht übernehmen
+VIEW.TryKeepPriorViewPosition          := True,
+// Positionierung bei allen Quell-Ansichten übernehmen
+VIEW.TryKeepPriorViewPositionFromViews := {},
+// Vorgabesortierung
+VIEW.SQLOrderBy := 'CRM_SORT, ERSTELLT, MEMO_ID',
+
+// Gehört zu einer CRM-Aktion?
+if CRM_AKT_ID  > 0 then
+   oDAB075 := beopen(22, 1), // Index ID
+   startseq,
+      VIEW.ImageIndex  := 191,
+      VIEW.Disabled    := False,
+
+      // Name der CRM-Aktion als Ansichts-Bezeichnung
+      if dbseek({CRM_AKT_ID}, oDAB075) then
+         VIEW.Description := Trim(Token(oDAB075:NAME,'\', TokenCount(oDAB075:NAME, '\'))),
+      else
+         VIEW.Description := Str(CRM_AKT_ID),
+      endif,
+      cSQL := 'CRM_AKT_ID=' + Str(CRM_AKT_ID),
+   always,
+      beclose(oDAB075),
+   stopseq,
+else
+   VIEW.Description := 'Keine Zuordnung',
+   VIEW.ImageIndex  := 342,
+   VIEW.Disabled    := True,
+   cSQL             := 'MEMO_ID=-1',
+endif,
+
+cSQL

@@ -1,0 +1,48 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+//******************************************************************************
+function GetSqlWHERE()
+   Result := 'INNER JOIN "DABROB.ADT" DABROB ON (CAST(DABFRM.MASK_ID as SQL_NUMERIC) = DABROB.MASKEN_ID)  // Berechtigungs-Objekt zur Maske joinen ' + crlf +
+             'WHERE '                                                                                                                               + crlf +
+             '       NOT DABFRM."DEFAULT"                        // keine Default-Masken betrachten      '                                          + crlf +
+             "  AND  NOT SubString(DABFRM.MASK_ID, 7, 3) = '000' // keine Masken-Gruppen-Einträge (z.B. für Individual-Tabellen)"                   + crlf +
+             '  AND  NOT EXISTS( ' + crlf +
+             '              SELECT * FROM "DABRER.ADT" DABRER WHERE DABRER.O_GUID_STR = DABROB.GUID_STR   // keine Berechtigungs-Zuordnungen für diese Maske ' + crlf +
+             '              ) ',
+
+end,
+
+//******************************************************************************
+function Check()
+   CheckUtils_Cleaning_Standard_Check(waDabFRM, GetSqlWHERE(), 'DABFRM.MASK_ID, DABFRM.BEZ, DABFRM.BUCH_DATUM', {10, 55, 10}, '', 'DABFRM.MASK_ID, DABFRM.BEZ, DABFRM.BUCH_DATUM', m_aResult),
+end,
+
+//******************************************************************************
+function Execute()
+   if BeMessageDlgEx('Daten-Aktion durchführen?' + crlf + crlf + 'Durch diese Aktion werden Daten im System geändert!', mtWarning, {'Aktion durchführen', 'Abbrechen'}, {10, 20}, 20, 20) = 10 then
+      CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(GetSqlWHERE(), waDabFRM, 'std-masks-without-role', m_aResult, 'MASK_ID'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'DID_NOT_EXECUTE'),
+   endif,   
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: Masken ohne Rollen-Zuordnung'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Masken, die keiner Rolle zugeordnet sind, werden aktuell nicht genutzt. Typischerweise kann der Großteil dieser Masken bereinigt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Datenbereinigung durchführen...'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  195),
+
+m_aResult

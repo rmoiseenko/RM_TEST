@@ -1,0 +1,55 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| i, oTableInfo, cTables, nTableCount, cExtension |
+
+   cTables     := '',
+   nTableCount := 0,
+
+   for i := 700 to 799 do
+      oTableInfo := GetTableInfo(i),
+
+      if not empty(oTableInfo) then
+         nTableCount ++,
+
+         cExtension := Right(Upper(oTableInfo.TableDef.OrgTableName), 3),
+         if cExtension <> 'ADT' then
+            cTables := ConcatTrenner(cTables, 'Workarea: ' + Str(oTableInfo.TableWorkArea) + ' ' + oTableInfo.UserAlias + ' (' + oTableInfo.TableLabel  + ')', ', '),
+         endif,
+      endif,
+   next,
+
+   if not empty(cTables) then
+      KVU_Set(m_aResult, 'RESULT', 'ERROR'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',    Str(nTableCount) + ' Tabellen geprüft.' +
+                                       iif(empty(cTables),
+                                          ' Alle Tabellen haben das ADT-Format.',
+                                          crlf + 'Die folgenden Tabellen sind noch im DBF-Format: ' + crlf + cTables)),
+
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Umstellung Individual-Tabellen auf ADT-Format'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Individual-Tabellen müssen vor dem Update in das ADT-Format konvertiert werden.'),
+
+m_aResult

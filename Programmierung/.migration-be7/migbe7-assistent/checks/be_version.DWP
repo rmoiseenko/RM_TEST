@@ -1,0 +1,34 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode, m_cMinVersion |
+
+m_cMinVersion := '6.5.65.241',
+
+//******************************************************************************
+function Check()
+   if mBeVersion >= m_cMinVersion then
+      KVU_Set(m_aResult, 'RESULT', 'OK'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'WARNING'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   'Die aktuelle be Version ist <' + mBeVersion + '>.'),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'business express Version'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Vor dem Update auf be 7.x muss mindestens be ' + m_cMinVersion + ' installiert sein.'),
+
+m_aResult

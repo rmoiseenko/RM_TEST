@@ -1,0 +1,28 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+//******************************************************************************
+function GetSqlWHERE()
+   Result :=
+     "   WHERE (BEZ LIKE 'Neues Layout _') OR (BEZ LIKE 'Neues Layout __')   OR (BEZ LIKE 'Neues Layout ___')",
+end,
+
+//******************************************************************************
+function Check()
+   CheckUtils_Cleaning_Standard_Check(waDabR10, GetSqlWHERE(), 'DISTINCT REPORT_ID, REPORT_NR, BEZ, AEND_DAT', {30, 8, 30, 10}, '', 'REPORT_ID, REPORT_NR, BEZ, AEND_DAT', m_aResult),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: Layouts "Neues Layout ..."'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Layouts, die den Default-Namen tragen, sollten bereinigt werden. Eine detaillierte ‹bersicht bietet das Tool "layout-manager".'),
+KVU_Set(m_aResult, 'EXECUTABLE',  false), // Keine automatische Bereinigung von diese Layouts, das ist zu heiﬂ!
+m_aResult

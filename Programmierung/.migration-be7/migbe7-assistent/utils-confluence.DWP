@@ -1,0 +1,110 @@
+
+
+
+function ConfluenceExpFuncs_ResultFieldToStatusMacroColor(cResultValue)
+  case true
+     of cResultValue == 'OK'      :: Result := 'Green',
+     of cResultValue == 'ERROR'   :: Result := 'Red',
+     of cResultValue == 'WARNING' :: Result := 'Yellow',
+     of cResultValue == 'INFO'    :: Result := 'Grey',
+     otherwise                       Result := 'Red',
+  endcase,
+end,
+
+function ConfluenceExpFuncs_ResultFieldToStatusMacro(oMemCheck)
+| cResult, cColor |
+   cResult := AllTrim(oMemCheck:RESULT),
+   cColor  := ConfluenceExpFuncs_ResultFieldToStatusMacroColor(cResult),
+   Result  :=
+     '<ac:structured-macro ac:name="status">' +
+     '<ac:parameter ac:name="colour">' + cColor  + '</ac:parameter>' +
+     '<ac:parameter ac:name="title">'  + cResult + '</ac:parameter>' +
+     '</ac:structured-macro> ',
+end,
+
+function ConfluenceExpFuncs_ResultMessageToCodeblockMacro(cText)
+  Result := '',
+  if not empty(cText) then
+     Result :=
+        '<ac:structured-macro ac:name="code">' +
+        '<ac:parameter ac:name="language">diff</ac:parameter>' +
+        '<ac:plain-text-body>' +
+        '<![CDATA[ ' + cText +  ']]>' +
+        '</ac:plain-text-body></ac:structured-macro>',
+  endif,
+end,
+
+function ConfluenceExpFuncs_ReplaceHTMLSigns(cText)
+  cText  := StrTran(cText, '&', '&amp;'),
+  cText  := StrTran(cText, '<', '&lt;'),
+  cText  := StrTran(cText, '>', '&gt;'),
+  Result := cText,
+end,
+
+function ConfluenceExpFuncs_HeaderInfoRegion(cHeaderTemplatePath)
+  Result := BP_Basics_LoadSqlScriptByName(cHeaderTemplatePath),
+
+  Result := StrTran(Result, '@@DATUM-UHRZEIT@@', ToString(Date()) + ' ' + ToString(Time())),
+  Result := StrTran(Result, '@@BE-EXE-PATH@@',   CbApplication.ExeName),
+  Result := StrTran(Result, '@@BE-APP-FLAG@@',   RTrim(DABPAR:APPFLAG)),
+  Result := StrTran(Result, '@@BE-VERSION@@',    MBeVersion),
+  Result := StrTran(Result, '@@BE-BUILD-ID@@',   MBeBuildID),
+end,
+
+function ConfluenceExpFuncs_ApplyDataToChecklisteTemplate(oMemCheck, cTemplatePath, cHeaderTemplatePath)
+| cText, cDescriptionKey, cDescriptionText, cResultStatusMacroKey, cResultMsgBlockmacroKey, cResultMsgFirstLineKey,
+  cResultMsgTextKey, cResultMsgText,
+  cResultDetailsBlockMacroKey, cResultDetailsBlockMacroText,
+  oRec, cResultStatusMacroText, cResultMsgMacroText, cResultMsgFirstLineText, cHeaderInfoKey, nOldRecNo |
+
+  nOldRecNo := oMemCheck.CbRecNo,
+  DbDisableControls(oMemCheck),
+  startseq
+     oMemCheck.cbfirst(),
+
+     cText := BP_Basics_LoadSqlScriptByName(cTemplatePath),
+
+     cHeaderInfoKey := '@@confluence.doku.header.template@@',
+     cText          := StrTran(cText, cHeaderInfoKey, ConfluenceExpFuncs_HeaderInfoRegion(cHeaderTemplatePath)),
+
+     foreach oRec in oMemCheck do
+
+       // Ersetzungs-Texte lautet z.B. wie folgt:
+       // @@BARVERKAUF@description@@
+       // @@BARVERKAUF@result.statusmacro@@
+       // @@BARVERKAUF@result.msg.first.line@@
+       // @@BARVERKAUF@result.msg.as.blockmacro@@
+       // @@BARVERKAUF@result.details.as.blockmacro@@
+       // ...
+
+       cDescriptionKey             := '@@' + RTrim(oMemCheck:STEP_KEY) + '@description@@',
+       cResultStatusMacroKey       := '@@' + RTrim(oMemCheck:STEP_KEY) + '@result.statusmacro@@',
+       cResultMsgFirstLineKey      := '@@' + RTrim(oMemCheck:STEP_KEY) + '@result.msg.first.line@@',
+       cResultMsgTextKey           := '@@' + RTrim(oMemCheck:STEP_KEY) + '@result.msg.as.text@@',
+       cResultMsgBlockmacroKey     := '@@' + RTrim(oMemCheck:STEP_KEY) + '@result.msg.as.blockmacro@@',
+       cResultDetailsBlockMacroKey := '@@' + RTrim(oMemCheck:STEP_KEY) + '@result.details.as.blockmacro@@',
+
+       cDescriptionText             := ConfluenceExpFuncs_ReplaceHTMLSigns(RTrim(oMemCheck:KOMMENTAR)),
+       cResultStatusMacroText       := ConfluenceExpFuncs_ResultFieldToStatusMacro(oMemCheck),
+       cResultMsgText               := ConfluenceExpFuncs_ReplaceHTMLSigns(RTrim(oMemCheck:RESULT_MSG)),
+       cResultMsgMacroText          := ConfluenceExpFuncs_ResultMessageToCodeblockMacro(oMemCheck:RESULT_MSG),
+       cResultMsgFirstLineText      := ConfluenceExpFuncs_ReplaceHTMLSigns(Token(AllTrim(oMemCheck:RESULT_MSG), crlf, 1)),
+       cResultDetailsBlockMacroText := ConfluenceExpFuncs_ResultMessageToCodeblockMacro(oMemCheck:RESULT_SQL),
+
+       cText := StrTran(cText, cDescriptionKey,             cDescriptionText),
+       cText := StrTran(cText, cResultStatusMacroKey,       cResultStatusMacroText),
+       cText := StrTran(cText, cResultMsgFirstLineKey,      cResultMsgFirstLineText),
+       cText := StrTran(cText, cResultMsgBlockmacroKey,     cResultMsgMacroText),
+       cText := StrTran(cText, cResultMsgTextKey,           cResultMsgText),
+       cText := StrTran(cText, cResultDetailsBlockMacroKey, cResultDetailsBlockMacroText),
+
+     next,
+
+     CopyToClipboard(cText),
+  always
+    oMemCheck.CbGoTo(nOldRecNo),
+    DbEnableControls(oMemCheck),
+  stopseq,
+
+end,
+

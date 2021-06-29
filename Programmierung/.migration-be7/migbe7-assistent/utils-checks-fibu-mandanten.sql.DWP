@@ -1,0 +1,41 @@
+//##############################################################################
+// Dieses Script ermittelt eine Liste von FiBu-Mandanten
+// => Quelle sind die im DataDictionary befindlichen 'DFPARxxx' Tabellen
+//##############################################################################
+
+DECLARE @DFPar CURSOR;
+DECLARE @Stmt Char(300);
+
+OPEN @DFPar AS
+   SELECT Left(Name, 12) AS TABLENAME FROM system.ansi_tables where name like 'DFpar%';
+
+TRY DROP TABLE #Mandanten; CATCH ALL END;
+
+SELECT
+    CAST(null AS SQL_CHAR(3))  AS MANDANT_STR,
+    CAST(null AS SQL_CHAR(12)) AS TABLENAME,
+    CAST(null AS SQL_CHAR(30)) AS FIRMA,
+    CAST(null as SQL_DATE)     AS GJ_BEGINN
+  INTO #Mandanten
+  FROM system.iota;
+DELETE FROM #Mandanten;
+
+WHILE FETCH @DFPar DO
+
+   // Für jede im DD vorhandene "DFPARxxx" Tabelle einen Datensatz in die Ausgabe-Tabelle
+   // schreiben. Weitere Stammdaten-Werte wie "GJ-Beginn" aus der jeweiligen DFPARxxx holen.
+   // Achtung: Die DFPar enthält im "ersten" Satz die echten Mandanten-Stammdaten. Diesen Satz identifizieren wir über die Bedingung 'GJ_BEGINN IS NOT NULL'
+   @Stmt = 'INSERT INTO #Mandanten (TABLENAME, FIRMA, GJ_BEGINN) SELECT ''' + @DFPar.TABLENAME + ''' AS TABLENAME, FIRMA, GJ_BEGINN FROM "' + @DFPar.TABLENAME + '" WHERE GJ_BEGINN IS NOT NULL';
+
+   EXECUTE IMMEDIATE @Stmt;
+
+END WHILE;
+
+CLOSE @DFPar;
+
+// 3-stelligen Mandanten-String aus dem Tabellen-Namen ableiten
+UPDATE #Mandanten SET MANDANT_STR = SubString(TABLENAME, 6, 3);
+
+// Beispiel für die Nutzung
+// SELECT * FROM #Mandanten;
+

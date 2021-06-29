@@ -1,0 +1,71 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+//******************************************************************************
+function GetSqlWHERE()
+| aOldStandardLayouts_hardcoded, cSqlStdLayoutsHarcodedIn, aElem |
+
+   aOldStandardLayouts_hardcoded :=  {
+    {'CustMemoMail'             , 'Memo Druck (abgelöst)'       },
+    {'CustMemoFax'              , 'Memo Druck (abgelöst)'       },
+    {'SuppMemoMail'             , 'Memo Druck (abgelöst)'       },
+    {'SuppMemoFax'              , 'Memo Druck (abgelöst)'       },
+    {'AgentMemoMail'            , 'Memo Druck (abgelöst)'       },
+    {'AgentMemoFax'             , 'Memo Druck (abgelöst)'       },
+    {'IndiCommissOrder'         , 'Indiv.Logistik (gelöscht)'   },
+    {'IndiExtPosList'           , 'Indiv.Logistik (gelöscht)'   },
+    {'IndiPlaceLabel'           , 'Indiv.Logistik (gelöscht)'   },
+    {'IndiPlArtLabel'           , 'Indiv.Logistik (gelöscht)'   },
+    {'VoucherArchiveConvertion' , 'be 16 Konvertierung'         }
+   },
+
+   cSqlStdLayoutsHarcodedIn := '',
+   foreach aElem in aOldStandardLayouts_hardcoded do
+      cSqlStdLayoutsHarcodedIn := ConcatTrenner(cSqlStdLayoutsHarcodedIn, Replicate(' ', 15) + PadR("'" + aElem[1] + "'", 35) + " /* " + aElem[2] + "*/", ',' + crlf),
+   next,
+
+   Result :=
+     '   WHERE ' + crlf +
+     '          REPORT_ID in ('             + crlf +
+                   cSqlStdLayoutsHarcodedIn + crlf +
+     '                       )'             + crlf +
+     "       OR LEFT(REPORT_ID, 5) = 'BVBD_' // (abgelöst) Barverkauf-Beleg "            + crlf +
+     "       OR LEFT(REPORT_ID, 5) = 'BVJS_' // (abgelöst) Barverkauf-Journal "          + crlf +
+     "       OR LEFT(REPORT_ID, 5) = 'BVUS_' // (abgelöst) Barverkauf-Umsatzstatistik "  + crlf +
+     "       OR REPORT_ID LIKE '___\_FBZK\____\____' ESCAPE '\' // Zahlungsvorschlagsliste (veraltet)",
+
+end,
+
+//******************************************************************************
+function Check()
+   CheckUtils_Cleaning_Standard_Check(waDabR10, GetSqlWHERE(), 'DISTINCT REPORT_ID, REPORT_NR, BEZ, AEND_DAT', {28, 10, 25, 10}, '', 'REPORT_ID, REPORT_NR, BEZ, AEND_DAT', m_aResult),
+end,
+
+//******************************************************************************
+function Execute()
+   if BeMessageDlgEx('Daten-Aktion durchführen?' + crlf + crlf + 'Durch diese Aktion werden Daten im System geändert!', mtWarning, {'Aktion durchführen', 'Abbrechen'}, {10, 20}, 20, 20) = 10 then
+      CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(GetSqlWHERE(), waDabR10, 'old-standard-layouts', m_aResult, '[ROWID]'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'DID_NOT_EXECUTE'),
+   endif, 
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: Veraltete Standard-Layouts'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Layouts, die in älteren Versionen von business express für Standard-Druckausgaben genutzt wurden. Diese Layouts können bereinigt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Datenbereinigung durchführen...'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  195),
+
+m_aResult

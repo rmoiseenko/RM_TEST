@@ -1,0 +1,40 @@
+| m_aInputParams:P1, m_aResult, m_cModus, m_nSubStep, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+
+
+   if SomeThingWrong then
+      KVU_Set(m_aResult, 'RESULT',     'ERROR'),
+      KVU_Set(m_aResult, 'RESULT_MSG', ''),
+   else
+      KVU_Set(m_aResult, 'RESULT',     'OK'),
+      KVU_Set(m_aResult, 'RESULT_MSG', ''),
+   endif,
+
+   // KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+m_nSubStep := KVU_Get(m_aInputParams, 'SUB_STEP', 0),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Bezeichnung des Checks'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Erklärung Zeile 1' + crlf +
+                                'Erklärung Zeile 2'
+                                ),
+
+m_aResult

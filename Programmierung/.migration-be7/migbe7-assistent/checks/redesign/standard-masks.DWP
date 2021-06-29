@@ -1,0 +1,178 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-common
+//#p .migration-be7\migbe7-assistent\utils-checks
+
+//******************************************************************************
+function GetStdMaskSQL()
+   Result := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\redesign\standard-masks.sql'),
+   Result := StrTran(Result, '@USE_GROUP_CONCAT@', iif(CheckAdsVersion12IsInstalled(), '', '//')), // GROUP_CONCAT() gibt es in SQL erst ab ADS 12
+end,
+
+
+//******************************************************************************
+function Check()
+| aResult, cSQL, cSQLCount, nCount, cFormattedResult |
+
+   cSQL := GetStdMaskSQL(),
+
+   aResult          := CheckUtils_ExecCheckSQL(cSQL, '', {11, 4, 30, 7, 40}),
+   cFormattedResult := KVU_GetAssert(aResult, 'QUERY_AS_TEXT'),
+   nCount           := KVU_GetAssert(aResult, 'COUNT'),
+
+   if nCount > 0 then
+      KVU_Set(m_aResult, 'RESULT', 'INFO'),
+   else
+      KVU_Set(m_aResult, 'RESULT',  'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   Str(nCount) + ' Standard-Designer-Masken mit aktiver Rollen-Zuordnung gefunden. ' + crlf + crlf + cFormattedResult),
+   KVU_Set(m_aResult, 'RESULT_SQL',   cSQL),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CreateExportMemtable()
+   Result := CreateObject('TBeMemTable', 'MEM_EXPORT'),
+
+   Result.CbAddField('Mask_ID',            ftString,       20),
+   Result.CbAddField('Bezeichnung',        ftString,      128),
+   Result.CbAddField('Indiv',              ftString,        1),
+
+   Result.CbAddField('IndiFelder',         ftInteger,        0), // Anzahl X- und NONSTD- Controls
+   Result.CbAddField('CalcEdits',          ftInteger,        0), // Anzahl
+   Result.CbAddField('CbPanels',           ftInteger,        0), // Anzahl
+   Result.CbAddField('Buttons',            ftInteger,        0), // Anzahl Buttons, nur der mit 'CalcBlock'
+   Result.CbAddField('IndiMenues',         ftInteger,        0), // Anzahl
+   Result.CbAddField('IndiFilter',         ftInteger,        0), // Anzahl
+
+   Result.CbAddField('Beschreibung',       ftString,       70),
+   Result.CbAddField('Bewertung',          ftString,       50),
+
+   Result.CbAddField('Löschen',            ftString,        1),
+   Result.CbAddField('Std.Msk. nutzen',    ftString,        1),
+   Result.CbAddField('Aufwand Umstellung', ftFloat,         0),
+
+   Result.CbAddField('LetzteAend',         ftDate,          0),
+   Result.CbAddField('RollenAnz',          ftInteger,       0),  // ROL_ANZ
+   Result.CbAddField('Rollen',             ftMemo,          0),  // ROLLEN
+
+   Result.Active  := True,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CountMatchesByRegEx(cText, cRegEx)
+| oRegExpr |
+   Result := 0,
+
+   if empty(cText) then
+      Result := -1,
+   else
+      oRegExpr := CreateObject('TBeCBRegExpr'),
+      startseq
+         oRegExpr.SearchExpression := cRegEx,
+         oRegExpr.SearchText       := cText,
+         if oRegExpr.ExecSearch then
+            Result ++,
+            while oRegExpr.ExecSearchNext do
+               Result ++,
+            end,
+         endif,
+      always
+         DestroyObject(oRegExpr),
+      stopseq,
+   endif,
+end,
+
+//******************************************************************************
+function Execute()
+| cSQL, cExcelFilePath, cFullExcelFileName, oQuery, oRec, oMemTable, cBasisPfad, oDabFrm |
+  cSQL             := GetStdMaskSQL(),
+
+  cBasisPfad       := KVU_GetAssert(m_aInputParams, 'PFAD'),
+  cExcelFilePath   := MigBe7_CalcExportFolderName(cBasisPfad) + 'redesign\',
+
+  ForceDirectories(cExcelFilePath),
+
+  cFullExcelFileName := cExcelFilePath + '3.4.1 Masken des Standard-Maskendesigners - ReDesign Aufwandsschätzung.xlsx',
+
+  // Relevante Programme ermitteln
+  oQuery := CreateObject('TbeAdsQuery'),
+  startseq
+     oQuery.SQL    := cSQL,
+     oQuery.Active := true,
+
+
+     oMemTable := CreateExportMemtable(),
+     startseq
+        oDabFrm := BeOpen(waDabFRM, 'MASK_ID' ),
+        startseq
+
+
+              foreach oRec in oQuery do
+
+                MySeek({oQuery:Mask_ID}, oDabFrm),
+
+                oMemTable.CbAppend(),
+                oMemTable:Mask_ID     := oQuery:Mask_ID,
+                oMemTable:Bezeichnung := oQuery:BEZ,
+                oMemTable:Indiv       := oQuery:INDI,
+
+                oMemTable:IndiFelder  := CountMatchesByRegEx(oDabFrm:DATA, "DataField = 'X_| DataField = 'NONSTD_"),
+                oMemTable:CalcEdits   := CountMatchesByRegEx(oDabFrm:DATA, ": TBeCalcEdit\b"),
+                oMemTable:CbPanels    := CountMatchesByRegEx(oDabFrm:DATA, ": TCodeBlockPanel\b"),
+                oMemTable:Buttons     := CountMatchesByRegEx(oDabFrm:DATA, ": TBeBlockBtn\b"),
+                oMemTable:IndiMenues  := CountMatchesByRegEx(oDabFrm:DATA, ": TBeCustomMenuPanel\b"),
+                oMemTable:IndiFilter  := CountMatchesByRegEx(oDabFrm:DATA, ": TDbIndiFilterEx\b"),
+
+                oMemTable:LetzteAend  := oDabFrm:BUCH_DATUM,
+                oMemTable:RollenAnz   := oQuery:ROL_ANZ,
+                oMemTable:Rollen      := oQuery:ROLLEN,
+                oMemTable.CbPost(),
+              next,
+
+
+        always
+           BeClose(oDabFrm),
+        stopseq,
+
+        ExportExcelFile(cFullExcelFileName, oMemTable, true),
+
+     always
+        DestroyObject(oMemTable),
+     stopseq,
+
+  always
+     DestroyObject(oQuery),
+  stopseq,
+
+  ShellExecute(cExcelFilePath),
+
+
+  KVU_Set(m_aResult, 'RESULT',        'DONE'),
+  KVU_Set(m_aResult, 'RESULT_MSG',    'Datei wurde erstellt unter ' + cFullExcelFileName),
+  KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+  KVU_Set(m_aResult, 'RESULT_FOLDER', cExcelFilePath),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'ReDesign: Standard-Masken'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Alle Standard-Designer-Masken mit aktiver Rollen-Zuordnung, die nicht eine Default-Maske sind. ' +
+                                  'Das Design dieser Oberflächen sollte im Zuge des Updates standardisiert werden. Sofern möglich und sinnvoll, sollte auf die Standard-Maske umgestellt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Liste als XLSX exportieren'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  155),
+
+
+m_aResult

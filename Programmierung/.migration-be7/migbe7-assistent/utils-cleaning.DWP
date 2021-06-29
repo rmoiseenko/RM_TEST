@@ -1,0 +1,131 @@
+
+
+//#p .migration-be7\migbe7-assistent\utils-checks
+
+
+//##############################################################################
+// Funktionen, die per Include in Check-Programmen genutzt werden können, die
+//   eine "Daten-Bereinigung" ausführen können
+//##############################################################################
+
+
+
+//******************************************************************************
+// Daten bereinigen - Standardisierte Prüf-Logik
+//******************************************************************************
+function CheckUtils_Cleaning_Standard_Check(nWorkarea, cSqlWHERE, cSqlFieldSELECT, aColumnWidthArray, cSqlGroupBy, cSqlOrderBy, aCheckResultArray:R)
+| cSQL_Count, nCount, cSQL_Details, aDetailsResult, cFormattedResult |
+
+   // 1. Anzahl Datensätze ermitteln
+   cSQL_Count       := 'SELECT COUNT(*) AS ANZAHL '                 + crlf +
+                       '   FROM ' + DbSqlTableName(nWorkarea, true) + crlf +
+                       cSqlWHERE,
+   nCount           := CheckUtils_CalcSQLCount(cSQL_Count, 'ANZAHL'),
+
+
+   // 2. SQL für Ausgabe-Tabelle ermitteln und in lesbaren Text umwandeln
+   cSQL_Details     := 'SELECT ' + cSqlFieldSELECT   + crlf +
+                       '   FROM ' + DbSqlTableName(nWorkarea, true) + crlf +
+                       cSqlWHERE
+                       + iif( empty(cSqlGroupBy),
+                              '',
+                              crlf + ' GROUP BY ' + cSqlGroupBy )
+                       + iif( empty(cSqlOrderBy),
+                              '',
+                              crlf + ' ORDER BY ' + cSqlOrderBy ),
+   aDetailsResult   := CheckUtils_ExecCheckSQL(cSQL_Details, '', aColumnWidthArray, 20), // <-- nur die ersten 20 Zeilen ausgeben
+   cFormattedResult := KVU_GetAssert(aDetailsResult, 'QUERY_AS_TEXT'),
+
+   // 3. Rückgaben füllen
+   KVU_Set(aCheckResultArray, 'RESULT',     iif(nCount > 0,
+                                            'WARNING',
+                                            'OK')),
+   KVU_Set(aCheckResultArray, 'RESULT_MSG', iif( nCount = 0,
+                                                 '',
+                                                 Str(nCount) + iif(nCount = 1, ' Datensatz', ' Datensätze') + ' gefunden') +
+                                            iif( empty(cFormattedResult),
+                                                 '',
+                                                 crlf + crlf + cFormattedResult)
+          ),
+   KVU_Set(aCheckResultArray, 'RESULT_SQL', cSQL_Count + crlf + crlf + cSQL_Details),
+end,
+
+
+
+//******************************************************************************
+// Daten bereinigen - per SQL archivieren und anschließend an der Quelle löschen
+//
+// @bDeleteByPrimaryKeyField: Hier kann der Feld-Name des Primär-Schlüssel-Feldes
+//                            (muss eindeutig sein) angegeben werden, welches für
+//                            die Löscung verwendet werden soll.
+//                            Dieses Vorgehen ist notwendig, wenn das WHERE-SQL Tabellen-Aliase verwendet.
+//******************************************************************************
+function CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(cSqlWHEREPart, nWorkarea, cArchiveTableNameAddon, aCheckResultArray:R, cDeleteByPrimaryKeyField:C:='')
+| cArchivePath, cArchiveTableName, cSelectCountSQL_Orig, nRecordCount_Orig, cSelectCountSQL_Archiv, nRecordCount_Archiv, cBackUpSQL, cDeleteSQL |
+
+   //***************************************************************************
+   function GetTableAliasName(nWorkarea)
+   | oTableInfo |
+      oTableInfo := GetTableInfo(nWorkarea),
+      SetErrorIf(empty(oTableInfo), 'no table info for workarea ' + Str(nWorkarea)),
+      Result := AllTrim(oTableInfo.TableDef.AliasName),
+   end,
+
+   // 1. Schritt: Name der Archiv-Tabelle berechnen
+   //    Hinweis: Archivierung im "..\winbehid\..." klappt leider nicht, weil anschließender SELECT auf die Tabelle schief geht
+   cArchivePath      := 'migbe7-cleaning-archiv\', // <- relativ zu "winbe"
+   cArchiveTableName := cArchivePath + GetTableAliasName(nWorkarea) + '-clean-' + cArchiveTableNameAddon + '-' + FormatDateTime('YYYY-MM-DD--HH-MM-SS', GetAdsServerTime()),
+   cArchiveTableName := '"' + cArchiveTableName + '"',
+
+   // 2. Schritt: Anzahl zu löschender Datensätze berechnen
+   cSelectCountSQL_Orig := 'SELECT COUNT(*) AS ANZAHL ' + crlf +
+                           '   FROM ' + DbSqlTableName(nWorkarea, true) + crlf + cSqlWHEREPart,
+   nRecordCount_Orig    := CheckUtils_CalcSQLCount(cSelectCountSQL_Orig, 'ANZAHL'),
+
+   if nRecordCount_Orig = 0 then
+      SetError('Keine archivierbaren Datensätze gefunden.'),
+   endif,
+
+   // 3. Schritt: Daten archivieren
+   cBackUpSQL := 'SELECT * '                            + crlf  +
+                 '   INTO ' + cArchiveTableName         + crlf +
+                 '   FROM ' + DbSqlTableName(nWorkarea, true) + crlf +
+                 cSqlWHEREPart,
+
+   CheckUtils_ExecuteSQL(cBackUpSQL),
+
+   // 4. Schritt: Prüfen, ob Daten archiviert wurden
+   cSelectCountSQL_Archiv  := 'SELECT COUNT(*) AS ANZAHL ' + crlf +
+                              '   FROM ' + cArchiveTableName,
+   nRecordCount_Archiv     := CheckUtils_CalcSQLCount(cSelectCountSQL_Archiv, 'ANZAHL'),
+
+   if nRecordCount_Orig <> nRecordCount_Archiv then
+      SetError('Die Anzahl der archivierten Datensätze weicht von der Anzahl zu löschender Datensätze ab. Fehler in der Logik bzw. Menge während der Archivierung geändert?'),
+   endif,
+
+   // 5. Schritt: Daten löschen
+   if empty(cDeleteByPrimaryKeyField) then
+      cDeleteSQL := 'DELETE ' + crlf  +
+                    '   FROM ' + DbSqlTableName(nWorkarea, false) + crlf +
+                    cSqlWHEREPart,
+   else
+      cDeleteSQL := 'DELETE ' + crlf  +
+                    '   FROM ' + DbSqlTableName(nWorkarea, false) + crlf +
+                    '  WHERE ' + crlf +
+                    '   ' + cDeleteByPrimaryKeyField + ' IN (' + crlf +
+                    '      SELECT ' + GetTableAliasName(nWorkarea) + '.' + cDeleteByPrimaryKeyField + crlf +
+                    '      FROM ' + DbSqlTableName(nWorkarea, true) + crlf +
+                    cSqlWHEREPart + crlf +
+                    '    ) ',
+
+   endif,
+                                                                                //CopyToClipboard(cDeleteSQL),
+
+   CheckUtils_ExecuteSQL(cDeleteSQL),
+
+   KVU_Set(aCheckResultArray, 'RESULT',        'DONE'),
+   KVU_Set(aCheckResultArray, 'RESULT_MSG',    Str(nRecordCount_Archiv) + ' ' + iif(nRecordCount_Archiv = 1, 'Datensatz wurde', 'Datensätze wurden') + ' archiviert und anschließend gelöscht.' + crlf + crlf +
+                                               'Name der Archiv-Tabelle: ' + cArchiveTableName),
+   KVU_Set(aCheckResultArray, 'RESULT_SQL',    cBackUpSQL + crlf + crlf + cDeleteSQL),
+   KVU_Set(aCheckResultArray, 'RESULT_FOLDER', mBeDefault + '\' + cArchivePath),
+end,

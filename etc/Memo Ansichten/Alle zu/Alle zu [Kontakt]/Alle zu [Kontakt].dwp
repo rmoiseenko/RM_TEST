@@ -1,0 +1,32 @@
+| cSQL:C:='', oDAB005 |
+
+// Positionierung von vorheriger Ansicht übernehmen
+VIEW.TryKeepPriorViewPosition          := True,
+// Positionierung bei allen Quell-Ansichten übernehmen
+VIEW.TryKeepPriorViewPositionFromViews := {},
+
+// Gültiger Kontakt zugewiesen?
+if ID > 0 then
+   oDAB005 := beopen(38, 2), // Index ID
+   startseq,
+      MEMOBO.MemoID    := MEMO_ID, // MemoBusinessObject positionieren
+      VIEW.ImageIndex  := 214,
+      VIEW.Disabled    := False,
+      // "Name" und wenn nicht leer "Vorname" als Ansichts-Bezeichnung
+      if dbseek({ID}, oDAB005) and oDAB005:PERSNR = MEMOBO.PersNoValue then
+         VIEW.Description := D005_FullName(oDAB005, True),
+      else
+         VIEW.Description := Str(ID), 
+      endif,
+      cSQL := 'ID=' + str(ID),
+   always,
+      beclose(oDAB005),
+   stopseq,
+else
+   VIEW.Description := 'Keine Zuordnung',
+   VIEW.ImageIndex  := 342,
+   VIEW.Disabled    := True,
+   cSQL             := 'MEMO_ID=-1',
+endif,
+
+cSQL

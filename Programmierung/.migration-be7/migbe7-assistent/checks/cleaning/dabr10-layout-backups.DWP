@@ -1,0 +1,42 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+//******************************************************************************
+function GetSqlWHERE()
+   Result :=
+     "   WHERE Left(REPORT_ID, 7) = 'BACKUP_' OR Left(REPORT_ID, 6) = 'KOPIE_'",
+end,
+
+//******************************************************************************
+function Check()
+   CheckUtils_Cleaning_Standard_Check(waDabR10, GetSqlWHERE(), 'DISTINCT REPORT_ID, REPORT_NR, BEZ', {30, 10, 38}, '', 'REPORT_ID, REPORT_NR', m_aResult),
+end,
+
+//******************************************************************************
+function Execute()
+   if BeMessageDlgEx('Daten-Aktion durchführen?' + crlf + crlf + 'Durch diese Aktion werden Daten im System geändert!', mtWarning, {'Aktion durchführen', 'Abbrechen'}, {10, 20}, 20, 20) = 10 then
+      CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(GetSqlWHERE(), waDabR10, 'backups', m_aResult),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'DID_NOT_EXECUTE'),
+   endif,  
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: Layout-BackUps'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Layouts, die beim package-import als Sicherungskopie angelegt wurden, sollten bereinigt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Datenbereinigung durchführen...'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  195),
+
+m_aResult

@@ -1,0 +1,66 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//#p .migration-be7\migbe7-assistent\utils-checks
+//#p .migration-be7\migbe7-assistent\utils-checks-fibu
+
+//******************************************************************************
+function Check()
+| oQuery, cMandanten, oRec, cSQL, bFiBuActive |
+
+   //***************************************************************************
+   // 1. Step - FiBu aktiv?
+   bFiBuActive := CheckUtils_FiBu_IsActiveViaDABPAR(),
+
+   if bFiBuActive then
+     KVU_Set(m_aResult, 'RESULT', 'INFO'),
+   else
+     KVU_Set(m_aResult, 'RESULT', 'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   'Die business express Finanzbuchhaltung ist ' + iif(bFiBuActive, 'AKTIVIERT. ', 'nicht aktiv.')),
+   cSQL   := 'SELECT FIBU_AKTIV, FIRMA FROM  "DABPAR.ADT"',
+   KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+
+
+   //***************************************************************************
+   // 2. Step - Welche Mandanten sind aus ERP-Sicht definiert?
+   cSQL   := 'SELECT DISTINCT DABPAR.FIRMA FROM "DABPAR.ADT" DABPAR;',
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+      cMandanten    := '',
+      foreach oRec in oQuery do
+         cMandanten := ConcatTrenner(cMandanten, oQuery:FIRMA, ', '),
+      next,
+
+      KVU_Set(m_aResult, 'RESULT_MSG',  KVU_Get(m_aResult, 'RESULT_MSG', '') + crlf + crlf + 'Definierte Mandanten aus ERP-Sicht (DABPAR): ' + cMandanten),
+      KVU_Set(m_aResult, 'RESULT_SQL',  KVU_Get(m_aResult, 'RESULT_SQL', '') + ';' + crlf + cSQL),
+
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Info: Ist die business express Finanzbuchhaltung aktiv?'),
+KVU_Set(m_aResult, 'KOMMENTAR', '' + crlf +
+                                ''
+                                ),
+
+m_aResult

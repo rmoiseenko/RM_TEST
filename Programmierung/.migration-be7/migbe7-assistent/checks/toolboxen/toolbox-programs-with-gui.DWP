@@ -1,0 +1,40 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-checks
+
+//******************************************************************************
+function Check()
+| aResult, cSQL, cSQLCount, nCount, cFormattedResult, cIncludeMasksList |
+
+   cIncludeMasksList             := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\redesign\programs-with-gui-std-masks-list.sql'),
+
+   cSQL := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\toolboxen\toolbox-programs-with-gui.sql'),
+   cSQL := StrTran(cSQL, '@INCLUDE_F12_MASKS_LIST@', cIncludeMasksList),
+
+   aResult          := CheckUtils_ExecCheckSQL(cSQL, '/BEZ/MASK_ID/', {75, 11}),
+   cFormattedResult := KVU_GetAssert(aResult, 'QUERY_AS_TEXT'),
+   nCount           := KVU_GetAssert(aResult, 'COUNT'),
+
+   if nCount > 0 then
+      KVU_Set(m_aResult, 'RESULT', 'INFO'),
+   else
+      KVU_Set(m_aResult, 'RESULT',  'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   Str(nCount) + ' Programme gefunden. ' + crlf + crlf + cFormattedResult),
+   KVU_Set(m_aResult, 'RESULT_SQL',   cSQL),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Toolboxen: Packages mit Oberfläche'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Toolbox-Packages, die eine Oberfläche anzeigen. Diese Toolboxen müssen (nach Prüfung auf individuelle Änderungen) auf den aktuellen Stand aktualisiert werden. Toolboxen mit Administrations-Charakter werden nicht aufgelistet.'),
+KVU_Set(m_aResult, 'EXECUTABLE',  false),
+m_aResult

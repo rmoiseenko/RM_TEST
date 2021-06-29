@@ -1,0 +1,47 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| oQuery, cAdsVersion, cSQL |
+
+   cSQL   := 'SELECT COUNT(*) AS ANZAHL FROM  "DAB770.ADT"', // Hier absichtlich nicht mit waDAB770, damit das Programm auch unter 7.x noch läuft
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      if oQuery:ANZAHL > 0 then
+         KVU_Set(m_aResult, 'RESULT', 'WARNING'),
+      else
+         KVU_Set(m_aResult, 'RESULT', 'OK'),
+      endif,
+
+      KVU_Set(m_aResult, 'RESULT_MSG',   'Die Tabelle enthält <' + Str(oQuery:ANZAHL) + '> Datensätze.'),
+      KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Entfernung der Tabelle DAB770 (Barverkauf)'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Die Tabelle wird mit dem Update auf 7.x gelöscht.' + crlf +
+                                'Der Inhalt (sofern vorhanden) sollte vor dem Update aus Dokumentationsgründen gesichert werden.'),
+
+m_aResult

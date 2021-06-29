@@ -1,0 +1,635 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung: Migrations-Assistent Update auf business express Version 7.x
+//##############################################################################
+//##############################################################################
+
+|
+   m_oOwner:P1,
+   m_cFormRefKey:P2,
+
+   m_cPositionSaveId, m_cFormId, m_cBrowserID_Checks, m_cBrowserUser, m_cPfad, m_bStdBrowser,
+
+   m_oMemCheck,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, a_Browseruser, A_CopyDetailsResultToClipboard,
+   A_CopyDetailsSQLToClipboard, A_CopyToClipboardConfluenceFormatted,
+   A_DefineParams, A_ExecuteStepAction, A_Folder_OpenInExplorer,
+   A_Folder_OpenInVsCode, A_PerformChecks_All, A_PerformChecks_AllFast,
+   A_PerformChecks_Single, a_Pfad, A_ResetAndLoad, A_StartDetailCheck, actions,
+   barMessageResult, barMessageSQL, BeBarButton1, BeBarButton10, BeBarButton11,
+   BeBarButton2, BeBarButton3, BeBarButton4, BeBarButton5, BeBarButton6,
+   BeBarButton7, BeBarButton8, BeBarButton9, BeBarManager, BeBarManagerBar1,
+   BePanel1, btn_Params, dockMessageResult, dockMessageSQL, dockSteps,
+   ds_checks, edt_AdditionalResult, edt_Kommentar, edt_ResultMessage,
+   grd_checks, ipnl_Main, ipnl_ResultMessage, ipnl_ResultSQL,
+   ipnl_StartedInVersion7, ipnl_StepComment, ipnl_Steps, lbl_Welcome,
+   pnl_Bottom, pnl_Details, pnl_DetailsSQL, pnl_Results, pnl_Steps
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+
+//#p .migration-be7\migbe7-assistent\utils-common
+//#p .migration-be7\migbe7-assistent\utils-confluence
+
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId   := '@MIGASS70',
+m_cFormId           := '@MIGASS70',
+m_cBrowserID_Checks := '@MIGASS70',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+function IsBeVersion7()
+   Result := Left(mBeVersion, 1) = '7',
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+   A_StartDetailCheck.Enabled      := m_oMemCheck:HAS_DETAIL_CHECK,
+
+   A_ExecuteStepAction.Enabled     := m_oMemCheck:EXECUTABLE,
+   A_ExecuteStepAction.ImageIndex  := iif(m_oMemCheck:EXECUTABLE, m_oMemCheck:EXECUTABLE_IMG_INDEX, -1),
+   A_ExecuteStepAction.Caption     := iif(m_oMemCheck:EXECUTABLE, RTrim(m_oMemCheck:EXECUTABLE_CAPTION), 'Schritt nicht ausführbar'),
+   A_ExecuteStepAction.Hint        := A_ExecuteStepAction.Caption,
+
+
+   A_Folder_OpenInExplorer.Enabled := not empty(m_oMemCheck:RESULT_FOLDER),
+   A_Folder_OpenInVsCode.Enabled   := not empty(m_oMemCheck:RESULT_FOLDER),
+end,
+
+//******************************************************************************
+function RegisterCheck(oMemCheck, cStepKey, nSubStep, bFast, cCodeblock_Progname)
+| aParams, aResult |
+
+   SetErrorIf(Len(cStepKey) > 20,          'STEP_KEY darf maximal 20 Zeichen haben'),
+   SetErrorIf(Upper(cStepKey) <> cStepKey, 'STEP_KEY muss in Großschreibung angegeben werden'),
+
+   MyAppend(oMemCheck),
+   oMemCheck:STEP_KEY    := cStepKey,
+   oMemCheck:SUB_STEP    := nSubStep,
+   oMemCheck:CB_PROG     := cCodeblock_Progname,
+   oMemCheck:FAST        := bFast,
+
+   // Check-Programm im "Info"-Modus aufrufen, um Bezeichnung, Kommentar etc. zu bekommen
+   aParams := {},
+   KVU_Set(aParams, 'MODUS',    'INFO'),
+   KVU_Set(aParams, 'SUB_STEP', nSubStep),
+   aResult         := Call(AllTrim(oMemCheck:CB_PROG), aParams),
+
+   oMemCheck:BEZ                  := KVU_GetAssert(aResult, 'BEZ'),
+   oMemCheck:KOMMENTAR            := KVU_GetAssert(aResult, 'KOMMENTAR'),
+   oMemCheck:HAS_DETAIL_CHECK     := KVU_Get(      aResult, 'HAS_DETAIL_CHECK',     false),
+
+   oMemCheck:EXECUTABLE           := KVU_Get(      aResult, 'EXECUTABLE',           false),
+   oMemCheck:EXECUTABLE_CAPTION   := KVU_Get(      aResult, 'EXECUTABLE_CAPTION',   ''),
+   oMemCheck:EXECUTABLE_IMG_INDEX := KVU_Get(      aResult, 'EXECUTABLE_IMG_INDEX', -1),
+
+   oMemCheck:CHECKED              := false,
+   oMemCheck:RESULT               := '',
+   oMemCheck:RESULT_MSG           := '',
+   oMemCheck:RESULT_SQL           := '',
+   oMemCheck:RESULT_FOLDER        := '',
+   MyPost(oMemCheck),
+end,
+
+//******************************************************************************
+// Start-Browser darstellen
+//******************************************************************************
+function ResetAndLoad()
+   | i, cBaseChecksProgPath |
+   startseq
+      m_oMemCheck.CbEmptyTable(),
+
+      cBaseChecksProgPath := '.migration-be7\migbe7-assistent\checks\',
+
+      // Umgebungs-Voraussetzungen
+      if not IsBeVersion7() then
+         RegisterCheck(m_oMemCheck, 'ADS-VER',     0, true,  cBaseChecksProgPath + 'ads_server_version' ),
+         RegisterCheck(m_oMemCheck, 'BE-VER',      0, true,  cBaseChecksProgPath + 'be_version' ),
+         RegisterCheck(m_oMemCheck, 'STD-CHECKS',  0, false, cBaseChecksProgPath + 'execute_checks' ),
+         RegisterCheck(m_oMemCheck, 'INDI-ADT',    0, true,  cBaseChecksProgPath + 'alle_individual_tabellen_adt' ),
+         RegisterCheck(m_oMemCheck, 'DBF-NUMERIC', 0, true,  cBaseChecksProgPath + 'numeric_dbf_fields' ),
+         RegisterCheck(m_oMemCheck, 'BARVERKAUF',  0, true,  cBaseChecksProgPath + 'Barverkauf_Dab770_Empty' ),
+      endif,
+
+      RegisterCheck(m_oMemCheck, 'BLOCKSIZE',       0, true, cBaseChecksProgPath + 'blocksize' ),
+
+      if not IsBeVersion7() then
+         for i := 1 to 22 do
+            RegisterCheck(m_oMemCheck, 'UNIQUE-' + Str(i), i, true, cBaseChecksProgPath + 'unique_keys' ),
+         next,
+      endif,
+
+      // Umgebungs-Infos
+      RegisterCheck(m_oMemCheck, 'FIBU-AKTIV',      0, true, cBaseChecksProgPath + 'fibu_aktiv' ),
+      RegisterCheck(m_oMemCheck, 'FIBU-MANDANTEN',  0, true, cBaseChecksProgPath + 'fibu_relevante_mandanten' ),
+
+      // Cleaning
+      RegisterCheck(m_oMemCheck, 'CLEAN-PROG',           0, true, cBaseChecksProgPath + 'cleaning\dabprg-default-prognames' ),
+
+      RegisterCheck(m_oMemCheck, 'CLEAN-LAYOUT-OLD-STD', 0, true, cBaseChecksProgPath + 'cleaning\dabr10-old-standard-layouts' ),
+      RegisterCheck(m_oMemCheck, 'CLEAN-LAYOUT-DEFNAME', 0, true, cBaseChecksProgPath + 'cleaning\dabr10-layout-mit-default-name' ),
+      RegisterCheck(m_oMemCheck, 'CLEAN-LAYOUT-BACKUP',  0, true, cBaseChecksProgPath + 'cleaning\dabr10-layout-backups' ),
+      RegisterCheck(m_oMemCheck, 'CLEAN-LAYOUT-REP-GEN', 0, true, cBaseChecksProgPath + 'cleaning\dabr10-report-gen-layouts-without-report' ),
+
+      RegisterCheck(m_oMemCheck, 'CLEAN-MASK-STD',       0, true, cBaseChecksProgPath + 'cleaning\dabfrm-masks-without-dabrob' ),
+      RegisterCheck(m_oMemCheck, 'CLEAN-MASK-WO-ROLE',   0, true, cBaseChecksProgPath + 'cleaning\dabfrm-masks-without-role' ),
+
+      RegisterCheck(m_oMemCheck, 'CLEAN-BROW-NO-USER',   0, true, cBaseChecksProgPath + 'cleaning\dabbro-user-does-not-exist' ),
+      RegisterCheck(m_oMemCheck, 'CLEAN-BROW-SYSTEM',    0, true, cBaseChecksProgPath + 'cleaning\dabbro-system-browsers'     ),
+
+      // Idee: Datei-Verzeichnisse von "be-fremden" Ordner und Dateien bereinigen
+
+      // Designbare Oberflächen
+      RegisterCheck(m_oMemCheck, 'REDSGN-STDMASK',  0, true, cBaseChecksProgPath + 'redesign\standard-masks' ),
+      RegisterCheck(m_oMemCheck, 'REDSGN-CB-GUI',   0, true, cBaseChecksProgPath + 'redesign\programs-with-gui' ),
+
+      // Customizings
+      RegisterCheck(m_oMemCheck, 'CUSTOMIZING',     0, false, cBaseChecksProgPath + 'adt_konforme_codebloecke\check' ),
+
+      // Toolboxen (Vorab-Version, die nur bekannte Toolbox-Programme mit entsprechender F12 GUI betrachtet)
+      RegisterCheck(m_oMemCheck, 'TOOLBOXEN',       0, true, cBaseChecksProgPath + 'toolboxen\toolbox-programs-with-gui'),
+
+      DbGoTop(m_oMemCheck),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Durchführen des Checks', GetErrorObj()),
+   stopseq,
+end,
+
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+
+   m_oMemCheck := CreateObject('TBeMemTable', 'MEM_CHECKS', oForm),
+
+   m_oMemCheck.CbAddField('STEP_KEY',      ftString,       20),
+   m_oMemCheck.CbAddField('SUB_STEP',      ftInteger,       0),
+   m_oMemCheck.CbAddField('FAST',          ftBoolean,       0),
+   m_oMemCheck.CbAddField('BEZ',           ftString,      100),
+   m_oMemCheck.CbAddField('KOMMENTAR',     ftMemo,          0),
+   m_oMemCheck.CbAddField('CB_PROG',       ftString,      255),
+
+   m_oMemCheck.CbAddField('EXECUTABLE',    ftBoolean,          0), // Schritt ist "ausführbar" (nicht nur "prüfbar")
+   m_oMemCheck.CbAddField('EXECUTABLE_CAPTION',   ftString,  100),
+   m_oMemCheck.CbAddField('EXECUTABLE_IMG_INDEX', ftInteger,   0),
+
+   m_oMemCheck.CbAddField('CHECKED',       ftBoolean,       0),
+   m_oMemCheck.CbAddField('RESULT',        ftString,        7), // "OK", "WARNING", "ERROR", "INFO" und "DONE"
+   m_oMemCheck.CbAddField('RESULT_MSG',    ftMemo,          0), // Fehler- oder Warnungs-Text
+   m_oMemCheck.CbAddField('RESULT_SQL',    ftMemo,          0), // SQL-Statement, welches für die weitere Analyse verwendet werden kann
+   m_oMemCheck.CbAddField('RESULT_FOLDER', ftMemo,          0), // Checks können ein Verzeichnis zurück geben, welches dann über eine GUI-Aktion geöffnet werden kann
+
+   m_oMemCheck.CbAddField('HAS_DETAIL_CHECK',   ftBoolean, 0), // Detail-Prüfung vorhanden?
+
+   m_oMemCheck.Active  := True,
+
+   GU_LinkTableToGUI(m_oMemCheck, ds_checks, grd_checks, m_cBrowserID_Checks, false),
+
+   edt_Kommentar.DataField        := 'KOMMENTAR',
+   edt_ResultMessage.DataField    := 'RESULT_MSG',
+   edt_AdditionalResult.DataField := 'RESULT_SQL',
+   m_cBrowserUser := '/'+c_usr+'/',
+   m_cPfad        := 'C:\mig-be-7',
+   m_bStdBrowser  := false,
+   ResetAndLoad(),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function PerformCheckOrExecute(oMemCheck, cMode)
+| aParams, aResult, cBez, cKommentar, cResult, nOldCursor |
+
+   nOldCursor := SetCursor(crHourGlass),
+   startseq
+
+     MyEdit(oMemCheck),
+     startseq
+        // Check-Programm aufrufen
+        aParams := {},
+        KVU_Set(aParams, 'MODUS',         cMode),
+        KVU_Set(aParams, 'SUB_STEP',      oMemCheck:SUB_STEP),
+        KVU_Set(aParams, 'BROWSERUSER',   m_cBrowserUser),
+        KVU_Set(aParams, 'PFAD',          m_cPfad),
+        KVU_Set(aParams, 'STDBROWSER',    m_bStdBrowser),
+        aResult := Call(AllTrim(oMemCheck:CB_PROG), aParams),
+
+        cResult        := KVU_Get(aResult, 'RESULT',     ''),
+        if empty(cResult) then
+           SetError('check-programm returned no "RESULT" value.'),
+        endif,
+        if not cResult $ '/OK/WARNING/ERROR/INFO/DONE/DID_NOT_EXECUTE/' then
+           SetError('check-programm returned <' + cResult + '> as "RESULT" value. "OK", "WARNING", "ERROR", "INFO" or "DONE" expected.'),
+        endif,
+
+        if cResult <> 'DID_NOT_EXECUTE' then
+           oMemCheck:CHECKED       := true,
+           oMemCheck:RESULT        := cResult,
+           oMemCheck:RESULT_MSG    := KVU_Get(aResult, 'RESULT_MSG',    ''),
+           oMemCheck:RESULT_SQL    := KVU_Get(aResult, 'RESULT_SQL',    ''),
+           oMemCheck:RESULT_FOLDER := KVU_Get(aResult, 'RESULT_FOLDER', ''),
+        endif,
+     onerror
+        oMemCheck:RESULT        := 'ERROR',
+        oMemCheck:RESULT_MSG    := 'Interner Fehler beim Check => siehe Details',
+        oMemCheck:RESULT_SQL    := GetErrorText(),
+        oMemCheck:RESULT_FOLDER := '',
+     stopseq,
+     MyPost(oMemCheck),
+
+   always
+     SetCursor(nOldCursor),
+   stopseq,
+end,
+
+//******************************************************************************
+function PerformDetailCheck(oMemCheck)
+| aParams, aResult |
+   // Check-Programm im "Detail-Check"-Modus aufrufen
+   aParams := {},
+   KVU_Set(aParams, 'MODUS',       'DETAIL_CHECK'),
+   KVU_Set(aParams, 'SUB_STEP',    oMemCheck:SUB_STEP),
+   KVU_Set(aParams, 'BROWSERUSER', m_cBrowserUser),
+   KVU_Set(aParams, 'PFAD',        m_cPfad),
+   KVU_Set(aParams, 'STDBROWSER',  m_bStdBrowser),
+   aResult := Call(AllTrim(oMemCheck:CB_PROG), aParams),
+end,
+
+function Style65InfoPanel(oInfoPanel)
+   if mbeVersion < '7' then
+     oInfoPanel.Height           := 30,
+     oInfoPanel.Color            := 12089600,
+     oInfoPanel.BorderColor      := 12089600,
+     oInfoPanel.Font.Size        := 10,
+     oInfoPanel.Font.Style       := 0,
+     oInfoPanel.Font.Color       := clWhite,
+   else
+     oInfoPanel.ColorMode := oInfoPanel.ColorMode,
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Scroll in Check-Memtable
+//******************************************************************************
+function ds_checksScroll_Update( Sender )
+   ActionsEnabled(),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array entfernen
+   GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := true,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Ergebnis in die Zwischenablage (im Confluence Format)
+//******************************************************************************
+function A_CopyToClipboardConfluenceFormattedExecute( Sender )
+  ConfluenceExpFuncs_ApplyDataToChecklisteTemplate( m_oMemCheck,
+                                                    '.migration-be7\migbe7-assistent\confluence.doku.main.template',
+                                                    '.migration-be7\migbe7-assistent\confluence.doku.header.template' ),
+end,
+
+//******************************************************************************
+// Action: Einstellungen festlegen
+//******************************************************************************
+function A_DefineParamsExecute( Sender )
+| aDialogRes , aDialogSettings |
+   aDialogSettings := {},
+   KVU_SET(aDialogSettings,"nWindowWidth",300),
+   aDialogRes := DU_InputDialog(
+      'Optionen für den Migratiopnsassistenten',
+      'Bitte geben Sie die entsprechenden Optionen ein.',
+      {
+         DU_InputDialog_CreateInputControlDefinition('PFAD', 'Basis-Pfad',                      gl_DU_InputControlType_File,                 '',   0,  m_cPfad,        True),
+         DU_InputDialog_CreateInputControlDefinition('USER', 'Browser für User /000/ = alle',   gl_DU_InputControlType_Attribute_MultiCheck, '', -13, m_cBrowserUser,  True),
+         DU_InputDialog_CreateInputControlDefinition('STDBROWSER', 'Standard Browser prüfen? ', gl_DU_InputControlType_Logical,              '',   0, m_bStdBrowser,   False)
+      },
+      {
+         mrOK,
+         mrCancel
+      },
+      aDialogSettings
+   ),
+
+   //
+   // @Result: array - Enthält das Modal-Result und die eingegebenen Werte.
+   //          Format: {<ModalResult>, {{<Input-ID>, <Input-Value>}, ...}}
+   if aDialogRes[1] = 1 then
+       m_cPfad        := aDialogRes[2,1,2],
+       m_cBrowserUser := aDialogRes[2,2,2],
+       m_bStdBrowser  := aDialogRes[2,3,2],
+   endif,
+end,
+
+//******************************************************************************
+// Action: Ergebnisse zurücksetzen und neu laden
+//******************************************************************************
+function A_ResetAndLoadExecute( Sender )
+   ResetAndLoad(),
+end,
+
+//******************************************************************************
+// Action: Ausgewählte Prüfung durchführen
+//******************************************************************************
+function A_PerformChecks_SingleExecute( Sender )
+   startseq
+      PerformCheckOrExecute(m_oMemCheck, 'CHECK'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Durchführen des Checks', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Alle (schnellen) Prüfungen durchführen
+//******************************************************************************
+function A_PerformChecks_AllFastExecute( Sender )
+| oRec |
+   startseq
+      foreach oRec in m_oMemCheck do
+         if m_oMemCheck:FAST then
+            PerformCheckOrExecute(m_oMemCheck, 'CHECK'),
+         else
+            MyEdit(m_oMemCheck),
+            m_oMemCheck:CHECKED          := false,
+            m_oMemCheck:RESULT           := 'SKIPPED',
+            m_oMemCheck:RESULT_MSG       := 'Schritt wurde übersprungen (lang laufende Prüfung)',
+            m_oMemCheck:RESULT_SQL       := '',
+            m_oMemCheck:RESULT_FOLDER    := '',
+            MyPost(m_oMemCheck),
+         endif,
+      next,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Durchführen der Checks', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Alle Prüfungen durchführen
+//******************************************************************************
+function A_PerformChecks_AllExecute( Sender )
+| oRec |
+   startseq
+      foreach oRec in m_oMemCheck do
+         PerformCheckOrExecute(m_oMemCheck, 'CHECK'),
+      next,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Durchführen der Checks', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Detail-Prüfung zum ausgewählten Prüfschritt starten (sofern vorhanden)
+//******************************************************************************
+function A_StartDetailCheckExecute( Sender )
+   startseq
+      PerformDetailCheck(m_oMemCheck),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Durchführen des Detail-Checks', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: "Daten-Aktion" durchführen (z.B. Daten-Bereinigung)
+//******************************************************************************
+function A_ExecuteStepActionExecute( Sender )
+   startseq
+      PerformCheckOrExecute(m_oMemCheck, 'EXECUTE'),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Ausführen des Schrittes', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Detail-Ergebnis in Zwischenablage kopieren
+//******************************************************************************
+function A_CopyDetailsResultToClipboardExecute( Sender )
+  CopyToClipboard(RTrim(m_oMemCheck:RESULT_MSG)),
+end,
+
+//******************************************************************************
+// Action: Detail-Ergebnis-SQL in Zwischenablage kopieren
+//******************************************************************************
+function A_CopyDetailsSQLToClipboardExecute( Sender )
+  CopyToClipboard(RTrim(m_oMemCheck:RESULT_SQL)),
+end,
+
+//******************************************************************************
+// Action: Ausgabe-Verzeichnis in vscode öffnen
+//******************************************************************************
+function A_Folder_OpenInVsCodeExecute( Sender )
+| cFileName |
+   startseq
+
+      cFileName := '',
+      if m_oMemCheck:STEP_KEY = 'CUSTOMIZING' then
+         cFileName := m_oMemCheck:RESULT_FOLDER + '\.migbe7\info.txt', // Das ist natürlich keine generische Lösung... check müsste einen File-name zusätzlich zum Folder-name zurück geben. Oder aber ein vscode-Befehl...
+      endif,
+
+      VsCode_OpenViaCommandLine(m_oMemCheck:RESULT_FOLDER, cFileName),
+   onerror
+      GU_ShowStdErrorMessage('Fehler', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Ausgabe-Verzeichnis im Explorer öffnen
+//******************************************************************************
+function A_Folder_OpenInExplorerExecute( Sender )
+   startseq
+      ShellExecute(m_oMemCheck:RESULT_FOLDER),
+   onerror
+      GU_ShowStdErrorMessage('Fehler', GetErrorObj()),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+   if empty(m_oOwner) then
+      oForm := LoadForm(m_cFormId, Application),
+   else
+      oForm             := LoadForm(m_cFormId, m_oOwner),
+      oForm.FormStyle   := fsMDIChild,
+      oForm.Windowstate := wsMaximized,
+   endif,
+
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'Migrations-Assistent be 6.5 => be 7.x',
+   oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 195,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   a_Browseruser                        := FindObject(oForm, "a_Browseruser"),
+   A_CopyDetailsResultToClipboard       := FindObject(oForm, "A_CopyDetailsResultToClipboard"),
+   A_CopyDetailsSQLToClipboard          := FindObject(oForm, "A_CopyDetailsSQLToClipboard"),
+   A_CopyToClipboardConfluenceFormatted := FindObject(oForm, "A_CopyToClipboardConfluenceFormatted"),
+   A_DefineParams                       := FindObject(oForm, "A_DefineParams"),
+   A_ExecuteStepAction                  := FindObject(oForm, "A_ExecuteStepAction"),
+   A_Folder_OpenInExplorer              := FindObject(oForm, "A_Folder_OpenInExplorer"),
+   A_Folder_OpenInVsCode                := FindObject(oForm, "A_Folder_OpenInVsCode"),
+   A_PerformChecks_All                  := FindObject(oForm, "A_PerformChecks_All"),
+   A_PerformChecks_AllFast              := FindObject(oForm, "A_PerformChecks_AllFast"),
+   A_PerformChecks_Single               := FindObject(oForm, "A_PerformChecks_Single"),
+   a_Pfad                               := FindObject(oForm, "a_Pfad"),
+   A_ResetAndLoad                       := FindObject(oForm, "A_ResetAndLoad"),
+   A_StartDetailCheck                   := FindObject(oForm, "A_StartDetailCheck"),
+   actions                              := FindObject(oForm, "actions"),
+   barMessageResult                     := FindObject(oForm, "barMessageResult"),
+   barMessageSQL                        := FindObject(oForm, "barMessageSQL"),
+   BeBarButton1                         := FindObject(oForm, "BeBarButton1"),
+   BeBarButton10                        := FindObject(oForm, "BeBarButton10"),
+   BeBarButton11                        := FindObject(oForm, "BeBarButton11"),
+   BeBarButton2                         := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3                         := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4                         := FindObject(oForm, "BeBarButton4"),
+   BeBarButton5                         := FindObject(oForm, "BeBarButton5"),
+   BeBarButton6                         := FindObject(oForm, "BeBarButton6"),
+   BeBarButton7                         := FindObject(oForm, "BeBarButton7"),
+   BeBarButton8                         := FindObject(oForm, "BeBarButton8"),
+   BeBarButton9                         := FindObject(oForm, "BeBarButton9"),
+   BeBarManager                         := FindObject(oForm, "BeBarManager"),
+   BeBarManagerBar1                     := FindObject(oForm, "BeBarManagerBar1"),
+   BePanel1                             := FindObject(oForm, "BePanel1"),
+   btn_Params                           := FindObject(oForm, "btn_Params"),
+   dockMessageResult                    := FindObject(oForm, "dockMessageResult"),
+   dockMessageSQL                       := FindObject(oForm, "dockMessageSQL"),
+   dockSteps                            := FindObject(oForm, "dockSteps"),
+   ds_checks                            := FindObject(oForm, "ds_checks"),
+   edt_AdditionalResult                 := FindObject(oForm, "edt_AdditionalResult"),
+   edt_Kommentar                        := FindObject(oForm, "edt_Kommentar"),
+   edt_ResultMessage                    := FindObject(oForm, "edt_ResultMessage"),
+   grd_checks                           := FindObject(oForm, "grd_checks"),
+   ipnl_Main                            := FindObject(oForm, "ipnl_Main"),
+   ipnl_ResultMessage                   := FindObject(oForm, "ipnl_ResultMessage"),
+   ipnl_ResultSQL                       := FindObject(oForm, "ipnl_ResultSQL"),
+   ipnl_StartedInVersion7               := FindObject(oForm, "ipnl_StartedInVersion7"),
+   ipnl_StepComment                     := FindObject(oForm, "ipnl_StepComment"),
+   ipnl_Steps                           := FindObject(oForm, "ipnl_Steps"),
+   lbl_Welcome                          := FindObject(oForm, "lbl_Welcome"),
+   pnl_Bottom                           := FindObject(oForm, "pnl_Bottom"),
+   pnl_Details                          := FindObject(oForm, "pnl_Details"),
+   pnl_DetailsSQL                       := FindObject(oForm, "pnl_DetailsSQL"),
+   pnl_Results                          := FindObject(oForm, "pnl_Results"),
+   pnl_Steps                            := FindObject(oForm, "pnl_Steps"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+   if empty(m_oOwner) then
+      ShowModal(oForm),
+   else
+      Show(oForm),
+   endif,
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+
+   Style65InfoPanel(ipnl_Main),
+   Style65InfoPanel(ipnl_Steps),
+   Style65InfoPanel(ipnl_ResultMessage),
+   Style65InfoPanel(ipnl_ResultSQL),
+   Style65InfoPanel(ipnl_StepComment),
+   ipnl_StartedInVersion7.Visible := IsBeVersion7(),
+   ipnl_StartedInVersion7.ColorMode := ipnl_StartedInVersion7.ColorMode,
+   lbl_Welcome.Font.Size        := 11,
+   lbl_Welcome.Font.Style       := 0,
+   lbl_Welcome.Font.Color       := 12089600,
+
+   ActionsEnabled(),
+
+   MyFocusControl(oForm, grd_checks),
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
+
+

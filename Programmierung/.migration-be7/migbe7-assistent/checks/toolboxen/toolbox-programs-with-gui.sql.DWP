@@ -1,0 +1,16 @@
+
+// bekannte Toolboxen, die eine F12 Oberfläche haben (Übergangslösung für die Identifikation der Toolboxen)
+
+// Achtung: Script wird auch von package "migbe7-erstelle-jira-tickets" genutzt
+
+SELECT
+    PROGNR,
+    VERSION,
+    BEZ,
+    MASK_ID
+  FROM "DABPRG.ADT" DABPRG
+  WHERE     AKTIV = true
+        AND MASK_ID IN (
+            @INCLUDE_F12_MASKS_LIST@
+                       )                  
+  ORDER BY BEZ

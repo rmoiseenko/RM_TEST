@@ -8,6 +8,64 @@
 //
 // @Result: null
 //******************************************************************************
+function ExportDetailsCbCollector(cBasicPath)
+   | oExporter, aOption, i  |
+   oExporter := CreateObject('TBeCbCodeblockCollector'),
+   StartSeq
+      oExporter.CbFilePath := cBasicPath + 'etc\',
+
+      aOption := { 1,  // Druckerzuweisung
+      7,  // Versandstuerung
+      9,  // Textbausteine
+      11, // Memo Ansichten
+      15, // Größen- Faarbraster
+      17, // Reportgenerator
+      19, // Inventur Filter
+      22, // Automatische Liefereinst.
+      24, // SQL-Selektionen
+      26, // Sachkonten
+      27, // Zahlungsarten
+      28, // Sonstige WinPositionen
+      25, // Absatzplanung
+      23, // Fibu Parameter
+      21, // Parameter Filter
+      20, // Filter Liste
+      18, // Intrastat Parameter
+      16, // Kum.Stat. Betrachtungen
+      14, // Außendienst Parameter
+      12, // Allgemeine- und Lokale Parameter
+      2 // CRM-Aktionen
+      },
+
+      for i := 1 to ALen(aOption) do
+         writeln(aOption[i]),
+         oExporter.CbAddExportType(aOption[i]),
+      next,
+
+      // Übergabe des DD- und des DabPar Pfades
+      oExporter.CbDataBasePath := mBeDefault,
+      oExporter.CbDabPARPath   := '',
+
+      // Übergabe der verschiedenen Regulären Ausdrücke
+      oExporter.CbPathIncludeRegEx := '',
+      oExporter.CbPathExcludeRegEx := '',
+
+      // Regulärer Ausdruck für die Suche
+      oExporter.CbCodeIncludeRegEx := '',
+      oExporter.CbCodeExcludeRegEx := '',
+
+      oExporter.CbShowProgressBar := True,   // ProgressBar aktivieren
+      oExporter.CbExportCodeblock(),         // Export der Codeblöcke
+   always
+      DestroyObject(oExporter),
+   stopseq,
+end,
+
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
 function ExportPrograms(cBasicPath, bCompleteExport, dChangesSince)
    | oDabPRG, cFilePath, i |
    i := 0,
@@ -524,6 +582,10 @@ function ExportWithoutPackage(aExportSettings)
    if KVU_Get(aExportSettings, 'EXPORT_TABLEDEF', false) then
       ExportRollen(cBasicPath, bCompleteExport, dChangesSince),
    endif,
+
+   if KVU_Get(aExportSettings, 'EXPORT_DETAILS_CBCOLLECTOR',  false) then
+      ExportDetailsCbCollector(cBasicPath),
+   endif,
 end,
 
 //******************************************************************************
@@ -902,5 +964,9 @@ function ExportWithPackage(aExportSettings)
    KVU_Set(aParams, 'packageImportExport.packageFilePath', cBasicPath + 'package.bcp'),
    KVU_Set(aParams, 'packageImportExport.operation', 'export'),
    Result := call('Tools\package-import-export\GUI', nil, nil, nil, aParams),
+
+   if KVU_Get(aExportSettings, 'EXPORT_DETAILS_CBCOLLECTOR',  false) then
+      ExportDetailsCbCollector(cBasicPath),
+   endif,
 end,
 

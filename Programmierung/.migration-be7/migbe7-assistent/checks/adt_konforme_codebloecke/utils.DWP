@@ -1,0 +1,1114 @@
+
+//#p .migration-be7\migbe7-assistent\utils-checks-fibu
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+function CodeblockCollector_GetLookupRegEx()
+  // muss als Funktion bleiben da "details_gui" diese Datei Importiert
+  Result := 'Lookup\((([^{})]|\{[^{]|\}[^}])*)\)',
+end,
+
+function CodeblockCollector_GetActiveControl_RegEx()
+  Result := '\.ActiveControl.*:=', // zuvor: '\.ActiveControl',
+end,
+
+
+
+//******************************************************************************
+// Liste aller Individual-Tabellen-Workareas erstellen, die ADT sind.
+// => Lookup() etc. auf diese Tabellen sind kein Problem beim 7.x-er Update.
+//******************************************************************************
+//function CodeblockCollector_GetWorkareaArrayOfADTIndividualTables()
+//| i, oTableInfo, cTables, nTableCount, cExtension |
+
+//   Result      := {},
+//   nTableCount := 0,
+
+//   for i := 700 to 799 do
+//      oTableInfo := GetTableInfo(i),   // TBeTableInfo
+
+//      if not empty(oTableInfo) then
+//         nTableCount ++,
+
+//         cExtension := Right(Upper(oTableInfo.TableDef.OrgTableName), 3),
+//         if cExtension == 'ADT' then
+//            AAdd(Result, {i, oTableInfo.UserAlias }),
+//         endif,
+//      endif,
+//   next,
+//end,
+
+//******************************************************************************
+// Prüft, ob es sich beim übergebenen Lookup-Ausdruck um einen Zugriff auf eine Individual-Tabelle im ADT-Format handelt
+//******************************************************************************
+function CodeblockCollector_RegExMatch_IsRelevant_LookUp_IsADTIndiTable(cNormalizedMatch)
+| cFirstToken, nWorkarea, oTableInfo, bIsIndiTable, cExtension |
+
+   Result := false,
+
+   // Beispiele: lookup(700,...  bis    lookup(799,...
+
+   cFirstToken := Token(cNormalizedMatch, ',', 1),
+
+   if Len(cFirstToken) = 3 then
+      if CharOnly('0123456789', cFirstToken) == cFirstToken then
+         nWorkarea := Val(cFirstToken),
+
+         bIsIndiTable :=     nWorkarea >= 700
+                         and nWorkarea <= 799,
+         if bIsIndiTable then
+            oTableInfo := GetTableInfo(nWorkarea),                              //WriteLn('CodeblockCollector_RegExMatch_IsRelevant_LookUp_IsADTIndiTable', cNormalizedMatch, nWorkarea),
+            if not empty(oTableInfo) then
+               cExtension := Right(Upper(oTableInfo.TableDef.OrgTableName), 3),
+               Result     := cExtension == 'ADT',                               WriteLn('CodeblockCollector_RegExMatch_IsRelevant_LookUp_IsADTIndiTable => table found', cExtension),
+            else
+                                                                                WriteLn('Lookup auf Tabellen-Workarea, die es nicht gibt!', nWorkarea),
+            endif,
+         endif,
+      endif,
+   endif,
+
+end,     
+
+//******************************************************************************
+function CodeblockCollector_RegExMatch_IsRelevant_LookUp(cRegExMatch)
+| cNormalizedMatch, aNoProblemList, cNoProblemText, nLen, bMayBeProblematic, i, aIndiADTTables |
+
+
+   // "Nicht-Problem-Fälle":
+   aNoProblemList := {
+                       ')',        // LookUp() ohne Parameter => z.B. aus einem Kommentar
+
+                       // NICHT DBF->ADT Umstellungen                           // TODO: Alle Individual-Tabellen, die in 6.5 schon ADT sind, können ebenfalls ignoriert werden => dynamisch laden
+                       '3,',  'waDAB050,',
+                       '4,',  'waDAB055,',
+                       '7,',  'waDAB020,',
+                       '8,',  'waDAB320,',
+                       '9,',  'waDAB065,',
+                       '10,', 'waDABPAR,',
+                       '13,', 'waDAB035,',
+                       '14,', 'waDAB210,',
+                       '21,', 'waDab220,',
+                       '26,', 'waDab240,',
+                       '28,', 'waDab510,',
+                       '40,', 'waDab262,',
+                       '41,', 'waDab340,',
+                       '44,', 'waDab250,',
+                       '45,', 'waDab255,',
+                       '49,', 'waDab272,',
+                       '50,', 'waDF010,',
+                       '63,', 'waDab760,',
+                       '64,', 'waDab765,',
+                       '93,', 'waDabWAE,',
+
+                       // Dab000 - Kundenstamm
+                       '1,1,',
+                       '1,3,',
+                       'waDab000,1,',
+                       "waDAB000,'DF031000',",
+
+                       // Dab010 - Artikelstamm
+                       '2,1,',
+                       "2,'DAB011',",
+                       'waDab010,1,',
+                       'waDab010,''DAB011'',',
+                       'waDab010,"DAB011",',
+
+                       // DAB100 - Lieferantenstamm
+                       '5,1,',
+                       "waDAB100,'DF041000',",
+                       '5,3,',
+                       "waDAB100,'DF043000',",
+
+                       // Dab040 - Sonderpreise
+                       '6,1,',
+                       'waDab040,1,',
+
+                       // DAB350 - Textbausteine
+                       '12,1,',
+                       'waDab350,1,',
+
+                       // DAB062 - Vertreter
+                       '16,1,',
+                       'waDab062,1,',
+
+                       // Dab310 - Artikelgruppen
+                       '19,1,',
+                       'waDab310,1,',
+
+                       // Dab610 - Lagerorte
+                       '30,1,',
+
+                       // Dab005 - Kontaktpersonen
+                       '38,2,',
+                       'waDAB005,2,',
+                       "waDAB005,'DAB007',",
+
+                       // DAB920 - EAN Referenz
+                       '48,2,',
+
+                       // DABPAL
+                       '90,1,',
+                       'waDABPAL,1,',
+
+                       // DIA010 - AE/Intrastat Zolltarifnummern
+                       '81,1,',
+                       'waDia010,1,',
+
+                       // DIA020 - Länderverzeichnis
+                       '82,1,',
+                       'waDia020,1,',
+                       '82,3,',
+                       'waDia020,3,',
+
+                       // Treffer aus der EDI-Toolbox
+                       'WORKAREA,EDI_Partner_GetIdIndexNameByWorkarea(WORKAREA)',
+                       'nWorkarea,EDI_Partner_GetPrimaryIndexNameByWorkarea(nWorkarea)',
+                       'nWorkarea,EDI_Partner_GetIdIndexNameByWorkarea(nWorkarea)',
+                       'oEDIPART:WORKAREA,EDI_Partner_GetIdIndexNameByWorkarea(oEDIPART:WORKAREA)',
+
+                       // Sachmerkmalleisten
+                       'waSMLZUO, cIndexName, {',
+
+                       // Häufige, unkritische Treffer
+                       'iif(DfZaA:DebKred = 0, waDAB100, waDAB000)'     // Voller Treffer: "Lookup(iif(DfZaA:DebKred = 0, waDAB100, waDAB000), 1, {{Str(LiNr, 8)}}, ... "
+                     },
+
+
+   cNormalizedMatch := StrTran(cRegExMatch, ' ', ''),
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(13), ''),
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(10), ''),
+   cNormalizedMatch := Upper(cNormalizedMatch),
+
+   bMayBeProblematic := true,
+
+   if LEFT(cNormalizedMatch, 7) == 'LOOKUP(' then
+      cNormalizedMatch := AllTrim(SubStr(cNormalizedMatch, 8, Len(cNormalizedMatch))),
+      for i := 1 to ALen(aNoProblemList) do
+         cNoProblemText := Upper(StrTran(aNoProblemList[i], ' ', '')),
+         nLen           := Len(cNoProblemText),
+         if Left(cNormalizedMatch, nLen) == cNoProblemText then
+            bMayBeProblematic := false,
+            break,
+         endif,
+      next,
+                        
+      // Treffer konnte noch nicht als unproblematisch erkannt werden?
+      // => Prüfen, ob es sich um einen Zugriff auf eine Individual-Tabelle handelt
+      if bMayBeProblematic then
+         bMayBeProblematic := not CodeblockCollector_RegExMatch_IsRelevant_LookUp_IsADTIndiTable(cNormalizedMatch),
+      endif,            
+   endif,
+
+   //if bMayBeProblematic then
+   //   WriteLn(cRegExMatch),
+   //endif,
+
+   Result := bMayBeProblematic,
+end,
+
+//******************************************************************************
+function CodeblockCollector_RegExMatch_IsRelevant_Scope(cRegExMatch)
+| cNormalizedMatch, aNoProblemList, cNoProblemText, nLen, bMayBeProblematic, i |
+
+   // "Nicht-Problem-Fälle":
+   aNoProblemList := { 'NIL,',    // Scope aufheben mittels NIL
+                       ',',       // Scope aufheben mittels "keine Parameter Übergabe"
+                       '"",,',    // Scope aufheben mittels Leerstring ""
+                       "'',,",    // Scope aufheben mittels Leerstring ''
+                       ')'        // DbScope() ohne Parameter => z.B. aus einem Kommentar
+                     },
+
+   cNormalizedMatch := StrTran(cRegExMatch, ' ', ''),
+   cNormalizedMatch := Upper(cNormalizedMatch),
+
+   bMayBeProblematic := true,
+
+   if LEFT(cNormalizedMatch, 8) == 'DBSCOPE(' then
+      cNormalizedMatch := AllTrim(SubStr(cNormalizedMatch, 9, Len(cNormalizedMatch))),   //WriteLn('------------------', cNormalizedMatch),
+      for i := 1 to ALen(aNoProblemList) do
+         cNoProblemText := Upper(StrTran(aNoProblemList[i], ' ', '')),
+         nLen           := Len(cNoProblemText),
+         if Left(cNormalizedMatch, nLen) == cNoProblemText then
+            bMayBeProblematic := false,
+            break,
+         endif,
+      next,
+   endif,
+
+   //if bMayBeProblematic then
+   //   WriteLn(cRegExMatch),
+   //endif,
+
+   Result := bMayBeProblematic,
+end,
+
+//******************************************************************************
+function CodeblockCollector_RegExMatch_IsRelevant_Seek(cRegExMatch)
+| cNormalizedMatch, aNoProblemList, cNoProblemText, nLen, bMayBeProblematic, i |
+
+   // "Nicht-Problem-Fälle":
+
+   aNoProblemList := { ')',       // DbSeek() ohne Parameter => z.B. aus einem Kommentar
+
+                       // einfache Seeks, bei denen aus dem Such-Key klar hervorgeht, dass es sich um ein Einzel-Feld-Zugriff handeln muss
+
+                       'ARTNR)',  // => ohne Angabe der Tabelle, d.h. die Tabelle ist als Default registriert
+                       'ARTNR2)', //    dito
+
+                       'DAB050:KONTAKT_ID, oDAB005)',
+                       'nID, oDAB005)',
+                       'DfInv:ASt_Nr, oDfASt)',
+
+                       'uKey,oTable)',  // aus der basic-function "MySeek"
+
+                       // Häufige, unkritische Treffer
+                       'StrZero(DfInv:Kto_SAfA, 8)',    // Voller Treffer: "DbSeek(StrZero(DfInv:Kto_AfAA, 8), oDf010), ..."
+                       'StrZero(DfInv:Kto_AfAA, 8)'     // Voller Treffer: "DbSeek(StrZero(DfInv:Kto_AfAA, 8), oDf010), ..."
+
+                     },
+
+   cNormalizedMatch := StrTran(cRegExMatch, ' ', ''),
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(13), ''),
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(10), ''),
+   cNormalizedMatch := Upper(cNormalizedMatch),
+
+   bMayBeProblematic := true,
+
+   if LEFT(cNormalizedMatch, 7) == 'DBSEEK(' then
+      cNormalizedMatch := AllTrim(SubStr(cNormalizedMatch, 8, Len(cNormalizedMatch))),
+      for i := 1 to ALen(aNoProblemList) do
+         cNoProblemText := Upper(StrTran(aNoProblemList[i], ' ', '')),
+         nLen           := Len(cNoProblemText),
+         if Left(cNormalizedMatch, nLen) == cNoProblemText then
+            bMayBeProblematic := false,
+            break,
+         endif,
+      next,
+   endif,
+
+   //if bMayBeProblematic then
+   //   WriteLn(cRegExMatch),
+   //endif,
+
+   Result := bMayBeProblematic,
+end,
+
+//******************************************************************************
+function CodeblockCollector_RegExMatch_IsRelevant_DBF(cRegExMatch)
+| cNormalizedMatch, aNoProblemList, cNoProblemText, nLen, bMayBeProblematic, i |
+
+   // "Nicht-Problem-Fälle":
+
+   aNoProblemList := {  'unctions.MyRefresh()',
+                        ''',cOpPath',                  // Umwandlung zu FiBu-Datenbestand 
+                        ''',oEdtDataBasePath',         // CodeBlockCollector
+                        ''',oEdtExportPath'            // CodeBlockCollector
+                     },
+
+   cNormalizedMatch := StrTran(cRegExMatch, ' ', ''),    
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(13), ''),
+   cNormalizedMatch := StrTran(cNormalizedMatch, chr(10), ''),   
+   cNormalizedMatch := Upper(cNormalizedMatch),
+
+   bMayBeProblematic := true,
+
+   if LEFT(cNormalizedMatch, 4) == '.DBF' then
+      cNormalizedMatch := AllTrim(SubStr(cNormalizedMatch, 5, Len(cNormalizedMatch))),
+      for i := 1 to ALen(aNoProblemList) do
+         cNoProblemText := Upper(StrTran(aNoProblemList[i], ' ', '')),
+         nLen           := Len(cNoProblemText),
+         if Left(cNormalizedMatch, nLen) == cNoProblemText then
+            bMayBeProblematic := false,
+            break,
+         endif,
+      next,
+   endif,
+
+   //if bMayBeProblematic then
+   //   WriteLn(cRegExMatch),
+   //endif,
+
+   Result := bMayBeProblematic,
+end,
+
+//******************************************************************************
+// Gibt anhand des Collector-Typen den Berreich in be den er represäntiert zurück
+//******************************************************************************
+function BeSectionFromCollectorType(nExportType)
+   Result := '',
+   case nExportType
+      of 0 ::  Result := 'Unbekannt',
+      of 1 ::  Result := 'Druckzuweisungen',
+      of 2 ::  Result := 'CRM-Aktionen',
+      of 3 ::  Result := 'Individual Menüs',
+      of 4 ::  Result := 'Browser Definitionen',
+      of 5 ::  Result := 'Masken Definitionen',
+      of 6 ::  Result := 'Merkmalstabellen',
+      of 7 ::  Result := 'Versand Steuerungen',
+      of 8 ::  Result := 'Beleg Layouts',
+      of 9 ::  Result := 'Text Bausteine',
+      of 10 :: Result := 'Tabellen- und Feld Rechte',
+      of 11 :: Result := 'Memo Ansichten',
+      of 12 :: Result := 'Allgemeine- und Lokale Parameter',
+      of 13 :: Result := 'Codeblock Programme',
+      of 14 :: Result := 'Außendienst Parameter',
+      of 15 :: Result := 'Größen und Farb Raster',
+      of 16 :: Result := 'Kum.Stat. Indiv.Betrachtungen',
+      of 17 :: Result := 'Reportgenerator',
+      of 18 :: Result := 'Intrastat Parameter',
+      of 19 :: Result := 'Inventur Filter',
+      of 20 :: Result := 'Filter Liste',
+      of 21 :: Result := 'Parameter Filter',
+      of 22 :: Result := 'Automatische Liefereinstellungen',
+      of 23 :: Result := 'FiBu Parameter',
+      of 24 :: Result := 'SQL-Selektion',
+      of 25 :: Result := 'Vertreterverwaltung Absatzplanung Artikelfilter',
+      of 26 :: Result := 'FiBu Sachkonten',
+      of 27 :: Result := 'FiBuZahlungsarten',
+      of 28 :: Result := 'Sonstige WinPositionen',
+   endcase,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_Export_MigBe7(cCodeblockCollectorExportPath, cCbCodeIncludeRegEx, cCbPathExcludeRegEx, cBrowserFromUsers, bStdBrowser)
+| oExporter, i, cCollectorErrorLog |
+
+   function CodeblockCollector_DoError(Sender)
+   | cErrorText, bIgnoreError |
+      Sender.CbRaiseError := False, // Fehler "behandelt", weiter exportieren
+      cErrorText          := 'ErrorType:     ' + Str(Sender.CbErrorType) + ' (' + BeSectionFromCollectorType(Sender.CbErrorType) + ')' + crlf,
+      cErrorText          += 'InternalError: ' + iif(Sender.CbIsInternalError, 'True', 'False') + crlf,
+      cErrorText          += 'ErrorMessage:  ' + crlf + Sender.CbErrorMessage + crlf,
+      cErrorText          += '---------------------------------------------------' + crlf,
+
+
+      // Falls gewissen (immer wieder auftretende Fehler) als "nicht relevant" betrachtet werden soll, kann das hier geprüft werden
+      bIgnoreError := false,
+      // z.B.
+      // bIgnoreError := (Sender.CbErrorType = 7) and ('TBeShippingControlCollector' $ Sender.CbErrorMessage),
+
+      // ErrorLog Schreiben
+      if not bIgnoreError then
+         cCollectorErrorLog += cErrorText,
+      endif,
+      WriteLn(cErrorText),
+   end,
+
+   oExporter := CreateObject('TBeCbCodeblockCollector'),
+   StartSeq
+      cCollectorErrorLog := '',
+      AssignEvent(oExporter, 'CbOnError', 'CodeblockCollector_DoError'),
+
+      oExporter.CbFilePath := cCodeblockCollectorExportPath,
+
+      // Alle selektierten Codeblöcke durchlaufen
+      for i := 1 to 30 do
+         oExporter.CbAddExportType(i),
+      next,
+
+      // Browserdefinitionen mit Optionen hinzufügen
+      oExporter.CbAddExportTypeWithOptions(4, {bStdBrowser, cBrowserFromUsers}),
+
+      // Tabellen- und Feldrechte mit Optionen hinzufügen (keine Defaults, nur Individuelle)
+      oExporter.CbAddExportTypeWithOptions(10, {false, true}),
+
+      // Merkmalstabellen mit Optionen hinzufügen (keine Defaults, nur Individuelle)
+      oExporter.CbAddExportTypeWithOptions(6, {false, true}),
+
+      // Übergabe des DD- und des DabPar Pfades
+      oExporter.CbDataBasePath := mBeDefault,
+      oExporter.CbDabPARPath   := '',
+
+      // Übergabe der verschiedenen Regulären Ausdrücke
+      oExporter.CbPathIncludeRegEx := '',
+      oExporter.CbPathExcludeRegEx := cCbPathExcludeRegEx,
+
+      // Regulärer Ausdruck für die Suche
+      oExporter.CbCodeIncludeRegEx := cCbCodeIncludeRegEx,
+      oExporter.CbCodeExcludeRegEx := '',
+
+      oExporter.CbShowProgressBar := True,   // ProgressBar aktivieren
+      oExporter.CbExportCodeblock(),         // Export der Codeblöcke
+   always
+      DestroyObject(oExporter),
+   stopseq,
+
+   Result := cCollectorErrorLog,
+end,
+
+//******************************************************************************
+//
+// @Result: null
+//******************************************************************************
+function CodeblockCollector_MemTable_Create(oOwner)
+   Result := CreateObject('TBeMemTable', 'RESULT_MEM', oOwner),
+
+   Result.CbAddField('ID',                 ftInteger, 0),
+   Result.CbAddField('FILE_FULL_PATH',     ftString, 255),
+   Result.CbAddField('FILE_RELATIVE_PATH', ftString, 255),
+   Result.CbAddField('FILE_CONTENT',       ftMemo,     0),
+
+   Result.CbAddField('LOOKUP_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('LOOKUP_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('LOOKUP_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('SEEK_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('SEEK_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('SEEK_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('SCOPE_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('SCOPE_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('SCOPE_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('DBF_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('DBF_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('DBF_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('TRANSACT_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('TRANSACT_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('TRANSACT_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('ACTIVECONTROL_MATCHES_TOTAL',    ftInteger,  0),
+   Result.CbAddField('ACTIVECONTROL_MATCHES_RELEVANT', ftInteger,  0),
+   Result.CbAddField('ACTIVECONTROL_MATCHES',          ftMemo,     0),
+
+   Result.CbAddField('HAS_RELEVANT_MATCH',      ftBoolean,     0),
+
+   Result.Active  := True,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_MemTable_LoadFiles(oMemTable, cExportPath)
+| aDir, i, oFile, cFileContent, cFullPath, nExportPathLen, nIDCount |
+
+   nIDCount       := 0,
+   nExportPathLen := Len(cExportPath),
+
+   aDir := PathSeek({'*.*'}, cExportPath ),
+   for i := 1 to aLen(aDir) do
+
+      cFullPath := aDir[i],
+
+      if     not Right(cFullPath, Len('.vscode\settings.json')) = '.vscode\settings.json'
+         and not Right(cFullPath, Len('.migbe7\info.txt'))      = '.migbe7\info.txt'          then
+
+         oFile := FOpen(cFullPath, FO_READ),
+         startseq
+            FRead(oFile, cFileContent, oFile.Size),
+
+            MyAppend(oMemTable),
+            nIDCount ++,
+            oMemTable:ID                 := nIDCount,
+            oMemTable:FILE_FULL_PATH     := cFullPath,
+            oMemTable:FILE_RELATIVE_PATH := AllTrim(SubStr(cFullPath, nExportPathLen + 1, 255)),
+            oMemTable:FILE_CONTENT       := cFileContent,
+
+            oMemTable:LOOKUP_MATCHES_TOTAL       := 0,
+            oMemTable:LOOKUP_MATCHES_RELEVANT    := 0,
+            oMemTable:LOOKUP_MATCHES             := '',
+
+            oMemTable:SEEK_MATCHES_TOTAL         := 0,
+            oMemTable:SEEK_MATCHES_RELEVANT      := 0,
+            oMemTable:SEEK_MATCHES               := '',
+
+            oMemTable:SCOPE_MATCHES_TOTAL        := 0,
+            oMemTable:SCOPE_MATCHES_RELEVANT     := 0,
+            oMemTable:SCOPE_MATCHES              := '',
+
+            oMemTable:DBF_MATCHES_TOTAL          := 0,
+            oMemTable:DBF_MATCHES_RELEVANT       := 0,
+            oMemTable:DBF_MATCHES                := '',
+
+            oMemTable:TRANSACT_MATCHES_TOTAL          := 0,
+            oMemTable:TRANSACT_MATCHES_RELEVANT       := 0,
+            oMemTable:TRANSACT_MATCHES                := '',
+
+            oMemTable:ACTIVECONTROL_MATCHES_TOTAL          := 0,
+            oMemTable:ACTIVECONTROL_MATCHES_RELEVANT       := 0,
+            oMemTable:ACTIVECONTROL_MATCHES                := '',
+
+            MyPost(oMemTable),
+         always
+            FClose(oFile),
+         stopseq,
+
+      endif,
+   next,
+
+end,
+
+//******************************************************************************
+// Einzeilige Kommentare im Text löschen (durch "nichts" ersetzen)
+//******************************************************************************
+function CodeblockCollector_Eliminate_SingleLine_Comments(cFileContent)
+| oRegEx |
+
+   oRegEx := CreateObject('TBeCBRegExpr'),
+   startseq
+     oRegEx.UseMultiLine     := true,
+     oRegEx.UseCaseSensitive := false,
+     oRegEx.SearchText       := cFileContent,
+     oRegEx.SearchExpression := '(\/\/)([^\n\r]+)',
+                                                    // Erklärung:
+                                                    //   (\/\/)      =  //
+                                                    //   ([^\n\r]+)  =  alles außer NEWLINE und RETURN so oft wie möglich
+     oRegEx.ReplaceText      := '',
+
+     Result := oRegEx.Replace,
+   always
+      DestroyObject(oRegEx),
+   stopseq,
+end,
+
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_MemTable_AnalyzeOneRecord(oMemTable)
+| oRegEx, oRegEx2, bIsRelevantRegExMatch, nMatchesTotal, nMatchesRelevant, cMatch, cRelevantMatches, cFileContent |
+   cFileContent            := oMemTable:FILE_CONTENT,
+   cFileContent            := CodeblockCollector_Eliminate_SingleLine_Comments(cFileContent),
+
+   oRegEx  := CreateObject('TBeCBRegExpr'),
+   oRegEx2 := CreateObject('TBeCBRegExpr'),
+   startseq
+     oRegEx.UseMultiLine     := True,
+     oRegEx.UseCaseSensitive := false,
+     oRegEx.SearchText       := cFileContent,
+
+     //*************************************************************************
+     // 1. Suche nach LookUp()
+     //*************************************************************************
+     oRegEx.SearchExpression := CodeblockCollector_GetLookupRegEx(),
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        nMatchesTotal ++,
+        bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_LookUp(cMatch),
+        if bIsRelevantRegExMatch then
+           nMatchesRelevant++,
+           cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+        endif,
+        while oRegEx.ExecSearchNext do
+           cMatch                := oRegEx.Matches[1],
+           nMatchesTotal ++,
+           bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_LookUp(cMatch),
+           if bIsRelevantRegExMatch then
+              nMatchesRelevant++,
+              cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+           endif,
+        end,
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:LOOKUP_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:LOOKUP_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:LOOKUP_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     //*************************************************************************
+     // 2. Suche nach DbSeek()
+     //*************************************************************************
+     oRegEx.SearchExpression := 'DbSeek\(([^{})]*)\)',
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        nMatchesTotal ++,
+        bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_Seek(cMatch),
+        if bIsRelevantRegExMatch then
+           nMatchesRelevant++,
+           cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+        endif,
+        while oRegEx.ExecSearchNext do
+           cMatch                := oRegEx.Matches[1],
+           nMatchesTotal ++,
+           bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_Seek(cMatch),
+           if bIsRelevantRegExMatch then
+              nMatchesRelevant++,
+              cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+           endif,
+        end,
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:SEEK_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:SEEK_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:SEEK_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     //*************************************************************************
+     // 3. Suche nach DbScope()
+     //*************************************************************************
+
+     oRegEx.SearchExpression := 'DbScope\(([^{})]*)\)',
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        // nMatchesTotal ++,  // auskommentiert, sonst werden Dbscope(,oTable) in Stufe 1 angezeigt, obwohl irrelevant AR 23.12.2019
+        bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_Scope(cMatch),
+        if bIsRelevantRegExMatch then
+           nMatchesTotal ++,
+           nMatchesRelevant++,
+           cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+        endif,
+         prs('Suche nach DbScope', {oMemTable:FILE_RELATIVE_PATH, cMatch, bIsRelevantRegExMatch}),
+        while oRegEx.ExecSearchNext do
+           cMatch                := oRegEx.Matches[1],
+           // nMatchesTotal ++,  // auskommentiert, sonst werden Dbscope(,oTable) in Stufe 1 angezeigt, obwohl irrelevant AR 23.12.2019
+           bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_Scope(cMatch),
+           if bIsRelevantRegExMatch then
+              nMatchesTotal ++,
+              nMatchesRelevant++,
+              cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+           endif,
+         prs('Suche nach DbScope next', {oMemTable:FILE_RELATIVE_PATH, cMatch, bIsRelevantRegExMatch, nMatchesRelevant}),
+        end,
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:SCOPE_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:SCOPE_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:SCOPE_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     //*************************************************************************
+     // 4. Suche nach '.DBF'
+     //*************************************************************************
+     oRegEx.SearchExpression := '(\.DBF)(.*)', // '\.DBF',
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        nMatchesTotal ++,
+        bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_DBF(cMatch),
+        if bIsRelevantRegExMatch then
+           nMatchesRelevant++,
+           cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+        endif,
+        while oRegEx.ExecSearchNext do
+           cMatch                := oRegEx.Matches[1],
+           nMatchesTotal ++,
+           bIsRelevantRegExMatch := CodeblockCollector_RegExMatch_IsRelevant_DBF(cMatch),
+           if bIsRelevantRegExMatch then
+              nMatchesRelevant++,
+              cRelevantMatches   := ConcatTrenner(cRelevantMatches, cMatch, crlf + '--------' + crlf),
+           endif,
+        end,
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:DBF_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:DBF_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:DBF_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     //*************************************************************************
+     // 5. Suche nach 'DbStartTrans()'
+     //*************************************************************************
+     oRegEx.SearchExpression := 'DbStartTrans\(\)', // 'DbStartTrans()',
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        nMatchesTotal ++,
+        nMatchesRelevant ++, // Jeder Match ist relevant
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:TRANSACT_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:TRANSACT_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:TRANSACT_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     //*************************************************************************
+     // 6. Suche nach '.ActiveControl'
+     //*************************************************************************
+     oRegEx.SearchExpression := CodeblockCollector_GetActiveControl_RegEx(),
+     nMatchesTotal           := 0,
+     nMatchesRelevant        := 0,
+     cRelevantMatches        := '',
+
+     if oRegEx.ExecSearch then
+        cMatch                := oRegEx.Matches[1],
+        nMatchesTotal ++,
+        nMatchesRelevant ++, // Jeder Match ist relevant
+     endif,
+
+     MyEdit(oMemTable),
+     oMemTable:ACTIVECONTROL_MATCHES_TOTAL    := nMatchesTotal,
+     oMemTable:ACTIVECONTROL_MATCHES_RELEVANT := nMatchesRelevant,
+     oMemTable:ACTIVECONTROL_MATCHES          := cRelevantMatches,
+     MyPost(oMemTable),
+
+     // Abschluss: Gibt es im Datensatz (=File) mindestens einen relevanten Match?
+     MyEdit(oMemTable),
+     oMemTable:HAS_RELEVANT_MATCH   := (oMemTable:LOOKUP_MATCHES_RELEVANT +
+                                        oMemTable:SEEK_MATCHES_RELEVANT   +
+                                        oMemTable:SCOPE_MATCHES_RELEVANT  +
+                                        oMemTable:DBF_MATCHES_RELEVANT    +
+                                        oMemTable:TRANSACT_MATCHES_RELEVANT +
+                                        oMemTable:ACTIVECONTROL_MATCHES_RELEVANT)    >  0,
+     MyPost(oMemTable),
+
+
+   always
+      DestroyObject(oRegEx),
+      DestroyObject(oRegEx2),
+   stopseq,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_MemTable_AnalyzeAllRecords(oMemTable)
+| oRec |
+   foreach oRec in oMemTable do
+
+      // "Eigentreffer" ausschließen
+      if ('.migration-be7\migbe7-assistent\checks\' $ oMemTable:FILE_RELATIVE_PATH) or ('Tools\Update Migrationsassistent\7.x\' $ oMemTable:FILE_RELATIVE_PATH) then      // alten Package-Pfad drin lassen für Systeme, wo das alte package schon installiert war
+         MyEdit(oMemTable),
+         oMemTable:HAS_RELEVANT_MATCH   := false,
+         MyPost(oMemTable),
+      else
+         CodeblockCollector_MemTable_AnalyzeOneRecord(oMemTable),
+      endif,
+   next,
+
+   /*
+
+      // CM 12.08.2020: das darf man hier nicht machen, sonst kann man die Dateien nicht mehr auf der Platte löschen - über die Funktion "Als nicht relevant erkente löschen"
+
+   // Jetzt noch alle Datensätze aus der MemTable löschen, bei denen gar nichts gefunden wurde.
+   // Das sind die mit 'DbScope(,oTable)'
+   DbGoTop(oMemTable),
+   While not eof(oMemTable) do
+       if oMemTable:LOOKUP_MATCHES_TOTAL = 0 and oMemTable:SEEK_MATCHES_TOTAL = 0 and oMemTable:SCOPE_MATCHES_TOTAL = 0 and oMemTable:DBF_MATCHES_TOTAL = 0 and oMemTable:TRANSACT_MATCHES_TOTAL = 0 and oMemTable:ACTIVECONTROL_MATCHES_TOTAL = 0 then
+          MyDelete(oMemtable),
+       else
+          DbSkip(1, oMemTable),
+       endif,
+   end,
+   */
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_MemTable_CalcResultArray(oMemTable)
+| aResult, cSummaryText, nFilesWithAtLeastOneMatch, oRec  |
+
+   //***************************************************************************
+   function CountMatches(cMatchType)
+   | nTotal, nRelevant, oRec |
+      nTotal          := 0,
+      nRelevant       := 0,
+       foreach oRec in oMemTable do
+         nTotal    += AsVariant( cMatchType + '_MATCHES_TOTAL',    oMemTable),
+         nRelevant += AsVariant( cMatchType + '_MATCHES_RELEVANT', oMemTable),
+      next,
+
+      KVU_Set(aResult, cMatchType + '_MATCHES_TOTAL',    nTotal),
+      KVU_Set(aResult, cMatchType + '_MATCHES_RELEVANT', nRelevant),
+   end,
+
+   aResult := {},
+
+   // Dateien insgesamt (Stufe 1)
+   KVU_Set(aResult, 'FILE_COUNT_TOTAL', oMemTable.CbRecordCount),
+
+   oMemTable.Filter   := '',
+   oMemTable.Filtered := false,
+
+   // Dateien = Codeblöcke die mind. einen relevanten Treffer haben (Stufe 2)
+   nFilesWithAtLeastOneMatch := 0,
+   foreach oRec in oMemTable do
+      if oMemTable:HAS_RELEVANT_MATCH then
+         nFilesWithAtLeastOneMatch ++,
+      endif,
+   next,
+   KVU_Set(aResult, 'FILE_COUNT_WITH_MATCHES', nFilesWithAtLeastOneMatch),
+
+   CountMatches('LOOKUP'),
+   CountMatches('SEEK'),
+   CountMatches('SCOPE'),
+   CountMatches('DBF'),
+   CountMatches('TRANSACT'),
+   CountMatches('ACTIVECONTROL'),
+
+   Result := aResult,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CodeblockCollector_ResultArray_ToSummaryText(aResultArray)
+| cSummaryText, nGesamtTotal, nRelevantTotal |
+
+   //***************************************************************************
+   function SummaryOfMatchType(cMatchType)
+   | nTotal, nRelevant, nPercent |
+      nTotal    := KVU_Get(aResultArray, cMatchType + '_MATCHES_TOTAL',    -1),
+      nRelevant := KVU_Get(aResultArray, cMatchType + '_MATCHES_RELEVANT', -1),
+      nPercent := iif (nTotal>0, Round(nRelevant / nTotal * 100, 0),0),
+      Result := PadL(FormatStd(nTotal, 0), 6)    + ' gesamt, ' + PadL(FormatStd(nRelevant, 0), 6) + ' relevant  = ' + PadL(nPercent, 3)  + ' %',
+      nGesamtTotal     += nTotal,
+      nRelevantTotal   += nRelevant,
+   end,
+
+   cSummaryText := '<no result array available>',
+   if ALen(aResultArray) > 0 then
+      nGesamtTotal   := 0,
+      nRelevantTotal := 0,
+      cSummaryText   :=
+            'Anzahl Programm-Objekte (gesamt, Stufe 1)  : ' + FormatStd( KVU_Get(aResultArray, 'FILE_COUNT_TOTAL',        -1), 0 ) + crlf +
+            'Anzahl Programm-Objekte (relevant, Stufe 2): ' + FormatStd( KVU_Get(aResultArray, 'FILE_COUNT_WITH_MATCHES', -1), 0 ) + crlf +
+            crlf +
+            'Detail-Zahlen zu Treffern in Codeblöcken: ' + crlf +
+
+            ' - Lookup()       : ' + SummaryOfMatchType('LOOKUP')  + crlf +
+            ' - DbSeek()       : ' + SummaryOfMatchType('SEEK')    + crlf +
+            ' - DbScope()      : ' + SummaryOfMatchType('SCOPE')   + crlf +
+            ' - .DBF           : ' + SummaryOfMatchType('DBF') + crlf +
+            ' - Trans()        : ' + SummaryOfMatchType('TRANSACT') + crlf +
+            ' - .ActiveControl : ' + SummaryOfMatchType('ACTIVECONTROL') + crlf +
+            '   Summen         : ' + PadL(FormatStd(nGesamtTotal, 0), 6)    + ' gesamt, ' + PadL(FormatStd(nRelevantTotal, 0), 6) + ' relevant  = '
+            + PadL(iif(nGesamtTotal>0,Round(nRelevantTotal / nGesamtTotal * 100,0),0), 3)  + ' %',
+
+   endif,
+   Result := cSummaryText,
+end,
+
+
+//******************************************************************************
+// Die Funktion erstellt eine Info-Datei im Ausgabe-Verzeichnis
+// Rückgabe: Inhalt der Datei
+//******************************************************************************
+function CodeblockCollector_WriteInfoFile( cCodeblockCollectorExportPath, cCollectorErrorLog, cBrowserFromUsers, bStdBrowser, cCbCodeIncludeRegEx, cCbPathExcludeRegEx, aAnalyzeResultArray, nDeletedFilesCount )
+| oFile, cMainMessage, cDetailsMessage, bMoreThanOneUser, cSummaryText, nExportedFiles, cPath, cFileName |
+
+   cSummaryText   := CodeblockCollector_ResultArray_ToSummaryText(aAnalyzeResultArray),
+   nExportedFiles := KVU_Get(aAnalyzeResultArray, 'FILE_COUNT_WITH_MATCHES', -1),
+
+   bMoreThanOneUser := Len(cBrowserFromUsers) > 5,
+
+   cMainMessage    := 'Es wurden <' + Str(nExportedFiles) + '> Codeblöcke identifiziert, die geprüft und ggf. angepasst werden müssen (Ergebnis Stufe 2).' + crlf +
+                      'Es wurden nur die Browser ' + iif(bMoreThanOneUser, 'der User', 'des Users') + ' "' + AttribDispMultiVal(102036, cBrowserFromUsers, "/") + '" analysiert.',
+
+   cDetailsMessage := iif( empty(cCollectorErrorLog),
+                           '',
+                           'Bei der Analyse sind folgende Fehler aufgetreten: ' + crlf + crlf + cCollectorErrorLog + crlf + crlf ) +
+                      'Ausgabe-Pfad:      ' + cCodeblockCollectorExportPath + crlf +
+                      'Reg. Ausdruck:     ' + crlf + crlf +
+                      '                   ' + cCbCodeIncludeRegEx + crlf + crlf +
+                      'Ignorierte Pfade:  ' + crlf + crlf +
+                      '                   ' + cCbPathExcludeRegEx + crlf + crlf +
+                      'Anzahl gelöschter Ausgabe-Dateien, die ' + crlf +
+                      '  als "nicht relevant" erkannt wurden:       ' + Str(nDeletedFilesCount) + crlf + crlf +
+
+                      cSummaryText,
+
+   // Datei erstellen
+   cPath     := cCodeblockCollectorExportPath + '\.migbe7\',
+   ForceDirectories(cPath),
+   cFileName := 'info.txt',
+
+   oFile := FOpen(cPath + cFileName, _or(FO_CREATE, FO_EXCLUSIVE)),
+   startseq
+      FWrite(oFile, cMainMessage + crlf + Replicate('-', 80) + crlf + cDetailsMessage),
+   always
+      FClose(oFile),
+   stopseq,
+
+
+   Result := {},
+   KVU_Set(Result, 'MAIN_MESSAGE',    cMainMessage),
+   KVU_Set(Result, 'DETAILS_MESSAGE', cDetailsMessage),
+end,
+
+//******************************************************************************
+// Die Funktion legt ein .vscode Settings-File an, damit man den Export-Ordner
+//   in vscode öffnen kann und dort per Reguläre Ausdrücke suchen.
+//
+// - Die Definition des Encodings ist notwendig, da sonst vscode "utf-8" nutzt
+//   und die vscode Volltext-Suche falsche Treffer liefert
+//
+// - (optional) wird auch noch eine Datei mit Empfehlungen für vscode extensions angelegt
+//******************************************************************************
+function CodeblockCollector_CreateVsCodeConfigurationFiles(cPath, bCreateExtensionRecommendation:L:=false)
+| oFile, cSettingsFileName, cSettingsContent, cRecommendationsFileName, cRecommendationsContent |
+
+  cPath             := cPath + '\.vscode\',
+  cSettingsFileName := 'settings.json',
+  cSettingsContent  :=
+   '{'                                    + crlf +
+   '    "files.encoding": "windows1252"'  + crlf +
+   '}',
+
+  // Verzeichnis anlegen
+  ForceDirectories(cPath),
+
+  // Erstellen
+  oFile := FOpen(cPath + cSettingsFileName, _or(FO_CREATE, FO_EXCLUSIVE)),
+  startseq
+     FWrite(oFile, cSettingsContent),
+  always
+     FClose(oFile),
+  stopseq,
+
+  if bCreateExtensionRecommendation then
+     cRecommendationsFileName := 'extensions.json',
+     cRecommendationsContent  :=
+        '{'                                                  + crlf +
+        '    "recommendations": ["dontenwillag.codeblock"]'  + crlf +
+        '}',
+     oFile := FOpen(cPath + cRecommendationsFileName, _or(FO_CREATE, FO_EXCLUSIVE)),
+     startseq
+        FWrite(oFile, cRecommendationsContent),
+     always
+        FClose(oFile),
+     stopseq,
+  endif,
+end,
+
+//******************************************************************************
+// Aus dem Export-Verzeichnis des Codeblock-Collectors alle Dateien löschen, die bei der
+//      Detail-Prüfung als "nicht relevant" erkannt wurden.
+//
+// Rückgabe: Anzahl gelöschter Dateien
+//******************************************************************************
+function CodeblockCollector_DeleteNotRelevantFiles(oMemResults)
+| oRec |
+   Result := 0,
+
+   foreach oRec in oMemResults do
+      if not oMemResults:HAS_RELEVANT_MATCH then                                // WriteLn(oMemResults:FILE_FULL_PATH),
+         if not DeleteFile(AllTrim(oMemResults:FILE_FULL_PATH)) then
+            SetError('Datei <' + AllTrim(oMemResults:FILE_FULL_PATH) + '> konnte nicht gelöscht werden. Aktion abgebrochen.'),
+         endif,
+         Result++,
+      endif,
+   next,
+end,
+
+//******************************************************************************
+// Die Funktion löscht alle leeren Ordner, die unterhalb des
+// angegebenen @cPath liegen
+// Rückgabe: Anzahl gelöschter Ordner
+//******************************************************************************
+function CodeblockCollector_DeleteEmptFolders(cBaseDirectory)
+| m_nDeletedFolderCount |
+
+   function RecursiveDeleteEmptyDirectory(cDirectory)
+   | i, aDirectories, cDir, cCompleteDir |
+     aDirectories := DirArray(cDirectory, , faDirectory),                        // WriteLn(aDirectories),
+     for i := 1 to aLen(aDirectories) do
+        cDir := aDirectories[i, 1],
+        if cDir <> '.' and cDir <> '..' then
+          cCompleteDir := cDirectory + '\' + cDir,                               // WriteLn(cCompleteDir),
+          RecursiveDeleteEmptyDirectory(cCompleteDir),
+        endif,
+     next,
+
+     if RemoveDir(cDirectory) then // <- löscht nur, sofern der Ordner leer ist...
+        m_nDeletedFolderCount ++,
+     endif,
+   end,
+
+
+   m_nDeletedFolderCount := 0,
+
+   RecursiveDeleteEmptyDirectory(cBaseDirectory),
+
+   Result := m_nDeletedFolderCount,
+end,
+
+//******************************************************************************
+// Stellt einen Regulären Ausdruck für das Ignorieren von Altjahres-Mandanten-Layouts
+// beim Export mittels Codeblock-Collector zusammen
+// @Result: Regulärer Ausdruck für die Nutzung in "Ausdruck, der im Pfad nicht vorkommen darf"
+//******************************************************************************
+function CodeblockCollector_Build_AltjahresMandanten_Exclude_RegEx_Path(nGeschaeftsJahresBeginn_AktiveMandanten_Ab:N)
+| oQueryAktiveMandanten, cAktiveMandantenTokens, oFiBuLayoutsQuery, oRec, cPathRegEx, cFiBuLayoutsSqlLikeExpression |
+
+   Result := '',
+
+   // Liste der aktiven FiBu-Mandanten ermitteln und als Vergleichs-Text speichern
+   oQueryAktiveMandanten := CreateObject('TBeAdsQuery'),
+   startseq
+       oQueryAktiveMandanten.SQL    := CheckUtils_FiBu_Build_AktiveMandanten_SqlScript(nGeschaeftsJahresBeginn_AktiveMandanten_Ab),
+       oQueryAktiveMandanten.Active := true,
+
+       cAktiveMandantenTokens := '',
+       foreach oRec in oQueryAktiveMandanten do
+          cAktiveMandantenTokens := ConcatTrenner(cAktiveMandantenTokens, oQueryAktiveMandanten:MANDANT_STR, '/'),
+       next,
+   always
+       DestroyObject(oQueryAktiveMandanten),
+   stopseq,
+
+   WriteLn('Liste der aktiven Mandanten: ' + cAktiveMandantenTokens),
+
+
+   // Liste der FiBu-Layout-Präfixes (der Art '211_FB', '219_FB' etc) ermitteln
+   // => Daraus eine "Ignore RegEx" Ausdruck zusammen stellen, dabei die aktiven Mandanten nicht ignorieren
+   oFiBuLayoutsQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      cFiBuLayoutsSqlLikeExpression := "'___\_FB__\____\____' ESCAPE '\'", // <-- Dieser Ausdruck kann mittels des SQL 'LIKE' Operators genutzt werden um (zielsicher) FiBu-Layouts zu selektieren
+
+
+      oFiBuLayoutsQuery.SQL         := 'SELECT DISTINCT LEFT(REPORT_ID, 3) AS MANDANT_STR, LEFT(REPORT_ID, 6) AS REPORT_PRAEFIX ' + crlf +
+                                       '   FROM ' + DbSqlTableName(waDabR10) + crlf +
+                                       '   WHERE REPORT_ID LIKE ' + cFiBuLayoutsSqlLikeExpression,
+      oFiBuLayoutsQuery.Active := true,
+
+
+      // Beispiel-Output: "Beleg Layouts\\.*202|Beleg Layouts\\.*203"
+      Result := '',
+      foreach oRec in oFiBuLayoutsQuery do
+         if not oFiBuLayoutsQuery:MANDANT_STR $ cAktiveMandantenTokens then
+            cPathRegEx := 'Beleg Layouts\\.*' + RTrim(oFiBuLayoutsQuery:REPORT_PRAEFIX),
+            Result     := ConcatTrenner(Result, cPathRegEx, '|'),
+         endif,
+      next,
+   always
+      DestroyObject(oFiBuLayoutsQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+// Regulärer "Exclude" Ausdruck für das Ignorieren von bestimmten Export-Pfaden
+// @Result: String
+//******************************************************************************
+function CodeblockCollector_GetComplete_PathExclude_RegEx()
+| cFiBuAltjahresMandanten, cLayoutBackUps |
+
+   cLayoutBackUps          := 'Beleg Layouts\\BACKUP_|Beleg Layouts\\KOPIE_|Beleg Layouts\\ARCHIV_',
+   cFiBuAltjahresMandanten := CodeblockCollector_Build_AltjahresMandanten_Exclude_RegEx_Path(2020), // <- Mandanten als "alt" betrachten, wenn GJ-Beginn < 2020
+
+   Result                  := ConcatTrenner(cLayoutBackUps, cFiBuAltjahresMandanten, '|'),
+end,
+
+//******************************************************************************
+// Regulärer "Inlcude" Ausdruck für die Suche nach betroffenen Codeblöcken
+// @Result: String
+//******************************************************************************
+function CodeblockCollector_GetComplete_CodeInclude_RegEx()
+   Result := '((DbScope|DBSeek)\(([^{})]*)\)|' + CodeblockCollector_GetLookupRegEx() + '|\.DBF)'+'|DbStartTrans\(\)'+'|' + CodeblockCollector_GetActiveControl_RegEx(),
+end,
+

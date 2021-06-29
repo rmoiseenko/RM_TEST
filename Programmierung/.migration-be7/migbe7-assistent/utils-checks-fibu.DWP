@@ -1,0 +1,35 @@
+
+
+//##############################################################################
+// Funktionen mit FiBu-Bezug, die per Include in Check-Programmen genutzt werden können
+//##############################################################################
+
+
+//******************************************************************************
+// Prüfen, ob die FiBu aktiviert ist (per DABPAR, nicht per Lizenz!)
+// Result: ja/nein
+//******************************************************************************
+function CheckUtils_FiBu_IsActiveViaDABPAR()
+| oQuery, cSQL |
+   cSQL   := 'SELECT FIBU_AKTIV, FIRMA FROM ' + DbSqlTableName(waDabPAR),
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      Result := oQuery:FIBU_AKTIV,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+// Gibt ein SQL-Script zurück für die Ermittlung aktiver Mandanten zurück
+// Rückgabe: SQL-String
+//******************************************************************************
+function CheckUtils_FiBu_Build_AktiveMandanten_SqlScript(nGeschaeftsJahresBeginn_AktiveMandanten_Ab:N)
+   Result := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\utils-checks-fibu-mandanten.sql'),
+
+   Result += crlf +
+             'SELECT * FROM #Mandanten WHERE Year(GJ_BEGINN) >= ' + Str(nGeschaeftsJahresBeginn_AktiveMandanten_Ab),,
+end,

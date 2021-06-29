@@ -1,0 +1,47 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| oQuery, cAdsVersion, cSQL |
+
+   cSQL   := 'EXECUTE PROCEDURE sp_mgGetInstallInfo()',
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      cAdsVersion := AllTrim(oQuery:VERSION),
+
+      if cAdsVersion >= '12' then
+         KVU_Set(m_aResult, 'RESULT', 'OK'),
+      else
+         KVU_Set(m_aResult, 'RESULT', 'ERROR'),
+      endif,
+
+      KVU_Set(m_aResult, 'RESULT_MSG',   'Die aktuell installierte Version ist <' + cAdsVersion + '>.'),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Version des Datenbank-Servers'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'be 7.x erfordert den ADS-Server in Version 12.x'),
+
+m_aResult

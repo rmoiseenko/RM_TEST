@@ -99,6 +99,10 @@ function RemoveAll()
    if DirectoryExists(m_cRepoPath + 'Browser') then
       result := myRemoveDir(m_cRepoPath + 'Browser'),
    endif,
+
+   if DirectoryExists(m_cRepoPath + 'etc') then
+      result := myRemoveDir(m_cRepoPath + 'etc'),
+   endif,
 end,
 
 
@@ -124,6 +128,7 @@ function Export()
    KVU_Set(aExportSettings, 'EXPORT_CB_PANELS',  true),
 //KVU_Set(aExportSettings, 'EXPORT_TABLEDEF',   true),
 //KVU_Set(aExportSettings, 'EXPORT_ROLLEN',     true),
+   KVU_Set(aExportSettings, 'EXPORT_DETAILS_CBCOLLECTOR',  true),
 
    dBeginDateTime := now(),
    Result := ExportWithPackage(aExportSettings),

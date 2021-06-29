@@ -1,0 +1,10 @@
+| cResult, cUsername |
+
+cResult   := MEMO,
+cUsername := BeUserShortName(c_usr),
+
+cResult   := StrTran(cResult, '@DATUM@', FormatDateTime("DD.MM.YY", date())),
+cResult   := StrTran(cResult, '@HOUR@',  SubStr(FormatDateTime('HH:MM:SS', Now()), 1, 8)),
+cResult   := StrTran(cResult, '@USER@',  RTrim(cUsername)) + ":",
+
+cResult

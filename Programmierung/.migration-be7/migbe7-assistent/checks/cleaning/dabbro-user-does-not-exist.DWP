@@ -1,0 +1,43 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+//******************************************************************************
+function GetSqlWHERE()
+   Result := 'LEFT JOIN "DABUSR.ADT" DABUSR ON (DABBRO.[USER] = DABUSR.USER_NR)' + crlf +
+             'WHERE     DABUSR.USER_NR IS NULL'                                  + crlf +
+             '      AND DABBRO.[USER] <> 0',  
+end,
+
+//******************************************************************************
+function Check()
+   CheckUtils_Cleaning_Standard_Check(waDabBRO, GetSqlWHERE(), 'DabBRO.BROWSER_ID, DabBRO.[USER], DabBRO.BUCH_DATUM', {13, 5, 12}, '', 'DabBRO.BROWSER_ID, DabBRO.[USER]', m_aResult),
+end,
+
+//******************************************************************************
+function Execute()
+   if BeMessageDlgEx('Daten-Aktion durchführen?' + crlf + crlf + 'Durch diese Aktion werden Daten im System geändert!', mtWarning, {'Aktion durchführen', 'Abbrechen'}, {10, 20}, 20, 20) = 10 then
+      CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(GetSqlWHERE(), waDabBRO, 'browser-user-does-not-exist', m_aResult, '[ROWID]'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'DID_NOT_EXECUTE'),
+   endif,  
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: Browser von Usern, die nicht (mehr) existieren'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Browser, die einem nicht (mehr) existierenden User zugeordnet sind, sollten bereinigt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Datenbereinigung durchführen...'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  195),
+
+m_aResult

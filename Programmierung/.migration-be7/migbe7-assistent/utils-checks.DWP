@@ -1,0 +1,180 @@
+
+//##############################################################################
+// Funktionen, die per Include in Check-Programmen genutzt werden können
+//##############################################################################
+
+
+//******************************************************************************
+function CheckUtils_PrintToString(vVal)
+  if ValType(vVal) = 'U' then
+    Result := '<NULL>'
+  else
+    Result := ToString(vVal),
+  endif,
+end,
+
+//******************************************************************************
+// Wandelt den Tabellen-Inhalt in eine Text-Ausgabe um
+// Rückgabe: (mehrzeiliger) Text zur Darstellung mittels Festbreitenschriftart
+//******************************************************************************
+function CheckUtils_PrintTableToFixedLengthText(oTable, cFieldsOnly:C:='', uPadding:U:=15, nMaxPrintRecords:N:=300)
+| i, oField, oRec, cLine, nRecCount, nHeaderCount, nPadding, nCurrentColumn |
+
+  function GetPaddingForColumn(nColumn)
+    Result := nPadding,
+    if ValType(uPadding) = 'A' then
+      if ALen(uPadding) >= nColumn then
+        Result := uPadding[nColumn],
+      endif,
+    endif,
+  end,
+
+  Result      := '',
+  cFieldsOnly := Upper(cFieldsOnly),
+
+  if ValType(uPadding) = 'N' then
+    nPadding := uPadding,
+  else
+    if ValType(uPadding) = 'A' then
+      // nix
+    else
+      SetError('unhandled valtype for param "uPadding"'),
+    endif,
+  endif,
+
+  // header
+  nHeaderCount        := 0,
+  nCurrentColumn      := 0,
+  cLine               := '',
+  for i := 0 to oTable.CbFieldCount - 1 do
+    oField := oTable.CbField(i),
+    if not empty(oField) then  // in SQL-Queries (TBeAdsQuery) gibt es kein 0.tes Feld
+      if Empty(cFieldsOnly) or '/' + Upper(oField.FieldName) + '/' $ cFieldsOnly then
+        nHeaderCount++,
+        nCurrentColumn++,
+        cLine := ConcatTrenner(cLine, PadR(oField.FieldName, GetPaddingForColumn(nCurrentColumn)), '|'),
+      endif,
+    endif,
+  next,
+  Result := cLine + crlf + Replicate('-', Len(cLine)),
+
+  // content
+  nRecCount := 0,
+  foreach oRec in oTable do
+    nRecCount++,
+
+    if nRecCount <= nMaxPrintRecords then
+       cLine          := '',
+       nCurrentColumn := 0,
+       for i := 0 to oTable.CbFieldCount - 1 do
+         oField := oTable.CbField(i),
+         if not empty(oField) then  // in SQL-Queries (TBeAdsQuery) gibt es kein 0.tes Feld
+           if Empty(cFieldsOnly) or '/' + Upper(oField.FieldName) + '/' $ cFieldsOnly then
+             nCurrentColumn++,
+
+             // Hier darf nicht mit "ConcatTrenner" gearbeitet werden, da sonst leere Feldwerte "verschluckt" würden. Auch leere Feldwerte sollen eine Spalte ergeben.
+             if nCurrentColumn > 1 then
+                cLine += '|',
+             endif,
+             cLine += PadR(CheckUtils_PrintToString(AsVariant(oField.FieldName, oTable)), GetPaddingForColumn(nCurrentColumn)),
+           endif,
+         endif,
+       next,
+       Result += crlf + cLine,
+    else
+       cLine  := '... es werden nur die ersten ' + Str(nMaxPrintRecords) + ' Zeilen ausgegeben',
+       Result += crlf + cLine,
+       break,
+    endif,
+  next,
+
+  // no content available?
+  if oTable.CbEoF and oTable.CbBoF then
+    cLine  := ' < no records > ',
+    Result += crlf + cLine,
+  endif,
+
+end,
+
+//******************************************************************************
+// Sql Statement ausführen, standardisierte Rückgabe per Array
+//******************************************************************************
+function CheckUtils_ExecCheckSQL(cSQL, cOutputFieldsOnly:C:='', uPadding:U:=15, nMaxPrintRecords:N:=300)
+| oQuery, oRec, nCount, cQueryAsText |
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+      DbGoTop(oQuery),
+
+      nCount := 0,
+      foreach oRec in oQuery do
+        nCount++,
+      next,
+
+      cQueryAsText := '',
+      if nCount <> 0 then
+         cQueryAsText := CheckUtils_PrintTableToFixedLengthText(oQuery, cOutputFieldsOnly, uPadding, nMaxPrintRecords),
+      endif,
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   Result := {},
+   KVU_Set(Result, 'COUNT',         nCount),
+   KVU_Set(Result, 'QUERY_AS_TEXT', cQueryAsText),
+end,
+
+//******************************************************************************
+// Prüfen, ob ADS 12 verfügbar ist => liefert z.B. die SQL-Funktion GROUP_CONCAT(), die es unter ADS 11 noch nicht gab
+// Result: ja/nein
+//******************************************************************************
+function CheckAdsVersion12IsInstalled()
+| oQuery, cAdsVersion, cSQL |
+
+   cSQL   := 'EXECUTE PROCEDURE sp_mgGetInstallInfo()',
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,       // Browse(, oQuery),
+
+      cAdsVersion := AllTrim(oQuery:VERSION),
+      Result      := Left(cAdsVersion, 3) = '12.'
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+// "... Count(*) ..." SQL Statement ausführen und Ergebnis des Zähler-Feldes
+//                    zurück liefern
+// Result: Integer
+//******************************************************************************
+function CheckUtils_CalcSQLCount(cSQL:C, cCountFieldName:C:='ANZAHL')
+| oQuery |
+
+  oQuery := CreateObject('TBeAdsQuery'),
+  startseq
+     oQuery.SQL    := cSQL,
+     oQuery.Active := true,
+     Result        := AsVariant(cCountFieldName, oQuery),
+  always
+     DestroyObject(oQuery),
+  stopseq,
+end,
+
+//******************************************************************************
+// Ausführbares (UPDATE, DELETE, ...) SQL Statement ausführen
+//******************************************************************************
+function CheckUtils_ExecuteSQL(cSQL:C)
+| oQuery |
+
+  oQuery := CreateObject('TBeAdsQuery'),
+  startseq
+     oQuery.SQL := cSQL,
+     oQuery.CbExecSql(),
+  always
+     DestroyObject(oQuery),
+  stopseq,
+end,

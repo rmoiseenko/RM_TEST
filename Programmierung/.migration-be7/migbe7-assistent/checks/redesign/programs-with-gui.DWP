@@ -1,0 +1,178 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-common
+//#p .migration-be7\migbe7-assistent\utils-checks
+
+//******************************************************************************
+function BuildIndiMasksWithGuiSqlScript()
+| cExcludeMasksList, cExcludeMasksListIngoreAlways |
+
+   cExcludeMasksList             := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\redesign\programs-with-gui-std-masks-list.sql'),
+   cExcludeMasksListIngoreAlways := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\redesign\programs-with-gui-std-masks-list-ignore-always.sql'),
+
+   Result := BP_BASICS_LOADSQLSCRIPTBYNAME('.migration-be7\migbe7-assistent\checks\redesign\programs-with-gui.sql'),
+   Result := StrTran(Result, '@EXCLUDE_F12_MASKS_LIST@', cExcludeMasksList + crlf + ',' + crlf + cExcludeMasksListIngoreAlways),
+end,
+
+//******************************************************************************
+function Check()
+| aResult, cSQL, cSQLCount, nCount, cFormattedResult |
+
+   cSQL             := BuildIndiMasksWithGuiSqlScript(),
+
+   aResult          := CheckUtils_ExecCheckSQL(cSQL, '/BEZ/MASK_ID/F12/GETLIST/', {75, 11, 3, 7}),
+   cFormattedResult := KVU_GetAssert(aResult, 'QUERY_AS_TEXT'),
+   nCount           := KVU_GetAssert(aResult, 'COUNT'),
+
+   if nCount > 0 then
+      KVU_Set(m_aResult, 'RESULT', 'INFO'),
+   else
+      KVU_Set(m_aResult, 'RESULT',  'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   Str(nCount) + ' designbare Oberflächen gefunden. ' + crlf + crlf + cFormattedResult),
+   KVU_Set(m_aResult, 'RESULT_SQL',   cSQL),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CreateExportMemtable()
+   Result := CreateObject('TBeMemTable', 'MEM_EXPORT'),
+
+   Result.CbAddField('Bezeichnung',     ftString,      128),
+   Result.CbAddField('Programm',        ftInteger,       0),
+   Result.CbAddField('Version',         ftInteger,       0),
+   Result.CbAddField('CodeZeilen',      ftInteger,       0),
+   Result.CbAddField('GUIObjekte',      ftInteger,       0),
+
+   Result.CbAddField('Beschreibung',    ftString,       70),
+   Result.CbAddField('Bewertung',       ftString,       50),
+
+   Result.CbAddField('Löschen',         ftString,       5),
+   Result.CbAddField('Umstellen',       ftString,       5),
+   Result.CbAddField('Aufwand Umstellung', ftFloat,      0),
+
+   Result.CbAddField('MaskenID',        ftString,       10),
+   Result.CbAddField('F12',             ftString,        1),
+   Result.CbAddField('GETLIST',         ftString,        1),
+
+   Result.CbAddField('Angelegt',        ftDateTime,      0),
+   Result.CbAddField('AngelegtVon',     ftString,       30),
+
+   Result.CbAddField('LetzteAend',      ftDateTime,      0),
+   Result.CbAddField('LetzteAendVon',   ftString,       30),
+
+
+   Result.Active  := True,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CountGuiObjekte(cProgramm)
+| nPosStart, nPosEnd, cCodePart |
+
+  nPosStart := At('@VZB@ ', cProgramm), // Beginn der Variablen-Zuweisung
+  nPosEnd   := At('@VZE@ ', cProgramm), // Ende der Variablen-Zuweisung
+  cCodePart := SubStr(cProgramm, nPosStart, nPosEnd - nPosStart),
+  Result    := Max(0, TokenCount(cCodePart, crlf) - 2),
+
+  // WriteLn(nPosStart, nPosEnd, Result),
+end,
+
+//******************************************************************************
+function Execute()
+| cSQL, cExcelFilePath, cFullExcelFileName, oQuery, oRec, oMemTable, cBasisPfad, oDabPrg, oDabPrgErsteVersion |
+  cSQL             := BuildIndiMasksWithGuiSqlScript(),
+
+  cBasisPfad       := KVU_GetAssert(m_aInputParams, 'PFAD'),
+  cExcelFilePath   := MigBe7_CalcExportFolderName(cBasisPfad) + 'redesign\',
+
+  ForceDirectories(cExcelFilePath),
+
+  cFullExcelFileName := cExcelFilePath + '3.4.2 Individuelle Oberflächen - ReDesign Aufwandsschätzung.xlsx',
+
+  // Relevante Programme ermitteln
+  oQuery := CreateObject('TbeAdsQuery'),
+  startseq
+     oQuery.SQL    := cSQL,
+     oQuery.Active := true,
+
+
+     oMemTable := CreateExportMemtable(),
+     startseq
+        oDabPrg := BeOpen(waDabPRG, 'PROGNR' ),
+        startseq
+           oDabPrgErsteVersion := BeOpen(waDabPRG, 'PROGNR' ),
+           startseq
+
+              foreach oRec in oQuery do
+
+                MySeek({oQuery:PROGNR, oQuery:VERSION}, oDabPrg),
+
+                DbScope({oQuery:PROGNR}, {oQuery:PROGNR}, oDabPrgErsteVersion),
+                DbGoTop(oDabPrgErsteVersion),
+
+                oMemTable.CbAppend(),
+                oMemTable:Programm      := oQuery:PROGNR,
+                oMemTable:Version       := oQuery:VERSION,
+                oMemTable:Bezeichnung   := oQuery:BEZ,
+                oMemTable:LetzteAend    := oDabPrg:AEND_DAT + oDabPrg:AEND_TIME,
+                oMemTable:LetzteAendVon := iif(BeUserName(oDabPrg:AEND_VON) = '---', oDabPrg:AEND_VON, BeUserName(oDabPrg:AEND_VON)),
+                oMemTable:MaskenID      := oQuery:MASK_ID,
+                oMemTable:CodeZeilen    := TokenCount(oDabPrg:PROGRAMM, crlf),
+                oMemTable:GUIObjekte    := CountGuiObjekte(oDabPrg:PROGRAMM),
+
+                oMemTable:Angelegt      := oDabPrgErsteVersion:ERST_DAT + oDabPrgErsteVersion:ERST_TIME,
+                oMemTable:AngelegtVon   := iif(BeUserName(oDabPrgErsteVersion:ERST_VON) = '---', oDabPrgErsteVersion:ERST_VON, BeUserName(oDabPrgErsteVersion:ERST_VON)),
+
+                oMemTable:F12           := oQuery:F12,
+                oMemTable:GETLIST       := oQuery:GETLIST,
+                oMemTable.CbPost(),
+              next,
+
+           always
+              BeClose(oDabPrgErsteVersion),
+           stopseq,
+
+        always
+           BeClose(oDabPrg),
+        stopseq,
+
+        ExportExcelFile(cFullExcelFileName, oMemTable, true),
+
+     always
+        DestroyObject(oMemTable),
+     stopseq,
+
+  always
+     DestroyObject(oQuery),
+  stopseq,
+
+  ShellExecute(cExcelFilePath),
+
+
+  KVU_Set(m_aResult, 'RESULT',        'DONE'),
+  KVU_Set(m_aResult, 'RESULT_MSG',    'Datei wurde erstellt unter ' + cFullExcelFileName),
+  KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+  KVU_Set(m_aResult, 'RESULT_FOLDER', cExcelFilePath),
+end,
+
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',                  'ReDesign: CB Masken (F12 & GetLists)'),
+KVU_Set(m_aResult, 'KOMMENTAR',            'Alle Codeblock-Programme, die eine designbare Oberfläche anzeigen. Das Design dieser Oberflächen sollte im Zuge des Updates standardisiert werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Liste als XLSX exportieren'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  155),
+
+m_aResult

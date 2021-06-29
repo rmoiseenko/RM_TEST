@@ -1,0 +1,22 @@
+
+// Alle Programme, die eine GUI starten (F12-Form oder GetList)
+
+// Achtung: Script wird auch von package "migbe7-erstelle-jira-tickets" genutzt
+
+SELECT
+    PROGNR,
+    VERSION,
+    BEZ,
+    MASK_ID,
+    iif(CONTAINS(PROGRAMM, '*LoadForm*'), 'x', '') AS F12,
+    iif(CONTAINS(PROGRAMM, '*ReadGets*'), 'x', '') AS GETLIST
+  FROM "DABPRG.ADT" DABPRG
+  WHERE     AKTIV = true
+        AND CONTAINS(PROGRAMM, '*LoadForm* OR *ReadGets*')
+        AND (    MASK_ID is null 
+              or NOT MASK_ID IN (
+            @EXCLUDE_F12_MASKS_LIST@
+                                )
+        )
+        AND NOT BEZ LIKE '.migration-be7\%'
+  ORDER BY BEZ

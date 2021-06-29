@@ -1,0 +1,24 @@
+| cSQL:C:='', cImgIdx |
+
+// Positionierung von vorheriger Ansicht übernehmen
+VIEW.TryKeepPriorViewPosition          := True,
+// Positionierung bei allen Quell-Ansichten übernehmen
+VIEW.TryKeepPriorViewPositionFromViews := {},
+
+// Zuordnung vorhanden?
+if not empty(PERSNR_KZ) and (PERSNR_KZ <= bcMemoLinkIdUser) then
+   MEMOBO.MemoID := MEMO_ID, // MemoBusinessObject positionieren
+   // Array mit Img.Index für Kunde,Zulieferer,Vertreter,Benutzer
+   cImgIdx := {328,332,3,525},
+   VIEW.Description  := MEMOBO.CaptionInfo.Link.CBCalcCaption(False, True, False),
+   VIEW.ImageIndex   := cImgIdx[PERSNR_KZ],
+   VIEW.Disabled     := False,
+   cSQL := 'PERSNR=' + str(PERSNR) + ' AND PERSNR_KZ=' + str(PERSNR_KZ),
+else
+   VIEW.Description := 'Keine Zuordnung',
+   VIEW.ImageIndex  := 342,
+   VIEW.Disabled    := True,
+   cSQL := 'MEMO_ID=-1',
+endif,
+
+cSQL

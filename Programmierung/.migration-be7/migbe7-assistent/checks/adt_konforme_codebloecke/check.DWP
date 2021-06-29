@@ -1,0 +1,125 @@
+| m_aInputParams:P1, m_aResult, m_cModus, m_nSubStep, bInfoMode, bDetailCheckMode |
+
+//#p .migration-be7\migbe7-assistent\utils-common
+//#p .migration-be7\migbe7-assistent\checks\adt_konforme_codebloecke\utils
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| cCollectorErrorLog, nFilesCountWithMatches, cBasisPfad, cBrowserFromUsers, bStdBrowser, oMemTable,
+  aAnalyzeResultArray, cCodeblockCollectorExportPath, nDeletedFilesCount, aMessage, cMainMessage, cDetailsMessage, cCbCodeIncludeRegEx, cCbPathExcludeRegEx |
+
+   //***************************************************************************
+   // Pfad für Codeblock-Export erstellen
+   cBasisPfad   := KVU_Get(m_aInputParams, 'PFAD', 'C:\mig-be-7'),
+   cCodeblockCollectorExportPath := MigBe7_CalcExportFolderName(cBasisPfad),
+
+   if DirectoryExists(cCodeblockCollectorExportPath) then
+      SetError('Export-Verzeichnis <' + cCodeblockCollectorExportPath + '> existiert bereits. Bitte löschen Sie das Export-Verzeichnis'),
+   endif,
+
+   ForceDirectories(cCodeblockCollectorExportPath),
+
+   //***************************************************************************
+   // Einstellungs-Dateien für .vscode anlegen, damit die Suche per RegEx in vscode
+   //   ordentliche Treffer liefert
+   //***************************************************************************
+   CodeblockCollector_CreateVsCodeConfigurationFiles(cCodeblockCollectorExportPath, true),
+   CodeblockCollector_CreateVsCodeConfigurationFiles(cCodeblockCollectorExportPath + '\..'),    // Auch im übergeordneten Ordner die .vscode settings anlegen / updaten => dann funktionierten RegEx-Suchenauch über alle Export-Ergebnisse gemeinsam
+   CodeblockCollector_CreateVsCodeConfigurationFiles(cCodeblockCollectorExportPath + '\..\..'), // dito...
+
+   //***************************************************************************
+   // Pfad im Explorer öffnen
+   // ShellExecute(cCodeblockCollectorExportPath),
+
+   //***************************************************************************
+   // Analyse Stufe 1: potentiell betroffene Codeblöcke exportieren
+   cBrowserFromUsers    := KVU_Get(m_aInputParams, 'BROWSERUSER',    c_usr),
+   cBrowserFromUsers    := iif(Left(cBrowserFromUsers, 1)  = '/', SubStr(cBrowserFromUsers, 2, Len(cBrowserFromUsers)     ), cBrowserFromUsers),
+   cBrowserFromUsers    := iif(Right(cBrowserFromUsers, 1) = '/', SubStr(cBrowserFromUsers, 1, Len(cBrowserFromUsers) - 1 ), cBrowserFromUsers),
+   bStdBrowser          := KVU_Get(m_aInputParams, 'STDBROWSERUSER', false),
+   cCbCodeIncludeRegEx  := CodeblockCollector_GetComplete_CodeInclude_RegEx(),
+   cCbPathExcludeRegEx  := CodeblockCollector_GetComplete_PathExclude_RegEx(),
+
+   cCollectorErrorLog   := CodeblockCollector_Export_MigBe7(
+                              cCodeblockCollectorExportPath,
+                              cCbCodeIncludeRegEx,
+                              cCbPathExcludeRegEx,
+                              cBrowserFromUsers,
+                              bStdBrowser ),
+
+   //***************************************************************************
+   // Analyse Stufe 2: exportierte Codeblöcke analysieren und weiter reduzieren
+
+   ProgressBarShow('Analyse Stufe 2', 'DBF => ADT Kompatibilitätsprüfung'),
+   startseq
+      ProgressBarUpdate(0, ''),
+      oMemTable := CodeblockCollector_MemTable_Create(nil),
+      startseq
+         CodeblockCollector_MemTable_LoadFiles(oMemTable, cCodeblockCollectorExportPath),            ProgressBarUpdate(15, ''),
+         CodeblockCollector_MemTable_AnalyzeAllRecords(oMemTable),                                   ProgressBarUpdate(75, ''),
+         aAnalyzeResultArray := CodeblockCollector_MemTable_CalcResultArray(oMemTable),              ProgressBarUpdate(85, ''),
+
+         // In Stufe 2 als "nicht relevant" erkannte Dateien löschen
+         nDeletedFilesCount := CodeblockCollector_DeleteNotRelevantFiles(oMemTable),
+
+         // Leere Ordner löschen
+         CodeblockCollector_DeleteEmptFolders(cCodeblockCollectorExportPath),
+
+         aMessage        := CodeblockCollector_WriteInfoFile( cCodeblockCollectorExportPath, cCollectorErrorLog, cBrowserFromUsers, bStdBrowser, cCbCodeIncludeRegEx, cCbPathExcludeRegEx, aAnalyzeResultArray, nDeletedFilesCount ),
+         cMainMessage    := KVU_GetAssert(aMessage, 'MAIN_MESSAGE'),
+         cDetailsMessage := KVU_GetAssert(aMessage, 'DETAILS_MESSAGE'),
+
+      always
+         DestroyObject(oMemTable),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+
+   nFilesCountWithMatches := KVU_GetAssert(aAnalyzeResultArray, 'FILE_COUNT_WITH_MATCHES'),
+   if not empty(cCollectorErrorLog) then
+      KVU_Set(m_aResult, 'RESULT',     'ERROR'),
+   else
+      if nFilesCountWithMatches > 0 then
+         KVU_Set(m_aResult, 'RESULT',     'WARNING'),
+      else
+         KVU_Set(m_aResult, 'RESULT',     'OK'),
+      endif,
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG',    cMainMessage    ),
+   KVU_Set(m_aResult, 'RESULT_SQL',    cDetailsMessage ),
+   KVU_Set(m_aResult, 'RESULT_FOLDER', cCodeblockCollectorExportPath),
+end,
+
+//##############################################################################
+//##############################################################################
+
+
+m_cModus         := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+m_nSubStep       := KVU_Get(m_aInputParams, 'SUB_STEP', 0),
+bInfoMode        := m_cModus <> 'CHECK',
+bDetailCheckMode := m_cModus = 'DETAIL_CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+
+if bDetailCheckMode then
+   Call('.migration-be7\migbe7-assistent\checks\adt_konforme_codebloecke\details_gui', m_aInputParams),
+else
+   if not bInfoMode then
+      Check(),
+   endif,
+endif,
+KVU_Set(m_aResult, 'BROWSERUSERS', '/000/'),
+
+KVU_Set(m_aResult, 'BEZ',       'Prüfungen & Anpassungen von Customizings'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Im Zuge des Updates werden alle Tabellen einheitlich auf das ADT-Format umgestellt. ' +
+                                'Folglich müssen Codeblöcke überprüft und ggf. angepasst werden, die auf DBF-Tabellen zugreifen (DbSeek, DbLookup, DbScope, "...DBF", etc.).'),
+KVU_Set(m_aResult, 'HAS_DETAIL_CHECK', true),
+
+m_aResult

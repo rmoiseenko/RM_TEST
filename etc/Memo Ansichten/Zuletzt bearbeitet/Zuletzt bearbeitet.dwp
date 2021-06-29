@@ -1,0 +1,29 @@
+| aLastUsed, i, cSQL:C:='' |
+
+// Filter-Einstellung für Ansicht
+VIEW.ReminderDateVisible := False,
+VIEW.ReminderDateValue   := 0,
+VIEW.ShowReminderActive  := False,
+VIEW.ShowReminderVisible := False,
+VIEW.NextActionValue     := '',
+VIEW.NextActionVisible   := False,
+VIEW.ShowUnreadActive    := False,
+VIEW.ShowUnreadVisible   := False,
+VIEW.ShowGroupActive     := False,
+VIEW.ShowGroupVisible    := False,
+VIEW.ShowDeletedActive   := True,
+VIEW.ShowDeletedVisible  := False,
+// Sortierung des Views vorgeben
+VIEW.SQLOrderBy := 'GEAENDERT DESC',
+
+// zuletzt bearbeitete Memos des akt. Users (max. 200)
+aLastUsed := GetLastUsedRecords(Val(c_usr),9),
+// MEMO_IDs mit OR
+for i := 1 to Alen(aLastUsed) do
+   cSQL += if(empty(cSQL), '', ' OR '),
+   cSQL += 'MEMO_ID = ' + Str(aLastUsed[i, 3]),
+next,
+// Wenn keine bearbeiteten Memos vorhanden nichts anzeigen
+cSQL := iif(empty(cSQL),'(MEMO_ID = -1)', '(' + cSQL + ')'),
+
+cSQL

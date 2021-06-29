@@ -1,0 +1,202 @@
+<p>
+  <ac:structured-macro ac:macro-id="afac0295-c591-4ebd-9465-414ae26481e0" ac:name="toc" ac:schema-version="1"/>
+</p>
+<h1>Zielsetzung</h1>
+<p>Dieses Dokument dient als Grundlage für die Planung des Updates auf <em>business express</em> <span> Version 7. Die Ergebnisse der Vorabprüfung wurden über den "Migrations-Assistenten" ermittelt. Der Assistent analysiert den aktuellen Systemzustand und liefert Hinweise zu notwendigen Arbeitsschritten im Zuge des Updates. Die Hinweise enthalten sowohl notwendige als auch optionale Schritte.</span>
+</p>
+<p>Um den Aufwand für das Update zu verringern und gleichzeitig den Standardisierungs-Grad des Systems zu erhöhen, sollten im ersten Schritt die vorgeschlagenen Bereinigungs-Schritte durchgeführt werden. Diese reduzieren den Umfang der zu betrachtenden Customizing-Objekte.</p>
+<h1>Umgebungs-Information</h1>
+<p>Die Prüfungen wurden unter folgenden Umgebungsbedingungen vorgenommen:</p>
+<p>@@confluence.doku.header.template@@</p>
+<p>
+  <br/>
+</p>
+<p>@@FIBU-AKTIV@result.statusmacro@@ @@FIBU-AKTIV@result.msg.first.line@@</p>
+<p>@@FIBU-MANDANTEN@result.statusmacro@@ @@FIBU-MANDANTEN@result.msg.first.line@@<br/> @@FIBU-MANDANTEN@result.msg.as.blockmacro@@</p>
+<p>
+  <ac:structured-macro ac:macro-id="ce80e8d3-9cd2-4a30-8b66-755b0956643c" ac:name="scroll-pagebreak" ac:schema-version="1"/>
+</p>
+<h1>Ergebnisse der Vorabprüfung</h1>
+<h2>Umgebungs-Voraussetzungen für das Update</h2>
+<table class="wrapped relative-table" style="width: 43.7191%;">
+  <colgroup> <col style="width: 18.9698%;"/> <col style="width: 81.0302%;"/> </colgroup>
+  <tbody>
+    <tr>
+      <th>Prüfschritt</th>
+      <th>Beschreibung</th>
+    </tr>
+    <tr>
+      <td>Datenbank-Server</td>
+      <td>
+        <p>@@ADS-VER@description@@</p>
+        <p>@@ADS-VER@result.statusmacro@@ @@ADS-VER@result.msg.first.line@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td>business express</td>
+      <td>
+        <p>@@BE-VER@description@@</p>
+        <p>@@BE-VER@result.statusmacro@@ @@BE-VER@result.msg.first.line@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td>Strukturelle <br/>Voraussetzungen</td>
+      <td>
+        <p>@@STD-CHECKS@description@@</p>
+        <p>@@STD-CHECKS@result.statusmacro@@<br/>@@STD-CHECKS@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td>Individual-Tabellen <br/>ADT-Format</td>
+      <td>
+        <p>@@INDI-ADT@description@@</p>
+        <p>@@INDI-ADT@result.statusmacro@@<br/> <span>@@INDI-ADT@result.msg.as.blockmacro@@</span>
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td>NUMERIC Felder</td>
+      <td>
+        <p>@@DBF-NUMERIC@description@@</p>
+        <p>@@DBF-NUMERIC@result.statusmacro@@ @@DBF-NUMERIC@result.msg.first.line@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td>Entfernung DAB770</td>
+      <td>
+        <p>@@BARVERKAUF@description@@</p>
+        <p>@@BARVERKAUF@result.statusmacro@@ @@BARVERKAUF@result.msg.first.line@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Nicht eindeutige <br/>Datensätze</td>
+      <td colspan="1">
+        <p>Beim Update werden für einige Tabellen neue, eindeutige Schlüsselwerte definiert. Sofern in den Tabellen Datensätze mit nicht eindeutigen <span>Schlüsselwerten vorhanden sind, müssen diese geprüft und bereinigt werden.</span>
+        </p>
+        <p>
+          <span>@@UNIQUE-1@result.statusmacro@@ @@UNIQUE-1@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-2@result.statusmacro@@ @@UNIQUE-2@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-3@result.statusmacro@@ @@UNIQUE-3@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-4@result.statusmacro@@ @@UNIQUE-4@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-5@result.statusmacro@@ @@UNIQUE-5@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-6@result.statusmacro@@ @@UNIQUE-6@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-7@result.statusmacro@@ @@UNIQUE-7@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-8@result.statusmacro@@ @@UNIQUE-8@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-9@result.statusmacro@@ @@UNIQUE-9@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-10@result.statusmacro@@ @@UNIQUE-10@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-11@result.statusmacro@@ @@UNIQUE-11@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-12@result.statusmacro@@ @@UNIQUE-12@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-13@result.statusmacro@@ @@UNIQUE-13@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-14@result.statusmacro@@ @@UNIQUE-14@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-15@result.statusmacro@@ @@UNIQUE-15@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-16@result.statusmacro@@ @@UNIQUE-16@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-17@result.statusmacro@@ @@UNIQUE-17@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-18@result.statusmacro@@ @@UNIQUE-18@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-19@result.statusmacro@@ @@UNIQUE-19@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-20@result.statusmacro@@ @@UNIQUE-20@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-21@result.statusmacro@@ @@UNIQUE-21@result.msg.first.line@@</span> <br/> <span>@@UNIQUE-22@result.statusmacro@@ @@UNIQUE-22@result.msg.first.line@@</span>
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Memo Blocksize</td>
+      <td colspan="1">
+        <p>@@BLOCKSIZE@description@@<br/>@@BLOCKSIZE@result.statusmacro@@ <br/> <span>@@BLOCKSIZE@result.msg.as.blockmacro@@</span>
+        </p>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  <br/> <ac:structured-macro ac:macro-id="a9c42063-57bd-421b-8a25-e87cd2a1d85c" ac:name="scroll-pagebreak" ac:schema-version="1"/>
+</p>
+<h2>Daten-Bereinigung</h2>
+<ac:structured-macro ac:macro-id="2924410b-5641-4cb8-a7d4-ec6f983a9a6b" ac:name="tip" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>Der Migrations-Assistent enthält diverse Daten-Bereinigungs-Schritte. Diese Schritte reduzieren den zu betrachtenden Customizing-Umfang und sollten daher vor der Prüfung &amp; Anpassung von Customizings erfolgen.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+<table class="wrapped relative-table" style="width: 45.7488%;">
+  <colgroup> <col style="width: 13.9256%;"/> <col style="width: 86.0744%;"/> </colgroup>
+  <tbody>
+    <tr>
+      <th>Bezeichnung</th>
+      <th>Ergebnis</th>
+    </tr>
+    <tr>
+      <td>Programm [123]</td>
+      <td>
+        <p>@@CLEAN-PROG@result.statusmacro@@ @@CLEAN-PROG@description@@<br/>@@CLEAN-PROG@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Veraltete Standard-Layouts</td>
+      <td colspan="1">
+        <p>@@CLEAN-LAYOUT-OLD-STD@result.statusmacro@@ @@CLEAN-LAYOUT-OLD-STD@description@@<br/>@@CLEAN-LAYOUT-OLD-STD@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">"Neues Layout ..."</td>
+      <td colspan="1">
+        <p>@@CLEAN-LAYOUT-DEFNAME@result.statusmacro@@ @@CLEAN-LAYOUT-DEFNAME@description@@<br/>@@CLEAN-LAYOUT-DEFNAME@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Layout-BackUps</td>
+      <td colspan="1">
+        <p>@@CLEAN-LAYOUT-BACKUP@result.statusmacro@@ @@CLEAN-LAYOUT-BACKUP@description@@<br/>@@CLEAN-LAYOUT-BACKUP@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Gelöschte<br/>Reports</td>
+      <td colspan="1">
+        <p>@@CLEAN-LAYOUT-REP-GEN@result.statusmacro@@ @@CLEAN-LAYOUT-REP-GEN@description@@<br/>@@CLEAN-LAYOUT-REP-GEN@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Masken ohne <br/>Berechtigungs-<br/>Objekt (DabROB)</td>
+      <td colspan="1">
+        <p>@@CLEAN-MASK-STD@result.statusmacro@@ @@CLEAN-MASK-STD@description@@<br/>@@CLEAN-MASK-STD@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Inaktive Masken</td>
+      <td colspan="1">
+        <p>@@CLEAN-MASK-WO-ROLE@result.statusmacro@@ @@CLEAN-MASK-WO-ROLE@description@@<br/>@@CLEAN-MASK-WO-ROLE@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">Browser <br/>ohne User</td>
+      <td colspan="1">
+        <p>@@CLEAN-BROW-NO-USER@result.statusmacro@@ @@CLEAN-BROW-NO-USER@description@@<br/>@@CLEAN-BROW-NO-USER@result.msg.as.blockmacro@@</p>
+      </td>
+    </tr>
+    <tr>
+      <td colspan="1">System-Browser</td>
+      <td colspan="1">
+        <span>@@CLEAN-BROW-SYSTEM@result.statusmacro@@ @@CLEAN-BROW-SYSTEM@description@@<br/> </span> <span>@@CLEAN-BROW-SYSTEM@result.msg.as.blockmacro@@</span>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  <br/> <ac:structured-macro ac:macro-id="6232b694-7196-4c0a-8594-e064139a6865" ac:name="scroll-pagebreak" ac:schema-version="1"/>
+</p>
+<h2>Customizings</h2>
+<p>Im Zuge des Updates werden alle Tabellen einheitlich auf das ADT-Format umgestellt. Folglich müssen Codeblöcke überprüft und ggf. angepasst werden, die auf DBF-Tabellen zugreifen (DbSeek, DbLookup, DbScope, "...DBF", etc.).</p>
+<ac:structured-macro ac:macro-id="f6c10b60-9e01-44f1-bc26-33eb0d30f828" ac:name="info" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>Um den Aufwand zu reduzieren, werden bei aktivierter Finanzbuchhaltung nur die Layouts der aktiven Mandanten (Geschäftsjahr &gt;= 2020) geprüft.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+<p>@@CUSTOMIZING@result.statusmacro@@<br/>@@CUSTOMIZING@result.msg.as.text@@</p>
+<p>@@CUSTOMIZING@result.details.as.blockmacro@@</p>
+<p>
+  <ac:structured-macro ac:macro-id="1c34cbb8-5c81-4950-809d-acfdd8d05a06" ac:name="scroll-pagebreak" ac:schema-version="1"/>
+</p>
+<h2>Designbare Oberflächen</h2>
+<h3>Masken des Standard-Masken-Designers</h3>
+<p>@@REDSGN-STDMASK@result.statusmacro@@ @@REDSGN-STDMASK@description@@</p>
+<p>
+  <span> <span>@@REDSGN-STDMASK@result.msg.as.blockmacro@@</span> <br/> </span>
+</p>
+<h3>Individuelle Oberflächen</h3>
+<p>@@REDSGN-CB-GUI@result.statusmacro@@ @@REDSGN-CB-GUI@description@@</p>
+<ac:structured-macro ac:macro-id="de2cfd6d-340e-4045-8838-8d6474b01cc5" ac:name="tip" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>Prüfen Sie bitte, ob die hier gelisteten Oberflächen noch aktiv genutzt werden. Sollte dies nicht der Fall sein, empfiehlt es sich, die Programme zu entfernen oder zumindest die Aufruf-Möglichkeit für Anwender zu entfernen.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+<p>@@REDSGN-CB-GUI@result.msg.as.blockmacro@@</p>
+<p>
+  <ac:structured-macro ac:macro-id="8c058b35-bdf4-4184-bd4d-706d2bfe2436" ac:name="scroll-pagebreak" ac:schema-version="1"/>
+</p>
+<h2>Toolboxen</h2>
+<ac:structured-macro ac:macro-id="ef5b75f6-7180-49c8-8937-e6365bb3ab49" ac:name="info" ac:schema-version="1">
+  <ac:rich-text-body>
+    <p>Die im Folgenden aufgelisteten Toolbox-Programme müssen im Zuge des Updates aktualisiert werden, sofern nicht bereits die neueste Version vorliegt. Sofern kunden-individuelle Änderungen vorgenommen wurden, müssen diese entsprechend berücksichtigt werden.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+<p>@@TOOLBOXEN@result.statusmacro@@ @@REDSGN-CB-GUI@description@@</p>
+<p>@@TOOLBOXEN@result.msg.as.blockmacro@@</p>
+

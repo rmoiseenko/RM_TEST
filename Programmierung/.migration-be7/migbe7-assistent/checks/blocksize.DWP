@@ -1,0 +1,74 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| nDab065Blocksize, nDab700Blocksize, m_nWarnings, m_cErrorMessage, m_nMinBlockSize |
+
+   m_nMinBlockSize := 64,
+
+   //***************************************************************************
+   function AddBlocksizeWarningForTableName(cTableName, bIgnoreError)
+    | nBlocksize |
+
+      startseq
+         nBlocksize := BeGetMemoBlockSize(cTableName, nil),
+         if nBlocksize < m_nMinBlockSize then
+            m_cErrorMessage := ConcatTrenner(m_cErrorMessage, 'Tabelle ' + cTableName + ', aktuelle Blocksize ' + Str(nBlocksize), crlf),
+            m_nWarnings ++,
+         endif,
+      onerror
+         if not bIgnoreError then
+            SetError('Fehler beim Abruf der Blocksize für Tabelle ' + cTableName),
+         endif,
+      stopseq,
+   end,
+
+   //***************************************************************************
+   function AddBlocksizeWarningForWorkarea(nWorkarea)
+    | cTableName, nBlocksize |
+      cTableName := AllTrim(StrTran(DbSqlTableName(nWorkarea), '"', '')),
+      AddBlocksizeWarningForTableName(cTableName, false),
+   end,
+
+   m_nWarnings      := 0,
+   m_cErrorMessage  := '',
+
+   AddBlocksizeWarningForWorkarea(waDab065),
+   AddBlocksizeWarningForWorkarea(waDab700),
+   AddBlocksizeWarningForTableName('DMSBSP.ADT', true), // Tabelle gibt es nicht immer
+
+   if m_nWarnings > 0 then
+      KVU_Set(m_aResult, 'RESULT', 'WARNING'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'OK'),
+   endif,
+
+   KVU_Set(m_aResult, 'RESULT_MSG', iif( m_nWarnings > 0,
+
+                                         'Die Blocksize sollte für ' + Str(m_nWarnings) + ' Tabellen angepasst werden.' + crlf + crlf + 
+                                         m_cErrorMessage,
+
+                                         '' ) ),
+
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Memo Blocksize'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Die Memo Blocksize definiert die maximale Größe der Tabelle. Beispiele: Eine Blocksize von 8 ermöglicht eine Maximalgröße von 32 GB, Blocksize 64 ermöglicht 256 GB.'),
+
+m_aResult

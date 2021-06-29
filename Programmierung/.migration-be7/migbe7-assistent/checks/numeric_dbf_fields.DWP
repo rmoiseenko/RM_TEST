@@ -1,0 +1,63 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| cSQL, oQuery |
+
+   cSQL := 'SELECT Field_type' + crlf +
+           'FROM system.columns FELDER' + crlf +
+           'INNER JOIN system.tables TABLE_HEAD ON (TABLE_HEAD.NAME = FELDER.PARENT)' + crlf +
+           'WHERE     TABLE_HEAD.TABLE_TYPE = 2  ' + crlf + // nur DBF Tabellen
+           '      AND FELDER.Field_type = 2      ' + crlf + // nur NUMERIC Felder
+           '      AND FELDER.Field_length > 15   ' + crlf +
+           '      AND FELDER.Field_Decimal = 0',
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      if oQuery.CbRecordCount > 0 then
+         KVU_Set(m_aResult, 'RESULT', 'ERROR'),
+      else
+         KVU_Set(m_aResult, 'RESULT', 'OK'),
+      endif,
+
+      KVU_Set(m_aResult, 'RESULT_MSG',   iif(oQuery.CbRecordCount > 0,
+                                             '<' + Str(oQuery.CbRecordCount) + '> Felder erfüllen NICHT die Update-Voraussetzungen.',
+                                             'Alle Felder erfüllen die Update-Voraussetzungen.'
+                                             )),
+
+
+      KVU_Set(m_aResult, 'RESULT_SQL',    cSQL),
+   always
+      DestroyObject(oQuery),
+   stopseq,  
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'NUMERIC Felder in DBF-Tabellen mit > 15 Stellen'),
+KVU_Set(m_aResult, 'KOMMENTAR', 'Felder in DBF-Tabellen vom Feldtyp "NUMERIC" und ohne Nachkommastellen werden vom Update in das ADT-Feldformat "INTEGER" überführt.' + crlf +
+                                'Da INTEGER maximal 2,147,483,647 speichern kann, dürfen maximal 15 Vorkommastellen im DBF-NUMERIC Feld definiert sein.'
+                                //  + crlf + crlf +
+                                // 'HINWEIS: Dieses Problem kann u.U. durch eine Standard-Erweiterung in 7.x behoben werden (Konvertierung auf ADT-Typen "NUMERIC" anstatt "INTEGER")'
+                                ),
+
+
+
+m_aResult

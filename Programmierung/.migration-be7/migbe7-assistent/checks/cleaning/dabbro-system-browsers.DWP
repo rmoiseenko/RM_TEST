@@ -1,0 +1,198 @@
+| m_aInputParams:P1, m_aResult, m_cModus |
+
+//#p .migration-be7\migbe7-assistent\utils-cleaning
+
+// TODO: Ideen für Erweiterungen
+//   - Individual-Browser für Standard-MM-Tabellen löschen
+//         SELECT DISTINCT BROWSERID
+//            FROM  "DABMTA.ADT"  DABMTA
+//            WHERE NOT (TAB_ID BETWEEN 0 AND 99999)
+//            ORDER BY TAB_ID
+
+
+// Ungeprüfte Ideen:
+
+//    'LOGWND'       // Table-Logging | Änderungen
+//    'DB_LIST'      // Datenbank-Verwaltung |  Tabellen
+//    'FLD_LST'      // Datenbank-Verwaltung |  Felder
+//    'MNUEDTR'      // Individual-Menü-Editor | Menüs   
+//    'scbprg'       // Programmierung | Suche (Strg+P)
+//    'resultp'      // Programmierung | Suche Detail-Ergebnisse
+//    'CRMHIST'      // CRM-Aktionen | Verarbeitungs-Historie
+//    'PLACEHO'      // CRM-Aktionen | Platzhalter
+//    'ST_UST'       // Reportgenerator | Reports
+
+//    'FIXPRT1'      // Printmanager | Druckerzuweisungen
+//    'ARC_SEL'      // Printmanager | Belegarchiv
+//    'PRWOFFE'      // Printmanager | Verkauf | Angebot
+//    'PRWCONS'      // Printmanager | Verkauf | Service-Anforderungen
+//    'PRWCONF'      // Printmanager | Verkauf | Auftragsbestätigungen
+//    'PRWCOMM'      // Printmanager | Verkauf | Kommiss-Scheine
+//    'PRWDELR'      // Printmanager | Verkauf | Entnahemschein Einzeln
+//    'PRWCUMR'      // Printmanager | Verkauf | Entnahemschein Sammel
+//    'PRWDELV'      // Printmanager | Verkauf | Lieferscheine
+//    'PRWCUMD'      // Printmanager | Verkauf | Sammel-Lieferscheine
+//    'PRWREDE'      // Printmanager | Verkauf | Miet-Lieferscheine
+//    'PRMVMRU'      // Printmanager | Verkauf | Lieferschein Rückgabe Vermietung
+//    'PRWBILL'      // Printmanager | Verkauf | Rechnungen
+//    'PRMABRE'      // Printmanager | Verkauf | Abschlags-Rechnungen
+//    'PRWCUMB'      // Printmanager | Verkauf | Sammel-Rechnungen
+//    'PRWREIN'      // Printmanager | Verkauf | Miet-Zwischen-Rechnungen
+//    'PRWINQU'      // Printmanager | Einkauf | Preisanfragen
+//    'PRWSUBS'      // Printmanager | Einkauf | Bestellungen
+//    'PRWSUBC'      // Printmanager | Einkauf | Abrufeinteilung
+//    'PRWSUBR'      // Printmanager | Einkauf | Bestellmahnung
+
+function GetSystemBrowsers()
+   Result := {
+
+    { 'SYSDBCONVU' ,  'Systemverwaltung | Angemeldete ADS-User'                                   },
+    { 'SYSDBCONVT' ,  'Systemverwaltung | Angemeldete ADS-User - Offene Tabellen'                 },
+    { 'SYS_WS'     ,  'Systemverwaltung | Angemeldete Workstations (alt)'                         },
+    { 'SYS_TBL'    ,  'Systemverwaltung | Gesperrte Datensätze'                                   },
+    { 'SYS_DB'     ,  'Systemverwaltung | Datenbank'                                              },
+    { 'ERR_LOG'    ,  'Systemverwaltung | Fehler-Protokolle'                                      },
+    { 'SQL_LOG'    ,  'Systemverwaltung | SQL-Protokolle'                                         },
+
+    { 'WOTAGUB'    ,  'Festwerte | Allg. Param. | Arbeitstage je Unt. Bereich'            },
+    { 'STORSEL'    ,  'Festwerte | Allg. Param. | Lager-Auswahlliste'                     },
+    { 'LAGNAMS'    ,  'Festwerte | Allg. Param. | Lager-Einstellungen'                    },
+    { '~018E81'    ,  'Festwerte | Allg. Param. | Dab020 Statistik nur für Felder'        },
+    { 'PARA_TO'    ,  'Festwerte | Allg. Param. | Dialog "Parameter - Standortübernahme"' },
+
+    { 'USRMAILCFG' ,  'Festwerte | Lok. Param. | Kommunikation | E-Mail-Konten '             },
+    { 'USROUTLCFG' ,  'Festwerte | Lok. Param. | Kommunikation | Outlook-Konten'             },
+    { 'MOBACCCFG'  ,  'Festwerte | Lok. Param. | Kommunikation | Mobile-Konten'              },
+
+    { 'EXCRCTL'    ,  'Festwerte | Erweiterte Kreditkontrolle'                                    },
+
+    { 'CURTBL1'    ,  'Festwerte | Währungstabelle'                                               },
+
+    { 'CS_TBL'     ,  'Festwerte | Größen-/Farben Tabelle'                                        },
+
+    { 'AESTVL'     ,  'Festwerte | Intrastat / Ausfuhrerklärung'                                  },
+
+    { 'CPI_CDO'    ,  'Festwerte | Länderverzeichnis'                                             },
+
+    { 'PARAPRD'    ,  'Festwerte | Produktionsabteilungen'                                        },
+
+    { 'BDECADMBRO' , 'Festwerte | BDE - Codes'                                                    },
+
+    { 'ATTRADO'    ,  'Festwerte | Merkmalstabellen | Merkmalstabellen'                           },
+    { 'MDT'        ,  'Festwerte | Merkmalstabellen | Merkmale'                                   },
+    { 'ATTDEF'     ,  'Festwerte | Merkmalstabellen | Standard-Browser statische MM-Tabellen'     },
+
+    { 'SZC_BRO'    ,  'Festwerte | Lagerort-Größenklassen'                                        },
+
+    { 'BHT_GRD'    ,  'Festwerte | Behältertypen'                                                 },
+
+    { 'BHG_GRD'    ,  'Festwerte | Behälter in Größenklassen'                                     },
+
+    { 'USERADMBRO' ,  'Festwerte | Benutzerverwaltung | Benutzer'                                 },
+    { 'ROLEASABRO' ,  'Festwerte | Benutzerverwaltung | Rollenzuordnung'                          },
+    { 'PERMOV_BRO' ,  'Festwerte | Benutzerverwaltung | Effektive Berechtigungen'                 },
+    { 'ROLEAARBRO' ,  'Festwerte | Benutzerverwaltung | Alle Rollen'                              },
+
+    { 'ALDUSRBRO'  ,  'Festwerte | Alternative Logins'                                            },
+
+    { 'ROLEADMBRO' ,  'Festwerte | Rollenverwaltung | Rollen'                                     },
+    { 'ROLEADMBRU' ,  'Festwerte | Rollenverwaltung | Benutzerzuordnung'                          },
+    { 'PERMOVRBRO' ,  'Festwerte | Rollenverwaltung | Effektive Berechtigungen'                   },
+
+    { 'ROLEMAABRO' ,  'Festwerte | Maskenverwaltung | Zugeordnete Rollen'                         },
+    { 'ROLEMARBRO' ,  'Festwerte | Maskenverwaltung | Alle Rollen'                                },
+
+    { 'ROLEGRABRO' ,  'Festwerte | Browserverwaltung | Zugeordnete Rollen'                        },
+    { 'ROLEGRRBRO' ,  'Festwerte | Browserverwaltung | Alle Rollen'                               },
+
+    { 'BENG_BR'    ,  'Festwerte | beng Einstellungen'                                            },
+
+    { 'PARAAABRO ' ,  'Festwerte | Zugriffsberechtigungen | Funktionen des Fensters'              },
+    { 'ROLEPEABRO' ,  'Festwerte | Zugriffsberechtigungen | Definierte Berechtigungen'            },
+    { 'ROLEPERBRO' ,  'Festwerte | Zugriffsberechtigungen | Alle Rollen'                          },
+
+    { 'MAILSVRCFG' ,  'Festwerte | Kommunikation | E-Mail-Server'                                 },
+    { 'MAILACCCFG' ,  'Festwerte | Kommunikation | E-Mail-Konten'                                 },
+    { 'OLSYNCACC'  ,  'Festwerte | Kommunikation | Outlook-Konten'                                },
+    { 'MOBACCCFG'  ,  'Festwerte | Kommunikation | Mobile-Konten'                                 },
+
+    { 'BDEHOL3'    ,  'Festwerte | Feiertage / Betriebsruhe'                                      }
+
+   },
+end,
+
+//******************************************************************************
+function GetSqlWHERE()
+| aSystemBrowsers, aElem, cSqlInList, cInElem |
+
+   aSystemBrowsers := GetSystemBrowsers(),
+
+   cSqlInList := '',
+   foreach aElem in aSystemBrowsers do
+      cInElem    := Replicate(' ', 10) + PadR("'" + aElem[1] + "'", 15) + '/* ' + aElem[2] + '*/',
+      cSqlInList := ConcatTrenner(cSqlInList, cInElem, ', ' + crlf),
+   next,
+
+
+   Result := 'WHERE ' + crlf +
+             '      DabBRO.[USER] > 0 ' + crlf +
+             '  AND DabBRO.BROWSER_ID IN (' + crlf +
+                cSqlInList + crlf +
+             '       )',
+end,
+
+//******************************************************************************
+function Check()
+| aSystemBrowsers, aElem, cSqlInList, cCaseElem, cSqlSelectFields, cSqlBezCASE |
+
+   aSystemBrowsers := GetSystemBrowsers(),
+
+   // Produziert ein CASE-Statement, welches die Bezeichnung eines Browsers als Spalte ausgibt
+   // Der Art...
+   // CASE DabBRO.BROWSER_ID
+   //       WHEN 'SYS_WS' THEN 'Angemeldete Workstations'
+   //       ELSE '???'
+   //   END AS BEZ,
+
+   cSqlBezCASE := 'IfNull(DabBRO.BEZ, CASE DabBRO.BROWSER_ID' + crlf,
+   foreach aElem in aSystemBrowsers do
+      cCaseElem   := Replicate(' ', 8) + 'WHEN ' + PadR("'" + aElem[1] + "'", 15) + ' THEN ' + "'" + aElem[2] + "'",
+      cSqlBezCASE += crlf + cCaseElem,
+   next,
+   cSqlBezCASE += crlf +
+      Replicate(' ', 8) + "ELSE '???'" + crlf +
+      'END)',
+
+   cSqlSelectFields := 'DabBRO.BROWSER_ID, ' + crlf + cSqlBezCASE + crlf + ' AS BEZ, SUM(1) AS ANZ, Max(DabBRO.BUCH_DATUM) AS MAX_B_DATUM',
+
+   CheckUtils_Cleaning_Standard_Check(waDabBRO, GetSqlWHERE(), cSqlSelectFields, {11, 55, 3, 11}, 'DabBRO.BROWSER_ID, DabBRO.BEZ', cSqlBezCASE + ', DabBRO.BROWSER_ID', m_aResult),
+end,
+
+//******************************************************************************
+function Execute()
+   if BeMessageDlgEx('Daten-Aktion durchführen?' + crlf + crlf + 'Durch diese Aktion werden Daten im System geändert!', mtWarning, {'Aktion durchführen', 'Abbrechen'}, {10, 20}, 20, 20) = 10 then
+      CheckUtils_Cleaning_Via_Archive_And_Delete_By_SQL(GetSqlWHERE(), waDabBRO, 'system-browsers', m_aResult, '[ROWID]'),
+   else
+      KVU_Set(m_aResult, 'RESULT', 'DID_NOT_EXECUTE'),
+   endif,
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_aResult := {},
+m_cModus  := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+case true
+  of m_cModus == 'CHECK' or EditorMode() :: Check(),
+  of m_cModus == 'EXECUTE'               :: Execute(),
+endcase,
+
+KVU_Set(m_aResult, 'BEZ',         'Daten-Bereinigung: System-Browser'),
+KVU_Set(m_aResult, 'KOMMENTAR',   'Browser von System-Oberflächen wie z.B. "Systemverwaltung", "Datenbankverwaltung" etc. enthalten typischerweise keine Individualisierungen und sollten auf den Auslieferungs-Standard zurück gesetzt werden.'),
+
+KVU_Set(m_aResult, 'EXECUTABLE',            true),
+KVU_Set(m_aResult, 'EXECUTABLE_CAPTION',    'Datenbereinigung durchführen...'),
+KVU_Set(m_aResult, 'EXECUTABLE_IMG_INDEX',  195),
+
+m_aResult
+

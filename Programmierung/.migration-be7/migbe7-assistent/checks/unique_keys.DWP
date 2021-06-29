@@ -1,0 +1,205 @@
+| m_aInputParams:P1, m_aResult, m_cModus, m_nSubStep, bInfoMode, m_aSubSteps, m_cSQL |
+
+//******************************************************************************
+//******************************************************************************
+function CheckANZAHL(cBez, cSQL)
+| oQuery |
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      if oQuery:ANZAHL > 1 then
+         KVU_Set(m_aResult, 'RESULT',     'ERROR'),
+         KVU_Set(m_aResult, 'RESULT_MSG', cBez + ' -> Es wurden <' + Str(oQuery.CbRecordCount) + '> nicht eindeutige Schlüssel gefunden.'),
+      else
+         KVU_Set(m_aResult, 'RESULT',     'OK'),
+         KVU_Set(m_aResult, 'RESULT_MSG', cBez + ' -> Keine Duplikate'),
+      endif,
+
+      KVU_Set(m_aResult, 'RESULT_SQL', cSQL),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function CheckHasRecords(cBez, cSQL)
+| oQuery |
+
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL    := cSQL,
+      oQuery.Active := true,
+
+      if NoDs(oQuery) then
+         KVU_Set(m_aResult, 'RESULT',     'OK'),
+         KVU_Set(m_aResult, 'RESULT_MSG', cBez + ' -> Keine Duplikate'),
+      else
+         KVU_Set(m_aResult, 'RESULT',     'ERROR'),
+         KVU_Set(m_aResult, 'RESULT_MSG', cBez + ' -> Es wurden <' + Str(oQuery.CbRecordCount) + '> nicht eindeutige Schlüssel gefunden.'),
+      endif,
+
+      KVU_Set(m_aResult, 'RESULT_SQL', cSQL),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+
+m_aSubSteps := {
+   /* 1. Substep */    {
+                         'DABSPR (Fremdsprachige Oberfläche)',
+                         'Der Inhalt des Feldes <KEY> muss eindeutig sein.',
+                         'SELECT "KEY", Count("KEY") as ANZAHL FROM ' + DbSqlTableName(waDAbSPR) + crlf +
+                           'GROUP BY "KEY"'                                                      + crlf +
+                           'HAVING ANZAHL > 1'
+                       },
+   /* 2. Substep */    {
+                         'DAB010 (Artikel)',
+                         'Der Inhalt der Felder <ARTNR, STANDORT, VERS_ARTNR, VERS_STAT, VERS_NR> (Index DAB01E) muss eindeutig sein.',
+                         'SELECT ARTNR, STANDORT, VERS_ARTNR, VERS_STAT, VERS_NR, SUM(1) AS ANZAHL'  + crlf +
+                            'FROM ' + DbSqlTableName(waDab010)                                       + crlf +
+                            'GROUP BY ARTNR, STANDORT, VERS_ARTNR, VERS_STAT, VERS_NR'               + crlf +
+                            'HAVING ANZAHL > 1'
+                       },
+   /* 3. Substep */    {
+                         'DAB010 ID (Artikel)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab010) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 4. Substep */    {
+                         'DAB000 KDNR (Kunden)',
+                         'Der Inhalt des Feldes <KDNR> muss eindeutig sein.',
+                         'SELECT KDNR, Count(KDNR) AS ANZAHL FROM ' + DbSqlTableName(waDab000) + ' GROUP BY KDNR HAVING ANZAHL > 1'
+                       },
+   /* 5. Substep */    {
+                         'DAB000 ID (Kunden)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab000) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 6. Substep */    {
+                         'DAB100 KDNR (Lieferanten)',
+                         'Der Inhalt des Feldes <LINR> muss eindeutig sein.',
+                         'SELECT LINR, Count(LINR) AS ANZAHL FROM ' + DbSqlTableName(waDab100) + ' GROUP BY LINR HAVING ANZAHL > 1'
+                       },
+   /* 7. Substep */    {
+                         'DAB100 ID (Lieferanten)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab100) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 8. Substep */    {
+                         'DIA020 (Länderverzeichnis)',
+                         'Der Inhalt des Feldes <LANDNR> muss eindeutig sein.',
+                         'SELECT LANDNR, SUM(1) AS ANZAHL FROM ' + DbSqlTableName(waDia020) + ' GROUP BY LANDNR HAVING ANZAHL > 1'
+                       },
+   /* 9. Substep */    {
+                         'DAB920 (EAN Referenz)',
+                         'Der Inhalt des Feldes <EAN> muss eindeutig sein.',
+                         'SELECT EAN, COUNT(EAN) AS ANZAHL FROM ' + DbSqlTableName(waDab920) + ' GROUP BY EAN HAVING ANZAHL > 1'
+                       },
+   /* 10. Substep */    {
+                         'DAB110 (Artikel-Fremdsprachen)',
+                         'Der Inhalt der Felder <ARTNR, SPRACHE> muss eindeutig sein.',
+                         'SELECT ARTNR, SPRACHE, count(*) as ANZAHL FROM ' + DbSqlTableName(waDab110) + ' GROUP BY ARTNR, SPRACHE HAVING ANZAHL > 1'
+                       },
+   /* 11. Substep */    {
+                         'DABR10 (Layouts)',
+                         'Der Inhalt der Felder <REPORT_ID, REPORT_NR, REPORT_TYP> muss eindeutig sein.',
+                         'SELECT REPORT_ID, REPORT_NR, REPORT_TYP, count(*) as ANZAHL FROM ' + DbSqlTableName(waDabR10) + ' GROUP BY REPORT_ID, REPORT_NR, REPORT_TYP HAVING ANZAHL > 1'
+                       },
+   /* 12. Substep */    {
+                         'DABPAL (User)',
+                         'Der Inhalt des Feldes <USER> muss eindeutig sein.',
+                         'SELECT "USER", count(*) as ANZAHL FROM ' + DbSqlTableName(waDabPAl) + ' GROUP BY "USER" HAVING ANZAHL > 1'
+                       },
+   /* 13. Substep */    {
+                         'DAB062 VTNR (Vertreter)',
+                         'Der Inhalt des Feldes <VTNR> muss eindeutig sein.',
+                         'SELECT VTNR, Count(VTNR) AS ANZAHL FROM ' + DbSqlTableName(waDab062) + ' GROUP BY VTNR HAVING ANZAHL > 1'
+                       },
+   /* 14. Substep */    {
+                         'DABR20 (Druckeinstellungen)',
+                         'Der Inhalt des Feldes <ABTEILUNG,USER,REPORT_ID,REPORT_NR> muss eindeutig sein.',
+                         'SELECT ABTEILUNG,"USER",REPORT_ID,REPORT_NR, Count(*) AS ANZAHL FROM ' + DbSqlTableName(waDabR20) + ' GROUP BY ABTEILUNG,"USER",REPORT_ID,REPORT_NR HAVING ANZAHL > 1'
+                       },
+   /* 15. Substep */    {
+                         'DABR30 (Druckzuweisungen)',
+                         'Der Inhalt des Feldes <REPORT_PR,ABTEILUNG,USER> muss eindeutig sein.',
+                         'SELECT REPORT_PR,ABTEILUNG,"USER", Count(*) AS ANZAHL FROM ' + DbSqlTableName(waDabR30) + ' GROUP BY REPORT_PR,ABTEILUNG,"USER" HAVING ANZAHL > 1'
+                       },
+   /* 16. Substep */    {
+                         'DAB005 ID (Kontakte)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab005) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 17. Substep */    {
+                         'DAB040 ID (Kunden-Sonderpreise)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab040) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 18. Substep */    {
+                         'DAB350 ID (Textbausteine)',
+                         'Der Inhalt des Feldes <ID> muss eindeutig sein.',
+                         'SELECT ID, Count(ID) AS ANZAHL FROM ' + DbSqlTableName(waDab350) + ' GROUP BY ID HAVING ANZAHL > 1'
+                       },
+   /* 19. Substep */    {
+                         'DIA010 WARENNR (AE/Intrastat/Zoll)',
+                         'Der Inhalt des Feldes <WARENNR> muss eindeutig sein.',
+                         'SELECT WARENNR, Count(WARENNR) AS ANZAHL FROM ' + DbSqlTableName(waDIA010) + ' GROUP BY WARENNR HAVING ANZAHL > 1'
+                       },
+   /* 20. Substep */    {
+                         'DAB310 ARTGRUPPE (Arikelgruppen)',
+                         'Der Inhalt des Feldes <ARTGRUPPE> muss eindeutig sein.',
+                         'SELECT ARTGRUPPE, Count(ARTGRUPPE) AS ANZAHL FROM ' + DbSqlTableName(waDAB310) + ' GROUP BY ARTGRUPPE HAVING ANZAHL > 1'
+                       },
+   /* 21. Substep */    {
+                         'DABMSK (Masken)',
+                         'Der Inhalt der Felder <USERNO, MASKID> muss eindeutig sein.',
+                         'SELECT USERNO, MASKID, SUM(1) AS ANZAHL'  + crlf +
+                            'FROM ' + DbSqlTableName(waDabMSK)      + crlf +
+                            'GROUP BY USERNO, MASKID'               + crlf +
+                            'HAVING ANZAHL > 1'
+                       },
+   /* 22. Substep */    {
+                         'DABSPR (Browser-Übersetzungen)',    // ... Mehrfach abgespeicherte
+                         'Der Inhalt des Feldes <KEY> muss eindeutig sein.',
+                         'SELECT "key", SUBSTRING("KEY", 1, 11) +' +'''   '''+ '+ SUBSTRING("KEY", 12, 7) as key_neu ' + crlf +
+                         '  FROM  ' + DbSqlTableName(waDAbSPR) + crlf +
+                         '  WHERE LEFT("KEY", 4) = ''Grid'' and length(trim("KEY")) < 21 '
+                       },
+                },
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS',    'INFO'),
+m_nSubStep := KVU_Get(m_aInputParams, 'SUB_STEP', 0),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode  := false,
+   m_nSubStep := 22,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+
+   m_cSQL := m_aSubSteps[m_nSubStep, 3],                                        // prs('22',m_cSQL),
+   if m_nSubStep = 22 then
+      CheckHasRecords(m_aSubSteps[m_nSubStep, 1], m_cSQL),
+   else
+      CheckANZAHL(m_aSubSteps[m_nSubStep, 1],   m_cSQL),
+   endif,
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Unique Keys in ' + m_aSubSteps[m_nSubStep, 1]),
+KVU_Set(m_aResult, 'KOMMENTAR', m_aSubSteps[m_nSubStep, 2]),
+
+m_aResult
+

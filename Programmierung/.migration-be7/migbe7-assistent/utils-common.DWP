@@ -1,0 +1,63 @@
+
+//##############################################################################
+// Allgemeine Utils für den Migrations-Assistenten
+//##############################################################################
+
+
+//******************************************************************************
+// Funktion öffnet eine vscode Instanz (oder verwendet diese wieder, wenn schon eine Instanz mit dem richtigen Folder offen ist)
+//
+//  siehe https://code.visualstudio.com/docs/editor/command-line
+//******************************************************************************
+function VsCode_OpenViaCommandLine(cExportFolder, cFullFileName:C:='')
+| cShellCmd |
+
+   // Pfad darf nicht mit backslash aufhören, sonst kommt vscode durcheinander
+   cExportFolder := AllTrim(cExportFolder),
+   if Right(cExportFolder, 1) = '\' then
+      cExportFolder := Left(cExportFolder, Len(cExportFolder) - 1),
+   endif,
+
+   // Beispiel, wie es in der cmd aussehen würde:
+   //   code "C:\be_vs_code\2018-07-25-10-44-27" "C:\be_vs_code\2018-07-25-10-44-27\Programm 403.dwp"
+   cShellCmd := '"' + cExportFolder + '"',
+   if not empty(cFullFileName) then
+      cShellCmd +=  ' "' + cFullFileName + '"',
+   endif,
+
+   WriteLn(cShellCmd),
+
+   ShellExecute(, 'open', 'code', cShellCmd, '', SW_HIDE, true),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function MigBe7_CalcExportFolderName(cBasis)
+| cSQL, oQuery, cCompanyName, cAppFlag, cAllowedCharacters, cFileName, nCounter, cFilepath |
+
+   // 1. Namen der be-Installation ermitteln
+   cSQL   := 'SELECT "USER", APPFLAG FROM ' + DbSqlTableName(waDABPAR) + ' WHERE STANDORT = 0 AND ABTEILUNG = 0',
+   oQuery := CreateObject('TBeAdsQuery'),
+   startseq
+      oQuery.SQL := cSQL,
+      oQuery.Active := true,
+
+      cCompanyName   := AllTrim(oQuery:USER),
+      cAppFlag       := AllTrim(oQuery:APPFLAG),
+   always
+      DestroyObject(oQuery),
+   stopseq,
+
+   // 2. Datei-Verzeichnis-Konformen Namen daraus bilden
+   cAllowedCharacters := 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_',
+
+   cCompanyName          := CharOnly(cAllowedCharacters, cCompanyName),      // ungültige Zeichen entfernen
+   cCompanyName          := iif(Empty(cCompanyName), 'test', cCompanyName),  // Fallback-Dateiname: debug
+
+   cAppFlag    := CharOnly(cAllowedCharacters, cAppFlag),  // ungültige Zeichen entfernen
+   cAppFlag    := iif(Empty(cAppFlag), 'main', cAppFlag),  // Fallback-Dateiname: debug
+
+   nCounter  := 0,
+   cFilepath := cBasis + '\' + cCompanyName + '_' + cAppFlag + '\' + DToS(Today()) + '-' + FormatDateTime('HH-MM-SS', GetAdsServerTime()) + '\',
+   Result    := cFilepath,
+end,

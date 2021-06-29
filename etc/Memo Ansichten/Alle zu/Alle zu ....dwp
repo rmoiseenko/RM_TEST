@@ -1,0 +1,15 @@
+| cSQL:C:='' |
+
+VIEW.Disabled := True,
+
+// Zuordnung vorhanden?
+if (not empty(PERSNR_KZ) and PERSNR_KZ <= bcMemoLinkIdUser) or (ID > 0) then
+   cSQL := '(PERSNR>0 AND PERSNR=' + str(PERSNR) + 
+           ' AND PERSNR_KZ=' + str(PERSNR_KZ) + ') OR ' +
+           '(ID>0 AND ID=' + str(ID) + ') OR ' + 
+           '(CRM_AKT_ID>0 AND CRM_AKT_ID=' + str(CRM_AKT_ID) + ')',
+else
+   cSQL := 'MEMO_ID=-1',
+endif,
+
+cSQL

@@ -1,0 +1,57 @@
+| m_aInputParams:P1, m_aResult, m_cModus, bInfoMode |
+
+//#p .migration-be7\migbe7-assistent\utils-checks
+//#p .migration-be7\migbe7-assistent\utils-checks-fibu
+
+//******************************************************************************
+//******************************************************************************
+function Check()
+| aResult, cSQLScript, cSQLCount, nCount, cFormattedResult, nGJBeginnAb |
+
+   nGJBeginnAb := 2020,
+
+   cSQLScript := CheckUtils_FiBu_Build_AktiveMandanten_SqlScript(nGJBeginnAb),
+
+   aResult          := CheckUtils_ExecCheckSQL(cSQLScript, '', {12, 15, 31, 11}),
+   cFormattedResult := KVU_Get(aResult, 'QUERY_AS_TEXT', '?'),
+   nCount           := KVU_Get(aResult, 'COUNT', -1),
+
+   if nCount > 1 then
+     KVU_Set(m_aResult, 'RESULT', 'WARNING'), // mehr als ein aktiver Mandant => "Warning"
+   else
+     if nCount > 0 then
+        KVU_Set(m_aResult, 'RESULT', 'INFO'),
+     else
+       KVU_Set(m_aResult, 'RESULT',  'OK'),
+     endif,
+   endif,
+
+
+
+   KVU_Set(m_aResult, 'RESULT_MSG',   Str(nCount) + ' Mandant' + iif(nCount = 1, '', 'en')
+                                      + ' mit GJ-Beginn >= ' + Str(nGJBeginnAb)
+                                      + ' ermittelt.' + crlf + crlf + cFormattedResult),
+   KVU_Set(m_aResult, 'RESULT_SQL',   cSQLScript),
+end,
+
+//##############################################################################
+//##############################################################################
+
+m_cModus   := KVU_Get(m_aInputParams, 'MODUS', 'INFO'),
+bInfoMode  := m_cModus <> 'CHECK',
+
+if EditorMode() then
+   bInfoMode := false,
+endif,
+
+m_aResult := {},
+if not bInfoMode then
+   Check(),
+endif,
+
+KVU_Set(m_aResult, 'BEZ',       'Info: Welche aktiven FiBu-Mandanten gibt es?'),
+KVU_Set(m_aResult, 'KOMMENTAR', ''),
+
+m_aResult
+
+

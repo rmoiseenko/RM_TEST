@@ -1,0 +1,564 @@
+//##############################################################################
+//##############################################################################
+// Beschreibung:
+//
+//
+// Verwendung:
+//   Folgendes Codeblock-Snippet kann innerhalb eines Individual-Menüs verwendet
+//   werden:
+//
+//     GFU_ShowMDIChild(
+//        '...',
+//        '...'
+//     )
+//
+//##############################################################################
+//##############################################################################
+
+|
+  // m_oOwner:P1,
+  // m_cFormRefKey:P2,
+   m_aInputParams:P1,
+
+   m_cPositionSaveId, m_cFormId, m_cBrowserID,
+
+   m_oMemResults,
+
+   m_cCodeblockCollectorExportPath,
+   m_cCbCodeIncludeRegEx, m_cCbPathExcludeRegEx,
+   m_cBrowserFromUsers, m_bStdBrowser,
+   m_cSummaryText, m_aAnalyzeResultArray,
+   m_cCollectorErrorLog,
+
+   // @VDB@ der nachfolgende Teil wird automatisch gepflegt
+   oForm, A_Analyze_Step1, A_Analyze_Step2, A_DeleteNotRelevantFiles,
+   A_Filter_clear, A_Filter_dbf, A_Filter_Lookup, A_Filter_Only_Step2,
+   A_Filter_Scope, A_Filter_Seek, A_Filter_TextPfad, A_Filter_transact,
+   A_OpenFile, A_OpenFolderInExplorer, A_OpenFolderInVscode, barFilter, barMain,
+   BeActionList, BeBarButton1, BeBarButton2, BeBarButton3, BeBarButton4,
+   BeBarButton5, BeBarButton6, BeBarButton7, BeBarControlContainerItem1,
+   BeBarDockControl, BeBarManager, btn_clear, btn_dbf, btn_DbStartTrans,
+   btn_Lookup, btn_scope, btn_seek, btn_TextPfad, dockFilter, ds_results,
+   grd_results, lbl_filter, pnl_CurrentDir
+   // @VDE@ der vorangehende Teil wird automatisch gepflegt
+|
+
+//##############################################################################
+//##############################################################################
+// Utils
+//##############################################################################
+//##############################################################################
+
+//#p .migration-be7\migbe7-assistent\utils-common
+//#p .migration-be7\migbe7-assistent\checks\adt_konforme_codebloecke\utils
+
+//##############################################################################
+//##############################################################################
+// Konstanten
+//##############################################################################
+//##############################################################################
+
+m_cPositionSaveId   := '@MIG70ADT',
+m_cFormId           := '@MIG70ADT',
+
+m_cBrowserID        := '@MIG70ADT',
+
+//##############################################################################
+//##############################################################################
+// Funktionen
+//##############################################################################
+//##############################################################################
+
+function Style65InfoPanel(oInfoPanel)
+   if mbeVersion < '7' then
+     oInfoPanel.Height           := 30,
+     oInfoPanel.Color            := 12089600,
+     oInfoPanel.BorderColor      := 12089600,
+     oInfoPanel.Font.Size        := 10,
+     oInfoPanel.Font.Style       := 0,
+     oInfoPanel.Font.Color       := clWhite,
+   else
+     oInfoPanel.ColorMode := oInfoPanel.ColorMode,
+   endif,
+end,
+
+//******************************************************************************
+// Steuern des Enabled-Zustandes aller Actions und den ReadOnly-Zustand der
+// Eingabe-Controls
+//******************************************************************************
+function ActionsEnabled()
+   A_Analyze_Step2.Enabled := not empty(m_cCodeblockCollectorExportPath),
+   A_OpenFile.Enabled      := not empty(m_oMemResults:FILE_FULL_PATH),
+
+   if empty(m_cCodeblockCollectorExportPath) then
+      pnl_CurrentDir.Caption := 'Aktuelles Export-Verzeichnis: <Export noch nicht durchgeführt> ',
+   else
+      pnl_CurrentDir.Caption := 'Aktuelles Export-Verzeichnis: ' + m_cCodeblockCollectorExportPath,
+   endif,
+end,
+
+//******************************************************************************
+// Notwendige Tabellen öffnen und ggf. mit GUI verbinden
+//******************************************************************************
+function OpenDatabaseAndLinkToGUI()
+
+   m_oMemResults := CodeblockCollector_MemTable_Create(oForm),
+
+   GU_LinkTableToGUI(m_oMemResults, ds_results, grd_results, m_cBrowserID, false),
+
+end,
+
+//******************************************************************************
+//******************************************************************************
+function Step1_ExportPerCodeblockCollector()
+| cBasisPfad |
+
+   //***************************************************************************
+   // Pfad für Codeblock-Export erstellen
+   cBasisPfad   := KVU_Get(m_aInputParams, 'PFAD', 'C:\mig-be-7'),
+   m_cCodeblockCollectorExportPath := MigBe7_CalcExportFolderName(cBasisPfad),
+
+   if DirectoryExists(m_cCodeblockCollectorExportPath) then
+      SetError('Export-Verzeichnis <' + m_cCodeblockCollectorExportPath + '> existiert bereits. Bitte löschen Sie das Export-Verzeichnis'),
+   endif,
+
+   ForceDirectories(m_cCodeblockCollectorExportPath),
+
+   //***************************************************************************
+   // Einstellungs-Dateien für .vscode anlegen, damit die Suche per RegEx in vscode
+   //   ordentliche Treffer liefert
+   //***************************************************************************
+   CodeblockCollector_CreateVsCodeConfigurationFiles(m_cCodeblockCollectorExportPath, true),
+   CodeblockCollector_CreateVsCodeConfigurationFiles(m_cCodeblockCollectorExportPath + '\..'),    // Auch im übergeordneten Ordner die .vscode settings anlegen / updaten => dann funktionierten RegEx-Suchenauch über alle Export-Ergebnisse gemeinsam
+   CodeblockCollector_CreateVsCodeConfigurationFiles(m_cCodeblockCollectorExportPath + '\..\..'), // dito...
+
+   //***************************************************************************
+   // Analyse Stufe 1: potentiell betroffene Codeblöcke exportieren
+   //***************************************************************************
+   m_cBrowserFromUsers   := KVU_Get(m_aInputParams, 'BROWSERUSER', '/000/'),
+   m_bStdBrowser         := KVU_Get(m_aInputParams, 'STDBROWSER',  false),
+   m_cCbCodeIncludeRegEx := CodeblockCollector_GetComplete_CodeInclude_RegEx(),
+   m_cCbPathExcludeRegEx := CodeblockCollector_GetComplete_PathExclude_RegEx(),
+
+   m_cCollectorErrorLog  := CodeblockCollector_Export_MigBe7( m_cCodeblockCollectorExportPath, m_cCbCodeIncludeRegEx, m_cCbPathExcludeRegEx, m_cBrowserFromUsers, m_bStdBrowser ),
+   CodeblockCollector_WriteInfoFile( m_cCodeblockCollectorExportPath, m_cCollectorErrorLog, m_cBrowserFromUsers, m_bStdBrowser, m_cCbCodeIncludeRegEx, m_cCbPathExcludeRegEx, m_aAnalyzeResultArray, 0  ),
+end,
+
+//******************************************************************************
+function SetFilter(oSenderAction, cKey)
+| cFilter, cText, aFilterActions, aAction |
+
+   // Alle anderen Filter-Buttons auf "nicht gedrückt" setzen
+   aFilterActions :=  { A_Filter_clear,
+                        A_Filter_dbf,
+                        A_Filter_Lookup,
+                        A_Filter_Only_Step2,
+                        A_Filter_Scope,
+                        A_Filter_Seek,
+                        A_Filter_TextPfad,
+                        A_Filter_transact },
+
+   foreach aAction in aFilterActions do
+      if aAction <> oSenderAction then
+         aAction.Checked := false,             WriteLn('uncheck ' + aAction.Name),
+      endif,
+   end,
+
+   cFilter := '',
+
+   if not empty(oSenderAction) and oSenderAction.Checked then
+      case cKey
+         of 'STEP2'    ::   cFilter := 'HAS_RELEVANT_MATCH',
+         of 'LOOKUP'   ::   cFilter := 'LOOKUP_MATCHES_TOTAL > 0',
+         of 'SEEK'     ::   cFilter := 'SEEK_MATCHES_TOTAL > 0',
+         of 'SCOPE'    ::   cFilter := 'SCOPE_MATCHES_TOTAL > 0',
+         of 'DBF'      ::   cFilter := 'DBF_MATCHES_TOTAL > 0',
+         of 'TRANSACT' ::   cFilter := 'TRANSACT_MATCHES_TOTAL > 0',
+         of 'TEXTPFAD' ::   cText   := Inputbox('Eingabe Text im relativen Textpfad', 'Geben Sie die zu suchende Zeichenkette ein', ''),
+                            cFilter := " FILE_RELATIVE_PATH LIKE '*"+cText+"*' ",     writeln(cFilter),
+         otherwise          cFilter := '',
+      endcase,
+   endif,
+
+   WriteLn('Memtable Filter: ' + cFilter),
+   m_oMemResults.Filter   := cFilter,
+   m_oMemResults.Filtered := not empty(cFilter),
+end,
+
+//******************************************************************************
+//******************************************************************************
+function Step2_AnalyseExportedFiles()
+
+   ProgressBarShow('Analyse Stufe 2', 'DBF => ADT Kompatibilitätsprüfung'),
+   startseq
+      ProgressBarUpdate(0, ''),
+
+      m_oMemResults.CbDisableControls(),
+      startseq
+         m_oMemResults.CbEmptyTable(),
+         m_oMemResults.Filter   := '',
+         m_oMemResults.Filtered := false,
+         CodeblockCollector_MemTable_LoadFiles(m_oMemResults, m_cCodeblockCollectorExportPath),          ProgressBarUpdate(15, ''),
+         CodeblockCollector_MemTable_AnalyzeAllRecords(m_oMemResults),                                   ProgressBarUpdate(75, ''),
+         m_aAnalyzeResultArray := CodeblockCollector_MemTable_CalcResultArray(m_oMemResults),            ProgressBarUpdate(85, ''),
+
+         CodeblockCollector_WriteInfoFile( m_cCodeblockCollectorExportPath, m_cCollectorErrorLog, m_cBrowserFromUsers, m_bStdBrowser, m_cCbCodeIncludeRegEx, m_cCbPathExcludeRegEx, m_aAnalyzeResultArray, 0 ),
+
+         SetFilter(nil, ''),
+
+         DbGoTop(m_oMemResults),
+      always
+         m_oMemResults.CbEnableControls(),
+      stopseq,
+
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+//******************************************************************************
+//******************************************************************************
+function DeleteNotRelevantFiles_GUI(oMemResults)
+| nDeletedFilesCount, oRec |
+   ProgressBarShow('Analyse Stufe 2', 'DBF => ADT Kompatibilitätsprüfung'),
+   startseq
+      ProgressBarUpdate(0, 'Lösche nicht relevante Dateien aus ' + crlf + m_cCodeblockCollectorExportPath),
+
+      oMemResults.CbDisableControls(),
+      startseq
+         oMemResults.Filter   := '',
+         oMemResults.Filtered := false,
+         DbGoTop(oMemResults),
+
+         // Dateien von der Platte löschen
+         nDeletedFilesCount := CodeblockCollector_DeleteNotRelevantFiles(oMemResults),
+
+         // in der GUI auch die Memtable-Sätze löschen, die nerven sonst nur beim Abarbeiten
+         DbGoTop(oMemResults),
+         while not EoF(oMemResults) do
+            if not oMemResults:HAS_RELEVANT_MATCH then
+               DbDelete(oMemResults),
+            else
+               DbSkip(1, oMemResults),
+            endif,
+         end,
+
+         // Leere Ordner löschen
+         CodeblockCollector_DeleteEmptFolders(m_cCodeblockCollectorExportPath),
+
+         CodeblockCollector_WriteInfoFile( m_cCodeblockCollectorExportPath, m_cCollectorErrorLog, m_cBrowserFromUsers, m_bStdBrowser, m_cCbCodeIncludeRegEx, m_cCbPathExcludeRegEx, m_aAnalyzeResultArray, nDeletedFilesCount ),
+
+         SetFilter(nil, ''),
+
+         DbGoTop(oMemResults),
+      always
+         oMemResults.CbEnableControls(),
+      stopseq,
+   always
+      ProgressBarHide(),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Eventhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Event: Doppelklick im Grid
+//******************************************************************************
+function grd_resultsDblClick( Sender )
+   ActionExecute(A_OpenFile),
+end,
+
+//******************************************************************************
+// Event: Beim Schließen des Formulars
+//******************************************************************************
+function FormExClose(Sender, Action)
+   Action := caFree,
+end,
+
+//******************************************************************************
+// Event: Beim Zerstören des Formulars
+//******************************************************************************
+function FormExDestroy( Sender )
+   // MDI-Child aus Form-Ref-Array entfernen
+   // GFU_MDIChild_Destroyed(oForm, m_cFormRefKey),
+end,
+
+//******************************************************************************
+// Event: Prüfung: Darf das Formular geschlossen werden?
+//******************************************************************************
+function FormExCloseQuery(Sender, bCanClose)
+   bCanClose := true,
+end,
+
+//##############################################################################
+//##############################################################################
+// Actionhandler
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// Action: Filter löschen
+//******************************************************************************
+function A_Filter_clearExecute( Sender )
+   SetFilter(nil, ''),
+end,
+
+//******************************************************************************
+// Action: Filter Only_Step2 setzen
+//******************************************************************************
+function A_Filter_Only_Step2Execute( Sender )
+   SetFilter(Sender, 'STEP2'),
+end,
+
+//******************************************************************************
+// Action: Filter "Text in Pfad" setzen
+//******************************************************************************
+function A_Filter_TextPfadExecute( Sender )
+   SetFilter(Sender, 'TEXTPFAD'),
+end,
+
+//******************************************************************************
+// Action: Filter Only_Transact setzen
+//******************************************************************************
+function A_Filter_transactExecute( Sender )
+   SetFilter(Sender, 'TRANSACT'),
+end,
+
+//******************************************************************************
+// Action: Filter Only_.DBF setzen
+//******************************************************************************
+function A_Filter_dbfExecute( Sender )
+   SetFilter(Sender, 'DBF'),
+end,
+
+//******************************************************************************
+// Action: Filter Only_Scope setzen
+//******************************************************************************
+function A_Filter_ScopeExecute( Sender )
+   SetFilter(Sender, 'SCOPE'),
+end,
+
+//******************************************************************************
+// Action: Filter Only_Seek setzen
+//******************************************************************************
+function A_Filter_SeekExecute( Sender )
+   SetFilter(Sender, 'SEEK'),
+end,
+
+//******************************************************************************
+// Action: Filter Only_Lookup setzen
+//******************************************************************************
+function A_Filter_LookupExecute( Sender )
+   SetFilter(Sender, 'LOOKUP'),
+end,
+
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function A_Analyze_Step1Execute( Sender )
+   startseq
+      Step1_ExportPerCodeblockCollector(),
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action:
+//******************************************************************************
+function A_Analyze_Step2Execute( Sender )
+   startseq
+      Step2_AnalyseExportedFiles(),
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Nicht relevante Files aus dem Datei-Export-Verzeichnis löschen
+//******************************************************************************
+function A_DeleteNotRelevantFilesExecute( Sender )
+   startseq
+      DeleteNotRelevantFiles_GUI(m_oMemResults),
+      ActionsEnabled(),
+   onerror
+      GU_ShowStdErrorMessage('Fehler', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Ausgabe-Verzeichnis in Explorer öffnen
+//******************************************************************************
+function A_OpenFolderInExplorerExecute( Sender )
+   startseq
+      if not empty(m_cCodeblockCollectorExportPath) then
+         ShellExecute(m_cCodeblockCollectorExportPath),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Öffnen', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Ausgabe-Verzeichnis in vscode öffnen
+//******************************************************************************
+function A_OpenFolderInVscodeExecute( Sender )
+   startseq
+      VsCode_OpenViaCommandLine(m_cCodeblockCollectorExportPath),
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Öffnen', GetErrorObj()),
+   stopseq,
+end,
+
+//******************************************************************************
+// Action: Datei in vscode öffnen
+//******************************************************************************
+function A_OpenFileExecute( Sender )
+   startseq
+      if not empty(m_oMemResults:FILE_FULL_PATH) then
+         VsCode_OpenViaCommandLine(m_cCodeblockCollectorExportPath, RTrim(m_oMemResults:FILE_FULL_PATH)),
+      endif,
+   onerror
+      GU_ShowStdErrorMessage('Fehler beim Öffnen', GetErrorObj()),
+   stopseq,
+end,
+
+
+//##############################################################################
+//##############################################################################
+// Oberflächen-Funktionen
+//##############################################################################
+//##############################################################################
+
+//******************************************************************************
+// InitForm lädt das Formular in Abhängigkeit des Owners
+// @result: null
+//******************************************************************************
+function InitForm()
+//   if empty(m_oOwner) then
+//      oForm := LoadForm(m_cFormId, Application),
+//   else
+//      oForm             := LoadForm(m_cFormId, m_oOwner),
+//      oForm.FormStyle   := fsMDIChild,
+//      oForm.Windowstate := wsMaximized,
+//   endif,
+   oForm := LoadForm(m_cFormId, Application),
+
+   oForm.PositionSaveId := m_cPositionSaveId,
+   oForm.OrigCapt       := 'Migrations-Assistent be 6.5 => be 7.x: Detail-Prüfung ADT-Konformität Codeblöcke',
+   //oForm.Name           := GFU_CalcFormularName(m_cFormRefKey, oForm, m_oOwner),
+   oForm.ImageIndex     := 195,
+
+   AssignEvent(oForm, 'OnClose',      'FormExClose'),
+   AssignEvent(oForm, 'OnCloseQuery', 'FormExCloseQuery'),
+   AssignEvent(oForm, 'OnDestroy',    'FormExDestroy'),
+end,
+
+//******************************************************************************
+// LoadGUI lädt sämtliche Komponenten, die für die Oberfläche benötigt werden
+// @result: null
+//******************************************************************************
+function LoadGUI()
+   // @VZB@ der nachfolgende Teil wird automatisch gepflegt
+   A_Analyze_Step1            := FindObject(oForm, "A_Analyze_Step1"),
+   A_Analyze_Step2            := FindObject(oForm, "A_Analyze_Step2"),
+   A_DeleteNotRelevantFiles   := FindObject(oForm, "A_DeleteNotRelevantFiles"),
+   A_Filter_clear             := FindObject(oForm, "A_Filter_clear"),
+   A_Filter_dbf               := FindObject(oForm, "A_Filter_dbf"),
+   A_Filter_Lookup            := FindObject(oForm, "A_Filter_Lookup"),
+   A_Filter_Only_Step2        := FindObject(oForm, "A_Filter_Only_Step2"),
+   A_Filter_Scope             := FindObject(oForm, "A_Filter_Scope"),
+   A_Filter_Seek              := FindObject(oForm, "A_Filter_Seek"),
+   A_Filter_TextPfad          := FindObject(oForm, "A_Filter_TextPfad"),
+   A_Filter_transact          := FindObject(oForm, "A_Filter_transact"),
+   A_OpenFile                 := FindObject(oForm, "A_OpenFile"),
+   A_OpenFolderInExplorer     := FindObject(oForm, "A_OpenFolderInExplorer"),
+   A_OpenFolderInVscode       := FindObject(oForm, "A_OpenFolderInVscode"),
+   barFilter                  := FindObject(oForm, "barFilter"),
+   barMain                    := FindObject(oForm, "barMain"),
+   BeActionList               := FindObject(oForm, "BeActionList"),
+   BeBarButton1               := FindObject(oForm, "BeBarButton1"),
+   BeBarButton2               := FindObject(oForm, "BeBarButton2"),
+   BeBarButton3               := FindObject(oForm, "BeBarButton3"),
+   BeBarButton4               := FindObject(oForm, "BeBarButton4"),
+   BeBarButton5               := FindObject(oForm, "BeBarButton5"),
+   BeBarButton6               := FindObject(oForm, "BeBarButton6"),
+   BeBarButton7               := FindObject(oForm, "BeBarButton7"),
+   BeBarControlContainerItem1 := FindObject(oForm, "BeBarControlContainerItem1"),
+   BeBarDockControl           := FindObject(oForm, "BeBarDockControl"),
+   BeBarManager               := FindObject(oForm, "BeBarManager"),
+   btn_clear                  := FindObject(oForm, "btn_clear"),
+   btn_dbf                    := FindObject(oForm, "btn_dbf"),
+   btn_DbStartTrans           := FindObject(oForm, "btn_DbStartTrans"),
+   btn_Lookup                 := FindObject(oForm, "btn_Lookup"),
+   btn_scope                  := FindObject(oForm, "btn_scope"),
+   btn_seek                   := FindObject(oForm, "btn_seek"),
+   btn_TextPfad               := FindObject(oForm, "btn_TextPfad"),
+   dockFilter                 := FindObject(oForm, "dockFilter"),
+   ds_results                 := FindObject(oForm, "ds_results"),
+   grd_results                := FindObject(oForm, "grd_results"),
+   lbl_filter                 := FindObject(oForm, "lbl_filter"),
+   pnl_CurrentDir             := FindObject(oForm, "pnl_CurrentDir"),
+   // @VZE@ der vorangehende Teil wird automatisch gepflegt
+end,
+
+//******************************************************************************
+// ShowGUI zeigt das GUI an, das vorher mit LoadGUI geladen werden muss.
+// @result: null
+//******************************************************************************
+function ShowGUI()
+     ShowModal(oForm),
+end,
+
+//******************************************************************************
+// Setzen der Standardeinstellungen
+// @result: null
+//******************************************************************************
+function SetDefaults()
+
+   m_cCodeblockCollectorExportPath := '',
+
+   if EditorMode() then
+      // m_cCodeblockCollectorExportPath := 'C:\be_migration_70\DontenwillAG_main\20180709-13-03',   // TODO: Für Tests
+      KVU_Set(m_aInputParams, 'MODUS',       'DETAIL_CHECK'),
+      KVU_Set(m_aInputParams, 'BROWSERUSER', '/199/'),
+      KVU_Set(m_aInputParams, 'PFAD',        'C:\mig-be-7'),
+   endif,
+
+
+
+   Style65InfoPanel(pnl_CurrentDir),
+
+   ActionsEnabled(),
+
+   SetFilter(nil, ''),
+
+   m_aAnalyzeResultArray := {},
+end,
+
+//##############################################################################
+//##############################################################################
+// Hauptprogramm
+//##############################################################################
+//##############################################################################
+startseq
+   InitForm(),
+   LoadGUI(),
+   OpenDatabaseAndLinkToGUI(),
+   SetDefaults(),
+   ShowGUI(),
+onerror
+   GU_ShowStdErrorMessage('Fehler im Programm ' + ProgName(), GetErrorObj()),
+   DestroyObject(oForm),
+   oForm := nil,
+stopseq,
+
+oForm
